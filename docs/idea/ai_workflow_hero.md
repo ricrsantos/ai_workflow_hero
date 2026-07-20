@@ -2780,4 +2780,44 @@ UI-C04-001-dashboard.md
 | `/hero:back` | Retorna para a etapa de Planning quando o Judge identifica ambiguidade na SDD (não lacuna de implementação); reseta Implementation/QA/Judge para Waiting. |
 | `/hero:resume [ciclo]` | Retoma um ciclo pausado (arquivado manualmente via `/hero:archive`), movendo-o de volta para `cycles/current/`. |
 
+---
+## Decisões da Sessão de Grilling — 2026-07-20 (parte 2)
+
+### Sessões Limpas com Subagentes
+
+59. **Escopo de "sessões limpas"**: aplica-se apenas aos **subagentes** (backend_agent, frontend_agent, generic_agent, qa_agent, judge_agent, end2end_qa_agent, context_agent), invocados via Task tool. Cada chamada roda em sessão nova/isolada, sem herdar o histórico de chat do orchestrator. O subagente recebe apenas **ponteiros para arquivos** (caminhos de `AGENTS.md`, `current-state.md`, da SDD/tasks relevantes) em vez de conteúdo completo colado no prompt. O orchestrator absorve de volta apenas o **resultado final estruturado** do subagente (ex: seção "Output Format" de cada `*_agent.md`), não seu raciocínio intermediário. A sessão principal do `orchestration_agent` permanece contínua ao longo de todo o ciclo — apenas os subagentes são "descartáveis" por chamada.
+
+### Padrões de Código e Testes do Hero CLI (Go)
+
+60. **Princípios de código e teste** (aplicam-se a todo o código Go do repositório `workflow-hero`, não aos projetos-usuário):
+    - Prefer **clarity over cleverness**.
+    - Test **behavior**, not implementation details.
+    - Favor **real dependencies** over excessive mocking.
+    - Keep tests **deterministic and fast**.
+    - Avoid over-engineered test frameworks.
+
+61. **Estratégia de testes do Hero CLI**: testes unitários (`go test`) para a lógica de negócio de cada `internal/*` (install, upgrade, doctor, etc.) + golden-file tests para validação de renderização de templates (garante que `{{placeholder}}` é substituído corretamente) + testes de integração leves rodando o binário compilado contra um diretório temporário para `install`/`upgrade`/`uninstall`/`doctor`.
+
+62. **Organização de arquivos de teste**: colocados junto ao código, mesmo pacote (`internal/install/service_test.go` ao lado de `service.go`), usando `t.TempDir()` e o filesystem real do SO como dependência real (sem mocks de filesystem); `embed.FS` de assets também usado real (não mockado) nos testes de integração.
+
+### Plataformas, Build e Release
+
+63. **Plataformas alvo (V1)**: Linux e macOS, ambos em `amd64` e `arm64` (4 combinações via cross-compilation do Go). Windows fica para V2.
+
+64. **Processo de build/release (V1)**: manual, sem CI/CD — um script `.sh` próprio no repositório (`scripts/release.sh`) gera as 4 combinações a partir de um único comando, usando a tag git atual como versão.
+
+65. **Versionamento**: SemVer (`vMAJOR.MINOR.PATCH`), injetado no binário via `-ldflags "-X main.version=..."` a partir da tag git no momento do build. `assets.version` (em `hero.json`) é sempre igual a `cli.version`, pois os assets viajam embarcados no mesmo binário via `embed.FS`.
+
+66. **Checksums**: o script de release gera um arquivo `checksums.txt` (SHA256) para os 4 binários, publicado na mesma release do GitHub. Verificação é manual pelo usuário (`sha256sum -c`); sem assinatura GPG na V1.
+
+### UX de Terminal (CLI)
+
+67. **Estilo visual**: cores + ícones semânticos consistentes — verde/✓ sucesso, amarelo/⚠ aviso, vermelho/✗ erro, azul/→ progresso. Detecta suporte a cor do terminal (TTY / variável `NO_COLOR`) e degrada para texto puro quando não suportado. A mesma convenção de ícones/semântica é usada também pelos agentes no **Runtime** (chat do Cursor), para consistência visual em toda a experiência do Hero — por exemplo nos resumos de fechamento de etapa e nos avisos de fallback de modelo.
+
+68. **Saída de comandos de leitura** (`hero status`, `hero variables`, `hero doctor`): tabela legível por humanos por padrão, com flag `--json` opcional para saída estruturada consumida por scripts/CI.
+
+69. **Prompts interativos**: usar uma lib Go estilo survey (ex: `AlecAivazis/survey` ou `charmbracelet/huh`), com navegação por setas para escolhas múltiplas (ex: confirmação de `git init`) e validação inline de campos obrigatórios. Comandos com prompts interativos (como `hero install`) também aceitam flags equivalentes (`--name`, `--summary`, `--yes`) para pular os prompts; se todas as flags necessárias forem fornecidas, o comando roda sem interatividade — caso contrário, cai para o prompt interativo apenas nos campos faltantes.
+
+70. **Mensagens de erro**: estrutura consistente — ícone/cor de erro + descrição clara do problema + sugestão de correção (quando aplicável) + código de saída não-zero. Stack traces de erros inesperados (panics) só aparecem com uma flag `--verbose`/`--debug`.
+
 
