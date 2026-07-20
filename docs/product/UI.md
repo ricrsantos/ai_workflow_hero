@@ -111,3 +111,7 @@ Example:
 | Error structure | Icon + description + suggestion + non-zero exit code |
 | Verbose/debug | `--verbose`/`--debug` flag reveals stack traces |
 | Runtime consistency | Same icon/semantic convention reused in chat by all agents |
+
+## 7. Testing Requirement
+
+Every CLI command's output formatting (table rendering, `--json` payloads, error structure) must be covered by golden-file or unit tests before being considered done, per the testing strategy in [AGENTS.md — Testing](../../AGENTS.md#testing) and [ADR-009](../architecture/ADR.md#adr-009-test-real-dependencies-over-mocks). Run `go test ./...` and fix any failure before finishing — never leave the repository in a failing state.

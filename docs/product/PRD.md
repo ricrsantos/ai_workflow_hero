@@ -133,6 +133,8 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 `/hero:init`, `/hero:start`, `/hero:approve`, `/hero:reject`, `/hero:cancel`, `/hero:finish`, `/hero:archive`, `/hero:resume [cycle]`, `/hero:sync`, `/hero:status`, `/hero:help`, `/hero:continue`, `/hero:back`.
 
+Each Runtime command maps to exactly one embedded asset file (`hero-<command>.md` in `.cursor/commands/`), and each agent above maps to exactly one `<agent_name>.md` file in `.cursor/agents/` — see [ADR-011](../architecture/ADR.md#adr-011-one-asset-file-per-runtime-command-and-agent) for the full file lists.
+
 ### 5.10 Metrics
 
 - `metrics.md` (per cycle): one row per stage, with sub-rows when multiple agents act in the same stage (e.g. backend + frontend in Implementation), plus a subtotal and a grand total.
@@ -146,6 +148,8 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 - **Git dependency**: the project must be a git repository (required for `/hero:cancel` checkpoint/rollback). `hero install` offers to run `git init` if missing.
 - **Backward-safe upgrades**: `hero upgrade` never silently overwrites user-customized templates; it detects modifications via checksum and warns instead.
 - **Clean subagent sessions**: every subagent invocation (backend/frontend/generic/qa/judge/end2end_qa/context) runs in a fresh, isolated session via the Task tool, receiving only file pointers (not full pasted content) to conserve context window budget. Only the final structured output is absorbed back by the orchestrator.
+- **Testing (this repository)**: `go test ./...` must pass before any task is considered complete. On failure: analyze, fix, re-run, and only stop once green — never leave the repository in a failing state. See [ADR-009](../architecture/ADR.md#adr-009-test-real-dependencies-over-mocks) and the Testing section of [AGENTS.md](../../AGENTS.md).
+- **Testing (Hero-managed end-user projects)**: every cycle's `TESTING.md` template documents the target project's own test command and pass/fail policy; the `qa_agent` and `end2end_qa_agent` enforce it during the QA and QA End-to-End stages (§5.2).
 
 ## 7. Out of Scope for V1
 

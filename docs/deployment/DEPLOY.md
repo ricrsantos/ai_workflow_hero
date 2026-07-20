@@ -32,6 +32,8 @@ go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o hero ./
 
 V1 does not use CI/CD. Releases are cut manually by the maintainer, but the repetitive cross-compilation work is automated by a single script.
 
+**Testing gate**: `go test ./...` must pass with zero failures before tagging a release commit. If any test fails, analyze and fix it, then re-run the suite — never tag or run `scripts/release.sh` against a repository in a failing state (see [AGENTS.md — Testing](../../AGENTS.md#testing) and [ADR-009](../architecture/ADR.md#adr-009-test-real-dependencies-over-mocks)).
+
 ### 4.1 `scripts/release.sh`
 
 Responsibilities of the script, run from a clean, tagged commit:
@@ -55,10 +57,11 @@ Usage:
 
 ### 4.2 Publishing
 
-1. Tag the release commit: `git tag v1.2.0 && git push origin v1.2.0`.
-2. Run `./scripts/release.sh`.
-3. Manually create a GitHub Release for the tag and upload all files from `dist/` (4 binaries + `checksums.txt`).
-4. Write release notes summarizing changes since the previous tag.
+1. Run `go test ./...` and confirm it passes (see Testing gate above).
+2. Tag the release commit: `git tag v1.2.0 && git push origin v1.2.0`.
+3. Run `./scripts/release.sh`.
+4. Manually create a GitHub Release for the tag and upload all files from `dist/` (4 binaries + `checksums.txt`).
+5. Write release notes summarizing changes since the previous tag.
 
 > V2 candidate: automate steps 2–3 with GoReleaser + GitHub Actions once release frequency justifies the investment (see [PRD.md §2.3](../product/PRD.md#23-v2-scope-out-of-scope-for-v1)).
 

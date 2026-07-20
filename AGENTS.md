@@ -6,11 +6,11 @@ Guidance for AI agents working on the **AI Workflow Hero** (Hero) repository.
 
 ## Project Summary
 
-Hero is an open-source framework for AI-augmented software development. It does not replace the coding agent — it coordinates multiple specialized subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider.
+Hero is an open-source framework for AI-augmented software development. It does not replace the coding agent — it coordinates specialized subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider.
 
-Hero ships as a single Go CLI binary (`hero`) that bootstraps a project with commands, skills, prompts, and templates for a supported IDE/harness (Cursor in V1). Once installed, the actual reasoning-driven workflow (Research → Planning → Implementation → QA → Judge → QA End-to-End) runs entirely in the **Runtime** (the IDE's chat, via slash commands), never inside the CLI binary itself.
+Hero ships as a single Go CLI binary (`hero`) that bootstraps a project with commands, skills, prompts, and templates for a supported IDE/harness (Cursor in V1). Once installed, the reasoning-driven workflow (Research → Planning → Implementation → QA → Judge → QA End-to-End) runs entirely in the **Runtime** (the IDE's chat, via slash commands), never in the CLI binary.
 
-This repository is the Hero framework's own source code — not a project that consumes Hero. Agents working here are building the tool, not using it.
+This repository is Hero's own source code — not a project that consumes Hero. Agents working here build the tool, not use it.
 
 ## Documentation Map
 
@@ -20,33 +20,24 @@ Always read project documentation **before** writing code or making architectura
 |---|---|---|
 | Product Requirements | [docs/product/PRD.md](docs/product/PRD.md) | Goals, scope, functional/non-functional requirements, V1/V2 boundaries |
 | Terminal UX Spec | [docs/product/UI.md](docs/product/UI.md) | CLI visual style, output formats, prompts, error conventions |
-| Architecture Decision Records | [docs/architecture/ADR.md](docs/architecture/ADR.md) | All architectural decisions and their rationale |
+| Architecture Decision Records | [docs/architecture/ADR.md](docs/architecture/ADR.md) | All architectural decisions, rationale, and full data-file schemas |
 | Deployment Guide | [docs/deployment/DEPLOY.md](docs/deployment/DEPLOY.md) | Target platforms, build/release process, versioning, checksums |
 | Design Notes (source) | [docs/idea/ai_workflow_hero.md](docs/idea/ai_workflow_hero.md) | Full design discussion and grilling session decisions log |
 
-## Testing
+**Context compression files** (this repo's own state — see below) must be **kept up to date after every code-affecting interaction**:
 
-Follow these principles for all Go code in this repository:
+| File | Path | Lifetime | Purpose |
+|---|---|---|---|
+| Current State | [context/current-state.md](context/current-state.md) | Long-lived | Source of truth: name, goal, stack, implemented/pending features, architecture, constraints |
+| Context Log | [context/context-log.md](context/context-log.md) | Short/medium-lived | Operational memory: timestamp, problem, investigation, decision, outcome, refactor, rationale |
 
-- Prefer **clarity over cleverness**.
-- Test **behavior**, not implementation details.
-- Favor **real dependencies** over excessive mocking — use `t.TempDir()` and the real filesystem, and the real `embed.FS` for asset-related tests, rather than mocking the filesystem.
-- Keep tests **deterministic and fast**.
-- Avoid over-engineered test frameworks.
-
-Test files are colocated with the code they test, in the same package (e.g. `internal/install/service_test.go` next to `service.go`). Use:
-
-- **Unit tests** for the business logic of each `internal/<feature>/` package.
-- **Golden-file tests** for template rendering, to guarantee `{{placeholder}}` substitution is correct.
-- **Lightweight integration tests** that run the compiled binary against a temporary directory for `install`/`upgrade`/`uninstall`/`doctor`.
-
-Always run `go test ./...` before completing a task. Never leave the repository in a failing state.
+After finishing any task that changes code or decisions: (1) update `context/current-state.md` to reflect the new state, and (2) append an entry to `context/context-log.md`.
 
 ## Reference Lookup Order
 
-When an agent needs external or internal reference material, follow this order:
+When an agent needs external or internal reference material, follow this order strictly:
 
-1. **Project documents** — PRD, UI spec, ADRs, DEPLOY.md, and this file.
+1. **Project documents** — this file, PRD, UI spec, ADRs, DEPLOY.md, and the context compression files above.
 2. **Context7 MCP** — for library/framework documentation (Cobra, survey/huh, Go stdlib).
 3. **Web search** — only when project docs and Context7 do not answer the question.
 
@@ -54,17 +45,29 @@ Do not guess or invent requirements. If project docs are silent on a topic, ask 
 
 ## Ambiguity and Missing Information
 
-**Any ambiguous requirement or missing information must be questioned to the user before proceeding.**
+**Any ambiguous requirement or missing information must be questioned to the user before proceeding.** Do not assume defaults that contradict documented decisions, and do not silently fill gaps in the PRD, UI spec, ADRs, or context files.
 
-Do not assume defaults that contradict documented decisions. Do not silently fill gaps in the PRD, UI spec, or ADRs. When in doubt:
+1. Check project docs and context files first (Reference Lookup Order above).
+2. If still unclear, ask the user a specific question with a recommended option — never silently pick one and proceed.
+3. Record the answer in `context/context-log.md` and update the affected doc(s) if it changes scope.
 
-1. Check project docs first.
-2. If still unclear, ask the user a specific question with a recommended option.
-3. Record the user's answer and update affected docs if the decision changes scope.
+## Testing
+
+Principles for all Go code here: clarity over cleverness; test **behavior**, not implementation details; favor **real dependencies** over mocking (real `t.TempDir()` filesystem, real `embed.FS`); keep tests deterministic and fast; avoid over-engineered test frameworks.
+
+Test files are colocated with the code they test, same package (e.g. `internal/install/service_test.go` next to `service.go`): **unit tests** per `internal/<feature>/` package, **golden-file tests** for template rendering, **lightweight integration tests** running the compiled binary against a temp directory for `install`/`upgrade`/`uninstall`/`doctor`.
+
+**After any code modification**, follow this loop without exception:
+
+1. Run `go test ./...`.
+2. If tests fail: (2.1) analyze the failure, (2.2) fix the issue, (2.3) re-run `go test ./...`.
+3. Only stop when all tests pass.
+
+**Never leave the repository in a failing state.**
 
 ## Project Constraints
 
-The following constraints are mandatory and must not be violated:
+Mandatory, must not be violated:
 
 - **Language**: Go, using the Cobra library for the CLI.
 - **Architecture**: Feature Based + Vertical Slice (see [ADR-002](docs/architecture/ADR.md#adr-002-repository-architecture-feature-based--vertical-slice)).

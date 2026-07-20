@@ -14,6 +14,9 @@
 | [ADR-008](#adr-008-three-level-model-fallback-chain) | Three-level model fallback chain | Accepted |
 | [ADR-009](#adr-009-test-real-dependencies-over-mocks) | Test real dependencies over mocks | Accepted |
 | [ADR-010](#adr-010-manual-release-process-via-a-single-script) | Manual release process via a single script | Accepted |
+| [ADR-011](#adr-011-one-asset-file-per-runtime-command-and-agent) | One asset file per Runtime command and per agent | Accepted |
+
+> **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 
 ---
 
@@ -149,3 +152,238 @@ Only purely administrative commands may have equivalents in both (e.g. `hero sta
 - No GitHub Actions workflow is required for V1 releases; this is deferred to V2 (GoReleaser or plain Actions) if/when release frequency grows.
 - The maintainer is responsible for manually uploading the script's output artifacts to GitHub Releases.
 - Because `assets.version == cli.version` (ADR-001), there is only one version number to manage per release.
+
+---
+
+## ADR-011: One asset file per Runtime command and per agent
+
+**Context**: Hero's embedded assets must map cleanly to Cursor's own conventions (one command = one `.md` file in `.cursor/commands/`, one agent = one `.md` file in `.cursor/agents/`) so `hero install`/`hero upgrade` can copy, checksum, and diff them individually (see ADR-001, and the upgrade behavior in [DEPLOY.md §7](../deployment/DEPLOY.md#7-update--removal)).
+
+**Decision**: Every Runtime slash command has exactly one corresponding asset file named `hero-<command>.md` in `.cursor/commands/`, and every agent has exactly one `<agent_name>.md` file in `.cursor/agents/`. The full V1 lists are:
+
+- **Runtime command files** (13): `hero-init.md`, `hero-start.md`, `hero-approve.md`, `hero-reject.md`, `hero-cancel.md`, `hero-finish.md`, `hero-archive.md`, `hero-resume.md`, `hero-sync.md`, `hero-status.md`, `hero-help.md`, `hero-continue.md`, `hero-back.md`.
+- **Agent files** (10): `orchestration_agent.md`, `discover_agent.md`, `planning_agent.md`, `context_agent.md`, `backend_agent.md`, `frontend_agent.md`, `generic_agent.md`, `qa_agent.md`, `judge_agent.md`, `end2end_qa_agent.md`.
+
+Every agent file is self-sufficient (per ADR-005): it documents its Role, Responsibilities, Rules, and an explicit Output Format section, since the agent starts each invocation with no prior chat context.
+
+**Consequences**:
+- `hero doctor` can verify installation integrity file-by-file against this fixed list (see [DEPLOY.md §7](../deployment/DEPLOY.md#7-update--removal)).
+- Adding a new Runtime command or agent in a future version always means adding exactly one new asset file, never editing a shared "commands bundle" file.
+- The full list above is the source of truth for asset file names; `docs/idea/ai_workflow_hero.md` contains the full markdown content for each file's template.
+
+---
+
+## Appendix: Data File Schemas
+
+These are the concrete JSON/YAML schemas referenced throughout this document and the PRD. They are the source of truth for field names; full field-by-field narrative and worked examples live in [docs/idea/ai_workflow_hero.md § Arquivos / Templates](../idea/ai_workflow_hero.md).
+
+### `.workflow-hero/config/hero.json`
+
+Hero's own installation metadata (never edited by hand).
+
+```json
+{
+  "cli": {
+    "version": "1.0.0",
+    "installedAt": "2026-07-11T12:00:00Z",
+    "tools": ["cursor"]
+  },
+  "assets": {
+    "version": "1.0.0",
+    "installedAt": "2026-07-11T12:00:00Z"
+  }
+}
+```
+
+`assets.version` always equals `cli.version` (ADR-001).
+
+### `.workflow-hero/config/project.json`
+
+The project's own identity and advanced metadata.
+
+```json
+{
+  "name": "project name",
+  "summary": "project summary",
+  "repository": "project-repository",
+  "createdAt": "2026-07-11T12:00:00Z",
+
+  "workflow": {
+    "name": "Feature Development",
+    "phase": "Research",
+    "cycle": 4
+  },
+
+  "technology": {
+    "stack": "project stack",
+    "backend": "project backend",
+    "languages": ["project languages"]
+  },
+
+  "platform": {
+    "targets": ["project platform targets"]
+  },
+
+  "localization": {
+    "languages": ["project languages"],
+    "defaultLanguage": "project default language"
+  },
+
+  "ui": {
+    "design": "Design style",
+    "theme": { "default": "light", "supportsDarkMode": true }
+  },
+
+  "deployment": {
+    "target": "project deployment target",
+    "domain": "project domain"
+  }
+}
+```
+
+- `workflow.cycle`: sequential global cycle counter, incremented by the `orchestration_agent` on every successful `/hero:init`. Used as the prefix (`C04`) in document numbering (`PRD-C04-001-slug.md`) and in archive folder names (`C04-yyyy-mm-dd-slug/`).
+- Advanced fields (`technology`, `platform`, `localization`, `ui`, `deployment`) are empty/`null` right after `hero install`; the `orchestration_agent` fills them during the first `/hero:init`, either by inferring from an existing codebase or by asking the user.
+
+### `.workflow-hero/config/documents.json`
+
+Registry of every document created for the current cycle, maintained automatically by the `discover_agent` (see ADR on document numbering in the PRD).
+
+```json
+{
+  "documents": [
+    {
+      "name": "TESTING Strategy",
+      "path": "docs/testing/TESTING.md",
+      "purpose": "Testing strategy and commands."
+    },
+    {
+      "name": "PRD-C04-001",
+      "path": "docs/product/PRD-C04-001-checkout-flow.md",
+      "purpose": "Checkout flow requirements"
+    },
+    {
+      "name": "UI / Design Spec",
+      "path": "docs/product/UI.md",
+      "purpose": "Visual direction, sections, components, tokens"
+    },
+    {
+      "name": "ADR-C04-001",
+      "path": "docs/architecture/ADR-C04-001-database-choice.md",
+      "purpose": "Database choice for the checkout flow"
+    }
+  ]
+}
+```
+
+`openspec/config.yaml`'s `context:` field (Authoritative sources) is generated dynamically by the `planning_agent` by iterating this array — never hardcoded (ADR-006, ADR-007).
+
+### `workflow-config.yml` (per cycle)
+
+The single file the user edits before running `/hero:start`. Full annotated example:
+
+```yaml
+title: New Feature
+objective: Implement a new feature.
+
+# Fallback model used when an agent's configured model is unavailable.
+# The user is always warned explicitly when this fallback is used.
+generic_model: claude-sonnet-5
+
+scope:
+  backend: true
+  frontend: false
+  native: false
+  script: false
+  infrastructure: false
+
+stages:
+  research:
+    enabled: true
+    purpose: Collaborate with the user to gather requirements and produce the project specifications.
+    max_iterations: 50
+    timeout_minutes: 15
+    require_human_approval: false
+
+  planning:
+    enabled: true
+    purpose: Convert the approved specifications into a complete SDD ready for implementation.
+    max_iterations: 3
+    timeout_minutes: 20
+    require_human_approval: false
+
+  implementation:
+    enabled: true
+    purpose: Implement the approved SDD.
+    max_iterations: 4
+    timeout_minutes: 30
+    require_human_approval: false
+
+  qa:
+    enabled: true
+    purpose: Validate implementation quality (tests, coverage, architecture, lint, build).
+    max_iterations: 2
+    timeout_minutes: 15
+    require_human_approval: true
+
+  judge:
+    enabled: true
+    purpose: Verify SDD requirement coverage.
+    max_iterations: 3
+    timeout_minutes: 10
+    require_human_approval: false
+
+  qa_end_to_end:
+    enabled: true
+    purpose: Validate the complete feature end-to-end.
+    max_iterations: 1
+    timeout_minutes: 15
+    require_human_approval: true
+
+agents:
+  planning_agent:   { model: gpt-5.3-codex,    reasoning_effort: medium, enable_fast_model: false, thinking: na }
+  context_agent:    { model: composer-2.5,     reasoning_effort: na,     enable_fast_model: false, thinking: na }
+  backend_agent:    { model: grok-4.5,         reasoning_effort: high,   enable_fast_model: false, thinking: na }
+  frontend_agent:   { model: claude-sonnet-5,  reasoning_effort: high,   enable_fast_model: false, thinking: false }
+  generic_agent:    { model: claude-sonnet-5,  reasoning_effort: medium, enable_fast_model: false, thinking: false }
+  qa_agent:         { model: gpt-5.3-codex,    reasoning_effort: medium, enable_fast_model: false, thinking: na }
+  judge_agent:      { model: claude-sonnet-5,  reasoning_effort: high,   enable_fast_model: false, thinking: false }
+  end2end_qa_agent: { model: claude-4.6-sonnet,reasoning_effort: medium, enable_fast_model: false, thinking: false }
+
+workflow_rules:
+  - Skip any stage that is not enabled.
+  - Do not start implementation until the PRD has been approved, if the research stage is enabled.
+  - If the research stage is disabled, require the `objective` field above to be well described and ask the user for explicit scope confirmation before starting implementation.
+  - At least one of the five `scope` fields must be true when implementation is enabled.
+  - Do not change the architecture without an approved ADR.
+  - Update workflow.md after completing each stage.
+  - Before finishing the workflow, ensure current-state.md is up to date.
+```
+
+### `.workflow-hero/cycles/current/workflow.md` — allowed field values
+
+| Field | Allowed values |
+|---|---|
+| `Status` | `Waiting`, `Disable`, `In Progress`, `Completed`, `Cancelled`, `Paused` |
+| `Human Approval` | `N/A`, `Disable`, `Pending`, `Escalated`, `Rejected`, `Approved`, `Cancelled` |
+| `Extra Iterations Granted` | Integer, default `+0`, incremented on every `/hero:continue` for that stage |
+
+### `models/*.yml` (pricing reference files)
+
+One file per provider (`openai.yml`, `anthropic.yml`, `google.yml`, `cursor.yml`, `moonshot.yml`, `zhipu.yml`, `xai.yml`), refreshed by `hero update-models` (see [DEPLOY.md §8](../deployment/DEPLOY.md#8-pricing-data-updates)). Common shape:
+
+```yaml
+provider: anthropic
+version: 1
+last_updated: 2026-07-14
+currency: usd
+unit: per_1m_tokens
+
+models:
+  claude-sonnet-5:
+    input: 3
+    cache_write: 3.75
+    cache_read: 0.3
+    output: 15
+```
+
+Used by the token/cost estimation heuristic (character count ÷ ~4, multiplied by the model's price here) referenced in [PRD.md §5.10](../product/PRD.md#510-metrics).
