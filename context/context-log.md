@@ -48,4 +48,77 @@
 
 ---
 
+## 2026-07-20 — OpenSpec proposal created for `v1-ai-workflow-hero`
+
+**Problem:** The project had complete V1 docs but no implementation plan artifacts in OpenSpec for turning the approved scope into executable work.
+
+**Investigation:** Reviewed authoritative sources (`AGENTS.md`, `PRD.md`, `UI.md`, `ADR.md`, `DEPLOY.md`, `context/current-state.md`, `context/context-log.md`) and generated a constraints-first synthesis to avoid introducing requirements outside documented scope.
+
+**Decision:** Created change `v1-ai-workflow-hero` with all planning artifacts required before apply: `proposal.md`, `design.md`, `tasks.md`, and capability specs under `openspec/changes/v1-ai-workflow-hero/specs/`:
+- `cli-deterministic-command-suite`
+- `runtime-workflow-execution`
+- `asset-bootstrap-and-layout`
+
+The proposal explicitly separates CLI vs Runtime responsibilities (ADR-003), keeps V1 in-scope/out-of-scope boundaries from PRD §2.2/§2.3/§7, and defines an ordered implementation checklist with test gates (`go test ./...`).
+
+**Outcome:** Planning is apply-ready for implementation kickoff through `/opsx:apply`.
+
+**Next step:** Execute `/opsx:apply` and begin Task Group 1 (scaffold + command wiring), then progress through the install-first dependency chain.
+
+---
+
+## 2026-07-20 — Apply `v1-ai-workflow-hero` (full V1 CLI + Runtime assets)
+
+**Problem:** Docs and OpenSpec planning were complete, but the repo had no Go implementation.
+
+**Investigation:** Confirmed two gaps with the user before scaffolding: Go module path and interactive prompt library. Used Context7 for Cobra/huh; parallel subagents for repo/spec exploration, asset extraction, and CLI implementation.
+
+**Decision:**
+- Module: `github.com/ricrsantos/ai_workflow_hero` (git remote).
+- Prompts: `charmbracelet/huh`.
+- Layout: ADR-002 vertical slices; assets via `embed.FS` in `assets/`; checksum-protected upgrade; Hero-owned uninstall scope; Runtime semantics encoded in embedded markdown (not in CLI Go code).
+
+**Outcome:** All 42 OpenSpec tasks completed. Packages under `cmd/hero`, `internal/*`, `assets/`, `scripts/release.sh` landed. `go test ./...` green (unit, golden/template, inventory/runtime-asset, integration, release-script contract). No V1 out-of-scope items introduced (no Windows release targets, no CI release automation, no `hero sync` CLI command).
+
+**Refactor / rationale:** Shared `clierr` + `output` enforce UI §2/§5; install-first lifecycle; injectable HTTP for `update-models` tests.
+
+**Next step:** Archive the change (`/opsx:archive`), then cut the first tagged release with `scripts/release.sh`.
+
+---
+
+## 2026-07-20 — V1 Go CLI full implementation
+
+**Problem:** OpenSpec change `v1-ai-workflow-hero` had complete planning artifacts (proposal, design, specs, tasks.md) but no Go source code existed.
+
+**Investigation:** Reviewed PRD, UI spec, ADR, DEPLOY, and all three capability specs. Identified all required packages, commands, asset files, and tests per tasks 1.1–5.7, 4.x, 3.x, 2.x, 7.1–7.4.
+
+**Decision:** Implemented the complete V1 CLI in one session:
+- `assets/` package with `embed.FS` for all 13 commands, 10 agents, 2 skills, 6 templates, 7 model pricing files, 1 config file
+- `internal/common/` with clierr (UI §5 error format), output (✓/⚠/→/table, NO_COLOR/TTY), template ({{path.key}} only, ADR-006)
+- `internal/adapters/cursor/` with all Cursor path constants and ADR-011 inventory lists
+- All 7 feature packages: install, upgrade, uninstall, doctor, status, variables, update_models
+- `cmd/hero/main.go` with root command and all subcommands registered
+- `scripts/release.sh` for cross-compilation (4 targets) + checksums
+- Full test suite: unit, integration, asset inventory, runtime-semantics keyword checks
+
+**Outcome:** `go test ./...` — 12 packages pass, 0 failures. All tasks 1.1–5.7 and 7.1–7.4 marked complete. Context files updated.
+
+**Rationale:** Single-pass implementation possible because all architecture decisions were pre-documented (10 ADRs). Feature-based structure kept each package independently testable.
+
+**Next step:** Archive `v1-ai-workflow-hero` with `/opsx:archive`, then tag and release.
+
+---
+
+## 2026-07-20 — Bilingual README
+
+**Problem:** Project needed public-facing documentation in the style of [screenshot_hero README](https://github.com/ricrsantos/screenshot_hero/blob/main/README.md).
+
+**Decision:** Single `README.md` with EN + PT-BR sections (language switcher + anchors), covering install, quick start, Runtime commands, build/test, structure, and docs map — aligned with implemented V1.
+
+**Outcome:** `README.md` created; `context/current-state.md` updated.
+
+**Next step:** Archive OpenSpec change; first tagged release.
+
+---
+
 _To be maintained by agents. Prune entries older than the last 3–5 sessions once they no longer inform current work._

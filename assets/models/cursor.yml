@@ -1,0 +1,17 @@
+provider: cursor
+version: 1
+last_updated: 2026-07-14
+currency: usd
+unit: per_1m_tokens
+
+models:
+  composer-2.5:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+  composer-2.5-fast:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00

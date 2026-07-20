@@ -1,0 +1,75 @@
+title: New Feature
+objective: Describe the objective of this development cycle.
+
+# Fallback model used when an agent's configured model is unavailable.
+# The user is always warned explicitly when this fallback is used.
+generic_model: claude-sonnet-5
+
+scope:
+  backend: true
+  frontend: false
+  native: false
+  script: false
+  infrastructure: false
+
+stages:
+  research:
+    enabled: true
+    purpose: Collaborate with the user to gather requirements and produce the project specifications.
+    max_iterations: 50
+    timeout_minutes: 15
+    require_human_approval: false
+
+  planning:
+    enabled: true
+    purpose: Convert the approved specifications into a complete SDD ready for implementation.
+    max_iterations: 3
+    timeout_minutes: 20
+    require_human_approval: false
+
+  implementation:
+    enabled: true
+    purpose: Implement the approved SDD.
+    max_iterations: 4
+    timeout_minutes: 30
+    require_human_approval: false
+
+  qa:
+    enabled: true
+    purpose: Validate implementation quality (tests, coverage, architecture, lint, build).
+    max_iterations: 2
+    timeout_minutes: 15
+    require_human_approval: true
+
+  judge:
+    enabled: true
+    purpose: Verify SDD requirement coverage.
+    max_iterations: 3
+    timeout_minutes: 10
+    require_human_approval: false
+
+  qa_end_to_end:
+    enabled: true
+    purpose: Validate the complete feature end-to-end.
+    max_iterations: 1
+    timeout_minutes: 15
+    require_human_approval: true
+
+agents:
+  planning_agent:   { model: gpt-5.3-codex,     reasoning_effort: medium, enable_fast_model: false, thinking: na }
+  context_agent:    { model: composer-2.5,       reasoning_effort: na,     enable_fast_model: false, thinking: na }
+  backend_agent:    { model: grok-4.5,           reasoning_effort: high,   enable_fast_model: false, thinking: na }
+  frontend_agent:   { model: claude-sonnet-5,    reasoning_effort: high,   enable_fast_model: false, thinking: false }
+  generic_agent:    { model: claude-sonnet-5,    reasoning_effort: medium, enable_fast_model: false, thinking: false }
+  qa_agent:         { model: gpt-5.3-codex,      reasoning_effort: medium, enable_fast_model: false, thinking: na }
+  judge_agent:      { model: claude-sonnet-5,    reasoning_effort: high,   enable_fast_model: false, thinking: false }
+  end2end_qa_agent: { model: claude-4.6-sonnet,  reasoning_effort: medium, enable_fast_model: false, thinking: false }
+
+workflow_rules:
+  - Skip any stage that is not enabled.
+  - Do not start implementation until the PRD has been approved, if the research stage is enabled.
+  - If the research stage is disabled, require the objective field above to be well described and ask the user for explicit scope confirmation before starting implementation.
+  - At least one of the five scope fields must be true when implementation is enabled.
+  - Do not change the architecture without an approved ADR.
+  - Update workflow.md after completing each stage.
+  - Before finishing the workflow, ensure current-state.md is up to date.

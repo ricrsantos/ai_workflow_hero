@@ -11,64 +11,70 @@
 | Field | Value |
 |---|---|
 | **Name** | AI Workflow Hero (Hero) |
-| **Repository** | `ai_workflow_hero` (local; no remote published yet) |
+| **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Documentation / design complete for V1. No Go code written yet. |
+| **Phase** | V1 implementation complete for OpenSpec change `v1-ai-workflow-hero` (`go test ./...` green). Ready to archive the change. |
 
 ## Technology Stack
 
 | Concern | Choice |
 |---|---|
 | Language | Go |
+| Module path | `github.com/ricrsantos/ai_workflow_hero` |
 | CLI framework | [Cobra](https://github.com/spf13/cobra) |
-| Asset embedding | Go `embed.FS` (commands, skills, prompts, templates ship inside the binary) |
-| Interactive prompts | Go survey-style library (`AlecAivazis/survey` or `charmbracelet/huh`) |
+| Asset embedding | Go `embed.FS` (`assets` package) |
+| Interactive prompts | [charmbracelet/huh](https://github.com/charmbracelet/huh) |
+| YAML | `gopkg.in/yaml.v3` |
 | SDD / planning framework | [OpenSpec](https://github.com/Fission-AI/OpenSpec) |
-| E2E testing (Runtime side) | Playwright (frontend) / direct HTTP calls (backend-only) |
 | Target IDE/harness (V1) | Cursor only |
 | Target platforms (V1) | Linux and macOS, `amd64` and `arm64` |
-| Versioning | SemVer (`vMAJOR.MINOR.PATCH`), injected via `-ldflags` from git tag |
+| Versioning | SemVer (`vMAJOR.MINOR.PATCH`), injected via `-ldflags "-X main.version=..."` |
 
 ## Architecture Summary
 
-- **Feature Based + Vertical Slice** repository structure: each CLI capability lives in its own `internal/<feature>/` package (`internal/install/`, `internal/upgrade/`, `internal/uninstall/`, `internal/doctor/`, etc.), each with `command.go` (Cobra wiring), `service.go` (business logic), `validator.go` (validation). IDE-specific logic lives in `internal/adapters/cursor/`. Shared low-level concerns live in `internal/common/`. See [ADR-002](../docs/architecture/ADR.md#adr-002-repository-architecture-feature-based--vertical-slice).
-- **Strict CLI vs. Runtime separation**: the Go binary is 100% deterministic (install/upgrade/uninstall/doctor/version/variables/update-models/status/help) and never calls an LLM. All reasoning-driven workflow execution (Research → Planning → Implementation → QA → Judge → QA End-to-End) happens exclusively in the Runtime (IDE chat, via `/hero:*` slash commands). See [ADR-003](../docs/architecture/ADR.md#adr-003-cli-vs-runtime-separation).
-- **Clean subagent sessions**: every subagent (`backend_agent`, `frontend_agent`, `generic_agent`, `qa_agent`, `judge_agent`, `end2end_qa_agent`, `context_agent`) runs via the Cursor Task tool in a fresh, isolated session, receiving file pointers instead of pasted content. See [ADR-005](../docs/architecture/ADR.md#adr-005-subagent-invocation-via-task-tool-with-clean-sessions).
-- **Simple placeholder templating** (`{{path.key}}`), no loop/conditional engine. See [ADR-006](../docs/architecture/ADR.md#adr-006-simple-placeholder-templating-no-loop-engine).
-- **Three-level model fallback**: agent's configured model → `generic_model` (with explicit warning) → user must fix config and run `/hero:continue`. See [ADR-008](../docs/architecture/ADR.md#adr-008-three-level-model-fallback-chain).
-- Full architectural rationale: [docs/architecture/ADR.md](../docs/architecture/ADR.md) (10 ADRs, all Accepted).
+- **Feature Based + Vertical Slice**: `cmd/hero` + `internal/<feature>/` (`install`, `upgrade`, `uninstall`, `doctor`, `status`, `variables`, `update_models`) with `command.go` / `service.go` / `validator.go` as needed; Cursor paths in `internal/adapters/cursor/`; shared helpers in `internal/common/` (clierr, output, template).
+- **Strict CLI vs Runtime**: CLI is deterministic only; Runtime orchestration lives in embedded markdown under `assets/cursor/`.
+- **Simple templating**: `internal/common/template` supports `{{path.key}}` only (ADR-006).
+- **Assets**: `assets/` embedded via `assets.FS`; install copies into `.cursor/` and `.workflow-hero/`.
 
 ## Implemented Features
 
-- None yet. This repository currently contains only documentation and design artifacts (no Go source code).
+- CLI commands: `install --tools cursor`, `upgrade`, `uninstall`, `doctor`, `version`, `variables`, `update-models`, `status`, `help` (plus global `--verbose`/`--debug`).
+- Install: git prerequisite (`--git-init` / huh confirm), name/summary flags or prompts, asset materialization, `hero.json` / `project.json` / `documents.json`, checksum tracking, `metrics-summary.md`.
+- Upgrade: checksum-based non-overwrite of customized files with warnings.
+- Uninstall: removes only Hero-owned paths; preserves `AGENTS.md`, `context/`, `docs/`, `openspec/`.
+- Doctor / status / variables: table default + `--json`.
+- `update-models`: fetches structured upstream model YAML (HTTP client injectable for tests).
+- Template renderer + inventory / Runtime-semantics asset tests.
+- Embedded Runtime assets: 13 `hero-*.md` commands, 10 agents, skills (`workflow-hero`, `grilling`), templates, 7 model pricing files.
+- `scripts/release.sh` + contract test for artifact naming / platforms / checksums.
+- Integration tests for install/upgrade/uninstall/doctor against `t.TempDir()`.
+- Bilingual project README (`README.md`, EN + PT-BR in one file, Screenshot Hero style).
 
-## Pending Features (V1 scope)
+## Pending Features
 
-- Go module scaffold (`cmd/hero`, `internal/...`) per [ADR-002](../docs/architecture/ADR.md#adr-002-repository-architecture-feature-based--vertical-slice).
-- CLI commands: `hero install --tools cursor`, `hero upgrade`, `hero uninstall`, `hero doctor`, `hero version`, `hero variables`, `hero update-models`, `hero status`, `hero help`.
-- Embedded assets: `.cursor/agents/*.md` (10 agent prompts), `.cursor/commands/hero-*.md` (13 Runtime command files), `.cursor/skills/workflow-hero/` and `.cursor/skills/grilling/`, `.workflow-hero/templates/` (docs templates, `workflow-config.yml`, `workflow.md`, `metrics.md`, etc.), `models/*.yml` (7 provider pricing files).
-- Runtime-side prompt files implementing the full stage flow (Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End) and all `/hero:*` commands.
-- `scripts/release.sh` for manual cross-compiled releases (4 platform/arch combinations + `checksums.txt`).
-- `README.md` / `README_PT_BR.md` (bilingual, Hero's own tool documentation).
-- Test suite: unit tests per feature package, golden-file tests for template rendering, lightweight integration tests for `install`/`upgrade`/`uninstall`/`doctor`.
+- Archive OpenSpec change `v1-ai-workflow-hero` (`/opsx:archive`).
+- First tagged release via `scripts/release.sh` + GitHub Release upload.
+- Optional enrichment of Runtime agent/command prompts beyond V1 semantic stubs (content already encodes stage flow, approval, iteration, scope routing, fallback, metrics, Task isolation).
 
 ## Recent Decisions
 
-- All V1 design decisions (70+) were resolved in a grilling session on 2026-07-20; see [docs/idea/ai_workflow_hero.md](../docs/idea/ai_workflow_hero.md) for the full log.
-- Core documents created: `AGENTS.md`, `docs/product/PRD.md`, `docs/product/UI.md`, `docs/architecture/ADR.md`, `docs/deployment/DEPLOY.md`.
-- `/hero:sync` (basic activation of Hero in existing projects) promoted from V2 to V1.
+- Go module path: `github.com/ricrsantos/ai_workflow_hero` (from git remote).
+- Interactive prompts: `charmbracelet/huh` (not survey).
+- OpenSpec change `v1-ai-workflow-hero` implemented; all 42 tasks marked complete; `go test ./...` green.
 
 ## Known Technical Debt
 
-- None yet (no code exists). Track here once implementation starts.
+- Runtime asset prompts are functional stubs with required semantics; fuller narrative prompts from `docs/idea/ai_workflow_hero.md` can be deepened later without changing CLI APIs.
+- `update-models` upstream URL assumes `main` branch raw assets on this GitHub repo; first publish must keep that layout stable.
+- Global `--verbose`/`--debug` are registered but not yet wired into panic/stack-trace printing paths.
 
 ## Next Steps
 
-1. Scaffold the Go module and `internal/` package layout per ADR-002.
-2. Implement `hero install --tools cursor` first (all other CLI commands depend on the installed layout it creates).
-3. Author the embedded asset files (agent prompts, Runtime commands, templates) referenced throughout the PRD/ADR/DEPLOY docs.
-4. Set up `go test ./...` in CI-equivalent local workflow per the Testing section of `AGENTS.md`.
+1. Archive `v1-ai-workflow-hero` with `/opsx:archive`.
+2. Tag `v0.1.0` (or `v1.0.0`) and run `./scripts/release.sh`.
+3. Optionally deepen Runtime prompt content.
 
 ---
 

@@ -1,0 +1,17 @@
+provider: zhipu
+version: 1
+last_updated: 2026-07-14
+currency: usd
+unit: per_1m_tokens
+
+models:
+  glm-4:
+    input: 1.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 2.00
+  glm-4-flash:
+    input: 0.10
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.20

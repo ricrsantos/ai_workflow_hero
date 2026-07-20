@@ -1,0 +1,17 @@
+provider: openai
+version: 1
+last_updated: 2026-07-14
+currency: usd
+unit: per_1m_tokens
+
+models:
+  gpt-5.3-codex:
+    input: 3.00
+    cache_write: 0.00
+    cache_read: 1.50
+    output: 12.00
+  gpt-5-mini:
+    input: 0.15
+    cache_write: 0.00
+    cache_read: 0.075
+    output: 0.60
