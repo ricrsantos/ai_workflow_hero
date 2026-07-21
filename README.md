@@ -19,6 +19,10 @@
   <img src="https://img.shields.io/badge/license-BSD--2--Clause-green" alt="BSD-2-Clause">
 </p>
 
+<p align="center">
+  <img src="docs/images/1024_light_transparente.png" alt="AI Workflow Hero" width="512">
+</p>
+
 ---
 
 <a id="english"></a>
