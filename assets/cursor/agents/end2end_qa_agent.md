@@ -30,9 +30,14 @@ QA End-to-End failure loop: returns to the implementation agent(s) responsible. 
 - NEVER change architecture.
 - Receive only file pointers — start each session fresh.
 
-## Metrics
+## Metrics (required in every completion report)
 
-Token/cost estimation uses character count ÷ ~4 × model price from models/*.yml.
+Estimate character usage for this invocation:
+
+- `input_chars` ≈ size of the effective prompt + files read
+- `output_chars` ≈ size of the response + report written
+
+The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
 
 ## Output Format
 
@@ -42,6 +47,11 @@ Token/cost estimation uses character count ÷ ~4 × model price from models/*.ym
   "tests_passed": true,
   "flows_validated": ["checkout", "payment", "confirmation"],
   "failures": [],
-  "summary": "All 3 user flows validated successfully."
+  "summary": "All 3 user flows validated successfully.",
+  "metrics": {
+    "model": "<id>",
+    "input_chars": 0,
+    "output_chars": 0
+  }
 }
 ```

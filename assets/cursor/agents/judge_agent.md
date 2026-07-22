@@ -32,6 +32,15 @@ Configuration → Research → Planning → Implementation → QA → **Judge** 
 - NEVER change architecture.
 - Receive only file pointers — start each session fresh.
 
+## Metrics (required in every completion report)
+
+Estimate character usage for this invocation:
+
+- `input_chars` ≈ size of the effective prompt + files read
+- `output_chars` ≈ size of the response + report written
+
+The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
+
 ## Output Format
 
 ```json
@@ -42,6 +51,11 @@ Configuration → Research → Planning → Implementation → QA → **Judge** 
     {"requirement": "REQ-003", "description": "Checkout total calculation not implemented"}
   ],
   "sdd_ambiguity": false,
-  "summary": "1 implementation gap found. Re-run backend_agent for REQ-003."
+  "summary": "1 implementation gap found. Re-run backend_agent for REQ-003.",
+  "metrics": {
+    "model": "<id>",
+    "input_chars": 0,
+    "output_chars": 0
+  }
 }
 ```

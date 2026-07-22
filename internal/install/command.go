@@ -42,8 +42,8 @@ Only --tools cursor is supported in V1.`,
 
 	cmd.Flags().StringVar(&tools, "tools", "", "IDE tool to install for (required; only 'cursor' supported)")
 	cmd.Flags().StringVar(&name, "name", "", "Project name")
-	cmd.Flags().StringVar(&summary, "summary", "", "Project summary")
-	cmd.Flags().BoolVar(&yes, "yes", false, "Confirm all prompts automatically (name/summary still required)")
+	cmd.Flags().StringVar(&summary, "summary", "", "Project summary (optional)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "Skip interactive prompts (--name required; --summary optional)")
 	cmd.Flags().BoolVar(&gitInit, "git-init", false, "Initialize a git repository if none exists")
 
 	_ = cmd.MarkFlagRequired("tools")
@@ -93,7 +93,7 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 						Title("This directory is not a git repository. Initialize one now?").
 						Value(&doGitInit),
 				),
-			)
+			).WithTheme(heroInstallTheme())
 			if err := form.Run(); err != nil {
 				e := clierr.New("prompt error: " + err.Error())
 				clierr.Format(stderr, e)
@@ -111,35 +111,47 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 		}
 	}
 
-	// Prompt for name/summary if not provided via flags.
-	if name == "" || summary == "" {
-		fields := []huh.Field{}
-		if name == "" {
-			fields = append(fields, huh.NewInput().
-				Title("Project name").
-				Value(&name).
-				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
-						return fmt.Errorf("project name cannot be empty")
-					}
-					return nil
-				}),
-			)
+	summaryFlagSet := cmd.Flags().Changed("summary")
+	needName := strings.TrimSpace(name) == ""
+	needSummaryPrompt := !summaryFlagSet && !yes
+
+	if yes && needName {
+		e := clierr.NewWithSuggestion(
+			"project name is required",
+			"pass --name \"Your Project\" (and optionally --summary \"...\") with --yes.",
+		)
+		clierr.Format(stderr, e)
+		return e
+	}
+
+	printSetupHeader(stdout)
+
+	if needName || needSummaryPrompt {
+		groups := []*huh.Group{}
+		if needName {
+			groups = append(groups, huh.NewGroup(
+				huh.NewInput().
+					Title("Project name:").
+					Prompt("> ").
+					Value(&name).
+					Validate(func(s string) error {
+						if strings.TrimSpace(s) == "" {
+							return fmt.Errorf("project name cannot be empty")
+						}
+						return nil
+					}),
+			))
 		}
-		if summary == "" {
-			fields = append(fields, huh.NewInput().
-				Title("Project summary").
-				Value(&summary).
-				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
-						return fmt.Errorf("project summary cannot be empty")
-					}
-					return nil
-				}),
-			)
+		if needSummaryPrompt {
+			groups = append(groups, huh.NewGroup(
+				huh.NewInput().
+					Title("Project summary (Opcional):").
+					Prompt("> ").
+					Value(&summary),
+			))
 		}
 
-		form := huh.NewForm(huh.NewGroup(fields...))
+		form := huh.NewForm(groups...).WithTheme(heroInstallTheme())
 		if err := form.Run(); err != nil {
 			e := clierr.New("prompt error: " + err.Error())
 			clierr.Format(stderr, e)
@@ -150,7 +162,14 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 	name = strings.TrimSpace(name)
 	summary = strings.TrimSpace(summary)
 
-	output.Progressf(stdout, "Installing Hero for %s in %s...", tools, projectDir)
+	if name == "" {
+		e := clierr.NewWithSuggestion(
+			"project name is required",
+			"pass --name \"Your Project\" or run without --yes to be prompted.",
+		)
+		clierr.Format(stderr, e)
+		return e
+	}
 
 	opts := Options{
 		ProjectDir: projectDir,
@@ -176,6 +195,7 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 		return e
 	}
 
+	fmt.Fprintln(stdout)
 	output.Successf(stdout, "Hero installed successfully.")
 	return nil
 }

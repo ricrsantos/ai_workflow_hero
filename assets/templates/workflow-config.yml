@@ -56,14 +56,53 @@ stages:
     require_human_approval: true
 
 agents:
-  planning_agent:   { model: gpt-5.3-codex,     reasoning_effort: medium, enable_fast_model: false, thinking: na }
-  context_agent:    { model: composer-2.5,       reasoning_effort: na,     enable_fast_model: false, thinking: na }
-  backend_agent:    { model: grok-4.5,           reasoning_effort: high,   enable_fast_model: false, thinking: na }
-  frontend_agent:   { model: claude-sonnet-5,    reasoning_effort: high,   enable_fast_model: false, thinking: false }
-  generic_agent:    { model: claude-sonnet-5,    reasoning_effort: medium, enable_fast_model: false, thinking: false }
-  qa_agent:         { model: gpt-5.3-codex,      reasoning_effort: medium, enable_fast_model: false, thinking: na }
-  judge_agent:      { model: claude-sonnet-5,    reasoning_effort: high,   enable_fast_model: false, thinking: false }
-  end2end_qa_agent: { model: claude-4.6-sonnet,  reasoning_effort: medium, enable_fast_model: false, thinking: false }
+  planning_agent:
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+
+  context_agent:
+    model: composer-2.5
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+
+  backend_agent:
+    model: grok-4.5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: na
+
+  frontend_agent:
+    model: claude-sonnet-5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: false
+
+  generic_agent:
+    model: claude-sonnet-5
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: false
+
+  qa_agent:
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+
+  judge_agent:
+    model: claude-sonnet-5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: false
+
+  end2end_qa_agent:
+    model: claude-4.6-sonnet
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: false
 
 workflow_rules:
   - Skip any stage that is not enabled.

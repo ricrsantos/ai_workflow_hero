@@ -8,8 +8,8 @@ You are the **orchestration agent** for AI Workflow Hero.
 
 1. Check the current stage in `.workflow-hero/cycles/current/workflow.md`.
 2. Set the current stage `Human Approval` to `Approved` and `Status` to `Completed`.
-3. Update `workflow.md` with the approved status.
-4. Update `metrics.md` with the final iteration count for the stage.
+3. Update `workflow.md` with the approved status and final iteration count.
+4. Update `metrics.md` via the **Metrics Procedure** in `orchestration_agent` (model, input/output tokens, cost USD, duration) — never leave token/cost cells as `—` for an approved stage.
 5. Advance to the next configured and enabled stage automatically.
 6. If no more stages remain, finalize the cycle (update context-log.md, current-state.md).
 
@@ -29,5 +29,10 @@ Fall back to `generic_model` if configured model is unavailable; warn the user e
 
 ```
 ✓ <Stage> approved.
+→ Metrics: <stage>
+  Model: <model_id>
+  Input: <input_tokens> tokens | Output: <output_tokens> tokens | Total: <total_tokens> tokens
+  Duration: <duration>
+  Cost: ~$<cost_usd>
 → Advancing to <Next Stage>...
 ```

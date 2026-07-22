@@ -14,7 +14,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 - For each enabled stage, invoke the responsible specialized agent via the Task tool (fresh isolated session, receiving file pointers not pasted content — ADR-005).
 - Enforce the approval and control loop (auto-advance or wait for human commands).
 - Update `workflow.md` after every stage transition.
-- Update `metrics.md` after every stage, then show a metrics summary.
+- Update `metrics.md` after every stage using the **Metrics Procedure** below, then show a metrics summary.
 - Ensure `current-state.md` is up to date before finishing a cycle.
 - Handle fallback model routing with explicit user warnings.
 - Manage git checkpoints for cancel/rollback.
@@ -35,9 +35,33 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 `workflow-config.yml → scope` maps backend/frontend to backend_agent/frontend_agent; native/script/infrastructure map to generic_agent.
 
+## Implementation Parallelism
+
+During the Implementation stage:
+
+1. Read parallel vs series markings from the SDD / `tasks.md` (and any `parallel_groups` from planning).
+2. When two or more of backend_agent, frontend_agent, or generic_agent can run without blocking each other, launch **multiple Task tool invocations in the same turn** (parallel).
+3. Serialize only when the SDD marks a dependency (e.g. frontend waits on API contract task).
+4. Always pass file pointers only (ADR-005); absorb only each agent's structured Output Format.
+5. Encourage implementation agents to fan out further nested Task subagents for independent tasks within their scope.
+
 ## Model Fallback
 
 1. Agent's configured model → 2. generic_model (warn user every time) → 3. escalate and wait for /hero:continue.
+
+## Metrics Procedure
+
+**Mandatory on every stage close.** Never leave Input/Output/Cost/Duration as `—` for a stage that ran. The Task tool does not return API usage; estimate tokens from character counts. Always show the stage metrics summary in the chat to the user (tokens + duration + cost) — writing `metrics.md` alone is not enough.
+
+1. At stage start, record wall-clock start time. At stage close, `duration` = elapsed time (e.g. `12m 30s` or minutes).
+2. Read the agent model id from `workflow-config.yml` (or `generic_model` if fallback activated).
+3. Obtain `input_chars` and `output_chars` from the subagent's structured `metrics` return. For Configuration (orchestrator-only), estimate locally: input ≈ chars of files read + prompts; output ≈ chars of files written + chat summary.
+4. Convert: `input_tokens = round(input_chars / 4)`, `output_tokens = round(output_chars / 4)`, `total_tokens = input_tokens + output_tokens`.
+5. Open `.workflow-hero/models/<provider>.yml`, find the model entry, read `input` and `output` rates (`unit: per_1m_tokens`).
+6. Compute: `cost_usd = (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000`.
+7. Replace the stage row(s) in `.workflow-hero/cycles/current/metrics.md` with Model, Input Tokens, Output Tokens, Cost (USD), and Duration. For Implementation with multiple agents, write one sub-row per agent.
+8. Recalculate Subtotal and Grand Total when enough stages have numbers.
+9. Print the metrics summary in chat (format below). Never skip this step.
 
 ## Rules
 
@@ -54,7 +78,11 @@ At each stage transition:
 ✓ <Stage> completed. Human Approval: <status>
 ```
 
-After metrics update:
+After metrics update (required in chat every stage close):
 ```
-→ Metrics: <stage> — <tokens> tokens (~$<cost>)
+→ Metrics: <stage>
+  Model: <model_id>
+  Input: <input_tokens> tokens | Output: <output_tokens> tokens | Total: <total_tokens> tokens
+  Duration: <duration>
+  Cost: ~$<cost_usd>
 ```

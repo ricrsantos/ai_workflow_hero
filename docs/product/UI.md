@@ -63,13 +63,25 @@ hero status --json
 - Use a Go survey-style prompt library (e.g. `AlecAivazis/survey` or `charmbracelet/huh`) for multi-step interactive commands (`hero install`, confirmations like "run `git init`?").
 - Prompts support arrow-key navigation for multiple-choice questions and inline validation for required fields (e.g. project name cannot be empty).
 - **Non-interactive override**: every interactive prompt has an equivalent flag (e.g. `--name`, `--summary`, `--yes`). If all required flags for a command are supplied, the command runs with zero prompts (usable in CI/scripts). If some are missing, only the missing fields fall back to interactive prompts.
+- **`hero install` ceremony**: print a setup header, then minimal prompts (`Title` + `> ` input, no bordered huh chrome). Project summary is optional. Success uses the standard ✓ icon (UI §2.1). The 🚀 emoji is only used in this install header when the terminal supports color (TTY / no `NO_COLOR`).
 
-Example:
+Example (interactive):
 
-```bash
-# Fully interactive
+```text
 hero install --tools cursor
 
+🚀 Hero Project Setup
+
+Project name:
+> Indoor Location
+
+Project summary (Opcional):
+> Indoor positioning platform using BLE gateways.
+
+✓ Hero installed successfully.
+```
+
+```bash
 # Fully scripted (CI-friendly), no prompts at all
 hero install --tools cursor --name "Indoor Location" --summary "BLE indoor positioning platform" --yes
 ```

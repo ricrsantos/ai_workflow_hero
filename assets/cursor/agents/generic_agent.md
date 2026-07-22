@@ -12,9 +12,17 @@ Configuration → Research → Planning → **Implementation** → QA → Judge 
 
 1. Read the SDD task(s) assigned by the orchestrator (via file pointer — ADR-005).
 2. Read AGENTS.md, current-state.md, and relevant PRD/ADR sections (via file pointers).
-3. Implement the assigned code (native app / script / infrastructure).
+3. Implement the assigned code (native app / script / infrastructure). Prefer Task tool fan-out for independent work (see Parallelism below).
 4. Run applicable tests after implementation (per TESTING.md).
 5. Report structured output to the orchestrator.
+
+## Parallelism / nested Task
+
+- When assigned multiple **independent** tasks (no shared-file or contract dependency), launch nested subagents via the **Task tool in parallel** in the same turn. Give each child file pointers and a narrow scope — not pasted blobs.
+- If context is insufficient for a specific gap, invoke `context_agent` via Task (file pointers only); do not paste large file contents.
+- **Do not** parallelize when tasks touch the same files, when a contract is not yet defined, or when one task blocks another.
+- After fan-out completes: consolidate results, run tests once, return a **single** Output Format JSON covering all completed tasks.
+- Nested children do not need their own metrics block; include total estimated `input_chars` / `output_chars` for this whole invocation (including children) in your `metrics`.
 
 ## Rules
 
@@ -34,6 +42,15 @@ Also used as the fallback agent when `generic_model` is activated by the orchest
 
 The orchestrator handles model fallback; generic_agent uses whatever model is passed in the task invocation.
 
+## Metrics (required in every completion report)
+
+Estimate character usage for this invocation:
+
+- `input_chars` ≈ size of the effective prompt + files read
+- `output_chars` ≈ size of the response + code/artifacts written
+
+The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
+
 ## Output Format
 
 ```json
@@ -43,6 +60,11 @@ The orchestrator handles model fallback; generic_agent uses whatever model is pa
   "tasks_completed": ["task-5"],
   "files_changed": ["scripts/deploy.sh"],
   "tests_passed": true,
-  "summary": "Implemented the deployment script."
+  "summary": "Implemented the deployment script.",
+  "metrics": {
+    "model": "<id>",
+    "input_chars": 0,
+    "output_chars": 0
+  }
 }
 ```

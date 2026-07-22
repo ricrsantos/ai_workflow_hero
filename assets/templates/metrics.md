@@ -20,4 +20,10 @@
 
 ## Notes
 
-Token estimation: character count ÷ ~4 × model price (from models/*.yml).
+Token estimation (orchestrator Metrics Procedure):
+
+1. `input_tokens = round(input_chars / 4)`, `output_tokens = round(output_chars / 4)`
+2. Look up `input` / `output` rates in `.workflow-hero/models/<provider>.yml` (`unit: per_1m_tokens`)
+3. `cost_usd = (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000`
+
+Never leave Input/Output/Cost as `—` for a stage that ran.

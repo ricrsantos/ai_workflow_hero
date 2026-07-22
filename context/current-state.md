@@ -47,7 +47,7 @@
 - Doctor / status / variables: table default + `--json`.
 - `update-models`: fetches structured upstream model YAML (HTTP client injectable for tests).
 - Template renderer + inventory / Runtime-semantics asset tests.
-- Embedded Runtime assets: 13 `hero-*.md` commands, 10 agents, skills (`workflow-hero`, `grilling`), templates, 7 model pricing files.
+- Embedded Runtime assets: 13 `hero-*.md` commands, 10 agents, skills (`workflow-hero`, `grilling`), templates, 7 model pricing files; metrics use executable Metrics Procedure + subagent `input_chars`/`output_chars` contracts.
 - `scripts/release.sh` + contract test for artifact naming / platforms / checksums.
 - Integration tests for install/upgrade/uninstall/doctor against `t.TempDir()`.
 - Bilingual project README (`README.md`, EN + PT-BR in one file, Screenshot Hero style).
@@ -56,7 +56,7 @@
 
 - Archive OpenSpec change `v1-ai-workflow-hero` (`/opsx:archive`).
 - First tagged release via `scripts/release.sh` + GitHub Release upload.
-- Optional enrichment of Runtime agent/command prompts beyond V1 semantic stubs (content already encodes stage flow, approval, iteration, scope routing, fallback, metrics, Task isolation).
+- Optional further enrichment of Runtime narrative prompts (stage flow, approval, metrics procedure, and Task isolation are encoded; metrics estimation remains agent-driven).
 
 ## Recent Decisions
 
@@ -66,7 +66,7 @@
 
 ## Known Technical Debt
 
-- Runtime asset prompts are functional stubs with required semantics; fuller narrative prompts from `docs/idea/ai_workflow_hero.md` can be deepened later without changing CLI APIs.
+- Runtime asset prompts remain concise; fuller narrative prompts from `docs/idea/ai_workflow_hero.md` can be deepened later without changing CLI APIs. Metrics now have an executable Metrics Procedure + subagent `input_chars`/`output_chars` contract (still agent-estimated, not API usage).
 - `update-models` upstream URL assumes `main` branch raw assets on this GitHub repo; first publish must keep that layout stable.
 - Global `--verbose`/`--debug` are registered but not yet wired into panic/stack-trace printing paths.
 

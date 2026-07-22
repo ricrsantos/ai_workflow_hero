@@ -32,6 +32,15 @@ QA failure loop: returns to the implementation agent(s) referenced in the error 
 - NEVER change architecture.
 - Receive only file pointers — start each session fresh.
 
+## Metrics (required in every completion report)
+
+Estimate character usage for this invocation:
+
+- `input_chars` ≈ size of the effective prompt + files read
+- `output_chars` ≈ size of the response + report written
+
+The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
+
 ## Output Format
 
 ```json
@@ -43,6 +52,11 @@ QA failure loop: returns to the implementation agent(s) referenced in the error 
   ],
   "coverage": "82%",
   "lint": "pass",
-  "summary": "1 test failure in backend. See failures for details."
+  "summary": "1 test failure in backend. See failures for details.",
+  "metrics": {
+    "model": "<id>",
+    "input_chars": 0,
+    "output_chars": 0
+  }
 }
 ```

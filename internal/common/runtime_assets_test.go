@@ -70,7 +70,7 @@ func TestRuntimeAssets_Fallback(t *testing.T) {
 	}
 }
 
-// TestRuntimeAssets_Metrics verifies metrics-related keywords appear.
+// TestRuntimeAssets_Metrics verifies metrics-related keywords and executable procedure appear.
 func TestRuntimeAssets_Metrics(t *testing.T) {
 	keywords := []string{"metrics.md", "metrics-summary.md"}
 	allContent := loadAllAssetContent(t, "cursor")
@@ -78,6 +78,62 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 		if !strings.Contains(allContent, kw) {
 			t.Errorf("metrics keyword %q not found in any Runtime asset", kw)
 		}
+	}
+
+	orch, err := fs.ReadFile(assets.FS, "cursor/agents/orchestration_agent.md")
+	if err != nil {
+		t.Fatalf("read orchestration_agent: %v", err)
+	}
+	orchStr := string(orch)
+	for _, kw := range []string{"Metrics Procedure", "input_chars", "1_000_000", "per_1m_tokens", "Duration:", "Total:"} {
+		if !strings.Contains(orchStr, kw) {
+			t.Errorf("orchestration_agent.md missing Metrics Procedure keyword %q", kw)
+		}
+	}
+	if !strings.Contains(orchStr, "show the stage metrics summary in the chat") &&
+		!strings.Contains(orchStr, "required in chat every stage close") {
+		t.Error("orchestration_agent.md must require showing metrics (tokens + duration) in chat")
+	}
+
+	approve, err := fs.ReadFile(assets.FS, "cursor/commands/hero-approve.md")
+	if err != nil {
+		t.Fatalf("read hero-approve: %v", err)
+	}
+	approveStr := string(approve)
+	if strings.Contains(approveStr, "final iteration count for the stage") {
+		t.Error("hero-approve.md still limits metrics update to iteration count only")
+	}
+	if !strings.Contains(approveStr, "Metrics Procedure") {
+		t.Error("hero-approve.md missing Metrics Procedure reference")
+	}
+
+	taskAgents := []string{
+		"discover_agent", "planning_agent", "backend_agent", "frontend_agent",
+		"generic_agent", "qa_agent", "judge_agent", "end2end_qa_agent", "context_agent",
+	}
+	for _, agent := range taskAgents {
+		path := "cursor/agents/" + agent + ".md"
+		data, err := fs.ReadFile(assets.FS, path)
+		if err != nil {
+			t.Errorf("read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+		if !strings.Contains(content, `"metrics"`) && !strings.Contains(content, `"input_chars"`) {
+			t.Errorf("%s missing metrics/input_chars in output schema", path)
+		}
+		if !strings.Contains(content, "input_chars") {
+			t.Errorf("%s missing input_chars", path)
+		}
+	}
+
+	tmpl, err := fs.ReadFile(assets.FS, "templates/metrics.md")
+	if err != nil {
+		t.Fatalf("read metrics template: %v", err)
+	}
+	tmplStr := string(tmpl)
+	if !strings.Contains(tmplStr, "1_000_000") {
+		t.Error("templates/metrics.md missing explicit cost formula (1_000_000)")
 	}
 }
 
@@ -88,6 +144,77 @@ func TestRuntimeAssets_TaskIsolation(t *testing.T) {
 	hasTaskTool := strings.Contains(allContent, "Task tool") || strings.Contains(allContent, "isolated session")
 	if !hasTaskTool {
 		t.Error("Task tool isolation semantics not found in any Runtime asset")
+	}
+}
+
+// TestRuntimeAssets_ImplementationParallelism verifies planning/orchestration/impl agents
+// encode parallel Task dispatch and nested fan-out guidance.
+func TestRuntimeAssets_ImplementationParallelism(t *testing.T) {
+	planning, err := fs.ReadFile(assets.FS, "cursor/agents/planning_agent.md")
+	if err != nil {
+		t.Fatalf("read planning_agent: %v", err)
+	}
+	planStr := string(planning)
+	for _, kw := range []string{"parallel", "series", "parallel_groups", "subagent"} {
+		if !strings.Contains(strings.ToLower(planStr), strings.ToLower(kw)) && !strings.Contains(planStr, kw) {
+			t.Errorf("planning_agent.md missing parallelism keyword %q", kw)
+		}
+	}
+	if !strings.Contains(planStr, "parallel_groups") {
+		t.Error("planning_agent.md missing parallel_groups in output schema")
+	}
+
+	orch, err := fs.ReadFile(assets.FS, "cursor/agents/orchestration_agent.md")
+	if err != nil {
+		t.Fatalf("read orchestration_agent: %v", err)
+	}
+	orchStr := string(orch)
+	for _, kw := range []string{"Implementation Parallelism", "Task tool", "parallel"} {
+		if !strings.Contains(orchStr, kw) {
+			t.Errorf("orchestration_agent.md missing keyword %q", kw)
+		}
+	}
+
+	implAgents := []string{"backend_agent", "frontend_agent", "generic_agent"}
+	for _, agent := range implAgents {
+		path := "cursor/agents/" + agent + ".md"
+		data, err := fs.ReadFile(assets.FS, path)
+		if err != nil {
+			t.Errorf("read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+		for _, kw := range []string{"Parallelism / nested Task", "Task tool", "context_agent", "independent"} {
+			if !strings.Contains(content, kw) {
+				t.Errorf("%s missing parallelism keyword %q", path, kw)
+			}
+		}
+	}
+}
+
+// TestRuntimeAssets_ResearchPreDocumentGate verifies discover_agent and grilling skill
+// require asking for extra info before document generation.
+func TestRuntimeAssets_ResearchPreDocumentGate(t *testing.T) {
+	discover, err := fs.ReadFile(assets.FS, "cursor/agents/discover_agent.md")
+	if err != nil {
+		t.Fatalf("read discover_agent: %v", err)
+	}
+	discStr := string(discover)
+	for _, kw := range []string{"Pre-document gate", "before generating", "pre_document_additions", "additions_summary"} {
+		if !strings.Contains(discStr, kw) {
+			t.Errorf("discover_agent.md missing Pre-document gate keyword %q", kw)
+		}
+	}
+
+	skill, err := fs.ReadFile(assets.FS, "cursor/skills/grilling/SKILL.md")
+	if err != nil {
+		t.Fatalf("read grilling skill: %v", err)
+	}
+	skillStr := string(skill)
+	for _, kw := range []string{"Pre-document gate", "add any more information", "evaluates the additions"} {
+		if !strings.Contains(skillStr, kw) {
+			t.Errorf("grilling/SKILL.md missing Pre-document gate keyword %q", kw)
+		}
 	}
 }
 

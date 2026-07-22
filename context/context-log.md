@@ -121,4 +121,68 @@ The proposal explicitly separates CLI vs Runtime responsibilities (ADR-003), kee
 
 ---
 
+## 2026-07-21 — Fix metrics accounting (Runtime prompts)
+
+**Problem:** End-user cycle left `metrics.md` Input/Output/Cost as `—`. Agents reported “metrics not computed” because Task returns no API usage and prompts only said “update metrics.md”.
+
+**Investigation:** Confirmed design (PRD §5.10): agent estimates chars÷~4 × `models/*.yml`. CLI never computes cost. Root cause: orchestration stubs had no executable procedure; subagent outputs lacked char estimates; `hero-approve` only mentioned iteration count.
+
+**Decision:** Keep estimation in Runtime (ADR-003). Added Metrics Procedure to `orchestration_agent`, mirrored in `hero-finish`/`hero-approve`, required `metrics.{model,input_chars,output_chars}` on Task agents, stage-close pointers in skill/commands, explicit cost formula in `metrics.md` template Notes. Strengthened `TestRuntimeAssets_Metrics`.
+
+**Outcome:** Runtime assets instruct compute-and-write; tests assert procedure + contracts. Existing installs need `hero upgrade` to pick up assets.
+
+**Follow-up:** Chat line originally showed only tokens+cost. Expanded output format to require Input/Output/Total tokens, Duration, and Cost in chat on every stage close (wall-clock duration recorded by orchestrator).
+
+**Next step:** Archive OpenSpec change; first tagged release; verify metrics fill after upgrade on a short cycle.
+
+---
+
+## 2026-07-21 — workflow-config agents section formatting
+
+**Problem:** `agents` in `workflow-config.yml` used YAML flow-style one-liners (`{ model: ..., ... }`), hard to read/edit and inconsistent with `stages`.
+
+**Decision:** Expand to block style (same pattern as `stages`); sync ADR schema example. No field/semantics change.
+
+**Outcome:** Template + ADR updated. Existing cycle configs remain valid YAML.
+
+**Next step:** Archive OpenSpec change; first tagged release.
+
+---
+
+## 2026-07-21 — Polish `hero install` CLI UX
+
+**Problem:** Interactive install looked ugly (default huh left border, required summary, progress line) vs idea-doc/mock (`🚀 Hero Project Setup`, `> ` prompts, optional summary).
+
+**Decision:** Minimal huh theme (no border), setup header, `Prompt("> ")`, optional summary via `Flags().Changed("summary")`, remove mid-flow progress line; document ceremony in UI.md §4.
+
+**Outcome:** Install UX matches mock; `go test ./...` green.
+
+**Next step:** Archive OpenSpec change; first tagged release.
+
+---
+
+## 2026-07-21 — Encourage Task parallelism in implementation
+
+**Problem:** Design called for parallel/series SDD marking and “use subagents when possible,” but Runtime prompts for planning/orchestration/impl agents did not encode fan-out.
+
+**Decision:** Enrich `planning_agent` (parallel_groups), `orchestration_agent` (Implementation Parallelism), and backend/frontend/generic (nested Task + context_agent). No CLI change.
+
+**Outcome:** Assets encode parallel dispatch and nested fan-out rules; runtime asset tests assert keywords.
+
+**Next step:** Archive OpenSpec change; first tagged release.
+
+---
+
+## 2026-07-21 — Research Pre-document gate
+
+**Problem:** After grill-me, discover_agent jumped straight to document generation with no chance for the user to add last-minute project info.
+
+**Decision:** Mandatory Pre-document gate in `discover_agent` + grilling skill: ask before generating docs; evaluate and incorporate any additions; output fields `pre_document_additions` / `additions_summary`.
+
+**Outcome:** Research flow is grill → summarize → ask → (optional evaluate) → generate docs.
+
+**Next step:** Archive OpenSpec change; first tagged release.
+
+---
+
 _To be maintained by agents. Prune entries older than the last 3–5 sessions once they no longer inform current work._

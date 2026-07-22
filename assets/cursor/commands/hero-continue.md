@@ -19,7 +19,7 @@ Where `[N]` is the number of extra iterations to grant (e.g. `/hero:continue 2`)
 3. Increment `Extra Iterations Granted` for that stage by N (without altering workflow-config.yml).
 4. Update `workflow.md` to reflect the new iteration budget.
 5. Resume execution of the current stage with the additional iterations.
-6. Update metrics.md after each additional iteration.
+6. Update metrics.md after each additional iteration via the **Metrics Procedure** in `orchestration_agent`.
 
 ## Iteration and Timeout Handling
 

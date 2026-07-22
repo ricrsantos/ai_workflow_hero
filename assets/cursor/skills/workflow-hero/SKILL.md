@@ -10,10 +10,23 @@ This skill is automatically active when working within a Hero-managed project.
 
 Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
 
+## Stage Close Sequence
+
+Every stage closes with the same sequence (PRD §5.3):
+
+1. Summary + approval request (respect `require_human_approval`)
+2. Update `workflow.md`
+3. Update `metrics.md` via the **Metrics Procedure** in `orchestration_agent` (chars ÷ 4 × `models/*.yml` rates; never leave `—` for a stage that ran)
+4. Show the stage metrics summary in chat (tokens input/output/total, duration, cost) — required every stage
+5. Advance to the next configured stage
+
 ## Key References
 
 - `.workflow-hero/cycles/current/workflow-config.yml` — cycle configuration
 - `.workflow-hero/cycles/current/workflow.md` — current stage status
+- `.workflow-hero/cycles/current/metrics.md` — per-cycle token/cost estimates
+- `.workflow-hero/metrics-summary.md` — project-wide aggregated metrics
+- `.workflow-hero/models/*.yml` — model pricing (`unit: per_1m_tokens`)
 - `.workflow-hero/config/project.json` — project identity
 - `.workflow-hero/config/hero.json` — Hero installation metadata
 - `context/current-state.md` — current project state

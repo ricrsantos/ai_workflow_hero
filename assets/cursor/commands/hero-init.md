@@ -26,7 +26,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 - When `require_human_approval: false`: stage auto-completes and advances automatically.
 - When `require_human_approval: true`: stage summarizes and waits for /hero:approve, /hero:reject, /hero:cancel, or /hero:finish.
-- Every stage closes with: (a) summary + approval request, (b) update workflow.md, (c) update metrics.md and show metrics summary, (d) advance to next configured stage.
+- Every stage closes with: (a) summary + approval request, (b) update workflow.md, (c) update metrics.md via the **Metrics Procedure** in `orchestration_agent` and show metrics summary in chat (tokens + duration + cost), (d) advance to next configured stage.
 
 ## Fallback
 
