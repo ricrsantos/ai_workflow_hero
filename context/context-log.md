@@ -185,4 +185,18 @@ The proposal explicitly separates CLI vs Runtime responsibilities (ADR-003), kee
 
 ---
 
+## 2026-07-23 — Subagent models from workflow-config.yml
+
+**Problem:** After `hero install` in a consumer Cursor project, subagents ran on the orchestrator session model. Agent UI showed “Inherit from parent”; chat history confirmed the parent model. Root cause: (1) agent `.md` files lacked Cursor YAML frontmatter (default `inherit`); (2) Runtime prompts never required passing Task `model` from `workflow-config.yml`.
+
+**Investigation:** Cursor docs require frontmatter `model` (default inherit). Hero design (ADR-005 / idea §16) says pass model via Task from per-cycle YAML. PRD: switching models = edit YAML only — so frontmatter must stay `inherit`, not bake static model ids.
+
+**Decision:** Add frontmatter (`name`, `description`, `model: inherit`) to all 10 agents. Add mandatory **Model Resolution** procedure in `orchestration_agent` + `hero-start`/`sync`/`back`/`init`: always set Task `model` from `agents.<name>` with `[fast=…]` / `effort=` brackets; nested fan-out reuses that resolved id. Extend ADR-005/008 notes. Runtime asset tests for frontmatter + Model Resolution keywords.
+
+**Outcome:** `go test ./...` green. Consumer projects need `hero upgrade` to pick up assets. Agent editor may still show Inherit; execution must pass Task `model`. Cursor plan limits may still override models (documented debt).
+
+**Next step:** Archive OpenSpec change; first tagged release; validate Task `model` on a real consumer cycle after upgrade.
+
+---
+
 _To be maintained by agents. Prune entries older than the last 3–5 sessions once they no longer inform current work._

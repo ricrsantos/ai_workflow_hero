@@ -1,3 +1,9 @@
+---
+name: end2end_qa_agent
+description: Validates the complete user journey end-to-end during the QA End-to-End stage.
+model: inherit
+---
+
 # end2end_qa_agent — End-to-End QA Agent
 
 ## Role

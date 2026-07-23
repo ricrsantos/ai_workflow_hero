@@ -28,9 +28,9 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 - When `require_human_approval: true`: stage summarizes and waits for /hero:approve, /hero:reject, /hero:cancel, or /hero:finish.
 - Every stage closes with: (a) summary + approval request, (b) update workflow.md, (c) update metrics.md via the **Metrics Procedure** in `orchestration_agent` and show metrics summary in chat (tokens + duration + cost), (d) advance to next configured stage.
 
-## Fallback
+## Fallback / Model Resolution
 
-If the configured model is unavailable, fall back to `generic_model` from workflow-config.yml and warn the user explicitly. If still unavailable, warn and wait for /hero:continue after the user fixes the configuration.
+When later stages invoke subagents (after `/hero:start`), follow **Model Resolution** in `orchestration_agent`: always pass Task `model` from `workflow-config.yml` (`enable_fast_model` → `[fast=...]`; never omit). If the configured model is unavailable, fall back to `generic_model` and warn the user explicitly. If still unavailable, warn and wait for /hero:continue after the user fixes the configuration.
 
 ## Output Format
 

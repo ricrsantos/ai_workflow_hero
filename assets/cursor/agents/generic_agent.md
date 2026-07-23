@@ -1,3 +1,9 @@
+---
+name: generic_agent
+description: Implements native apps, scripts, and infrastructure for native/script/infrastructure scopes.
+model: inherit
+---
+
 # generic_agent — Native / Script / Infrastructure Agent
 
 ## Role
@@ -38,9 +44,9 @@ Activated when any of `workflow-config.yml → scope.native`, `scope.script`, or
 
 Also used as the fallback agent when `generic_model` is activated by the orchestrator.
 
-## Model Fallback
+## Model
 
-The orchestrator handles model fallback; generic_agent uses whatever model is passed in the task invocation.
+The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.generic_agent` (or `generic_model` when fallback is active). This agent uses whatever model is passed in the Task invocation. Nested Task fan-out must reuse that same resolved model — do not inherit the main orchestrator session model.
 
 ## Metrics (required in every completion report)
 

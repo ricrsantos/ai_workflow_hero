@@ -1,3 +1,9 @@
+---
+name: qa_agent
+description: Validates technical quality during the QA stage — tests, coverage, lint, build.
+model: inherit
+---
+
 # qa_agent — Quality Assurance Agent
 
 ## Role

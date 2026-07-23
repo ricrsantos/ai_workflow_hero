@@ -70,6 +70,80 @@ func TestRuntimeAssets_Fallback(t *testing.T) {
 	}
 }
 
+// TestRuntimeAssets_AgentFrontmatter verifies every Cursor agent file has YAML frontmatter
+// with name, description, and model: inherit (effective model comes from workflow-config via Task).
+func TestRuntimeAssets_AgentFrontmatter(t *testing.T) {
+	agents := []string{
+		"orchestration_agent", "discover_agent", "planning_agent", "context_agent",
+		"backend_agent", "frontend_agent", "generic_agent",
+		"qa_agent", "judge_agent", "end2end_qa_agent",
+	}
+	for _, agent := range agents {
+		path := "cursor/agents/" + agent + ".md"
+		data, err := fs.ReadFile(assets.FS, path)
+		if err != nil {
+			t.Errorf("read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+		if !strings.HasPrefix(content, "---\n") {
+			t.Errorf("%s must start with YAML frontmatter (---)", path)
+			continue
+		}
+		end := strings.Index(content[4:], "\n---")
+		if end < 0 {
+			t.Errorf("%s missing closing frontmatter ---", path)
+			continue
+		}
+		fm := content[4 : 4+end]
+		if !strings.Contains(fm, "name: "+agent) {
+			t.Errorf("%s frontmatter missing name: %s", path, agent)
+		}
+		if !strings.Contains(fm, "description:") {
+			t.Errorf("%s frontmatter missing description:", path)
+		}
+		if !strings.Contains(fm, "model: inherit") {
+			t.Errorf("%s frontmatter missing model: inherit", path)
+		}
+	}
+}
+
+// TestRuntimeAssets_ModelResolution verifies orchestrator and hero-start encode mandatory
+// Task tool model parameter resolution from workflow-config.yml.
+func TestRuntimeAssets_ModelResolution(t *testing.T) {
+	orch, err := fs.ReadFile(assets.FS, "cursor/agents/orchestration_agent.md")
+	if err != nil {
+		t.Fatalf("read orchestration_agent: %v", err)
+	}
+	orchStr := string(orch)
+	for _, kw := range []string{
+		"Model Resolution",
+		"workflow-config.yml",
+		"enable_fast_model",
+		"[fast=",
+		"never omit",
+		"model",
+	} {
+		if !strings.Contains(orchStr, kw) {
+			t.Errorf("orchestration_agent.md missing Model Resolution keyword %q", kw)
+		}
+	}
+	if !strings.Contains(orchStr, "Task tool") {
+		t.Error("orchestration_agent.md must require Task tool model parameter")
+	}
+
+	start, err := fs.ReadFile(assets.FS, "cursor/commands/hero-start.md")
+	if err != nil {
+		t.Fatalf("read hero-start: %v", err)
+	}
+	startStr := string(start)
+	for _, kw := range []string{"Model Resolution", "workflow-config.yml", "enable_fast_model", "[fast=", "never omit"} {
+		if !strings.Contains(startStr, kw) {
+			t.Errorf("hero-start.md missing Model Resolution keyword %q", kw)
+		}
+	}
+}
+
 // TestRuntimeAssets_Metrics verifies metrics-related keywords and executable procedure appear.
 func TestRuntimeAssets_Metrics(t *testing.T) {
 	keywords := []string{"metrics.md", "metrics-summary.md"}

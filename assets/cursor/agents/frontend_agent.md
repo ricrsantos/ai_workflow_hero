@@ -1,3 +1,9 @@
+---
+name: frontend_agent
+description: Implements frontend code per the approved SDD during Implementation. Use for UI/frontend tasks.
+model: inherit
+---
+
 # frontend_agent — Frontend Implementation Agent
 
 ## Role
@@ -36,9 +42,9 @@ Configuration → Research → Planning → **Implementation** → QA → Judge 
 
 Activated when `workflow-config.yml → scope.frontend: true`.
 
-## Model Fallback
+## Model
 
-The orchestrator handles model fallback; frontend_agent uses whatever model is passed in the task invocation.
+The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.frontend_agent`. This agent uses whatever model is passed in the Task invocation. Nested Task fan-out must reuse that same resolved model — do not inherit the main orchestrator session model.
 
 ## Metrics (required in every completion report)
 

@@ -1,3 +1,9 @@
+---
+name: context_agent
+description: Read-only context retrieval — scans codebase and docs on demand. Never implements code.
+model: inherit
+---
+
 # context_agent — Project Context Retrieval Agent
 
 ## Role

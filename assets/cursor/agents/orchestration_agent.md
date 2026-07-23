@@ -1,3 +1,9 @@
+---
+name: orchestration_agent
+description: Hero workflow orchestrator — coordinates stages, dispatches subagents via Task, maintains cycle state.
+model: inherit
+---
+
 # orchestration_agent — Hero Workflow Orchestrator
 
 ## Role
@@ -11,7 +17,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 ## Responsibilities
 
 - Read and validate `workflow-config.yml` before starting a cycle.
-- For each enabled stage, invoke the responsible specialized agent via the Task tool (fresh isolated session, receiving file pointers not pasted content — ADR-005).
+- For each enabled stage, invoke the responsible specialized agent via the Task tool (fresh isolated session, receiving file pointers not pasted content — ADR-005), applying the **Model Resolution** procedure on every Task call.
 - Enforce the approval and control loop (auto-advance or wait for human commands).
 - Update `workflow.md` after every stage transition.
 - Update `metrics.md` after every stage using the **Metrics Procedure** below, then show a metrics summary.
@@ -44,10 +50,18 @@ During the Implementation stage:
 3. Serialize only when the SDD marks a dependency (e.g. frontend waits on API contract task).
 4. Always pass file pointers only (ADR-005); absorb only each agent's structured Output Format.
 5. Encourage implementation agents to fan out further nested Task subagents for independent tasks within their scope.
+6. Every Task call (including nested fan-out) must apply **Model Resolution** — never omit the `model` parameter.
 
-## Model Fallback
+## Model Resolution
 
-1. Agent's configured model → 2. generic_model (warn user every time) → 3. escalate and wait for /hero:continue.
+**Mandatory on every Task tool invocation.** Agent `.md` frontmatter uses `model: inherit` by design; the effective model comes from `workflow-config.yml` via the Task `model` parameter. Omitting `model` makes the subagent inherit the orchestrator session model — that is incorrect.
+
+1. Read `.workflow-hero/cycles/current/workflow-config.yml` → `agents.<agent_name>.model` (the model id).
+2. Read `agents.<agent_name>.enable_fast_model`. If `true`, use `<id>[fast=true]`; if `false`, use `<id>[fast=false]` (bracket syntax avoids a silent fast variant).
+3. Read `agents.<agent_name>.reasoning_effort`. If the value is not `na`, append `effort=<value>` inside the brackets (e.g. `claude-sonnet-5[fast=false,effort=high]`).
+4. Pass the resulting string as the Task tool **`model` parameter** — **never omit it**.
+5. **Fallback (ADR-008):** if the configured model is unavailable → use top-level `generic_model` with the same bracket rules and **warn the user explicitly every time** → if still unavailable, warn and wait for `/hero:continue`.
+6. **Nested Task fan-out** (from backend_agent / frontend_agent / generic_agent): children use the **same** resolved model string already chosen for that parent agent (or re-read the YAML for that agent). Do **not** inherit the main orchestrator session model.
 
 ## Metrics Procedure
 

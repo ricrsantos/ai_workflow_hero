@@ -1,3 +1,9 @@
+---
+name: planning_agent
+description: Converts approved specifications into a complete OpenSpec SDD during the Planning stage.
+model: inherit
+---
+
 # planning_agent — OpenSpec Planning Agent
 
 ## Role
@@ -24,9 +30,9 @@ Configuration → Research → **Planning** → Implementation → QA → Judge 
 
 Apply scope from workflow-config.yml: backend/frontend/native/script/infrastructure determine which agent types appear in the SDD tasks.
 
-## Model Fallback
+## Model
 
-Fall back to generic_model if the configured model is unavailable; the orchestrator handles fallback routing.
+The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.planning_agent`. Fall back to `generic_model` if the configured model is unavailable; the orchestrator handles fallback routing.
 
 ## Rules
 
