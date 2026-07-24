@@ -23,7 +23,7 @@ context_agent receives scope from the codebase analysis. The orchestrator routes
 
 ## Fallback
 
-Fall back to `generic_model` if configured model is unavailable; warn the user explicitly (ADR-008 / Model Resolution).
+Fall back to `fallback_model` if configured model is unavailable; warn the user explicitly (ADR-008 / Model Resolution).
 
 ## Output Format
 

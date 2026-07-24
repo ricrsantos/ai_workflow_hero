@@ -59,16 +59,17 @@ During the Implementation stage:
 1. Read `.workflow-hero/cycles/current/workflow-config.yml` → `agents.<agent_name>.model` (the model id).
 2. Read `agents.<agent_name>.enable_fast_model`. If `true`, use `<id>[fast=true]`; if `false`, use `<id>[fast=false]` (bracket syntax avoids a silent fast variant).
 3. Read `agents.<agent_name>.reasoning_effort`. If the value is not `na`, append `effort=<value>` inside the brackets (e.g. `claude-sonnet-5[fast=false,effort=high]`).
-4. Pass the resulting string as the Task tool **`model` parameter** — **never omit it**.
-5. **Fallback (ADR-008):** if the configured model is unavailable → use top-level `generic_model` with the same bracket rules and **warn the user explicitly every time** → if still unavailable, warn and wait for `/hero:continue`.
-6. **Nested Task fan-out** (from backend_agent / frontend_agent / generic_agent): children use the **same** resolved model string already chosen for that parent agent (or re-read the YAML for that agent). Do **not** inherit the main orchestrator session model.
+4. Read `agents.<agent_name>.thinking`. If the value is not `na`, append `thinking=<value>` inside the brackets (e.g. `claude-sonnet-5[fast=false,effort=high,thinking=false]`).
+5. Pass the resulting string as the Task tool **`model` parameter** — **never omit it**.
+6. **Fallback (ADR-008):** if the configured model is unavailable → read `fallback_model.*` (`model`, `enable_fast_model`, `reasoning_effort`, `thinking`) and apply the same bracket rules (steps 2–4) → **warn the user explicitly every time** → if still unavailable, warn and wait for `/hero:continue`.
+7. **Nested Task fan-out** (from backend_agent / frontend_agent / generic_agent): children use the **same** resolved model string already chosen for that parent agent (or re-read the YAML for that agent). Do **not** inherit the main orchestrator session model.
 
 ## Metrics Procedure
 
 **Mandatory on every stage close.** Never leave Input/Output/Cost/Duration as `—` for a stage that ran. The Task tool does not return API usage; estimate tokens from character counts. Always show the stage metrics summary in the chat to the user (tokens + duration + cost) — writing `metrics.md` alone is not enough.
 
 1. At stage start, record wall-clock start time. At stage close, `duration` = elapsed time (e.g. `12m 30s` or minutes).
-2. Read the agent model id from `workflow-config.yml` (or `generic_model` if fallback activated).
+2. Read the agent model id from `workflow-config.yml` (or `fallback_model.model` if fallback activated).
 3. Obtain `input_chars` and `output_chars` from the subagent's structured `metrics` return. For Configuration (orchestrator-only), estimate locally: input ≈ chars of files read + prompts; output ≈ chars of files written + chat summary.
 4. Convert: `input_tokens = round(input_chars / 4)`, `output_tokens = round(output_chars / 4)`, `total_tokens = input_tokens + output_tokens`.
 5. Open `.workflow-hero/models/<provider>.yml`, find the model entry, read `input` and `output` rates (`unit: per_1m_tokens`).

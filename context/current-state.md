@@ -63,7 +63,7 @@
 - Go module path: `github.com/ricrsantos/ai_workflow_hero` (from git remote).
 - Interactive prompts: `charmbracelet/huh` (not survey).
 - OpenSpec change `v1-ai-workflow-hero` implemented; all 42 tasks marked complete; `go test ./...` green.
-- Subagent models: agent frontmatter stays `inherit`; effective model is Task `model` from per-cycle `workflow-config.yml` (ADR-005 / ADR-008). UI may still show Inherit; execution must pass Task `model`.
+- Subagent models: agent frontmatter stays `inherit`; effective model is Task `model` from per-cycle `workflow-config.yml` (ADR-005 / ADR-008). Fallback uses top-level `fallback_model` block (not `generic_model`). UI may still show Inherit; execution must pass Task `model`.
 
 ## Known Technical Debt
 

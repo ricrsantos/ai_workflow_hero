@@ -26,8 +26,9 @@ type Options struct {
 
 // Result reports the outcome of an upgrade operation.
 type Result struct {
-	Updated []string
-	Skipped []string // skipped due to local customization
+	Updated   []string
+	Skipped   []string // skipped due to local customization
+	Migrated  []string // workflow-config.yml files migrated from generic_model
 }
 
 // Run performs the upgrade: re-copies assets, protecting customized files.
@@ -106,6 +107,12 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 			return result, fmt.Errorf("upgrade asset group %s: %w", group.src, err)
 		}
 	}
+
+	migrated, err := migrateLegacyWorkflowConfigs(opts.ProjectDir, stderr)
+	if err != nil {
+		return result, fmt.Errorf("migrate workflow-config: %w", err)
+	}
+	result.Migrated = migrated
 
 	// Update hero.json versions.
 	heroPath := filepath.Join(opts.ProjectDir, cursoradapter.HeroJSONPath)

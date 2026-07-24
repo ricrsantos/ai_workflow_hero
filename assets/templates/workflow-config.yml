@@ -3,7 +3,11 @@ objective: Describe the objective of this development cycle.
 
 # Fallback model used when an agent's configured model is unavailable.
 # The user is always warned explicitly when this fallback is used.
-generic_model: claude-sonnet-5
+fallback_model:
+  model: claude-sonnet-5
+  reasoning_effort: medium
+  enable_fast_model: false
+  thinking: na
 
 scope:
   backend: true

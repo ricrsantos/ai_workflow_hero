@@ -45,4 +45,4 @@ Every stage closes with the same sequence (PRD §5.3):
 
 ## Fallback
 
-If the configured model is unavailable, fall back to `generic_model` and warn the user explicitly.
+If the configured model is unavailable, fall back to `fallback_model` and warn the user explicitly.

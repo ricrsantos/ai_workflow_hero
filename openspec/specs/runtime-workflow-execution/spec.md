@@ -44,11 +44,11 @@ When implementation is enabled, at least one scope flag SHALL be true; `backend`
 - **THEN** Runtime blocks execution until scope configuration is corrected
 
 ### Requirement: Runtime SHALL apply model fallback chain with explicit user warnings
-Agent model resolution SHALL follow configured model -> `generic_model` (with explicit warning) -> wait for user correction and `/hero:continue` if still unavailable (PRD §5.5; ADR-008).
+Agent model resolution SHALL follow configured model -> `fallback_model` (with explicit warning) -> wait for user correction and `/hero:continue` if still unavailable (PRD §5.5; ADR-008).
 
-#### Scenario: Primary model unavailable, generic fallback available
-- **WHEN** an agent's configured model is unavailable but `generic_model` is available
-- **THEN** Runtime executes using `generic_model` and emits explicit fallback warning
+#### Scenario: Primary model unavailable, fallback model available
+- **WHEN** an agent's configured model is unavailable but `fallback_model` is available
+- **THEN** Runtime executes using `fallback_model` and emits explicit fallback warning
 
 ### Requirement: Runtime SHALL maintain cycle and project metrics artifacts
 Runtime SHALL update per-cycle `metrics.md` and project-level `metrics-summary.md` with stage-level and aggregate values, including token and cost estimates based on model pricing references (PRD §5.10).

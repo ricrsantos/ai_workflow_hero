@@ -112,7 +112,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 ### 5.5 Model Selection and Fallback
 
 - Each agent's model is configured per-cycle in `workflow-config.yml`.
-- Fallback chain (2 levels + escalation): 1) the agent's configured model → 2) `generic_model` (top-level field in `workflow-config.yml`), **with an explicit warning to the user every time it activates** → 3) if still unavailable, warn the user and wait for `/hero:continue` after they fix the configuration.
+- Fallback chain (2 levels + escalation): 1) the agent's configured model → 2) `fallback_model` (top-level block in `workflow-config.yml`, with `model`, `reasoning_effort`, `enable_fast_model`, and `thinking`), **with an explicit warning to the user every time it activates** → 3) if still unavailable, warn the user and wait for `/hero:continue` after they fix the configuration.
 
 ### 5.6 Scope
 

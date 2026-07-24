@@ -73,6 +73,49 @@ func TestUpgrade_UnmodifiedFilesAreUpdated(t *testing.T) {
 	}
 }
 
+func TestUpgrade_MigratesLegacyGenericModelInCycleConfig(t *testing.T) {
+	dir := makeInstalledDir(t)
+
+	configPath := filepath.Join(dir, cursoradapter.HeroCurrentCycleDir, "workflow-config.yml")
+	legacy := `title: Test
+objective: Test objective.
+
+generic_model: gpt-5.3-codex
+
+scope:
+  backend: true
+`
+	if err := os.WriteFile(configPath, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	result, err := upgrade.Run(upgrade.Options{
+		ProjectDir: dir,
+		Version:    "1.1.0",
+		AssetsFS:   assets.FS,
+	}, &out, &out)
+	if err != nil {
+		t.Fatalf("upgrade failed: %v", err)
+	}
+
+	if len(result.Migrated) != 1 {
+		t.Fatalf("expected one migrated workflow-config, got %v", result.Migrated)
+	}
+
+	updated, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(updated)
+	if strings.Contains(content, "generic_model:") {
+		t.Errorf("generic_model was not migrated:\n%s", content)
+	}
+	if !strings.Contains(content, "fallback_model:") {
+		t.Errorf("fallback_model block missing:\n%s", content)
+	}
+}
+
 func TestUpgrade_CustomizedFileIsSkipped(t *testing.T) {
 	dir := makeInstalledDir(t)
 

@@ -62,10 +62,10 @@ func TestRuntimeAssets_ScopeRouting(t *testing.T) {
 
 // TestRuntimeAssets_Fallback verifies model fallback semantics appear in assets.
 func TestRuntimeAssets_Fallback(t *testing.T) {
-	// The word "fallback" or "generic_model" must appear.
+	// The word "fallback" or "fallback_model" must appear.
 	allContent := loadAllAssetContent(t, "cursor")
 	if !strings.Contains(strings.ToLower(allContent), "fallback") &&
-		!strings.Contains(allContent, "generic_model") {
+		!strings.Contains(allContent, "fallback_model") {
 		t.Error("model fallback semantics not found in any Runtime asset")
 	}
 }
@@ -120,6 +120,7 @@ func TestRuntimeAssets_ModelResolution(t *testing.T) {
 		"Model Resolution",
 		"workflow-config.yml",
 		"enable_fast_model",
+		"fallback_model",
 		"[fast=",
 		"never omit",
 		"model",

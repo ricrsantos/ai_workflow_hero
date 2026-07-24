@@ -6,7 +6,15 @@
 
 ---
 
-## 2026-07-20 — Grilling session: full V1 design definition
+## 2026-07-24 — Rename `generic_model` to `fallback_model` with full model options
+
+**Problem:** `generic_model` was a single string at the top of `workflow-config.yml`, easy to confuse with `generic_agent`, and lacked `reasoning_effort`, `enable_fast_model`, and `thinking` like per-agent config.
+
+**Decision:** Renamed to `fallback_model` as a block (`model`, `reasoning_effort`, `enable_fast_model`, `thinking`). Updated template, Runtime assets (Model Resolution in `orchestration_agent`), PRD §5.5, ADR-008, OpenSpec spec, README, and tests. Documented `thinking` bracket option in Model Resolution for agents and fallback.
+
+**Outcome:** `go test ./...` green. Archived OpenSpec change left unchanged (historical). `hero upgrade` auto-migrates legacy `generic_model` in cycle/template `workflow-config.yml` files to `fallback_model` block; warns on manual merge cases.
+
+---
 
 **Problem:** `docs/idea/ai_workflow_hero.md` contained a broad initial design for Hero with many open questions (approval loops, model fallback, scope handling, document numbering, CLI vs. Runtime boundaries, testing strategy, release process, terminal UX, etc.).
 

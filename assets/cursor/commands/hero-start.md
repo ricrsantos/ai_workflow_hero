@@ -31,9 +31,9 @@ Each stage can be enabled/disabled in workflow-config.yml. Skip any stage that i
 **Mandatory on every Task tool invocation.** Follow the full **Model Resolution** procedure in `orchestration_agent`:
 
 1. Read `agents.<agent_name>.model` from `.workflow-hero/cycles/current/workflow-config.yml`.
-2. Apply `enable_fast_model` as `[fast=true]` or `[fast=false]`; append `effort=<value>` when `reasoning_effort` is not `na`.
+2. Apply `enable_fast_model` as `[fast=true]` or `[fast=false]`; append `effort=<value>` when `reasoning_effort` is not `na`; append `thinking=<value>` when `thinking` is not `na`.
 3. Pass the result as the Task tool **`model` parameter** — never omit (omitting inherits the orchestrator session model).
-4. Fallback: configured model → `generic_model` (warn every time) → wait for `/hero:continue` if still unavailable.
+4. Fallback: configured model → `fallback_model` (warn every time) → wait for `/hero:continue` if still unavailable.
 
 ## Output Format
 

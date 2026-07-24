@@ -40,13 +40,9 @@ Configuration → Research → Planning → **Implementation** → QA → Judge 
 
 Activated when any of `workflow-config.yml → scope.native`, `scope.script`, or `scope.infrastructure` is true.
 
-## Fallback
-
-Also used as the fallback agent when `generic_model` is activated by the orchestrator.
-
 ## Model
 
-The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.generic_agent` (or `generic_model` when fallback is active). This agent uses whatever model is passed in the Task invocation. Nested Task fan-out must reuse that same resolved model — do not inherit the main orchestrator session model.
+The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.generic_agent` (or `fallback_model` when the configured model is unavailable). This agent uses whatever model is passed in the Task invocation. Nested Task fan-out must reuse that same resolved model — do not inherit the main orchestrator session model.
 
 ## Metrics (required in every completion report)
 

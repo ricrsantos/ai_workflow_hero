@@ -23,7 +23,7 @@ After approval, the orchestrator advances to the next stage. If the next stage r
 
 ## Fallback
 
-Fall back to `generic_model` if configured model is unavailable; warn the user explicitly.
+Fall back to `fallback_model` if configured model is unavailable; warn the user explicitly.
 
 ## Output Format
 

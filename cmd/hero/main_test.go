@@ -71,9 +71,8 @@ func TestInstallCommand_RequiresToolsFlag(t *testing.T) {
 	}
 }
 
-func TestVersionCommand_DefaultIsDev(t *testing.T) {
-	// The default version is "dev" unless injected at build time.
+func TestVersionCommand_DefaultIsSet(t *testing.T) {
 	if version == "" {
-		t.Error("version should default to 'dev', not empty string")
+		t.Error("version must not be empty")
 	}
 }

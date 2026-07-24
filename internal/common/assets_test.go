@@ -2,6 +2,7 @@ package common_test
 
 import (
 	"io/fs"
+	"strings"
 	"testing"
 
 	"github.com/ricrsantos/ai_workflow_hero/assets"
@@ -123,6 +124,23 @@ func TestAssets_OneFilePerAgent(t *testing.T) {
 	})
 	if count != 10 {
 		t.Errorf("expected 10 agent files, got %d", count)
+	}
+}
+
+// TestAssets_WorkflowConfigFallbackModel verifies the workflow-config template defines fallback_model with full model options.
+func TestAssets_WorkflowConfigFallbackModel(t *testing.T) {
+	data, err := fs.ReadFile(assets.FS, "templates/workflow-config.yml")
+	if err != nil {
+		t.Fatalf("read workflow-config template: %v", err)
+	}
+	content := string(data)
+	for _, kw := range []string{"fallback_model:", "reasoning_effort:", "enable_fast_model:", "thinking:"} {
+		if !strings.Contains(content, kw) {
+			t.Errorf("workflow-config.yml template missing %q", kw)
+		}
+	}
+	if strings.Contains(content, "generic_model") {
+		t.Error("workflow-config.yml template still references generic_model")
 	}
 }
 

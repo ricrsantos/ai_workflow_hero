@@ -45,7 +45,7 @@ Designed for an open-source workflow, it helps you move through:
 - Cursor Runtime assets: 13 `/hero:*` commands and 10 specialized agents
 - Configurable stage flow with human approval, iteration limits, timeouts, and escalation
 - Scope routing to `backend_agent`, `frontend_agent`, or `generic_agent`
-- Three-level model fallback (`agent model` → `generic_model` → wait for `/hero:continue`)
+- Three-level model fallback (`agent model` → `fallback_model` → wait for `/hero:continue`)
 - Context compression files (`AGENTS.md`, `context/current-state.md`, `context/context-log.md`)
 - OpenSpec integration for SDD planning and task-driven implementation
 - Per-cycle metrics and project-wide cost estimates from structured model pricing files
@@ -266,7 +266,7 @@ Projetado para um fluxo open source, ele ajuda você a avançar em:
 - Assets de Runtime no Cursor: 13 comandos `/hero:*` e 10 agentes especializados
 - Fluxo de stages configurável com aprovação humana, limites de iteração, timeouts e escalonamento
 - Roteamento de scope para `backend_agent`, `frontend_agent` ou `generic_agent`
-- Fallback de modelo em 3 níveis (`modelo do agente` → `generic_model` → espera `/hero:continue`)
+- Fallback de modelo em 3 níveis (`modelo do agente` → `fallback_model` → espera `/hero:continue`)
 - Arquivos de compressão de contexto (`AGENTS.md`, `context/current-state.md`, `context/context-log.md`)
 - Integração com OpenSpec para planejamento SDD e implementação orientada a tarefas
 - Métricas por ciclo e estimativas de custo do projeto a partir de arquivos estruturados de pricing

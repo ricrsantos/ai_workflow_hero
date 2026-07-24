@@ -32,7 +32,7 @@ Apply scope from workflow-config.yml: backend/frontend/native/script/infrastruct
 
 ## Model
 
-The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.planning_agent`. Fall back to `generic_model` if the configured model is unavailable; the orchestrator handles fallback routing.
+The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.planning_agent`. Fall back to `fallback_model` if the configured model is unavailable; the orchestrator handles fallback routing.
 
 ## Rules
 

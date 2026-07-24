@@ -82,7 +82,7 @@ Only purely administrative commands may have equivalents in both (e.g. `hero sta
 
 **Decision**: Invoke every subagent (`backend_agent`, `frontend_agent`, `generic_agent`, `qa_agent`, `judge_agent`, `end2end_qa_agent`, `context_agent`) via the IDE's Task tool, in a **fresh, isolated session** that does not inherit the orchestrator's chat history. Subagents receive **file pointers** (paths to `AGENTS.md`, `current-state.md`, the relevant SDD/tasks) instead of pasted content. The orchestrator absorbs back only the subagent's final structured output (its documented "Output Format" section), not its intermediate reasoning. The `orchestration_agent`'s own main session remains continuous across the whole cycle — only subagents are session-scoped per call.
 
-**Model selection**: Agent `.md` files use Cursor YAML frontmatter with `model: inherit` (plus `name` / `description`). The **effective** model is not taken from frontmatter; the orchestrator must pass the Task tool `model` parameter from `workflow-config.yml` → `agents.<name>.model` on every invocation (including nested fan-out), applying `enable_fast_model` / `reasoning_effort` as Cursor bracket options (e.g. `id[fast=false,effort=high]`). Omitting Task `model` incorrectly inherits the orchestrator session model. Fallback remains ADR-008. Cursor may still override unavailable or plan-restricted models; Hero cannot bypass IDE limits.
+**Model selection**: Agent `.md` files use Cursor YAML frontmatter with `model: inherit` (plus `name` / `description`). The **effective** model is not taken from frontmatter; the orchestrator must pass the Task tool `model` parameter from `workflow-config.yml` → `agents.<name>.model` on every invocation (including nested fan-out), applying `enable_fast_model` / `reasoning_effort` / `thinking` as Cursor bracket options (e.g. `id[fast=false,effort=high,thinking=false]`). On fallback, read `fallback_model.*` with the same rules. Omitting Task `model` incorrectly inherits the orchestrator session model. Fallback remains ADR-008. Cursor may still override unavailable or plan-restricted models; Hero cannot bypass IDE limits.
 
 **Consequences**:
 - Token usage per subagent call is bounded by what it actually needs to read, not by the orchestrator's accumulated history.
@@ -121,10 +121,10 @@ Only purely administrative commands may have equivalents in both (e.g. `hero sta
 
 **Context**: A key Hero goal is reducing dependency on any single LLM model. If an agent's configured model becomes unavailable (deprecated, rate-limited, not present on the user's plan), the workflow should not hard-fail silently or produce a confusing error.
 
-**Decision**: Implement a 3-level fallback: 1) the agent's model as configured in `workflow-config.yml`; 2) `generic_model`, a top-level fallback field in the same file — **the user is always explicitly warned whenever this fallback activates**; 3) if still unavailable, the orchestrator warns the user and waits for `/hero:continue` after they fix the configuration. At invocation time, the chosen id is passed as the Task tool `model` parameter (ADR-005 Model Resolution), not left to frontmatter inherit.
+**Decision**: Implement a 3-level fallback: 1) the agent's model as configured in `workflow-config.yml`; 2) `fallback_model`, a top-level block in the same file (`model`, `reasoning_effort`, `enable_fast_model`, `thinking`) — **the user is always explicitly warned whenever this fallback activates**; 3) if still unavailable, the orchestrator warns the user and waits for `/hero:continue` after they fix the configuration. At invocation time, the chosen id is passed as the Task tool `model` parameter (ADR-005 Model Resolution), not left to frontmatter inherit.
 
 **Consequences**:
-- `generic_model` is scoped per-cycle (top-level in `workflow-config.yml`), not globally in `hero.json`, since budget/availability may vary by cycle.
+- `fallback_model` is scoped per-cycle (top-level in `workflow-config.yml`), not globally in `hero.json`, since budget/availability may vary by cycle.
 - Users retain full visibility into which model actually ran, even when the fallback silently kept the cycle moving.
 
 ---
@@ -290,7 +290,11 @@ objective: Implement a new feature.
 
 # Fallback model used when an agent's configured model is unavailable.
 # The user is always warned explicitly when this fallback is used.
-generic_model: claude-sonnet-5
+fallback_model:
+  model: claude-sonnet-5
+  reasoning_effort: medium
+  enable_fast_model: false
+  thinking: na
 
 scope:
   backend: true

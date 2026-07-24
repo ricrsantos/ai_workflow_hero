@@ -988,7 +988,7 @@ Ao finalizar o planejamento, atualize os arquivos de contexto compactado: @conte
 
 2. Cada subagente, ao iniciar, avalia se o contexto já recebido (AGENTS.md, current-state.md, SDD) é suficiente; se identificar uma lacuna específica, invoca o **context_agent** por conta própria.
 
-3. Se o modelo configurado para um agente não estiver disponível, aplica-se a cadeia de fallback: 1º modelo do agente → 2º `generic_model` (definido no topo do `workflow-config.yml`) com aviso explícito ao usuário → 3º aviso ao usuário pedindo correção da configuração, aguardando `/hero:continue`.
+3. Se o modelo configurado para um agente não estiver disponível, aplica-se a cadeia de fallback: 1º modelo do agente → 2º `fallback_model` (bloco no topo do `workflow-config.yml`) com aviso explícito ao usuário → 3º aviso ao usuário pedindo correção da configuração, aguardando `/hero:continue`.
 
 4. Ao final da implementação de cada subagente, segue-se a sequência de fechamento de etapa (ver regra geral definida em "Início do Ciclo").
 
@@ -2281,7 +2281,11 @@ objective: Implement a new feature.
 
 # Fallback model used when an agent's configured model is unavailable.
 # The user is always warned explicitly when this fallback is used.
-generic_model: claude-sonnet-5
+fallback_model:
+	model: claude-sonnet-5
+	reasoning_effort: medium
+	enable_fast_model: false
+	thinking: na
 
 scope:
 	backend: true
@@ -2673,9 +2677,9 @@ scope:
 
 ### Fallback de Modelos
 
-23. **Cadeia de fallback (3 níveis)**: 1º tenta o modelo do agente configurado em `workflow-config.yml` → 2º tenta o `generic_model` global → 3º avisa o usuário e espera `/hero:continue` (usuário corrige a configuração do agente e retenta).
+23. **Cadeia de fallback (3 níveis)**: 1º tenta o modelo do agente configurado em `workflow-config.yml` → 2º tenta o bloco `fallback_model` global → 3º avisa o usuário e espera `/hero:continue` (usuário corrige a configuração do agente e retenta).
 
-24. **Localização do `generic_model`**: definido no topo do `workflow-config.yml` (mesmo nível de `agents:`), pois pode variar por ciclo dependendo do orçamento/necessidade daquele ciclo específico. **Sempre que o `generic_model` for ativado, o usuário deve ser avisado explicitamente**, mesmo que a execução continue automaticamente com esse fallback.
+24. **Localização do `fallback_model`**: definido no topo do `workflow-config.yml` (mesmo nível de `agents:`), com `model`, `reasoning_effort`, `enable_fast_model` e `thinking`, pois pode variar por ciclo dependendo do orçamento/necessidade daquele ciclo específico. **Sempre que o `fallback_model` for ativado, o usuário deve ser avisado explicitamente**, mesmo que a execução continue automaticamente com esse fallback.
 
 ### Documentos de Research: Templates, Numeração e Índices
 

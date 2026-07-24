@@ -30,7 +30,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 ## Fallback / Model Resolution
 
-When later stages invoke subagents (after `/hero:start`), follow **Model Resolution** in `orchestration_agent`: always pass Task `model` from `workflow-config.yml` (`enable_fast_model` → `[fast=...]`; never omit). If the configured model is unavailable, fall back to `generic_model` and warn the user explicitly. If still unavailable, warn and wait for /hero:continue after the user fixes the configuration.
+When later stages invoke subagents (after `/hero:start`), follow **Model Resolution** in `orchestration_agent`: always pass Task `model` from `workflow-config.yml` (`enable_fast_model` → `[fast=...]`; never omit). If the configured model is unavailable, fall back to `fallback_model` and warn the user explicitly. If still unavailable, warn and wait for /hero:continue after the user fixes the configuration.
 
 ## Output Format
 
