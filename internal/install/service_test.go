@@ -137,6 +137,18 @@ func TestRun_BasicInstall(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, cursoradapter.MetricsSummaryPath)); err != nil {
 		t.Errorf("metrics-summary.md not found: %v", err)
 	}
+
+	// Soft secrets hygiene at project root.
+	if _, err := os.Stat(filepath.Join(dir, ".env.example")); err != nil {
+		t.Errorf(".env.example missing after install: %v", err)
+	}
+	gi, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf(".gitignore missing after install: %v", err)
+	}
+	if !strings.Contains(string(gi), ".env") {
+		t.Error(".gitignore missing .env after install")
+	}
 }
 
 func TestRun_NoGitRepo_WithGitInit(t *testing.T) {

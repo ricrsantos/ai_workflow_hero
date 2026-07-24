@@ -13,6 +13,7 @@ import (
 	"time"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 )
@@ -113,6 +114,11 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 		return result, fmt.Errorf("migrate workflow-config: %w", err)
 	}
 	result.Migrated = migrated
+
+	// Soft secrets hygiene for projects upgraded from older Hero versions.
+	if err := envhygiene.EnsureProjectRoot(opts.ProjectDir, opts.AssetsFS); err != nil {
+		return result, fmt.Errorf("env hygiene: %w", err)
+	}
 
 	// Update hero.json versions.
 	heroPath := filepath.Join(opts.ProjectDir, cursoradapter.HeroJSONPath)

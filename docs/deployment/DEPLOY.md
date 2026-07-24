@@ -92,7 +92,7 @@ sha256sum -c checksums.txt --ignore-missing
 
 - `hero upgrade`: re-copies updated assets from the new binary version, but never silently overwrites a file the user has customized (detected via checksum comparison against what was originally installed); it warns instead, listing outdated files for manual merge.
 - `hero uninstall`: removes only Hero-owned paths (`.cursor/agents/`, `.cursor/commands/hero-*.md`, `.cursor/skills/workflow-hero/`, `.cursor/skills/grilling/`, `.workflow-hero/`), preserving project artifacts (`AGENTS.md`, `context/`, `docs/`, `openspec/`).
-- `hero doctor`: verifies installation integrity — presence of expected files/folders, version consistency between `hero.json` and the running binary, config file syntax, and git repository presence.
+- `hero doctor`: verifies installation integrity — presence of expected files/folders, version consistency between `hero.json` and the running binary, config file syntax, and git repository presence. Also warn-only soft secrets hygiene: missing `.env.example`, `.gitignore` not ignoring `.env`, or sensitive files tracked by git.
 
 ## 8. Pricing Data Updates
 

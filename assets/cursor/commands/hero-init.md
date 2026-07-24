@@ -16,7 +16,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 3. Increment `project.json → workflow.cycle` counter.
 4. Create `.workflow-hero/cycles/current/` directory if it does not exist.
 5. Copy `workflow-config.yml` template to `.workflow-hero/cycles/current/workflow-config.yml` (if not already present).
-6. Ask the user to review and edit `workflow-config.yml` before proceeding (including `scope` and, when frontend is in scope, `stages.qa_end_to_end.use_playwright`).
+6. Ask the user to review and edit `workflow-config.yml` before proceeding (including `scope` and, when frontend is in scope, `stages.qa_end_to_end.use_playwright`). Remind them that `.env.example` is the committed template; real secrets stay in local `.env`.
 7. Write `.workflow-hero/cycles/current/.lock` to prevent concurrent sessions.
 8. Initialize `workflow.md` with all stages in `Waiting` status.
 9. Initialize `metrics.md` with empty stage rows.

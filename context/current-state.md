@@ -41,10 +41,10 @@
 ## Implemented Features
 
 - CLI commands: `install --tools cursor`, `upgrade`, `uninstall`, `doctor`, `version`, `variables`, `update-models`, `status`, `help` (plus global `--verbose`/`--debug`).
-- Install: git prerequisite (`--git-init` / huh confirm), name/summary flags or prompts, asset materialization, `hero.json` / `project.json` / `documents.json`, checksum tracking, `metrics-summary.md`.
-- Upgrade: checksum-based non-overwrite of customized files with warnings.
-- Uninstall: removes only Hero-owned paths; preserves `AGENTS.md`, `context/`, `docs/`, `openspec/`.
-- Doctor / status / variables: table default + `--json`.
+- Install: git prerequisite (`--git-init` / huh confirm), name/summary flags or prompts, asset materialization, `hero.json` / `project.json` / `documents.json`, checksum tracking, `metrics-summary.md`, soft secrets hygiene (`.env.example` + `.gitignore` patterns).
+- Upgrade: checksum-based non-overwrite of customized files with warnings; also ensures env hygiene files/patterns.
+- Uninstall: removes only Hero-owned paths; preserves `AGENTS.md`, `context/`, `docs/`, `openspec/`, `.env.example`, `.gitignore`.
+- Doctor / status / variables: table default + `--json`; doctor warn-only checks for secrets hygiene (tracked `.env`, missing `.env.example` / `.env` ignore).
 - `update-models`: fetches structured upstream model YAML (HTTP client injectable for tests).
 - Template renderer + inventory / Runtime-semantics asset tests.
 - Embedded Runtime assets: 13 `hero-*.md` commands, 10 agents (Cursor YAML frontmatter with `model: inherit`), skills (`workflow-hero`, `grilling`), templates, 7 model pricing files; metrics use executable Metrics Procedure + subagent `input_chars`/`output_chars` contracts; **Model Resolution** requires Task `model` from `workflow-config.yml` on every subagent call; **QA End-to-End** selects Playwright via `stages.qa_end_to_end.use_playwright` (requires `scope.frontend`).
@@ -64,7 +64,8 @@
 - Interactive prompts: `charmbracelet/huh` (not survey).
 - OpenSpec change `v1-ai-workflow-hero` implemented; all 42 tasks marked complete; `go test ./...` green.
 - Subagent models: agent frontmatter stays `inherit`; effective model is Task `model` from per-cycle `workflow-config.yml` (ADR-005 / ADR-008). Fallback uses top-level `fallback_model` block (not `generic_model`). UI may still show Inherit; execution must pass Task `model`.
-- QA End-to-End Playwright is opt-in via `stages.qa_end_to_end.use_playwright` (default `false`); requires `scope.frontend: true`. CLI default version `0.3.0`.
+- QA End-to-End Playwright is opt-in via `stages.qa_end_to_end.use_playwright` (default `false`); requires `scope.frontend: true`.
+- Soft secrets hygiene: commit `.env.example` only; real values in local `.env`; doctor warns, does not block. CLI default version `0.4.0`.
 
 ## Known Technical Debt
 

@@ -11,11 +11,12 @@ You are the **orchestration agent** for AI Workflow Hero. This command activates
    - Pass file pointers: project root path, any existing AGENTS.md, docs/, context/.
    - context_agent is read-only: it never implements or decides architecture.
 2. Based on context_agent output, generate:
-   - `AGENTS.md` — from `.workflow-hero/templates/AGENTS.md` (all sections: doc map, context compression files, workflow, reference lookup order, ambiguity policy, testing, constraints).
+   - `AGENTS.md` — from `.workflow-hero/templates/AGENTS.md` (all sections: doc map, context compression files, workflow, reference lookup order, ambiguity policy, testing, constraints, secrets).
    - `context/current-state.md` — source-of-truth snapshot of the current project state.
    - `context/context-log.md` — empty log (first entry written here).
+   - Soft secrets hygiene (create only if missing; never overwrite): project-root `.env.example` and ensure `.gitignore` ignores `.env` (use `.workflow-hero/templates/env.example` and `gitignore-secrets` as references).
 3. Update `.workflow-hero/config/project.json` with inferred project metadata.
-4. Notify the user: sync is complete and the generated files should be reviewed.
+4. Notify the user: sync is complete and the generated files should be reviewed. Remind them to keep real secrets in local `.env` only.
 
 ## Scope Routing
 

@@ -6,8 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 )
 
@@ -139,6 +141,31 @@ func Run(opts Options) Report {
 		if err := json.Unmarshal(data, &v); err != nil {
 			addCheck("json:"+f, "fail", fmt.Sprintf("%s is not valid JSON: %v", f, err))
 		}
+	}
+
+	// 8. Soft secrets hygiene (warn only — never fails the report).
+	if !envhygiene.HasEnvExample(opts.ProjectDir) {
+		addCheck("secrets-env-example", "warn", "missing .env.example — commit placeholders only; keep real secrets in local .env")
+	} else {
+		addCheck("secrets-env-example", "ok", ".env.example present")
+	}
+
+	giPath := filepath.Join(opts.ProjectDir, envhygiene.GitignorePath)
+	if giData, err := os.ReadFile(giPath); err != nil {
+		addCheck("secrets-gitignore", "warn", "missing .gitignore — add patterns so .env and secrets are not committed")
+	} else if !envhygiene.GitignoreIgnoresEnv(string(giData)) {
+		addCheck("secrets-gitignore", "warn", ".gitignore does not ignore .env — add .env (and keep .env.example committed)")
+	} else {
+		addCheck("secrets-gitignore", "ok", ".gitignore ignores .env")
+	}
+
+	if tracked, err := envhygiene.TrackedSensitiveFiles(opts.ProjectDir); err == nil && len(tracked) > 0 {
+		addCheck("secrets-tracked", "warn", fmt.Sprintf(
+			"sensitive files tracked by git: %s — untrack them (git rm --cached) and keep values local",
+			strings.Join(tracked, ", "),
+		))
+	} else {
+		addCheck("secrets-tracked", "ok", "no sensitive files tracked by git")
 	}
 
 	return report

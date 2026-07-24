@@ -104,6 +104,37 @@ func TestDoctor_VersionMismatch_Warns(t *testing.T) {
 	}
 }
 
+func TestDoctor_TrackedSecrets_Warns(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0")
+
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("SECRET=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	add := exec.Command("git", "-C", dir, "add", "-f", ".env")
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+	})
+
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "secrets-tracked" && c.Status == "warn" && strings.Contains(c.Message, ".env") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected secrets-tracked warn when .env is tracked")
+	}
+	if !report.OK {
+		t.Error("secrets warn must not fail the doctor report")
+	}
+}
+
 func TestDoctor_NotGitRepo_Fails(t *testing.T) {
 	dir := t.TempDir()
 

@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-07-24 — Soft secrets hygiene (env example + doctor warns)
+
+**Problem:** Hero had no guidance or checks to keep secrets out of git in consumer projects.
+
+**Decision:** Soft enforcement only (no commit hooks): (1) templates `env.example` + `gitignore-secrets`; (2) `install`/`upgrade` call `envhygiene.EnsureProjectRoot` (create `.env.example` if missing; append gitignore block only when `.env` not already ignored); (3) `hero doctor` warn-only checks for missing example/ignore and tracked sensitive files; (4) AGENTS.md + Runtime agents/sync instruct never commit secrets.
+
+**Outcome:** Package `internal/common/envhygiene`; tests green. Bumped CLI default version `0.3.0` → `0.4.0`.
+
+---
+
 ## 2026-07-24 — `use_playwright` for QA End-to-End + minor bump to 0.3.0
 
 **Problem:** Playwright for e2e was implied only by `scope.frontend=true`; users with frontend scope could not explicitly opt in/out of browser e2e.

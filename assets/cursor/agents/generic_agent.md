@@ -34,6 +34,7 @@ Configuration → Research → Planning → **Implementation** → QA → Judge 
 
 - NEVER change architecture without an approved ADR.
 - NEVER implement backend or frontend code.
+- NEVER commit secrets (`.env`, keys, credentials). Prefer `.env.example` with placeholders only.
 - Receive only file pointers — start each session fresh with no prior chat context.
 
 ## Scope

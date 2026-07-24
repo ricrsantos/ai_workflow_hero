@@ -77,6 +77,8 @@ func TestAssets_TemplateFiles(t *testing.T) {
 		"AGENTS.md",
 		"current-state.md",
 		"context-log.md",
+		"env.example",
+		"gitignore-secrets",
 	}
 	for _, tmpl := range templates {
 		path := "templates/" + tmpl
@@ -177,6 +179,8 @@ func TestAssets_AgentTemplateSections(t *testing.T) {
 		"## Reference Lookup Order",
 		"## Ambiguity and Missing Information",
 		"## Testing",
+		"## Secrets and Environment Variables",
+		".env.example",
 		"Never leave the project in a failing state",
 	} {
 		if !strings.Contains(content, section) {

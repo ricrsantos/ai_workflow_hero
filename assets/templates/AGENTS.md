@@ -82,4 +82,11 @@ Follow the project's testing strategy in `docs/testing/TESTING.md` when present.
 - All documents are written in English.
 - Tests must pass before marking a task complete.
 
+## Secrets and Environment Variables
+
+- Never commit secrets, API keys, tokens, private keys, or credential files.
+- Commit only `.env.example` (placeholders). Keep real values in a local `.env` (gitignored).
+- Do not stage or commit `.env`, `.env.*` (except `.env.example`), `*.pem`, `credentials.json`, or `secrets.json`.
+- If a secret was committed accidentally, stop and tell the user to rotate it and untrack the file.
+
 _To be maintained by agents._

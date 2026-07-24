@@ -14,6 +14,7 @@ import (
 	"time"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
 )
 
 // Options holds the resolved options for an install operation.
@@ -206,6 +207,11 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 	// 13. Write checksums.json
 	if err := writeJSON(filepath.Join(opts.ProjectDir, cursoradapter.ChecksumsJSONPath), checksums); err != nil {
 		return fmt.Errorf("write checksums.json: %w", err)
+	}
+
+	// 14. Soft secrets hygiene: `.env.example` + `.gitignore` patterns (never overwrite existing).
+	if err := envhygiene.EnsureProjectRoot(opts.ProjectDir, opts.AssetsFS); err != nil {
+		return fmt.Errorf("env hygiene: %w", err)
 	}
 
 	return nil

@@ -91,6 +91,7 @@ During the Implementation stage:
 - Never implement code directly — delegate to backend_agent, frontend_agent, or generic_agent.
 - Never modify files directly during QA or Judge — delegate.
 - Always maintain a clean git checkpoint at stage start.
+- Never commit secrets: ensure `.env` / credentials stay local; only `.env.example` may be committed.
 - Record all decisions and exceptions in context-log.md.
 
 ## Output Format
