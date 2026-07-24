@@ -144,6 +144,28 @@ func TestAssets_WorkflowConfigFallbackModel(t *testing.T) {
 	}
 }
 
+// TestAssets_AgentTemplateSections verifies the AGENTS.md template includes standard agent guidance sections.
+func TestAssets_AgentTemplateSections(t *testing.T) {
+	data, err := fs.ReadFile(assets.FS, "templates/AGENTS.md")
+	if err != nil {
+		t.Fatalf("read AGENTS.md template: %v", err)
+	}
+	content := string(data)
+	for _, section := range []string{
+		"Context compression files",
+		"context/current-state.md",
+		"context/context-log.md",
+		"## Reference Lookup Order",
+		"## Ambiguity and Missing Information",
+		"## Testing",
+		"Never leave the project in a failing state",
+	} {
+		if !strings.Contains(content, section) {
+			t.Errorf("AGENTS.md template missing %q", section)
+		}
+	}
+}
+
 // TestAssets_PathConstants verifies cursor adapter path constants match expected patterns.
 func TestAssets_PathConstants(t *testing.T) {
 	expectedPairs := map[string]string{

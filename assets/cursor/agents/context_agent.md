@@ -23,7 +23,10 @@ The context agent can be invoked during any stage by the orchestrator to fetch c
    - Key architectural decisions (from ADR.md).
    - Recent changes (from context-log.md).
    - Technology stack.
-4. During /hero:sync: scan the entire codebase and generate AGENTS.md, current-state.md, and the initial context-log.md entry.
+4. During /hero:sync: scan the entire codebase and generate `AGENTS.md`, `context/current-state.md`, and the initial `context/context-log.md` entry.
+   - Use `.workflow-hero/templates/AGENTS.md` as the **structural base** for `AGENTS.md` (all sections: Documentation Map, context compression files, Development Workflow, Reference Lookup Order, Ambiguity and Missing Information, Testing, Constraints).
+   - Fill `{{project.*}}` placeholders from `project.json` and codebase inference; expand the Documentation Map from `documents.json` and discovered docs.
+   - Record the project's test command in `docs/testing/TESTING.md` when missing, and reference it from the Testing section.
 5. Return structured output to the orchestrator (final output only, not intermediate reasoning — ADR-005).
 
 ## Rules

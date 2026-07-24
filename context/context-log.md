@@ -16,6 +16,16 @@
 
 ---
 
+## 2026-07-24 — AGENTS.md consumer template aligned with Hero repo standard
+
+**Problem:** Projects generated via `/hero:sync` produced a minimal `AGENTS.md` missing context compression files, Reference Lookup Order, Ambiguity policy, and Testing loop sections present in this repository's `AGENTS.md`.
+
+**Decision:** Expanded `assets/templates/AGENTS.md` with all standard sections. Updated `context_agent` and `hero-sync` to require the template as structural base when generating project `AGENTS.md`.
+
+**Outcome:** `TestAssets_AgentTemplateSections` added; `go test ./...` green.
+
+---
+
 **Problem:** `docs/idea/ai_workflow_hero.md` contained a broad initial design for Hero with many open questions (approval loops, model fallback, scope handling, document numbering, CLI vs. Runtime boundaries, testing strategy, release process, terminal UX, etc.).
 
 **Investigation:** Ran an extensive `/grill-me` session covering every open question in the source document, plus three additional recommendations from the user: clean subagent sessions (Task tool, file pointers only), Go testing principles (real dependencies, colocated tests), and Feature Based Architecture for the CLI.
