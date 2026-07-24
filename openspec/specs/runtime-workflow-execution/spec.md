@@ -43,6 +43,21 @@ When implementation is enabled, at least one scope flag SHALL be true; `backend`
 - **WHEN** implementation is enabled and all scope flags are false
 - **THEN** Runtime blocks execution until scope configuration is corrected
 
+### Requirement: Runtime SHALL honor Playwright selection for QA End-to-End
+`stages.qa_end_to_end.use_playwright` SHALL control whether `end2end_qa_agent` uses Playwright. `use_playwright: true` SHALL require `scope.frontend: true`; otherwise Runtime SHALL block until corrected. When `use_playwright` is false, the agent SHALL use direct HTTP calls.
+
+#### Scenario: Playwright selected with frontend in scope
+- **WHEN** `use_playwright` is true and `scope.frontend` is true
+- **THEN** `end2end_qa_agent` runs browser journeys with Playwright
+
+#### Scenario: Playwright selected without frontend
+- **WHEN** `use_playwright` is true and `scope.frontend` is false
+- **THEN** Runtime blocks execution until configuration is corrected
+
+#### Scenario: Playwright disabled
+- **WHEN** `use_playwright` is false
+- **THEN** `end2end_qa_agent` uses direct HTTP calls for e2e validation
+
 ### Requirement: Runtime SHALL apply model fallback chain with explicit user warnings
 Agent model resolution SHALL follow configured model -> `fallback_model` (with explicit warning) -> wait for user correction and `/hero:continue` if still unavailable (PRD §5.5; ADR-008).
 

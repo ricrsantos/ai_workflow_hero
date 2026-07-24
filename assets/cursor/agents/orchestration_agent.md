@@ -41,6 +41,14 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 `workflow-config.yml → scope` maps backend/frontend to backend_agent/frontend_agent; native/script/infrastructure map to generic_agent.
 
+## QA End-to-End Playwright Selection
+
+Before dispatching `end2end_qa_agent`, validate `stages.qa_end_to_end.use_playwright`:
+
+- `use_playwright: true` is allowed only when `scope.frontend: true`. Otherwise block and ask the user to correct `workflow-config.yml`.
+- When `use_playwright: true` (and frontend in scope), the agent runs Playwright browser journeys.
+- When `use_playwright: false`, the agent uses direct HTTP calls only (even if `scope.frontend` is true).
+
 ## Implementation Parallelism
 
 During the Implementation stage:

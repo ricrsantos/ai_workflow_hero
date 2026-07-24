@@ -144,6 +144,25 @@ func TestAssets_WorkflowConfigFallbackModel(t *testing.T) {
 	}
 }
 
+// TestAssets_WorkflowConfigUsePlaywright verifies qa_end_to_end exposes use_playwright and related workflow rules.
+func TestAssets_WorkflowConfigUsePlaywright(t *testing.T) {
+	data, err := fs.ReadFile(assets.FS, "templates/workflow-config.yml")
+	if err != nil {
+		t.Fatalf("read workflow-config template: %v", err)
+	}
+	content := string(data)
+	for _, kw := range []string{
+		"qa_end_to_end:",
+		"use_playwright:",
+		"stages.qa_end_to_end.use_playwright may be true only when scope.frontend is true",
+		"When use_playwright is true, end2end_qa_agent uses Playwright",
+	} {
+		if !strings.Contains(content, kw) {
+			t.Errorf("workflow-config.yml template missing %q", kw)
+		}
+	}
+}
+
 // TestAssets_AgentTemplateSections verifies the AGENTS.md template includes standard agent guidance sections.
 func TestAssets_AgentTemplateSections(t *testing.T) {
 	data, err := fs.ReadFile(assets.FS, "templates/AGENTS.md")

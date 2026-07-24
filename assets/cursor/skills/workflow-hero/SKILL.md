@@ -22,7 +22,7 @@ Every stage closes with the same sequence (PRD §5.3):
 
 ## Key References
 
-- `.workflow-hero/cycles/current/workflow-config.yml` — cycle configuration
+- `.workflow-hero/cycles/current/workflow-config.yml` — cycle configuration (`scope`, stages, agents, `stages.qa_end_to_end.use_playwright`)
 - `.workflow-hero/cycles/current/workflow.md` — current stage status
 - `.workflow-hero/cycles/current/metrics.md` — per-cycle token/cost estimates
 - `.workflow-hero/metrics-summary.md` — project-wide aggregated metrics

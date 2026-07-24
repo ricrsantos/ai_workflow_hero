@@ -110,7 +110,7 @@ Seu projeto não fica refém do Hero, os arquivos são organizados de forma que 
 - Research com a Skill de grilling própria do Hero (`.cursor/skills/grilling/`, distribuída junto com o CLI);
 - SDD com o framework OpenSpec (`opsx-propose`, `opsx-explore`, `opsx-apply`, `opsx-sync`, `opsx:archive`);
 - Pesquisa com o MCP context7;
-- Teste de front end e ponta-a-ponta com o framework Playwright (etapa QA End-to-End, quando `scope.frontend=true`);
+- Teste de front end e ponta-a-ponta com o framework Playwright (etapa QA End-to-End, quando `stages.qa_end_to_end.use_playwright=true` e `scope.frontend=true`);
 - Versionamento com Git (pré-requisito obrigatório: usado pelo `/hero:cancel` para checkpoints/rollback).
 
 ---
@@ -1022,7 +1022,7 @@ Ao finalizar o planejamento, atualize os arquivos de contexto compactado: @conte
 
 >A partir daqui o **end2end_qa_agent** é acionado.
 
-1. O **end2end_qa_agent** executa cenários ponta a ponta do ponto de vista do usuário final. Se `scope.frontend=true`, usa **Playwright** para simular jornadas de usuário no navegador. Se `scope.frontend=false` (projeto somente backend/API), usa chamadas HTTP diretas simulando a jornada do cliente da API, sem Playwright.
+1. O **end2end_qa_agent** executa cenários ponta a ponta do ponto de vista do usuário final. O método é selecionado em `workflow-config.yml → stages.qa_end_to_end.use_playwright`: se `use_playwright=true` (exige `scope.frontend=true`), usa **Playwright** para simular jornadas de usuário no navegador; se `use_playwright=false`, usa chamadas HTTP diretas simulando a jornada do cliente da API, sem Playwright. `use_playwright=true` com `scope.frontend=false` é inválido — o orchestrator bloqueia e pede correção.
 
 2. Se **FAILED**: mesmo padrão do QA técnico — volta direto para o(s) agente(s) de implementação com o relatório do erro, consumindo 1 iteração do `max_iterations` da etapa QA End-to-End. Ao esgotar, mesmo escalonamento via `/hero:continue`.
 
@@ -2337,6 +2337,8 @@ stages:
 	    max_iterations: 1
 	    timeout_minutes: 15
 	    require_human_approval: true
+	    # When true and scope.frontend is true, end2end_qa_agent uses Playwright.
+	    use_playwright: false
 
 agents:
   
@@ -2742,9 +2744,9 @@ UI-C04-001-dashboard.md
 
 ### Playwright e QA End-to-End
 
-45. **Uso do Playwright**: exclusivamente pelo `end2end_qa_agent`, na etapa QA End-to-End, para simular jornadas de usuário real no navegador.
+45. **Uso do Playwright**: exclusivamente pelo `end2end_qa_agent`, na etapa QA End-to-End, quando `stages.qa_end_to_end.use_playwright: true` (requer `scope.frontend: true`), para simular jornadas de usuário real no navegador.
 
-46. **QA End-to-End em projetos sem frontend** (`scope.frontend=false`): o `end2end_qa_agent` usa chamadas HTTP diretas (curl/requests) simulando a jornada do cliente da API, sem Playwright, mantendo a mesma lógica de OK/FAILED e loop de correção.
+46. **Seleção explícita**: `use_playwright` é um boolean em `qa_end_to_end` no `workflow-config.yml`. Default `false`. `true` só é válido com `scope.frontend: true`; caso contrário o Runtime bloqueia. Com `use_playwright: false`, o `end2end_qa_agent` usa chamadas HTTP diretas (curl/requests), mesmo se `scope.frontend` for `true`.
 
 ### `/hero:sync` e Ativação em Projetos Existentes
 

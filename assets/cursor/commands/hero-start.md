@@ -14,11 +14,12 @@ Each stage can be enabled/disabled in workflow-config.yml. Skip any stage that i
 
 1. Read `.workflow-hero/cycles/current/workflow-config.yml`.
 2. Validate: at least one scope field is true when implementation is enabled.
-3. Do not start implementation until PRD has been approved if research is enabled.
-4. If research is disabled, require objective field to be well-described and ask for explicit scope confirmation before starting implementation.
-5. For each enabled stage, invoke the appropriate agent via the Task tool in a fresh isolated session. Apply **Model Resolution** (see below and `orchestration_agent`) on every Task call — never omit the `model` parameter.
-6. Update workflow.md after completing each stage.
-7. Before finishing, ensure current-state.md is up to date.
+3. Validate: if `stages.qa_end_to_end.use_playwright` is true, `scope.frontend` must also be true; otherwise block and ask for correction.
+4. Do not start implementation until PRD has been approved if research is enabled.
+5. If research is disabled, require objective field to be well-described and ask for explicit scope confirmation before starting implementation.
+6. For each enabled stage, invoke the appropriate agent via the Task tool in a fresh isolated session. Apply **Model Resolution** (see below and `orchestration_agent`) on every Task call — never omit the `model` parameter. For QA End-to-End, pass Playwright vs HTTP selection per `use_playwright` (see `orchestration_agent`).
+7. Update workflow.md after completing each stage.
+8. Before finishing, ensure current-state.md is up to date.
 
 ## Approval and Control Loop
 

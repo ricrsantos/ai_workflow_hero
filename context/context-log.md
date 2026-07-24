@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-07-24 — `use_playwright` for QA End-to-End + minor bump to 0.3.0
+
+**Problem:** Playwright for e2e was implied only by `scope.frontend=true`; users with frontend scope could not explicitly opt in/out of browser e2e.
+
+**Decision:** Added `stages.qa_end_to_end.use_playwright` (default `false`) to `workflow-config.yml`. Valid only when `scope.frontend: true`; otherwise Runtime blocks. `true` → Playwright; `false` → direct HTTP. Updated template, Runtime agents/commands, PRD, ADR, idea doc, OpenSpec runtime spec, and asset tests. Bumped CLI default version `0.2.0` → `0.3.0`.
+
+**Outcome:** `go test ./...` green; commit and push to `main`.
+
+---
+
 ## 2026-07-24 — Rename `generic_model` to `fallback_model` with full model options
 
 **Problem:** `generic_model` was a single string at the top of `workflow-config.yml`, easy to confuse with `generic_agent`, and lacked `reasoning_effort`, `enable_fast_model`, and `thinking` like per-agent config.

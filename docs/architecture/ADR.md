@@ -345,6 +345,10 @@ stages:
     max_iterations: 1
     timeout_minutes: 15
     require_human_approval: true
+    # When true and scope.frontend is true, end2end_qa_agent uses Playwright
+    # for browser journeys. Must be false when scope.frontend is false
+    # (direct HTTP calls only).
+    use_playwright: false
 
 agents:
   planning_agent:
@@ -400,6 +404,8 @@ workflow_rules:
   - Do not start implementation until the PRD has been approved, if the research stage is enabled.
   - If the research stage is disabled, require the `objective` field above to be well described and ask the user for explicit scope confirmation before starting implementation.
   - At least one of the five `scope` fields must be true when implementation is enabled.
+  - `stages.qa_end_to_end.use_playwright` may be true only when `scope.frontend` is true; otherwise block and ask for correction.
+  - When `use_playwright` is true, `end2end_qa_agent` uses Playwright; when false, it uses direct HTTP calls.
   - Do not change the architecture without an approved ADR.
   - Update workflow.md after completing each stage.
   - Before finishing the workflow, ensure current-state.md is up to date.

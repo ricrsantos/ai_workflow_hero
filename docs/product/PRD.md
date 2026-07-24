@@ -92,7 +92,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 | `generic_agent` | Implements native apps (Linux/Windows), scripts, and infrastructure code (`scope.native`/`script`/`infrastructure`). |
 | `qa_agent` | Validates technical quality: tests, coverage, build, lint, architecture consistency, and scope-specific checks. |
 | `judge_agent` | Validates SDD requirement coverage only (not code quality/style). |
-| `end2end_qa_agent` | Validates the full user journey end-to-end (Playwright or direct HTTP calls). |
+| `end2end_qa_agent` | Validates the full user journey end-to-end. Uses Playwright when `stages.qa_end_to_end.use_playwright: true` (requires `scope.frontend: true`); otherwise uses direct HTTP calls. |
 
 ### 5.3 Approval and Control Loop
 
@@ -117,6 +117,8 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 ### 5.6 Scope
 
 `workflow-config.yml → scope` has 5 boolean fields: `backend`, `frontend`, `native`, `script`, `infrastructure`. At least one must be `true` when `implementation.enabled: true`. `backend`/`frontend` map to `backend_agent`/`frontend_agent`; the other three map to `generic_agent`.
+
+`workflow-config.yml → stages.qa_end_to_end.use_playwright` selects the e2e method: `true` requires `scope.frontend: true` and tells `end2end_qa_agent` to use Playwright for browser journeys; `false` uses direct HTTP calls only.
 
 ### 5.7 Documents and Numbering
 
