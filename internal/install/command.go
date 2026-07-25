@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
 	"github.com/spf13/cobra"
@@ -197,5 +198,6 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 
 	fmt.Fprintln(stdout)
 	output.Successf(stdout, "Hero installed successfully.")
+	output.Progressf(stdout, "Full user guide: %s", cursoradapter.WorkflowHelpPath)
 	return nil
 }

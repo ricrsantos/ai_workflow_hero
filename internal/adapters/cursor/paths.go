@@ -34,6 +34,12 @@ const (
 	// HeroModelsDir is the Hero models directory.
 	HeroModelsDir = ".workflow-hero/models"
 
+	// HeroDocsDir is the Hero user documentation directory.
+	HeroDocsDir = ".workflow-hero/docs"
+
+	// WorkflowHelpPath is the installed end-user guide.
+	WorkflowHelpPath = ".workflow-hero/docs/workflow-help.md"
+
 	// HeroCyclesDir is the Hero cycles base directory.
 	HeroCyclesDir = ".workflow-hero/cycles"
 
@@ -68,6 +74,7 @@ func RequiredFiles() []string {
 		DocumentsJSONPath,
 		ChecksumsJSONPath,
 		MetricsSummaryPath,
+		WorkflowHelpPath,
 		filepath.Join(WorkflowHeroSkillDir, "SKILL.md"),
 		filepath.Join(GrillingSkillDir, "SKILL.md"),
 	}

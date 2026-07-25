@@ -57,6 +57,7 @@ func TestRun_BasicInstall(t *testing.T) {
 		cursoradapter.HeroConfigDir,
 		cursoradapter.HeroTemplatesDir,
 		cursoradapter.HeroModelsDir,
+		cursoradapter.HeroDocsDir,
 		cursoradapter.HeroCurrentCycleDir,
 	}
 	for _, d := range expectDirs {
@@ -136,6 +137,18 @@ func TestRun_BasicInstall(t *testing.T) {
 	// Verify metrics-summary.md.
 	if _, err := os.Stat(filepath.Join(dir, cursoradapter.MetricsSummaryPath)); err != nil {
 		t.Errorf("metrics-summary.md not found: %v", err)
+	}
+
+	// Verify end-user guide was installed.
+	helpData, err := os.ReadFile(filepath.Join(dir, cursoradapter.WorkflowHelpPath))
+	if err != nil {
+		t.Fatalf("workflow-help.md not found: %v", err)
+	}
+	helpStr := string(helpData)
+	for _, kw := range []string{"Philosophy", "hero install", "workflow-config.yml", "/hero:start", "Logging"} {
+		if !strings.Contains(helpStr, kw) {
+			t.Errorf("workflow-help.md missing %q", kw)
+		}
 	}
 
 	// Soft secrets hygiene at project root.

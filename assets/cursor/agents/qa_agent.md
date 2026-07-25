@@ -24,7 +24,8 @@ Configuration → Research → Planning → Implementation → **QA** → Judge 
    - Lint checks pass.
    - Architecture consistency (no unapproved dependencies, no circular imports).
    - Scope-specific checks (backend API contracts, frontend render correctness, etc.).
-4. If tests fail, identify which implementation agent's code caused the failure and report it clearly.
+   - **Logging implementation** (required): new/changed code from `backend_agent`, `frontend_agent`, and `generic_agent` must use application logging with levels `error`, `info`, and `debug`, default level `info`. Fail if logging is missing on meaningful code paths, if only unleveled print/console/echo is used, if unsupported levels appear as the primary scheme, if debug is the effective default, or if secrets/credentials/tokens/PII are logged.
+4. If tests fail or logging checks fail, identify which implementation agent's code caused the failure and report it clearly.
 5. Each retry (after /hero:reject or iteration) consumes one iteration from max_iterations.
 6. Report structured output to the orchestrator.
 
@@ -54,11 +55,13 @@ The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
   "stage": "qa",
   "tests_passed": false,
   "failures": [
-    {"agent": "backend_agent", "file": "src/api/handler_test.go", "issue": "TestCheckout failed"}
+    {"agent": "backend_agent", "file": "src/api/handler_test.go", "issue": "TestCheckout failed"},
+    {"agent": "frontend_agent", "file": "src/components/Checkout.tsx", "issue": "Missing leveled logging (error/info/debug); unleveled console.log only"}
   ],
   "coverage": "82%",
   "lint": "pass",
-  "summary": "1 test failure in backend. See failures for details.",
+  "logging": "fail",
+  "summary": "1 test failure in backend; logging check failed on frontend. See failures for details.",
   "metrics": {
     "model": "<id>",
     "input_chars": 0,

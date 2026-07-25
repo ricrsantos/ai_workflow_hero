@@ -99,6 +99,34 @@ func TestAssets_ConfigFiles(t *testing.T) {
 	}
 }
 
+// TestAssets_UserGuide verifies the end-user guide asset exists and covers core topics.
+func TestAssets_UserGuide(t *testing.T) {
+	data, err := fs.ReadFile(assets.FS, "docs/workflow-help.md")
+	if err != nil {
+		t.Fatalf("missing docs/workflow-help.md: %v", err)
+	}
+	content := string(data)
+	for _, kw := range []string{
+		"Philosophy",
+		"hero install",
+		"hero uninstall",
+		"hero upgrade",
+		"workflow-config.yml",
+		"/hero:init",
+		"/hero:start",
+		"Architecture",
+		"Logging",
+		"error",
+		"info",
+		"debug",
+		".workflow-hero/docs/workflow-help.md",
+	} {
+		if !strings.Contains(content, kw) {
+			t.Errorf("workflow-help.md missing %q", kw)
+		}
+	}
+}
+
 // TestAssets_OneFilePerCommand verifies command count matches ADR-011 (13 commands).
 func TestAssets_OneFilePerCommand(t *testing.T) {
 	count := 0

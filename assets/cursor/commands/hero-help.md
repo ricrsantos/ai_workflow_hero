@@ -26,6 +26,12 @@ Display a summary of all available Hero Runtime commands.
 | /hero:back | Reopen Planning stage (when Judge finds SDD ambiguity) |
 | /hero:help | Show this help |
 
+## Full user guide
+
+For philosophy, install/uninstall, configuration, CLI commands, agents, architecture docs, and logging standards, open:
+
+`.workflow-hero/docs/workflow-help.md`
+
 ## Stage Flow
 
 Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End

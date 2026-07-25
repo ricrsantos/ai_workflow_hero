@@ -116,6 +116,7 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 		filepath.Join(opts.ProjectDir, cursoradapter.HeroConfigDir),
 		filepath.Join(opts.ProjectDir, cursoradapter.HeroTemplatesDir),
 		filepath.Join(opts.ProjectDir, cursoradapter.HeroModelsDir),
+		filepath.Join(opts.ProjectDir, cursoradapter.HeroDocsDir),
 		filepath.Join(opts.ProjectDir, cursoradapter.HeroCurrentCycleDir),
 	}
 	for _, d := range dirs {
@@ -156,7 +157,12 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 		return fmt.Errorf("copy models: %w", err)
 	}
 
-	// 9. Write hero.json
+	// 9. Copy docs → .workflow-hero/docs/
+	if err := copyAssetDir(opts.AssetsFS, "docs", filepath.Join(opts.ProjectDir, cursoradapter.HeroDocsDir), opts.ProjectDir, checksums); err != nil {
+		return fmt.Errorf("copy docs: %w", err)
+	}
+
+	// 10. Write hero.json
 	heroData := HeroJSON{
 		CLI: CLIInfo{
 			Version:     opts.Version,
@@ -172,7 +178,7 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 		return fmt.Errorf("write hero.json: %w", err)
 	}
 
-	// 10. Write project.json
+	// 11. Write project.json
 	projectData := ProjectJSON{
 		Name:      opts.Name,
 		Summary:   opts.Summary,
@@ -192,24 +198,24 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 		return fmt.Errorf("write project.json: %w", err)
 	}
 
-	// 11. Write documents.json
+	// 12. Write documents.json
 	docsData := DocumentsJSON{Documents: []DocumentEntry{}}
 	if err := writeJSON(filepath.Join(opts.ProjectDir, cursoradapter.DocumentsJSONPath), docsData); err != nil {
 		return fmt.Errorf("write documents.json: %w", err)
 	}
 
-	// 12. Write metrics-summary.md
+	// 13. Write metrics-summary.md
 	metricsSummaryPath := filepath.Join(opts.ProjectDir, cursoradapter.MetricsSummaryPath)
 	if err := os.WriteFile(metricsSummaryPath, []byte("# Metrics Summary\n\nNo cycles completed yet.\n"), 0o644); err != nil {
 		return fmt.Errorf("write metrics-summary.md: %w", err)
 	}
 
-	// 13. Write checksums.json
+	// 14. Write checksums.json
 	if err := writeJSON(filepath.Join(opts.ProjectDir, cursoradapter.ChecksumsJSONPath), checksums); err != nil {
 		return fmt.Errorf("write checksums.json: %w", err)
 	}
 
-	// 14. Soft secrets hygiene: `.env.example` + `.gitignore` patterns (never overwrite existing).
+	// 15. Soft secrets hygiene: `.env.example` + `.gitignore` patterns (never overwrite existing).
 	if err := envhygiene.EnsureProjectRoot(opts.ProjectDir, opts.AssetsFS); err != nil {
 		return fmt.Errorf("env hygiene: %w", err)
 	}

@@ -267,6 +267,50 @@ func TestRuntimeAssets_ImplementationParallelism(t *testing.T) {
 	}
 }
 
+// TestRuntimeAssets_LoggingStandard verifies implementation agents require leveled
+// logging (error/info/debug, default info) and qa_agent checks for it.
+func TestRuntimeAssets_LoggingStandard(t *testing.T) {
+	implAgents := []string{"backend_agent", "frontend_agent", "generic_agent"}
+	for _, agent := range implAgents {
+		path := "cursor/agents/" + agent + ".md"
+		data, err := fs.ReadFile(assets.FS, path)
+		if err != nil {
+			t.Errorf("read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+		for _, kw := range []string{
+			"## Logging",
+			"**Levels** (only these): `error`, `info`, `debug`",
+			"**Default level**: `info`",
+			"NEVER skip the Logging standard",
+			"NEVER log secrets",
+		} {
+			if !strings.Contains(content, kw) {
+				t.Errorf("%s missing logging keyword %q", path, kw)
+			}
+		}
+	}
+
+	qa, err := fs.ReadFile(assets.FS, "cursor/agents/qa_agent.md")
+	if err != nil {
+		t.Fatalf("read qa_agent: %v", err)
+	}
+	qaStr := string(qa)
+	for _, kw := range []string{
+		"Logging implementation",
+		"error",
+		"info",
+		"debug",
+		"default level `info`",
+		`"logging"`,
+	} {
+		if !strings.Contains(qaStr, kw) {
+			t.Errorf("qa_agent.md missing logging check keyword %q", kw)
+		}
+	}
+}
+
 // TestRuntimeAssets_ResearchPreDocumentGate verifies discover_agent and grilling skill
 // require asking for extra info before document generation.
 func TestRuntimeAssets_ResearchPreDocumentGate(t *testing.T) {

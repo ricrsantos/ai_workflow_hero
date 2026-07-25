@@ -48,9 +48,15 @@ Designed for an open-source workflow, it helps you move through:
 - Three-level model fallback (`agent model` → `fallback_model` → wait for `/hero:continue`)
 - Context compression files (`AGENTS.md`, `context/current-state.md`, `context/context-log.md`)
 - OpenSpec integration for SDD planning and task-driven implementation
+- Research produces project specifications (PRD, ADR, UI, DEPLOY, TESTING) with cycle numbering; architecture changes require an approved ADR
+- Implementation logging standard (`error` / `info` / `debug`, default `info`) enforced by `qa_agent`
+- Soft secrets hygiene: `.env.example` + `.gitignore` patterns; `hero doctor` warns, never blocks
+- Opt-in Playwright for QA End-to-End (`stages.qa_end_to_end.use_playwright`, requires `scope.frontend`)
+- Parallel Task fan-out for independent implementation work; clean subagent sessions via file pointers
 - Per-cycle metrics and project-wide cost estimates from structured model pricing files
 - Upgrade safety: customized Hero files are never silently overwritten (checksum comparison)
 - Uninstall removes only Hero-owned paths; project knowledge (`AGENTS.md`, `docs/`, `context/`, `openspec/`) is preserved
+- Installed user guide at `.workflow-hero/docs/workflow-help.md` (path printed after `hero install`)
 
 ---
 
@@ -103,6 +109,8 @@ Then, in Cursor chat:
 2. `/hero:init` — start a new development cycle
 3. Edit `.workflow-hero/cycles/current/workflow-config.yml`
 4. `/hero:start` — run the configured stages
+
+After install, read the full user guide at `.workflow-hero/docs/workflow-help.md` (philosophy, configuration, CLI and Runtime commands).
 
 Useful CLI commands after install:
 
@@ -218,6 +226,7 @@ Cross-compiled release artifacts (4 platforms + `checksums.txt`):
 | Architecture Decision Records | [docs/architecture/ADR.md](docs/architecture/ADR.md) |
 | Deployment Guide | [docs/deployment/DEPLOY.md](docs/deployment/DEPLOY.md) |
 | Agent guidance | [AGENTS.md](AGENTS.md) |
+| End-user guide (installed into projects) | [assets/docs/workflow-help.md](assets/docs/workflow-help.md) → `.workflow-hero/docs/workflow-help.md` |
 
 ---
 
@@ -269,9 +278,15 @@ Projetado para um fluxo open source, ele ajuda você a avançar em:
 - Fallback de modelo em 3 níveis (`modelo do agente` → `fallback_model` → espera `/hero:continue`)
 - Arquivos de compressão de contexto (`AGENTS.md`, `context/current-state.md`, `context/context-log.md`)
 - Integração com OpenSpec para planejamento SDD e implementação orientada a tarefas
+- Research gera especificações do projeto (PRD, ADR, UI, DEPLOY, TESTING) com numeração por ciclo; mudanças de arquitetura exigem ADR aprovado
+- Padrão de logging na implementação (`error` / `info` / `debug`, default `info`) verificado pelo `qa_agent`
+- Higiene suave de secrets: `.env.example` + padrões no `.gitignore`; `hero doctor` avisa, não bloqueia
+- Playwright opcional no QA End-to-End (`stages.qa_end_to_end.use_playwright`, exige `scope.frontend`)
+- Fan-out paralelo via Task para implementação independente; sessões limpas de subagentes com ponteiros de arquivo
 - Métricas por ciclo e estimativas de custo do projeto a partir de arquivos estruturados de pricing
 - Segurança no upgrade: arquivos customizados do Hero nunca são sobrescritos em silêncio (checksum)
 - Uninstall remove apenas caminhos do Hero; o conhecimento do projeto (`AGENTS.md`, `docs/`, `context/`, `openspec/`) é preservado
+- Guia do usuário instalado em `.workflow-hero/docs/workflow-help.md` (caminho exibido após `hero install`)
 
 ---
 
@@ -324,6 +339,8 @@ Em seguida, no chat do Cursor:
 2. `/hero:init` — inicia um novo ciclo de desenvolvimento
 3. Edite `.workflow-hero/cycles/current/workflow-config.yml`
 4. `/hero:start` — executa os stages configurados
+
+Após a instalação, leia o guia completo em `.workflow-hero/docs/workflow-help.md` (filosofia, configuração, comandos CLI e Runtime).
 
 Comandos CLI úteis após a instalação:
 
@@ -439,6 +456,7 @@ Artefatos de release cross-compilados (4 plataformas + `checksums.txt`):
 | Architecture Decision Records | [docs/architecture/ADR.md](docs/architecture/ADR.md) |
 | Guia de deploy | [docs/deployment/DEPLOY.md](docs/deployment/DEPLOY.md) |
 | Orientação para agentes | [AGENTS.md](AGENTS.md) |
+| Guia do usuário final (instalado nos projetos) | [assets/docs/workflow-help.md](assets/docs/workflow-help.md) → `.workflow-hero/docs/workflow-help.md` |
 
 ---
 

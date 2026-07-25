@@ -20,8 +20,22 @@ Configuration → Research → Planning → **Implementation** → QA → Judge 
 2. Read AGENTS.md, current-state.md, and relevant PRD/UI/ADR sections (via file pointers).
 3. Implement the frontend code as specified in the SDD tasks. Prefer Task tool fan-out for independent work (see Parallelism below).
 4. Ensure implementation matches the UI spec (design, theme, accessibility).
-5. Run frontend tests after implementation (per TESTING.md test command).
-6. Report structured output to the orchestrator.
+5. Implement application logging per the Logging standard below (required for new/changed code paths).
+6. Run frontend tests after implementation (per TESTING.md test command).
+7. Report structured output to the orchestrator.
+
+## Logging
+
+When implementing or changing frontend code, add application logs with explicit levels. Do not rely on unleveled `console.log` as the primary logging mechanism.
+
+- **Levels** (only these): `error`, `info`, `debug`
+- **Default level**: `info` (debug messages exist in code but must not emit unless the runtime log level is set to `debug`)
+- **Usage**:
+  - `error` — failures that need attention (failed fetches, unexpected UI/state errors)
+  - `info` — significant user/app lifecycle events (navigation of key flows, feature init, successful critical actions)
+  - `debug` — detailed diagnostics for troubleshooting (not for routine happy-path noise at default level)
+- Prefer the project's existing logging stack when present; otherwise introduce an appropriate logger for the stack (leveled client logger wrapping console is acceptable).
+- NEVER log secrets, credentials, tokens, or PII.
 
 ## Parallelism / nested Task
 
@@ -35,6 +49,7 @@ Configuration → Research → Planning → **Implementation** → QA → Judge 
 
 - NEVER change architecture without an approved ADR.
 - NEVER skip running tests after implementation.
+- NEVER skip the Logging standard on new or changed code paths.
 - NEVER implement backend, native, or infrastructure code.
 - NEVER commit secrets (`.env`, keys, credentials). Prefer `.env.example` with placeholders only.
 - Receive only file pointers — start each session fresh with no prior chat context.

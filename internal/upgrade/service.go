@@ -55,6 +55,7 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 		{"cursor/skills/grilling", filepath.Join(opts.ProjectDir, cursoradapter.GrillingSkillDir)},
 		{"templates", filepath.Join(opts.ProjectDir, cursoradapter.HeroTemplatesDir)},
 		{"models", filepath.Join(opts.ProjectDir, cursoradapter.HeroModelsDir)},
+		{"docs", filepath.Join(opts.ProjectDir, cursoradapter.HeroDocsDir)},
 	}
 
 	for _, group := range assetGroups {

@@ -79,6 +79,7 @@ Project summary (Opcional):
 > Indoor positioning platform using BLE gateways.
 
 ✓ Hero installed successfully.
+→ Full user guide: .workflow-hero/docs/workflow-help.md
 ```
 
 ```bash

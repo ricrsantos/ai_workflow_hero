@@ -62,6 +62,7 @@ func Run(opts Options) Report {
 		cursoradapter.DocumentsJSONPath,
 		cursoradapter.ChecksumsJSONPath,
 		cursoradapter.MetricsSummaryPath,
+		cursoradapter.WorkflowHelpPath,
 	}
 	for _, f := range requiredFiles {
 		full := filepath.Join(opts.ProjectDir, f)

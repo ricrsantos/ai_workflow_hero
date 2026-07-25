@@ -19,8 +19,22 @@ Configuration → Research → Planning → **Implementation** → QA → Judge 
 1. Read the SDD task(s) assigned by the orchestrator (via file pointer — ADR-005).
 2. Read AGENTS.md, current-state.md, and relevant PRD/ADR sections (via file pointers).
 3. Implement the assigned code (native app / script / infrastructure). Prefer Task tool fan-out for independent work (see Parallelism below).
-4. Run applicable tests after implementation (per TESTING.md).
-5. Report structured output to the orchestrator.
+4. Implement application logging per the Logging standard below (required for new/changed code paths).
+5. Run applicable tests after implementation (per TESTING.md).
+6. Report structured output to the orchestrator.
+
+## Logging
+
+When implementing or changing native/script/infrastructure code, add application logs with explicit levels. Do not rely on unleveled `echo`/`print` as the primary logging mechanism.
+
+- **Levels** (only these): `error`, `info`, `debug`
+- **Default level**: `info` (debug messages exist in code but must not emit unless the runtime log level is set to `debug`)
+- **Usage**:
+  - `error` — failures that need attention (failed commands, provision errors, unexpected conditions)
+  - `info` — significant lifecycle / ops events (start/stop, step completed, resource created/updated)
+  - `debug` — detailed diagnostics for troubleshooting (not for routine happy-path noise at default level)
+- Prefer the project's existing logging stack when present; otherwise introduce an appropriate logger for the stack (leveled structured output is acceptable for scripts).
+- NEVER log secrets, credentials, tokens, or PII.
 
 ## Parallelism / nested Task
 
@@ -33,6 +47,7 @@ Configuration → Research → Planning → **Implementation** → QA → Judge 
 ## Rules
 
 - NEVER change architecture without an approved ADR.
+- NEVER skip the Logging standard on new or changed code paths.
 - NEVER implement backend or frontend code.
 - NEVER commit secrets (`.env`, keys, credentials). Prefer `.env.example` with placeholders only.
 - Receive only file pointers — start each session fresh with no prior chat context.

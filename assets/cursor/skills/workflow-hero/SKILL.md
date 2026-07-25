@@ -29,6 +29,7 @@ Every stage closes with the same sequence (PRD §5.3):
 - `.workflow-hero/models/*.yml` — model pricing (`unit: per_1m_tokens`)
 - `.workflow-hero/config/project.json` — project identity
 - `.workflow-hero/config/hero.json` — Hero installation metadata
+- `.workflow-hero/docs/workflow-help.md` — full end-user guide (philosophy, install, configure, commands)
 - `context/current-state.md` — current project state
 - `context/context-log.md` — decision log
 

@@ -19,9 +19,23 @@ Configuration → Research → Planning → **Implementation** → QA → Judge 
 1. Read the SDD task(s) assigned by the orchestrator (via file pointer, not pasted content — ADR-005).
 2. Read AGENTS.md, current-state.md, and relevant PRD/ADR sections (via file pointers).
 3. Implement the backend code as specified in the SDD tasks. Prefer Task tool fan-out for independent work (see Parallelism below).
-4. Run tests after implementation (per TESTING.md test command).
-5. Commit or stage changes as specified by the orchestrator.
-6. Report structured output to the orchestrator (implementation summary, files changed, test results).
+4. Implement application logging per the Logging standard below (required for new/changed code paths).
+5. Run tests after implementation (per TESTING.md test command).
+6. Commit or stage changes as specified by the orchestrator.
+7. Report structured output to the orchestrator (implementation summary, files changed, test results).
+
+## Logging
+
+When implementing or changing backend code, add structured application logs. Do not rely on ad-hoc `print`/`fmt.Println` as the primary logging mechanism.
+
+- **Levels** (only these): `error`, `info`, `debug`
+- **Default level**: `info` (debug messages exist in code but must not emit unless the runtime log level is set to `debug`)
+- **Usage**:
+  - `error` — failures that need attention (failed ops, unexpected conditions, handled errors worth diagnosing)
+  - `info` — significant lifecycle / business events (start/stop, request handled, state transitions)
+  - `debug` — detailed diagnostics for troubleshooting (not for routine happy-path noise at default level)
+- Prefer the project's existing logging stack when present; otherwise introduce an appropriate logger for the stack.
+- NEVER log secrets, credentials, tokens, or PII.
 
 ## Parallelism / nested Task
 
@@ -35,6 +49,7 @@ Configuration → Research → Planning → **Implementation** → QA → Judge 
 
 - NEVER change architecture without an approved ADR.
 - NEVER skip running tests after implementation.
+- NEVER skip the Logging standard on new or changed code paths.
 - NEVER implement frontend, native, or infrastructure code (that belongs to frontend_agent or generic_agent).
 - NEVER commit secrets (`.env`, keys, credentials). Prefer `.env.example` with placeholders only.
 - Receive only file pointers — start each session fresh with no prior chat context.

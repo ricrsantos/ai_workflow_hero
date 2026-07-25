@@ -6,9 +6,10 @@
 //   - templates/        → .workflow-hero/templates/ (Workflow templates)
 //   - models/           → .workflow-hero/models/    (Model pricing YAML files)
 //   - config/           → .workflow-hero/config/    (Config templates)
+//   - docs/             → .workflow-hero/docs/      (End-user documentation)
 package assets
 
 import "embed"
 
-//go:embed cursor templates models config
+//go:embed cursor templates models config docs
 var FS embed.FS
