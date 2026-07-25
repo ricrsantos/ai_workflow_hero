@@ -55,7 +55,7 @@
 ## Pending Features
 
 - Archive OpenSpec change `v1-ai-workflow-hero` (`/opsx:archive`).
-- First tagged release via `scripts/release.sh` + GitHub Release upload.
+- Publish GitHub Release for tag `v0.5.0` (upload `dist/` artifacts + release notes).
 - Optional further enrichment of Runtime narrative prompts (stage flow, approval, metrics procedure, and Task isolation are encoded; metrics estimation remains agent-driven).
 
 ## Recent Decisions
@@ -67,7 +67,8 @@
 - QA End-to-End Playwright is opt-in via `stages.qa_end_to_end.use_playwright` (default `false`); requires `scope.frontend: true`.
 - Soft secrets hygiene: commit `.env.example` only; real values in local `.env`; doctor warns, does not block.
 - Runtime logging standard for consumer projects: implementation agents add `error`/`info`/`debug` logs (default `info`); `qa_agent` fails the stage when logging is missing or incorrect on new/changed paths.
-- CLI default version `0.5.0` (logging standard + installed user guide `.workflow-hero/docs/workflow-help.md`).
+- CLI default version `0.5.1` (release.sh hardening: exact tag required, no `dev` fallback).
+- First release tag `v0.5.0` pushed; `scripts/release.sh` requires an exact tag on HEAD and strips the `v` prefix for CLI ldflags.
 
 ## Known Technical Debt
 

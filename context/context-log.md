@@ -6,6 +6,26 @@
 
 ---
 
+## 2026-07-25 — Release script fix, bump to 0.5.1
+
+**Problem:** `scripts/release.sh` fell back to `dev` when no git tag existed; tag `v0.5.0` was created before the script fix was committed.
+
+**Decision:** Harden `scripts/release.sh` (exact tag on HEAD, strip `v` for ldflags, artifact names use full tag). Bump CLI default `0.5.0` → `0.5.1`.
+
+**Outcome:** Changes committed; next release should tag `v0.5.1` on this commit and run `./scripts/release.sh`.
+
+---
+
+## 2026-07-25 — First release tag v0.5.0 + release.sh hardening
+
+**Problem:** `hero version` showed `dev` when the binary was built without a git tag (README/release fallback). No release tags existed yet.
+
+**Decision:** Update `scripts/release.sh` to require an exact tag on the current commit (no `dev` fallback), strip the leading `v` from the tag for `-X main.version=...` (CLI shows `0.5.0`), and name artifacts with the full tag (`hero_v0.5.0_<os>_<arch>`). Tagged `v0.5.0`, ran `./scripts/release.sh`, pushed tag to origin.
+
+**Outcome:** `dist/hero_v0.5.0_*` binaries + `checksums.txt` built; `hero version 0.5.0` on release binary. Next: GitHub Release upload.
+
+---
+
 ## 2026-07-25 — User guide + README capability sweep (v0.5.0)
 
 **Problem:** README under-documented capabilities (architecture via ADR, logging standard, secrets hygiene, Playwright, parallelism). No installed end-user guide; install success did not point users to documentation.

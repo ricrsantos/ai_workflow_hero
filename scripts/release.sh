@@ -16,9 +16,16 @@
 
 set -euo pipefail
 
-# Determine version from git tag.
-VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
-echo "Building version: ${VERSION}"
+# Require an exact tag on the current commit (no "dev" fallback).
+TAG=$(git describe --tags --exact-match 2>/dev/null || true)
+if [ -z "${TAG}" ]; then
+  echo "[ERROR] Current commit is not tagged. Tag the release commit first (e.g. git tag v0.5.0)." >&2
+  exit 1
+fi
+
+# Git tags use a leading "v" (v0.5.0); CLI version omits it (0.5.0).
+VERSION="${TAG#v}"
+echo "Building version: ${VERSION} (tag ${TAG})"
 
 DIST="dist"
 mkdir -p "${DIST}"
@@ -36,7 +43,7 @@ LDFLAGS="-X main.version=${VERSION}"
 for TARGET in "${TARGETS[@]}"; do
   OS="${TARGET%/*}"
   ARCH="${TARGET#*/}"
-  OUTPUT="${DIST}/hero_${VERSION}_${OS}_${ARCH}"
+  OUTPUT="${DIST}/hero_${TAG}_${OS}_${ARCH}"
   echo "→ Building ${OUTPUT}..."
   GOOS="${OS}" GOARCH="${ARCH}" go build \
     -ldflags "${LDFLAGS}" \
@@ -61,8 +68,8 @@ fi
 for TARGET in "${TARGETS[@]}"; do
   OS="${TARGET%/*}"
   ARCH="${TARGET#*/}"
-  BIN="${DIST}/hero_${VERSION}_${OS}_${ARCH}"
-  (cd "${DIST}" && ${SHA_CMD} "hero_${VERSION}_${OS}_${ARCH}") >> "${CHECKSUMS_FILE}"
+  BIN="${DIST}/hero_${TAG}_${OS}_${ARCH}"
+  (cd "${DIST}" && ${SHA_CMD} "hero_${TAG}_${OS}_${ARCH}") >> "${CHECKSUMS_FILE}"
 done
 
 echo ""
