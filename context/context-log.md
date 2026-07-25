@@ -12,7 +12,7 @@
 
 **Decision:** Harden `scripts/release.sh` (exact tag on HEAD, strip `v` for ldflags, artifact names use full tag). Bump CLI default `0.5.0` → `0.5.1`.
 
-**Outcome:** Changes committed; next release should tag `v0.5.1` on this commit and run `./scripts/release.sh`.
+**Outcome:** Changes committed; tagged `v0.5.1`, `./scripts/release.sh` built artifacts, tag pushed, GitHub Release published at https://github.com/ricrsantos/ai_workflow_hero/releases/tag/v0.5.1. Follow-up: `release.sh` now clears `dist/` before build and runs `chmod +x` on each binary.
 
 ---
 

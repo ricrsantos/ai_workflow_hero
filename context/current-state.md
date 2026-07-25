@@ -55,7 +55,6 @@
 ## Pending Features
 
 - Archive OpenSpec change `v1-ai-workflow-hero` (`/opsx:archive`).
-- Publish GitHub Release for tag `v0.5.0` (upload `dist/` artifacts + release notes).
 - Optional further enrichment of Runtime narrative prompts (stage flow, approval, metrics procedure, and Task isolation are encoded; metrics estimation remains agent-driven).
 
 ## Recent Decisions
@@ -68,7 +67,7 @@
 - Soft secrets hygiene: commit `.env.example` only; real values in local `.env`; doctor warns, does not block.
 - Runtime logging standard for consumer projects: implementation agents add `error`/`info`/`debug` logs (default `info`); `qa_agent` fails the stage when logging is missing or incorrect on new/changed paths.
 - CLI default version `0.5.1` (release.sh hardening: exact tag required, no `dev` fallback).
-- First release tag `v0.5.0` pushed; `scripts/release.sh` requires an exact tag on HEAD and strips the `v` prefix for CLI ldflags.
+- First release tag `v0.5.0` pushed; `v0.5.1` published on GitHub Releases with cross-compiled binaries.
 
 ## Known Technical Debt
 

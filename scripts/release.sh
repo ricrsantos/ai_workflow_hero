@@ -28,6 +28,7 @@ VERSION="${TAG#v}"
 echo "Building version: ${VERSION} (tag ${TAG})"
 
 DIST="dist"
+rm -rf "${DIST}"
 mkdir -p "${DIST}"
 
 TARGETS=(
@@ -49,6 +50,7 @@ for TARGET in "${TARGETS[@]}"; do
     -ldflags "${LDFLAGS}" \
     -o "${OUTPUT}" \
     "${MODULE_PATH}"
+  chmod +x "${OUTPUT}"
   echo "✓ Built ${OUTPUT}"
 done
 

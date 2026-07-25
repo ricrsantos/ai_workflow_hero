@@ -46,6 +46,8 @@ func TestReleaseScript_ArtifactNamingContract(t *testing.T) {
 		"darwin/arm64",
 		"hero_${TAG}_${OS}_${ARCH}",
 		`VERSION="${TAG#v}"`,
+		`rm -rf "${DIST}"`,
+		`chmod +x "${OUTPUT}"`,
 		"checksums.txt",
 		`-X main.version=`,
 		"./cmd/hero",
