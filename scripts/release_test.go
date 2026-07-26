@@ -67,3 +67,61 @@ func TestReleaseScript_ArtifactNamingContract(t *testing.T) {
 		}
 	}
 }
+
+func buildDevScriptPath(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	return filepath.Join(filepath.Dir(thisFile), "build_dev.sh")
+}
+
+func TestBuildDevScript_ExistsAndExecutableContract(t *testing.T) {
+	path := buildDevScriptPath(t)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("build_dev.sh missing: %v", err)
+	}
+	if info.IsDir() {
+		t.Fatal("build_dev.sh is a directory")
+	}
+}
+
+func TestBuildDevScript_ArtifactNamingContract(t *testing.T) {
+	data, err := os.ReadFile(buildDevScriptPath(t))
+	if err != nil {
+		t.Fatalf("read build_dev.sh: %v", err)
+	}
+	src := string(data)
+
+	required := []string{
+		"linux/amd64",
+		"linux/arm64",
+		"darwin/amd64",
+		"darwin/arm64",
+		`git tag -l --sort=-creatordate`,
+		`git rev-parse --short HEAD`,
+		`VERSION="${LAST_TAG#v}_${COMMIT}"`,
+		`VERSION="dev_${COMMIT}"`,
+		"hero_${VERSION}_${OS}_${ARCH}",
+		`rm -rf "${DIST}"`,
+		`chmod +x "${OUTPUT}"`,
+		"checksums.txt",
+		`-X main.version=`,
+		"./cmd/hero",
+	}
+	for _, want := range required {
+		if !strings.Contains(src, want) {
+			t.Errorf("build_dev.sh missing required contract fragment %q", want)
+		}
+	}
+
+	forbidden := []string{"windows", "GORELEASER", "github/workflows"}
+	lower := strings.ToLower(src)
+	for _, bad := range forbidden {
+		if strings.Contains(lower, strings.ToLower(bad)) {
+			t.Errorf("build_dev.sh must not include out-of-scope fragment %q", bad)
+		}
+	}
+}

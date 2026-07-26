@@ -49,6 +49,7 @@
 - Template renderer + inventory / Runtime-semantics asset tests.
 - Embedded Runtime assets: 13 `hero-*.md` commands, 10 agents (Cursor YAML frontmatter with `model: inherit`), skills (`workflow-hero`, `grilling`), templates, 7 model pricing files, bilingual end-user guide (`assets/docs/workflow-help.md`); metrics use executable Metrics Procedure + subagent `input_chars`/`output_chars` contracts; **Model Resolution** requires Task `model` from `workflow-config.yml` on every subagent call; **QA End-to-End** selects Playwright via `stages.qa_end_to_end.use_playwright` (requires `scope.frontend`); **Logging standard** — `backend_agent` / `frontend_agent` / `generic_agent` must implement leveled logs (`error`/`info`/`debug`, default `info`); `qa_agent` verifies logging on new/changed code.
 - `scripts/release.sh` + contract test for artifact naming / platforms / checksums.
+- `scripts/build_dev.sh` for local cross-compiles without a release tag (version `<latest-tag>_<short-commit>`).
 - Integration tests for install/upgrade/uninstall/doctor against `t.TempDir()`.
 - Bilingual project README (`README.md`, EN + PT-BR in one file, Screenshot Hero style).
 
