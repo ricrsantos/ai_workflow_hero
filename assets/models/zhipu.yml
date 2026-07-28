@@ -1,17 +1,19 @@
 provider: zhipu
 version: 1
-last_updated: 2026-07-14
+last_updated: 2026-07-28
 currency: usd
 unit: per_1m_tokens
 
 models:
-  glm-4:
-    input: 1.00
+  # Cursor Task / pricing catalog ids (cursor.com/docs/models-and-pricing).
+  glm-5.2:
+    input: 1.40
     cache_write: 0.00
-    cache_read: 0.00
-    output: 2.00
-  glm-4-flash:
-    input: 0.10
+    cache_read: 0.26
+    output: 4.40
+  # Task often exposes the high-effort variant as a distinct slug.
+  glm-5.2-high:
+    input: 1.40
     cache_write: 0.00
-    cache_read: 0.00
-    output: 0.20
+    cache_read: 0.26
+    output: 4.40

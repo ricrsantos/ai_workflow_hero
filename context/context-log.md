@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-07-28 — Add Kimi K3 / K2.7 Code / GLM 5.2 pricing
+
+**Problem:** Hero `models/*.yml` still had placeholder Moonshot/Zhipu ids (`moonshot-v1-*`, `glm-4*`) instead of current Cursor catalog models.
+
+**Decision:** Replace with Cursor docs rates — `kimi-k2.7-code` ($0.95/$0.19/$4), `kimi-k3` + `kimi-k3-max` ($3/$0.30/$15), `glm-5.2` + `glm-5.2-high` ($1.40/$0.26/$4.40). Effort variants mirror `cursor-grok-4.5-high` pattern for metrics slug lookup.
+
+**Outcome:** `assets/models/moonshot.yml` and `zhipu.yml` updated; CLI default version bumped to `0.6.1`; `go test ./...` green.
+
+---
+
 ## 2026-07-28 — Apply Browser UI Validation (complete)
 
 **Problem:** Implement OpenSpec change `browser-ui-validation`.
