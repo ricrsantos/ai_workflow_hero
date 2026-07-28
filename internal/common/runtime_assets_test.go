@@ -14,7 +14,7 @@ func TestRuntimeAssets_StageOrder(t *testing.T) {
 	// The canonical stage order must appear in at least one asset.
 	keywords := []string{
 		"Configuration", "Research", "Planning", "Implementation",
-		"QA", "Judge", "QA End-to-End",
+		"QA", "Judge", "Browser UI Validation", "QA End-to-End",
 	}
 
 	allContent := loadAllAssetContent(t, "cursor")
@@ -76,7 +76,7 @@ func TestRuntimeAssets_AgentFrontmatter(t *testing.T) {
 	agents := []string{
 		"orchestration_agent", "discover_agent", "planning_agent", "context_agent",
 		"backend_agent", "frontend_agent", "generic_agent",
-		"qa_agent", "judge_agent", "end2end_qa_agent",
+		"qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent",
 	}
 	for _, agent := range agents {
 		path := "cursor/agents/" + agent + ".md"
@@ -207,7 +207,7 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 
 	taskAgents := []string{
 		"discover_agent", "planning_agent", "backend_agent", "frontend_agent",
-		"generic_agent", "qa_agent", "judge_agent", "end2end_qa_agent", "context_agent",
+		"generic_agent", "qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent", "context_agent",
 	}
 	for _, agent := range taskAgents {
 		path := "cursor/agents/" + agent + ".md"
@@ -394,6 +394,107 @@ func TestRuntimeAssets_CleanSessionHandoff(t *testing.T) {
 		if !strings.Contains(startStr, kw) {
 			t.Errorf("hero-start.md missing Session Bootstrap keyword %q", kw)
 		}
+	}
+}
+
+// TestRuntimeAssets_BrowserUIValidation verifies browser_ui_agent and orchestration encode
+// Health/Visual semantics, gates, artifacts path, and stage order.
+func TestRuntimeAssets_BrowserUIValidation(t *testing.T) {
+	agent, err := fs.ReadFile(assets.FS, "cursor/agents/browser_ui_agent.md")
+	if err != nil {
+		t.Fatalf("read browser_ui_agent: %v", err)
+	}
+	agentStr := string(agent)
+	for _, kw := range []string{
+		"Browser Health",
+		"Visual Validation",
+		"Playwright",
+		"1280",
+		"768",
+		"375",
+		".workflow-hero/cycles/current/browser-ui/",
+		"failure_class",
+		"health-report.md",
+		"model: inherit",
+		`"input_chars"`,
+	} {
+		if !strings.Contains(agentStr, kw) {
+			t.Errorf("browser_ui_agent.md missing keyword %q", kw)
+		}
+	}
+
+	orch, err := fs.ReadFile(assets.FS, "cursor/agents/orchestration_agent.md")
+	if err != nil {
+		t.Fatalf("read orchestration_agent: %v", err)
+	}
+	orchStr := string(orch)
+	for _, kw := range []string{
+		"Browser UI Validation",
+		"browser_ui_agent",
+		"scope.frontend",
+		"Health failure skips Visual",
+		"frontend_agent",
+		"backend_agent",
+		".workflow-hero/cycles/current/browser-ui/",
+	} {
+		if !strings.Contains(orchStr, kw) {
+			t.Errorf("orchestration_agent.md missing Browser UI keyword %q", kw)
+		}
+	}
+
+	start, err := fs.ReadFile(assets.FS, "cursor/commands/hero-start.md")
+	if err != nil {
+		t.Fatalf("read hero-start: %v", err)
+	}
+	if !strings.Contains(string(start), "stages.browser_ui_validation.enabled") {
+		t.Error("hero-start.md must validate browser_ui_validation.enabled against scope.frontend")
+	}
+
+	canonical := "QA → Judge → Browser UI Validation → QA End-to-End"
+	if !strings.Contains(orchStr, canonical) {
+		t.Errorf("orchestration_agent.md missing canonical stage order fragment %q", canonical)
+	}
+
+	e2e, err := fs.ReadFile(assets.FS, "cursor/agents/end2end_qa_agent.md")
+	if err != nil {
+		t.Fatalf("read end2end_qa_agent: %v", err)
+	}
+	e2eStr := string(e2e)
+	if !strings.Contains(e2eStr, "business journeys") && !strings.Contains(e2eStr, "Browser UI Validation") {
+		t.Error("end2end_qa_agent.md should keep journey semantics distinct from Browser UI Validation")
+	}
+
+	help, err := fs.ReadFile(assets.FS, "docs/workflow-help.md")
+	if err != nil {
+		t.Fatalf("read workflow-help: %v", err)
+	}
+	helpStr := string(help)
+	for _, kw := range []string{
+		"Browser UI Validation",
+		"visual_validation",
+		"docs/ui/visual_reference",
+		".workflow-hero/cycles/current/browser-ui/",
+		"browser_ui_agent",
+	} {
+		if !strings.Contains(helpStr, kw) {
+			t.Errorf("workflow-help.md missing Browser UI keyword %q", kw)
+		}
+	}
+
+	metrics, err := fs.ReadFile(assets.FS, "templates/metrics.md")
+	if err != nil {
+		t.Fatalf("read metrics template: %v", err)
+	}
+	if !strings.Contains(string(metrics), "Browser UI Validation") || !strings.Contains(string(metrics), "browser_ui_agent") {
+		t.Error("templates/metrics.md must include Browser UI Validation row")
+	}
+
+	workflow, err := fs.ReadFile(assets.FS, "templates/workflow.md")
+	if err != nil {
+		t.Fatalf("read workflow template: %v", err)
+	}
+	if !strings.Contains(string(workflow), "Browser UI Validation") {
+		t.Error("templates/workflow.md must include Browser UI Validation stage row")
 	}
 }
 

@@ -8,7 +8,7 @@ Prefer running this command in a **new empty chat** after `/hero:init` (clean co
 
 ## Stage Flow
 
-Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
+Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
 Each stage can be enabled/disabled in workflow-config.yml. Skip any stage that is not enabled.
 
@@ -30,13 +30,14 @@ Summarize from those files what will run, then continue.
 1. Complete **Session Bootstrap** above.
 2. Read and validate `.workflow-hero/cycles/current/workflow-config.yml`.
 3. Validate: at least one scope field is true when implementation is enabled.
-4. Validate: if `stages.qa_end_to_end.use_playwright` is true, `scope.frontend` must also be true; otherwise block and ask for correction.
-5. Mark the Configuration stage complete in `workflow.md` (and update Configuration metrics via the **Metrics Procedure** if still open), then advance.
-6. Do not start implementation until PRD has been approved if research is enabled.
-7. If research is disabled, require objective field to be well-described and ask for explicit scope confirmation before starting implementation.
-8. For each enabled stage, invoke the appropriate agent via the Task tool in a fresh isolated session. Apply **Model Resolution** (see below and `orchestration_agent`) on every Task call — never omit the `model` parameter. For QA End-to-End, pass Playwright vs HTTP selection per `use_playwright` (see `orchestration_agent`).
-9. Update workflow.md after completing each stage.
-10. Before finishing, ensure current-state.md is up to date.
+4. Validate: if `stages.browser_ui_validation.enabled` is true, `scope.frontend` must also be true; otherwise block and ask for correction.
+5. Validate: if `stages.qa_end_to_end.use_playwright` is true, `scope.frontend` must also be true; otherwise block and ask for correction.
+6. Mark the Configuration stage complete in `workflow.md` (and update Configuration metrics via the **Metrics Procedure** if still open), then advance.
+7. Do not start implementation until PRD has been approved if research is enabled.
+8. If research is disabled, require objective field to be well-described and ask for explicit scope confirmation before starting implementation.
+9. For each enabled stage, invoke the appropriate agent via the Task tool in a fresh isolated session. Apply **Model Resolution** (see below and `orchestration_agent`) on every Task call — never omit the `model` parameter. For Browser UI Validation, enforce Health-before-Visual and Playwright gates (see `orchestration_agent`). For QA End-to-End, pass Playwright vs HTTP selection per `use_playwright` (see `orchestration_agent`).
+10. Update workflow.md after completing each stage.
+11. Before finishing, ensure current-state.md is up to date.
 
 ## Approval and Control Loop
 

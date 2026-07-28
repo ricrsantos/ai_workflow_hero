@@ -35,14 +35,14 @@ Hero ships as a single Go CLI binary (`hero`) that bootstraps a project with com
 
 Designed for an open-source workflow, it helps you move through:
 
-**Research → Planning → Implementation → QA → Judge → QA End-to-End**
+**Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End**
 
 ---
 
 ## Features
 
 - Deterministic CLI for install, upgrade, uninstall, doctor, status, variables, and model pricing updates
-- Cursor Runtime assets: 13 `/hero:*` commands and 10 specialized agents
+- Cursor Runtime assets: 13 `/hero:*` commands and 11 specialized agents
 - Configurable stage flow with human approval, iteration limits, timeouts, and escalation
 - Scope routing to `backend_agent`, `frontend_agent`, or `generic_agent`
 - Three-level model fallback (`agent model` → `fallback_model` → wait for `/hero:continue`)
@@ -51,7 +51,8 @@ Designed for an open-source workflow, it helps you move through:
 - Research produces project specifications (PRD, ADR, UI, DEPLOY, TESTING) with cycle numbering; architecture changes require an approved ADR
 - Implementation logging standard (`error` / `info` / `debug`, default `info`) enforced by `qa_agent`
 - Soft secrets hygiene: `.env.example` + `.gitignore` patterns; `hero doctor` warns, never blocks
-- Opt-in Playwright for QA End-to-End (`stages.qa_end_to_end.use_playwright`, requires `scope.frontend`)
+- Optional Browser UI Validation (`stages.browser_ui_validation`, requires `scope.frontend`): Playwright Health + optional Visual vs PNGs under `docs/ui/visual_reference`
+- Opt-in Playwright for QA End-to-End journeys (`stages.qa_end_to_end.use_playwright`, requires `scope.frontend`) — distinct from Browser UI Validation
 - Parallel Task fan-out for independent implementation work; clean subagent sessions via file pointers
 - Per-cycle metrics and project-wide cost estimates from structured model pricing files
 - Upgrade safety: customized Hero files are never silently overwritten (checksum comparison)
@@ -265,14 +266,14 @@ O Hero é distribuído como um binário CLI em Go (`hero`) que prepara o projeto
 
 Projetado para um fluxo open source, ele ajuda você a avançar em:
 
-**Research → Planning → Implementation → QA → Judge → QA End-to-End**
+**Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End**
 
 ---
 
 ## Recursos
 
 - CLI determinística para install, upgrade, uninstall, doctor, status, variables e atualização de preços de modelos
-- Assets de Runtime no Cursor: 13 comandos `/hero:*` e 10 agentes especializados
+- Assets de Runtime no Cursor: 13 comandos `/hero:*` e 11 agentes especializados
 - Fluxo de stages configurável com aprovação humana, limites de iteração, timeouts e escalonamento
 - Roteamento de scope para `backend_agent`, `frontend_agent` ou `generic_agent`
 - Fallback de modelo em 3 níveis (`modelo do agente` → `fallback_model` → espera `/hero:continue`)
@@ -281,7 +282,8 @@ Projetado para um fluxo open source, ele ajuda você a avançar em:
 - Research gera especificações do projeto (PRD, ADR, UI, DEPLOY, TESTING) com numeração por ciclo; mudanças de arquitetura exigem ADR aprovado
 - Padrão de logging na implementação (`error` / `info` / `debug`, default `info`) verificado pelo `qa_agent`
 - Higiene suave de secrets: `.env.example` + padrões no `.gitignore`; `hero doctor` avisa, não bloqueia
-- Playwright opcional no QA End-to-End (`stages.qa_end_to_end.use_playwright`, exige `scope.frontend`)
+- Browser UI Validation opcional (`stages.browser_ui_validation`, exige `scope.frontend`): Health com Playwright + Visual opcional vs PNGs em `docs/ui/visual_reference`
+- Playwright opcional no QA End-to-End para jornadas (`stages.qa_end_to_end.use_playwright`, exige `scope.frontend`) — distinto do Browser UI Validation
 - Fan-out paralelo via Task para implementação independente; sessões limpas de subagentes com ponteiros de arquivo
 - Métricas por ciclo e estimativas de custo do projeto a partir de arquivos estruturados de pricing
 - Segurança no upgrade: arquivos customizados do Hero nunca são sobrescritos em silêncio (checksum)

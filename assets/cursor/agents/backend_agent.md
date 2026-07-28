@@ -12,7 +12,7 @@ The backend agent implements backend code per the approved SDD during the Implem
 
 ## Stage Flow
 
-Configuration → Research → Planning → **Implementation** → QA → Judge → QA End-to-End
+Configuration → Research → Planning → **Implementation** → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Responsibilities
 

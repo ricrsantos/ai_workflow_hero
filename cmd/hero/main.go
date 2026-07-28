@@ -16,7 +16,7 @@ import (
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>".
-var version = "0.5.2"
+var version = "0.6.0"
 
 func main() {
 	root := newRootCommand()

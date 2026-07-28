@@ -30,7 +30,7 @@ func TestAssets_AgentInventory(t *testing.T) {
 	agents := []string{
 		"orchestration_agent", "discover_agent", "planning_agent", "context_agent",
 		"backend_agent", "frontend_agent", "generic_agent",
-		"qa_agent", "judge_agent", "end2end_qa_agent",
+		"qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent",
 	}
 
 	for _, agent := range agents {
@@ -142,7 +142,7 @@ func TestAssets_OneFilePerCommand(t *testing.T) {
 	}
 }
 
-// TestAssets_OneFilePerAgent verifies agent count matches ADR-011 (10 agents).
+// TestAssets_OneFilePerAgent verifies agent count matches ADR-011 (11 agents).
 func TestAssets_OneFilePerAgent(t *testing.T) {
 	count := 0
 	_ = fs.WalkDir(assets.FS, "cursor/agents", func(path string, d fs.DirEntry, err error) error {
@@ -152,8 +152,8 @@ func TestAssets_OneFilePerAgent(t *testing.T) {
 		count++
 		return nil
 	})
-	if count != 10 {
-		t.Errorf("expected 10 agent files, got %d", count)
+	if count != 11 {
+		t.Errorf("expected 11 agent files, got %d", count)
 	}
 }
 
@@ -190,6 +190,42 @@ func TestAssets_WorkflowConfigUsePlaywright(t *testing.T) {
 		if !strings.Contains(content, kw) {
 			t.Errorf("workflow-config.yml template missing %q", kw)
 		}
+	}
+}
+
+// TestAssets_WorkflowConfigBrowserUIValidation verifies browser_ui_validation stage + agent + scope gate.
+func TestAssets_WorkflowConfigBrowserUIValidation(t *testing.T) {
+	data, err := fs.ReadFile(assets.FS, "templates/workflow-config.yml")
+	if err != nil {
+		t.Fatalf("read workflow-config template: %v", err)
+	}
+	content := string(data)
+	for _, kw := range []string{
+		"browser_ui_validation:",
+		"visual_validation:",
+		"reference_dir: docs/ui/visual_reference",
+		"browser_ui_agent:",
+		"stages.browser_ui_validation.enabled may be true only when scope.frontend is true",
+		"Browser Health always runs",
+	} {
+		if !strings.Contains(content, kw) {
+			t.Errorf("workflow-config.yml template missing %q", kw)
+		}
+	}
+	// Defaults: stage and visual off
+	idx := strings.Index(content, "browser_ui_validation:")
+	if idx < 0 {
+		t.Fatal("browser_ui_validation block missing")
+	}
+	block := content[idx:]
+	if end := strings.Index(block, "\n  qa_end_to_end:"); end > 0 {
+		block = block[:end]
+	}
+	if !strings.Contains(block, "enabled: false") {
+		t.Error("browser_ui_validation should default enabled: false")
+	}
+	if !strings.Contains(block, "visual_validation:") || !strings.Contains(block, "enabled: false") {
+		t.Error("visual_validation should default enabled: false")
 	}
 }
 

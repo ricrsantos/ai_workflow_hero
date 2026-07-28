@@ -52,6 +52,18 @@ stages:
     timeout_minutes: 10
     require_human_approval: false
 
+  browser_ui_validation:
+    enabled: false
+    purpose: Validate browser UI health (render, console, network/CSS) and optional visual comparison.
+    max_iterations: 2
+    timeout_minutes: 15
+    require_human_approval: true
+    # Visual Validation runs only after Browser Health passes.
+    # Health has no separate toggle — it always runs when this stage is enabled.
+    visual_validation:
+      enabled: false
+      reference_dir: docs/ui/visual_reference
+
   qa_end_to_end:
     enabled: true
     purpose: Validate the complete feature end-to-end.
@@ -60,7 +72,7 @@ stages:
     require_human_approval: true
     # When true and scope.frontend is true, end2end_qa_agent uses Playwright
     # for browser journeys. Must be false when scope.frontend is false
-    # (direct HTTP calls only).
+    # (direct HTTP calls only). Independent of browser_ui_validation.
     use_playwright: false
 
 agents:
@@ -106,6 +118,12 @@ agents:
     enable_fast_model: false
     thinking: false
 
+  browser_ui_agent:
+    model: claude-sonnet-5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: false
+
   end2end_qa_agent:
     model: claude-4.6-sonnet
     reasoning_effort: medium
@@ -117,6 +135,8 @@ workflow_rules:
   - Do not start implementation until the PRD has been approved, if the research stage is enabled.
   - If the research stage is disabled, require the objective field above to be well described and ask the user for explicit scope confirmation before starting implementation.
   - At least one of the five scope fields must be true when implementation is enabled.
+  - stages.browser_ui_validation.enabled may be true only when scope.frontend is true; otherwise block and ask for correction.
+  - When Browser UI Validation is enabled, Browser Health always runs (Playwright required at execution); Visual Validation runs only when visual_validation.enabled is true and only after Health passes.
   - stages.qa_end_to_end.use_playwright may be true only when scope.frontend is true; otherwise block and ask for correction.
   - When use_playwright is true, end2end_qa_agent uses Playwright; when false, it uses direct HTTP calls.
   - Do not change the architecture without an approved ADR.

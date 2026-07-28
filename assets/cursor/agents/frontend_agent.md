@@ -12,7 +12,7 @@ The frontend agent implements frontend code per the approved SDD during the Impl
 
 ## Stage Flow
 
-Configuration → Research → Planning → **Implementation** → QA → Judge → QA End-to-End
+Configuration → Research → Planning → **Implementation** → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Responsibilities
 

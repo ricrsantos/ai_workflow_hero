@@ -32,7 +32,7 @@ Core ideas:
 Stage flow:
 
 ```text
-Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
+Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 ```
 
 **Configuration** always runs implicitly and is not toggleable. Every other stage is configured in `workflow-config.yml`.
@@ -47,7 +47,7 @@ During a cycle, Hero (via Runtime agents) typically:
 - **Plans** an OpenSpec SDD with ordered, testable tasks.
 - **Implements** via scope-routed agents (`backend` / `frontend` / `generic`), with parallel Task fan-out when tasks are independent.
 - **Requires application logging** on new/changed code: levels `error`, `info`, `debug`; **default level `info`**.
-- **Validates** with QA (tests, lint, build, architecture consistency, **logging checks**), Judge (SDD coverage), and End-to-End (HTTP or optional Playwright).
+- **Validates** with QA (tests, lint, build, architecture consistency, **logging checks**), Judge (SDD coverage), optional **Browser UI Validation** (Playwright Health + optional Visual vs PNG refs), and End-to-End (HTTP or optional Playwright journeys).
 - **Tracks metrics** (estimated tokens/cost per stage) and updates context compression files.
 - **Protects secrets** softly: prefer `.env.example`; never commit real secrets.
 
@@ -180,7 +180,8 @@ In the new chat, **select the IDE agent/model you want as the Hero orchestrator 
 | `fallback_model` | Used when an agent’s model is unavailable (`model`, `reasoning_effort`, `enable_fast_model`, `thinking`) |
 | `scope` | Booleans: `backend`, `frontend`, `native`, `script`, `infrastructure` (at least one must be true when Implementation is enabled) |
 | `stages.*` | Per stage: `enabled`, `purpose`, `max_iterations`, `timeout_minutes`, `require_human_approval` |
-| `stages.qa_end_to_end.use_playwright` | `true` → Playwright (requires `scope.frontend: true`); `false` → direct HTTP |
+| `stages.browser_ui_validation` | Default `enabled: false`. Requires `scope.frontend: true` when enabled. Always runs **Browser Health** (Playwright). Optional nested `visual_validation.enabled` + `visual_validation.reference_dir` (default `docs/ui/visual_reference`) |
+| `stages.qa_end_to_end.use_playwright` | `true` → Playwright journeys (requires `scope.frontend: true`); `false` → direct HTTP. Independent of Browser UI Validation |
 | `agents.*` | Per-agent model settings |
 | `workflow_rules` | Guardrails the orchestrator must follow |
 
@@ -192,14 +193,27 @@ In the new chat, **select the IDE agent/model you want as the Hero orchestrator 
 | `frontend` | `frontend_agent` |
 | `native` / `script` / `infrastructure` | `generic_agent` |
 
-### 8.3 Approval and control
+### 8.3 Browser UI Validation
+
+When `stages.browser_ui_validation.enabled: true` (requires `scope.frontend: true`):
+
+1. **Browser Health** always runs via `browser_ui_agent` + Playwright: open app, render check, console errors, failed network (CSS/JS/images/fonts/APIs), CSS load. Desktop viewport 1280. Playwright missing at execution → Health failure → fix loop to `frontend_agent`.
+2. **Visual Validation** runs only if Health passed **and** `visual_validation.enabled: true`. Agent captures screenshots at 1280 / 768 / 375 and compares with agent vision against PNGs named `<screen-id>.png` under `reference_dir`. Missing PNG → warn and continue (not a failure). Empty/missing dir → one warning, skip Visual.
+3. Artifacts: `.workflow-hero/cycles/current/browser-ui/` (`health-report.md`, `screenshots/`, optional `visual-report.md`). User reference PNGs are never overwritten.
+4. Failure routing: asset/console/render/visual → `frontend_agent`; clearly classified API failures → `backend_agent`.
+
+Prerequisite: install/configure Playwright in the **consumer project** (Hero does not auto-install it).
+
+QA End-to-End Playwright journeys (`use_playwright`) remain separate business flows.
+
+### 8.4 Approval and control
 
 - `require_human_approval: true` → stage waits for `/hero:approve`, `/hero:reject`, `/hero:cancel`, or `/hero:finish`.
 - `require_human_approval: false` → stage auto-advances after summary (you can still interrupt before the next stage starts).
 - Iteration/timeout exhaustion → escalates; grant more work with `/hero:continue`.
 - Judge finds SDD ambiguity → `/hero:back` (reopen Planning) or `/hero:approve` (accept as-is).
 
-### 8.4 Model fallback
+### 8.5 Model fallback
 
 1. Agent’s configured model  
 2. Top-level `fallback_model` (user is always warned)  
@@ -268,6 +282,7 @@ hero update-models
 | `generic_agent` | Native / script / infrastructure + logging standard |
 | `qa_agent` | Tests, coverage, lint, build, architecture, **logging checks** |
 | `judge_agent` | SDD requirement coverage only |
+| `browser_ui_agent` | Browser Health (Playwright) + optional Visual vs PNG refs |
 | `end2end_qa_agent` | End-to-end journeys (HTTP or Playwright) |
 
 ---
@@ -367,7 +382,7 @@ Ideias centrais:
 Fluxo de stages:
 
 ```text
-Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
+Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 ```
 
 **Configuration** sempre roda e não é configurável. Os demais stages ficam em `workflow-config.yml`.
@@ -382,7 +397,7 @@ Em um ciclo, o Hero (via Runtime) tipicamente:
 - **Planeja** um SDD OpenSpec com tarefas ordenadas e testáveis.
 - **Implementa** com agentes por scope, com fan-out paralelo quando possível.
 - **Exige logging** em código novo/alterado: `error`, `info`, `debug`; **nível padrão `info`**.
-- **Valida** com QA (incluindo checagem de logs), Judge (cobertura da SDD) e End-to-End (HTTP ou Playwright opcional).
+- **Valida** com QA (incluindo checagem de logs), Judge (cobertura da SDD), **Browser UI Validation** opcional (Health Playwright + Visual vs PNGs) e End-to-End (HTTP ou jornadas Playwright opcionais).
 - Registra **métricas** e atualiza compressão de contexto.
 - Protege **secrets** de forma suave (`.env.example`; nunca commit de segredos reais).
 
@@ -470,7 +485,7 @@ Atualiza assets com proteção por checksum (customizações locais não são so
 
 Após o `/hero:init`, prefira um chat limpo para o `/hero:start` (orientação soft) — evita carregar grilling/Q&A da configuração na janela de contexto. No chat novo, escolha o agente/modelo da sessão IDE que fará o papel de orchestrator / grill-me antes de iniciar.
 
-Configure `scope`, `stages`, `agents`, `fallback_model` e `stages.qa_end_to_end.use_playwright` conforme a seção em inglês (§8) — os campos são os mesmos.
+Configure `scope`, `stages`, `agents`, `fallback_model`, `stages.browser_ui_validation` e `stages.qa_end_to_end.use_playwright` conforme a seção em inglês (§8) — os campos são os mesmos. Browser UI Validation exige Playwright no projeto consumidor; artefatos em `.workflow-hero/cycles/current/browser-ui/`.
 
 ---
 
@@ -488,7 +503,7 @@ Configure `scope`, `stages`, `agents`, `fallback_model` e `stages.qa_end_to_end.
 
 ## 11. Agentes, documentos, arquitetura e logs
 
-- **Agentes:** orquestração, discovery (Research + docs), planning (OpenSpec), context, backend/frontend/generic (implementação + logs), QA (inclui logs), Judge, End-to-End.
+- **Agentes:** orquestração, discovery (Research + docs), planning (OpenSpec), context, backend/frontend/generic (implementação + logs), QA (inclui logs), Judge, Browser UI Validation (`browser_ui_agent`), End-to-End.
 - **Documentos:** PRD/ADR/UI/DEPLOY/TESTING; ADRs definem arquitetura.
 - **Logs:** `error` / `info` / `debug`, default `info`; QA falha se o padrão não for seguido.
 - **Secrets:** só `.env.example` no git; valores reais em `.env` local.

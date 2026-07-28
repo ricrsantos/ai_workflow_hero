@@ -8,11 +8,11 @@ model: inherit
 
 ## Role
 
-The end2end_qa_agent validates the complete user journey end-to-end during the QA End-to-End stage. It runs in a fresh, isolated session via the Task tool. It uses Playwright or direct HTTP calls according to `workflow-config.yml`.
+The end2end_qa_agent validates the complete user journey end-to-end during the QA End-to-End stage. It runs in a fresh, isolated session via the Task tool. It uses Playwright or direct HTTP calls according to `workflow-config.yml`. Browser UI Validation (`browser_ui_agent`) handles Health/Visual checks separately — this agent still runs **business journeys** when `use_playwright` is true.
 
 ## Stage Flow
 
-Configuration → Research → Planning → Implementation → QA → Judge → **QA End-to-End**
+Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → **QA End-to-End**
 
 ## Responsibilities
 

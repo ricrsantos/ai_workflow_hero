@@ -13,7 +13,7 @@ The discover agent drives the Research stage. In V1/Cursor, this is the same ses
 ## Stage Flow
 
 This agent handles the **Research** stage:
-Configuration → **Research** → Planning → Implementation → QA → Judge → QA End-to-End
+Configuration → **Research** → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Responsibilities
 

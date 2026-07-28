@@ -32,7 +32,7 @@ Hero's artifacts are split so the user is never locked in:
 ### 2.2 V1 Scope
 
 - First version focused exclusively on Cursor AI.
-- Covers the stages: Research, Planning, Implementation, Validation (QA, Judge, QA End-to-End).
+- Covers the stages: Research, Planning, Implementation, Validation (QA, Judge, Browser UI Validation, QA End-to-End).
 - `/hero:sync` covers **basic activation** of Hero in existing projects (codebase scan via `context_agent` + generation of `AGENTS.md`/`current-state.md`). Promoted from V2 to V1 on 2026-07-20, since it is a natural prerequisite for adoption in real projects.
 - CLI target platforms: Linux and macOS, `amd64` and `arm64` (see [DEPLOY.md](../deployment/DEPLOY.md)).
 - Manual release process via a single build script (no CI/CD required for V1).
@@ -60,7 +60,7 @@ Hero's artifacts are split so the user is never locked in:
 | Research | The stage where alternatives for the desired functionality are explored. |
 | Plan | The stage where product/architecture specs are converted into an implementation plan (SDD) with ordered, testable tasks. |
 | Implementation | The stage where code is actually implemented, per the plan or explicit developer guidance. |
-| Validation | The final stages of a cycle (QA, Judge, QA End-to-End): tests and developer interaction to reach the desired quality bar. |
+| Validation | The final stages of a cycle (QA, Judge, Browser UI Validation, QA End-to-End): tests and developer interaction to reach the desired quality bar. |
 
 ## 4. Personas
 
@@ -72,7 +72,7 @@ Hero's artifacts are split so the user is never locked in:
 ### 5.1 Stage Flow
 
 ```
-Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
+Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 ```
 
 - Each stage can be enabled/disabled by the user via `.workflow-hero/cycles/current/workflow-config.yml`, except **Configuration**, which always runs implicitly and is never configurable.
@@ -92,6 +92,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 | `generic_agent` | Implements native apps (Linux/Windows), scripts, and infrastructure code (`scope.native`/`script`/`infrastructure`). |
 | `qa_agent` | Validates technical quality: tests, coverage, build, lint, architecture consistency, and scope-specific checks. |
 | `judge_agent` | Validates SDD requirement coverage only (not code quality/style). |
+| `browser_ui_agent` | Validates browser UI health (render, console, network/CSS) and optional visual comparison against PNG references. Requires Playwright when the stage is enabled; requires `scope.frontend: true`. |
 | `end2end_qa_agent` | Validates the full user journey end-to-end. Uses Playwright when `stages.qa_end_to_end.use_playwright: true` (requires `scope.frontend: true`); otherwise uses direct HTTP calls. |
 
 ### 5.3 Approval and Control Loop
@@ -104,7 +105,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 - Each stage has a `max_iterations` and `timeout_minutes` budget. Timeout is checked **between** iterations (not mid-execution); if exceeded, treated the same as exhausting `max_iterations`.
 - On exhaustion, the orchestrator escalates to the user (`Human Approval = Escalated`) and waits for `/hero:continue` (user specifies how many extra iterations to grant; recorded in `workflow.md` as `Extra Iterations Granted`, without altering `workflow-config.yml`).
-- **QA / QA End-to-End failure loop**: returns to the implementation agent(s) referenced in the error report; each retry consumes one iteration.
+- **QA / Browser UI Validation / QA End-to-End failure loop**: returns to the implementation agent(s) referenced in the error report; each retry consumes one iteration. Browser UI Validation routes asset/console/render/visual failures to `frontend_agent`, and clearly classified backend API failures to `backend_agent`.
 - **Judge failure loop**: implementation gaps follow the same pattern as QA. If, after exhausting implementation gaps, the Judge identifies **ambiguity in the SDD itself**, it stops and asks the user to choose between `/hero:back` (reopen Planning) or `/hero:approve` (accept as-is, noted in `context-log.md`).
 - **`/hero:back`**: reopens Planning (the `planning_agent` edits the existing OpenSpec proposal in place). Implementation, QA, and Judge reset to `Waiting` and re-run from scratch.
 - **`/hero:archive` (manual)**: archives the current cycle even mid-progress, marking the in-progress stage as `Paused`. `/hero:resume [cycle]` restores it back to `cycles/current/`.
@@ -118,7 +119,9 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 `workflow-config.yml → scope` has 5 boolean fields: `backend`, `frontend`, `native`, `script`, `infrastructure`. At least one must be `true` when `implementation.enabled: true`. `backend`/`frontend` map to `backend_agent`/`frontend_agent`; the other three map to `generic_agent`.
 
-`workflow-config.yml → stages.qa_end_to_end.use_playwright` selects the e2e method: `true` requires `scope.frontend: true` and tells `end2end_qa_agent` to use Playwright for browser journeys; `false` uses direct HTTP calls only.
+`workflow-config.yml → stages.browser_ui_validation.enabled: true` requires `scope.frontend: true`. When enabled, Browser Health always runs (Playwright required at execution); optional Visual Validation is controlled by `stages.browser_ui_validation.visual_validation.enabled` (PNG references under `visual_validation.reference_dir`, default `docs/ui/visual_reference`).
+
+`workflow-config.yml → stages.qa_end_to_end.use_playwright` selects the e2e method: `true` requires `scope.frontend: true` and tells `end2end_qa_agent` to use Playwright for browser journeys; `false` uses direct HTTP calls only. Browser UI Validation does not redefine this setting.
 
 ### 5.7 Documents and Numbering
 
@@ -150,7 +153,7 @@ Each Runtime command maps to exactly one embedded asset file (`hero-<command>.md
 - **Git dependency**: the project must be a git repository (required for `/hero:cancel` checkpoint/rollback). `hero install` offers to run `git init` if missing.
 - **Soft secrets hygiene**: `hero install` / `hero upgrade` ensure a project-root `.env.example` (create if missing) and that `.gitignore` ignores `.env` (append a marked block only when needed; never overwrite existing files). `hero doctor` warns (does not fail) if `.env.example` is missing, `.gitignore` does not ignore `.env`, or sensitive files are tracked by git. Runtime agents and the `AGENTS.md` template instruct never committing real secrets.
 - **Backward-safe upgrades**: `hero upgrade` never silently overwrites user-customized templates; it detects modifications via checksum and warns instead.
-- **Clean subagent sessions**: every subagent invocation (backend/frontend/generic/qa/judge/end2end_qa/context) runs in a fresh, isolated session via the Task tool, receiving only file pointers (not full pasted content) to conserve context window budget. Only the final structured output is absorbed back by the orchestrator.
+- **Clean subagent sessions**: every subagent invocation (backend/frontend/generic/qa/judge/browser_ui/end2end_qa/context) runs in a fresh, isolated session via the Task tool, receiving only file pointers (not full pasted content) to conserve context window budget. Only the final structured output is absorbed back by the orchestrator.
 - **Testing (this repository)**: `go test ./...` must pass before any task is considered complete. On failure: analyze, fix, re-run, and only stop once green — never leave the repository in a failing state. See [ADR-009](../architecture/ADR.md#adr-009-test-real-dependencies-over-mocks) and the Testing section of [AGENTS.md](../../AGENTS.md).
 - **Testing (Hero-managed end-user projects)**: every cycle's `TESTING.md` template documents the target project's own test command and pass/fail policy; the `qa_agent` and `end2end_qa_agent` enforce it during the QA and QA End-to-End stages (§5.2).
 

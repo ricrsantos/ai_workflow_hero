@@ -8,7 +8,7 @@ This skill is automatically active when working within a Hero-managed project.
 
 ## Stage Flow
 
-Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
+Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Clean Session Handoff
 
@@ -26,9 +26,10 @@ Every stage closes with the same sequence (PRD §5.3):
 
 ## Key References
 
-- `.workflow-hero/cycles/current/workflow-config.yml` — cycle configuration (`scope`, stages, agents, `stages.qa_end_to_end.use_playwright`)
+- `.workflow-hero/cycles/current/workflow-config.yml` — cycle configuration (`scope`, stages, agents, `stages.browser_ui_validation`, `stages.qa_end_to_end.use_playwright`)
 - `.workflow-hero/cycles/current/workflow.md` — current stage status
 - `.workflow-hero/cycles/current/metrics.md` — per-cycle token/cost estimates
+- `.workflow-hero/cycles/current/browser-ui/` — Browser UI Validation artifacts (when that stage runs)
 - `.workflow-hero/metrics-summary.md` — project-wide aggregated metrics
 - `.workflow-hero/models/*.yml` — model pricing (`unit: per_1m_tokens`)
 - `.workflow-hero/config/project.json` — project identity

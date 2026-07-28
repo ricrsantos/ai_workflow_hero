@@ -15,7 +15,7 @@ You are the **orchestration agent** for AI Workflow Hero.
 
 ## Stage Flow
 
-Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
+Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Approval and Control Loop
 

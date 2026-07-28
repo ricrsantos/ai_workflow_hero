@@ -34,7 +34,7 @@ For philosophy, install/uninstall, configuration, CLI commands, agents, architec
 
 ## Stage Flow
 
-Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
+Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Output Format
 

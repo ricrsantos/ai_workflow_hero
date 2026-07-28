@@ -12,7 +12,7 @@ The orchestration agent is the main session agent for Hero. It coordinates all d
 
 ## Stage Flow
 
-Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
+Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Responsibilities
 
@@ -38,12 +38,22 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 - Check timeouts between iterations (not mid-execution).
 - On exhaustion, set Human Approval = Escalated, wait for /hero:continue.
-- QA/QA End-to-End failures loop back to implementation agents.
+- QA / Browser UI Validation / QA End-to-End failures loop back to implementation agents.
+- Browser UI Validation: Health failure skips Visual; route `failure_class: frontend` → `frontend_agent`, `failure_class: backend` → `backend_agent`. Visual failures → `frontend_agent`. Missing PNG refs are warnings, not failures.
 - Judge SDD ambiguity → offer /hero:back or /hero:approve.
 
 ## Scope Routing
 
 `workflow-config.yml → scope` maps backend/frontend to backend_agent/frontend_agent; native/script/infrastructure map to generic_agent.
+
+## Browser UI Validation Gates
+
+Before dispatching `browser_ui_agent`, validate `stages.browser_ui_validation`:
+
+- `enabled: true` is allowed only when `scope.frontend: true`. Otherwise block and ask the user to correct `workflow-config.yml`.
+- When enabled, always run Browser Health (Playwright required at execution). Playwright absence is a Health failure → frontend loop.
+- Run Visual Validation only when `visual_validation.enabled` is true **and** Browser Health passed.
+- Artifacts live under `.workflow-hero/cycles/current/browser-ui/`.
 
 ## QA End-to-End Playwright Selection
 
@@ -52,7 +62,7 @@ Before dispatching `end2end_qa_agent`, validate `stages.qa_end_to_end.use_playwr
 - `use_playwright: true` is allowed only when `scope.frontend: true`. Otherwise block and ask the user to correct `workflow-config.yml`.
 - When `use_playwright: true` (and frontend in scope), the agent runs Playwright browser journeys.
 - When `use_playwright: false`, the agent uses direct HTTP calls only (even if `scope.frontend` is true).
-
+- Enabling Browser UI Validation does **not** disable or redefine `use_playwright` journey semantics.
 ## Implementation Parallelism
 
 During the Implementation stage:

@@ -80,7 +80,7 @@ Only purely administrative commands may have equivalents in both (e.g. `hero sta
 
 **Context**: One of Hero's global goals is reducing token costs. Passing full conversational history and pasted file contents to every subagent invocation (backend_agent, qa_agent, etc.) wastes context window and money, and can leak irrelevant reasoning between agents with very different responsibilities.
 
-**Decision**: Invoke every subagent (`backend_agent`, `frontend_agent`, `generic_agent`, `qa_agent`, `judge_agent`, `end2end_qa_agent`, `context_agent`) via the IDE's Task tool, in a **fresh, isolated session** that does not inherit the orchestrator's chat history. Subagents receive **file pointers** (paths to `AGENTS.md`, `current-state.md`, the relevant SDD/tasks) instead of pasted content. The orchestrator absorbs back only the subagent's final structured output (its documented "Output Format" section), not its intermediate reasoning. The `orchestration_agent`'s own main session remains continuous across the whole cycle — only subagents are session-scoped per call.
+**Decision**: Invoke every subagent (`backend_agent`, `frontend_agent`, `generic_agent`, `qa_agent`, `judge_agent`, `browser_ui_agent`, `end2end_qa_agent`, `context_agent`) via the IDE's Task tool, in a **fresh, isolated session** that does not inherit the orchestrator's chat history. Subagents receive **file pointers** (paths to `AGENTS.md`, `current-state.md`, the relevant SDD/tasks) instead of pasted content. The orchestrator absorbs back only the subagent's final structured output (its documented "Output Format" section), not its intermediate reasoning. The `orchestration_agent`'s own main session remains continuous across the whole cycle — only subagents are session-scoped per call.
 
 **Model selection**: Agent `.md` files use Cursor YAML frontmatter with `model: inherit` (plus `name` / `description`). The **effective** model is not taken from frontmatter; the orchestrator must pass the Task tool `model` parameter from `workflow-config.yml` → `agents.<name>.model` on every invocation (including nested fan-out), applying `enable_fast_model` / `reasoning_effort` / `thinking` as **kebab Task slugs** (e.g. `cursor-grok-4.5-high`, `composer-2.5-fast`, `claude-sonnet-5-medium`) — **not** bracket options like `id[fast=false,effort=high]` (Cursor Task rejects brackets in current IDE versions). On fallback, read `fallback_model.*` with the same kebab rules. Omitting Task `model` incorrectly inherits the orchestrator session model. Fallback remains ADR-008. Cursor may still override unavailable or plan-restricted models; Hero cannot bypass IDE limits. When looking up pricing in `models/*.yml`, match the resolved slug or strip known suffixes (`-thinking`, `-fast`, `-high`, `-medium`, `-low`) to find a base rate entry.
 
@@ -165,7 +165,7 @@ Only purely administrative commands may have equivalents in both (e.g. `hero sta
 **Decision**: Every Runtime slash command has exactly one corresponding asset file named `hero-<command>.md` in `.cursor/commands/`, and every agent has exactly one `<agent_name>.md` file in `.cursor/agents/`. The full V1 lists are:
 
 - **Runtime command files** (13): `hero-init.md`, `hero-start.md`, `hero-approve.md`, `hero-reject.md`, `hero-cancel.md`, `hero-finish.md`, `hero-archive.md`, `hero-resume.md`, `hero-sync.md`, `hero-status.md`, `hero-help.md`, `hero-continue.md`, `hero-back.md`.
-- **Agent files** (10): `orchestration_agent.md`, `discover_agent.md`, `planning_agent.md`, `context_agent.md`, `backend_agent.md`, `frontend_agent.md`, `generic_agent.md`, `qa_agent.md`, `judge_agent.md`, `end2end_qa_agent.md`.
+- **Agent files** (11): `orchestration_agent.md`, `discover_agent.md`, `planning_agent.md`, `context_agent.md`, `backend_agent.md`, `frontend_agent.md`, `generic_agent.md`, `qa_agent.md`, `judge_agent.md`, `browser_ui_agent.md`, `end2end_qa_agent.md`.
 
 Every agent file is self-sufficient (per ADR-005): it documents its Role, Responsibilities, Rules, and an explicit Output Format section, since the agent starts each invocation with no prior chat context.
 
@@ -339,6 +339,18 @@ stages:
     timeout_minutes: 10
     require_human_approval: false
 
+  browser_ui_validation:
+    enabled: false
+    purpose: Validate browser UI health (render, console, network/CSS) and optional visual comparison.
+    max_iterations: 2
+    timeout_minutes: 15
+    require_human_approval: true
+    # Visual Validation runs only after Browser Health passes.
+    # Health has no separate toggle — it always runs when this stage is enabled.
+    visual_validation:
+      enabled: false
+      reference_dir: docs/ui/visual_reference
+
   qa_end_to_end:
     enabled: true
     purpose: Validate the complete feature end-to-end.
@@ -347,7 +359,7 @@ stages:
     require_human_approval: true
     # When true and scope.frontend is true, end2end_qa_agent uses Playwright
     # for browser journeys. Must be false when scope.frontend is false
-    # (direct HTTP calls only).
+    # (direct HTTP calls only). Independent of browser_ui_validation.
     use_playwright: false
 
 agents:
@@ -393,6 +405,12 @@ agents:
     enable_fast_model: false
     thinking: false
 
+  browser_ui_agent:
+    model: claude-sonnet-5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: false
+
   end2end_qa_agent:
     model: claude-4.6-sonnet
     reasoning_effort: medium
@@ -404,6 +422,8 @@ workflow_rules:
   - Do not start implementation until the PRD has been approved, if the research stage is enabled.
   - If the research stage is disabled, require the `objective` field above to be well described and ask the user for explicit scope confirmation before starting implementation.
   - At least one of the five `scope` fields must be true when implementation is enabled.
+  - `stages.browser_ui_validation.enabled` may be true only when `scope.frontend` is true; otherwise block and ask for correction.
+  - When Browser UI Validation is enabled, Browser Health always runs (Playwright required at execution); Visual Validation runs only when `visual_validation.enabled` is true and only after Health passes.
   - `stages.qa_end_to_end.use_playwright` may be true only when `scope.frontend` is true; otherwise block and ask for correction.
   - When `use_playwright` is true, `end2end_qa_agent` uses Playwright; when false, it uses direct HTTP calls.
   - Do not change the architecture without an approved ADR.

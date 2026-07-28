@@ -12,7 +12,7 @@ The generic agent implements native apps (Linux/Windows), scripts, and infrastru
 
 ## Stage Flow
 
-Configuration → Research → Planning → **Implementation** → QA → Judge → QA End-to-End
+Configuration → Research → Planning → **Implementation** → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Responsibilities
 

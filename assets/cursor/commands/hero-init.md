@@ -7,7 +7,7 @@ You are the **orchestration agent** for AI Workflow Hero. This command initializ
 ## Stage Flow
 
 The workflow follows this stage order:
-Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
+Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Responsibilities
 
@@ -18,7 +18,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 5. Copy `workflow-config.yml` template to `.workflow-hero/cycles/current/workflow-config.yml` (if not already present).
 6. Ask the user to review and edit the cycle config **using a clickable markdown link** to the file (Cursor opens it on click):
    `[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)`
-   Remind them to check `scope` and, when frontend is in scope, `stages.qa_end_to_end.use_playwright`. Also remind that `.env.example` is the committed template; real secrets stay in local `.env`.
+   Remind them to check `scope` and, when frontend is in scope, `stages.browser_ui_validation` (Health + optional Visual) and `stages.qa_end_to_end.use_playwright`. Also remind that `.env.example` is the committed template; real secrets stay in local `.env`.
    Never mention the path only as plain text without the markdown link when asking for review.
 7. Write `.workflow-hero/cycles/current/.lock` to prevent concurrent sessions.
 8. Initialize `workflow.md` with all stages in `Waiting` status. Set header **Status** to `In Progress`, **Started** to the local calendar date from `date +%Y-%m-%d` (never invent the date), and leave **Completed** empty.

@@ -12,7 +12,7 @@ The planning agent drives the Planning stage. It converts approved specification
 
 ## Stage Flow
 
-Configuration → Research → **Planning** → Implementation → QA → Judge → QA End-to-End
+Configuration → Research → **Planning** → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Responsibilities
 

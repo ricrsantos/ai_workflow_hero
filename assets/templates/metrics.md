@@ -13,6 +13,7 @@
 | Implementation | frontend_agent | — | — | — | — | — |
 | QA | qa_agent | — | — | — | — | — |
 | Judge | judge_agent | — | — | — | — | — |
+| Browser UI Validation | browser_ui_agent | — | — | — | — | — |
 | QA End-to-End | end2end_qa_agent | — | — | — | — | — |
 | **Subtotal** | | | | | | |
 

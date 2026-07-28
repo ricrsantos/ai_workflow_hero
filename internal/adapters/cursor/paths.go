@@ -99,7 +99,7 @@ func RequiredAgentFiles() []string {
 	agents := []string{
 		"orchestration_agent", "discover_agent", "planning_agent", "context_agent",
 		"backend_agent", "frontend_agent", "generic_agent",
-		"qa_agent", "judge_agent", "end2end_qa_agent",
+		"qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent",
 	}
 	files := make([]string, len(agents))
 	for i, agent := range agents {

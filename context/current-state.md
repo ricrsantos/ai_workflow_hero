@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | V1 implementation complete for OpenSpec change `v1-ai-workflow-hero` (`go test ./...` green). Ready to archive the change. |
+| **Phase** | V1 complete; OpenSpec change `browser-ui-validation` implemented (ready to archive). Default CLI version `0.6.0`. |
 
 ## Technology Stack
 
@@ -47,7 +47,7 @@
 - Doctor / status / variables: table default + `--json`; doctor warn-only checks for secrets hygiene (tracked `.env`, missing `.env.example` / `.env` ignore).
 - `update-models`: fetches structured upstream model YAML (HTTP client injectable for tests).
 - Template renderer + inventory / Runtime-semantics asset tests.
-- Embedded Runtime assets: 13 `hero-*.md` commands, 10 agents (Cursor YAML frontmatter with `model: inherit`), skills (`workflow-hero`, `grilling`), templates, 7 model pricing files, bilingual end-user guide (`assets/docs/workflow-help.md`); metrics use executable Metrics Procedure + subagent `input_chars`/`output_chars` contracts; **Model Resolution** builds **kebab Task slugs** from `workflow-config.yml` (`cursor-grok-4.5-high`, not bracket options); **QA End-to-End** selects Playwright via `stages.qa_end_to_end.use_playwright` (requires `scope.frontend`); **Logging standard** — `backend_agent` / `frontend_agent` / `generic_agent` must implement leveled logs (`error`/`info`/`debug`, default `info`); `qa_agent` verifies logging on new/changed code; **Clean Session Handoff** — after `/hero:init`, soft guidance to open a new empty chat, select orchestrator / grill-me agent, then `/hero:start` (disk-only bootstrap).
+- Embedded Runtime assets: 13 `hero-*.md` commands, **11 agents** (incl. `browser_ui_agent`; Cursor YAML frontmatter with `model: inherit`), skills (`workflow-hero`, `grilling`), templates, 7 model pricing files, bilingual end-user guide (`assets/docs/workflow-help.md`); metrics use executable Metrics Procedure + subagent `input_chars`/`output_chars` contracts; **Model Resolution** builds **kebab Task slugs** from `workflow-config.yml`; stage order **QA → Judge → Browser UI Validation → QA End-to-End**; **Browser UI Validation** (`stages.browser_ui_validation`, default off) — Playwright Health + optional Visual vs PNGs (`visual_validation`, default `docs/ui/visual_reference`); requires `scope.frontend`; artifacts under `.workflow-hero/cycles/current/browser-ui/`; **QA End-to-End** Playwright journeys remain via `use_playwright` (distinct); **Logging standard**; **Clean Session Handoff**.
 - `scripts/release.sh` + contract test for artifact naming / platforms / checksums.
 - `scripts/build_dev.sh` for local cross-compiles without a release tag (version `<latest-tag>_<short-commit>`).
 - Integration tests for install/upgrade/uninstall/doctor against `t.TempDir()`.
@@ -55,37 +55,35 @@
 
 ## Pending Features
 
-- Archive OpenSpec change `v1-ai-workflow-hero` (`/opsx:archive`).
-- Optional further enrichment of Runtime narrative prompts (stage flow, approval, metrics procedure, and Task isolation are encoded; metrics estimation remains agent-driven).
+- Archive OpenSpec change `browser-ui-validation` when ready.
+- Tag/publish `v0.6.0` via `./scripts/release.sh`.
+- Optional further enrichment of Runtime narrative prompts.
+- Other post-V1 / V2 priorities not yet selected (see PRD §2.3).
 
 ## Recent Decisions
 
+- Browser UI Validation (2026-07-28): new stage after Judge; Health always-on when enabled; Visual optional (agent vision); no `base_url`/`screens.yml`; failure routing front/back; SemVer `0.6.0`.
 - Clickable chat links (2026-07-28): init review and metrics summaries must use markdown `[path](path)` so Cursor opens the file on click.
 - Archive folder date (2026-07-28): `C<N>-YYYY-MM-DD-<slug>` uses `workflow.md` **Completed** (set on `/hero:finish` via `date +%Y-%m-%d`), not a guessed “today”.
-- Task Model Resolution (2026-07-28): Cursor Task rejects bracket slugs (`id[fast=…,effort=…]`); Hero builds kebab variants (`cursor-grok-4.5-high`). Pricing: `cursor-grok-4.5` / `cursor-grok-4.5-high` in `cursor.yml` (same rates as `xai.yml` → `grok-4.5`).
-- Clean Session Handoff (2026-07-28): after `/hero:init`, soft guidance to open a new empty chat, select orchestrator / grill-me agent, then `/hero:start`; start bootstraps from disk only.
+- Task Model Resolution (2026-07-28): Cursor Task rejects bracket slugs; Hero builds kebab variants (`cursor-grok-4.5-high`).
+- Clean Session Handoff (2026-07-28): after `/hero:init`, soft guidance to open a new empty chat, then `/hero:start`.
 - Go module path: `github.com/ricrsantos/ai_workflow_hero` (from git remote).
-- Interactive prompts: `charmbracelet/huh` (not survey).
-- OpenSpec change `v1-ai-workflow-hero` implemented; all 42 tasks marked complete; `go test ./...` green.
-- Subagent models: agent frontmatter stays `inherit`; effective model is Task `model` from per-cycle `workflow-config.yml` (ADR-005 / ADR-008). Fallback uses top-level `fallback_model` block (not `generic_model`). UI may still show Inherit; execution must pass Task `model`.
-- QA End-to-End Playwright is opt-in via `stages.qa_end_to_end.use_playwright` (default `false`); requires `scope.frontend: true`.
-- Soft secrets hygiene: commit `.env.example` only; real values in local `.env`; doctor warns, does not block.
-- Runtime logging standard for consumer projects: implementation agents add `error`/`info`/`debug` logs (default `info`); `qa_agent` fails the stage when logging is missing or incorrect on new/changed paths.
-- CLI default version `0.5.2` (release.sh hardening: exact tag required, no `dev` fallback).
-- First release tag `v0.5.0` pushed; `v0.5.1` published on GitHub Releases; default bumped to `0.5.2` with Runtime UX/model fixes.
+- Subagent models: agent frontmatter stays `inherit`; effective model is Task `model` from per-cycle `workflow-config.yml` (ADR-005 / ADR-008).
+- Soft secrets hygiene: commit `.env.example` only; doctor warns, does not block.
+- CLI default version `0.6.0`.
 
 ## Known Technical Debt
 
-- Runtime asset prompts remain concise; fuller narrative prompts from `docs/idea/ai_workflow_hero.md` can be deepened later without changing CLI APIs. Metrics now have an executable Metrics Procedure + subagent `input_chars`/`output_chars` contract (still agent-estimated, not API usage).
-- Cursor may still override Task/`frontmatter` models on some plans (known IDE limits); Hero cannot bypass that from Runtime prompts alone.
-- `update-models` upstream URL assumes `main` branch raw assets on this GitHub repo; first publish must keep that layout stable.
+- Runtime asset prompts remain concise; fuller narrative prompts from `docs/idea/ai_workflow_hero.md` can be deepened later without changing CLI APIs. Metrics still agent-estimated, not API usage.
+- Cursor may still override Task/`frontmatter` models on some plans (known IDE limits).
+- `update-models` upstream URL assumes `main` branch raw assets on this GitHub repo.
 - Global `--verbose`/`--debug` are registered but not yet wired into panic/stack-trace printing paths.
 
 ## Next Steps
 
-1. Archive `v1-ai-workflow-hero` with `/opsx:archive`.
-2. Tag `v0.1.0` (or `v1.0.0`) and run `./scripts/release.sh`.
-3. Optionally deepen Runtime prompt content.
+1. Archive OpenSpec change `browser-ui-validation` (`/opsx:archive`).
+2. Tag/publish `v0.6.0` via `./scripts/release.sh`.
+3. Optionally deepen other Runtime prompt content.
 
 ---
 

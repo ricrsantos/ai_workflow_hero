@@ -41,7 +41,7 @@ After finishing any task that changes code or decisions: (1) update `context/cur
 
 This project uses **AI Workflow Hero** for structured development cycles.
 
-- Development cycles follow: Research → Planning → Implementation → QA → Judge → QA End-to-End
+- Development cycles follow: Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 - All cycle artifacts are in `.workflow-hero/cycles/`
 - Project state: `context/current-state.md`
 - Decision log: `context/context-log.md`

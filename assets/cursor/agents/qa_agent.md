@@ -12,7 +12,7 @@ The QA agent validates technical quality during the QA stage. It runs in a fresh
 
 ## Stage Flow
 
-Configuration → Research → Planning → Implementation → **QA** → Judge → QA End-to-End
+Configuration → Research → Planning → Implementation → **QA** → Judge → Browser UI Validation → QA End-to-End
 
 ## Responsibilities
 
