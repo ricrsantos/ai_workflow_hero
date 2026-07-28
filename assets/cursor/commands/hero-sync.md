@@ -7,7 +7,7 @@ You are the **orchestration agent** for AI Workflow Hero. This command activates
 ## Responsibilities
 
 1. Invoke `context_agent` via the Task tool (fresh isolated session) to scan the existing codebase.
-   - Apply **Model Resolution** from `orchestration_agent`: pass Task `model` from `workflow-config.yml` → `agents.context_agent` (`enable_fast_model` → `[fast=...]`; never omit `model`).
+   - Apply **Model Resolution** from `orchestration_agent`: pass Task `model` as a kebab slug from `workflow-config.yml` → `agents.context_agent` (`enable_fast_model` → `<id>-fast`; never omit `model`; never use brackets).
    - Pass file pointers: project root path, any existing AGENTS.md, docs/, context/.
    - context_agent is read-only: it never implements or decides architecture.
 2. Based on context_agent output, generate:

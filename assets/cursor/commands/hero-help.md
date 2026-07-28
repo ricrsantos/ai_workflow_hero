@@ -12,13 +12,13 @@ Display a summary of all available Hero Runtime commands.
 
 | Command | Description |
 |---------|-------------|
-| /hero:init | Initialize a new development cycle |
-| /hero:start | Start the configured workflow stages |
+| /hero:init | Initialize a new development cycle (then open a new chat for start) |
+| /hero:start | Start the configured workflow stages (prefer new empty chat; select orchestrator / grill-me first) |
 | /hero:approve | Approve the current stage and advance |
 | /hero:reject | Reject the current stage and re-run |
 | /hero:cancel | Cancel the current stage and rollback via git |
-| /hero:finish | Finish and close the current cycle |
-| /hero:archive | Archive the current cycle (even mid-progress) |
+| /hero:finish | Finish and close the current cycle (writes Completed date for archive naming) |
+| /hero:archive | Archive current cycle; folder date from workflow.md Completed field |
 | /hero:resume [cycle] | Restore an archived cycle |
 | /hero:sync | Activate Hero in an existing project |
 | /hero:status | Show current cycle stage status |

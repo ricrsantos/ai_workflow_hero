@@ -6,6 +6,56 @@
 
 ---
 
+## 2026-07-28 — Bump version to 0.5.2
+
+**Problem:** Ship Runtime fixes (clean session handoff, kebab Task models, archive Completed date, clickable file links) under a new patch version.
+
+**Decision:** Increment SemVer patch `0.5.1` → `0.5.2` in `cmd/hero/main.go`.
+
+**Outcome:** Version bumped; commit and push requested.
+
+---
+
+## 2026-07-28 — Clickable links for config review and metrics
+
+**Problem:** During init, users had to hunt for `workflow-config.yml`; metrics summaries in chat did not point to the details file.
+
+**Decision:** Runtime prompts must emit Cursor-clickable markdown links: `[path](path)` for `.workflow-hero/cycles/current/workflow-config.yml` on init review, and for `.workflow-hero/cycles/current/metrics.md` (plus `metrics-summary.md` on finish) after every metrics summary.
+
+**Outcome:** Updated hero-init, orchestration Metrics Procedure/output, hero-approve, hero-finish, workflow-hero skill; contract assertions in runtime asset tests.
+
+---
+
+## 2026-07-28 — Archive folder date = cycle Completed
+
+**Problem:** `/hero:archive` produced wrong/future dates in folder names (e.g. `C1-2026-07-28-…` when the cycle finished on the 26th). `hero-archive.md` only said `YYYY-MM-DD` with no source; agents invented “today” from chat/model context.
+
+**Decision:** (1) `workflow.md` header gains **Status**, **Started**, **Completed**. (2) `/hero:init` sets Started via `date +%Y-%m-%d`. (3) `/hero:finish` writes Completed the same way. (4) `/hero:archive` MUST use Completed from workflow.md as the folder date; shell `date` only as fallback for mid-progress or legacy missing Completed. Never hallucinate dates.
+
+**Outcome:** Runtime + ADR + tests updated; `go test ./...` green.
+
+---
+
+## 2026-07-28 — cursor-grok-4.5 pricing + kebab Task Model Resolution
+
+**Problem:** Workflow feedback: “O slug com brackets não é aceito nesta versão do Task — usando `cursor-grok-4.5-high` (equivale a effort=high).” Hero Model Resolution built `id[fast=…,effort=…]` (ADR-005), but Cursor Task only accepts kebab allow-list slugs. Also missing Cursor Grok pricing entry.
+
+**Decision:** (1) Add `cursor-grok-4.5` and `cursor-grok-4.5-high` to `assets/models/cursor.yml` with the same rates as `xai.yml` → `grok-4.5`. (2) Change Model Resolution to kebab suffixes (`-fast`, `-<effort>`, `-thinking`); forbid brackets. (3) Metrics lookup strips known suffixes when needed. (4) Template/ADR default backend model → `cursor-grok-4.5`. Update ADR-005.
+
+**Outcome:** Runtime + ADR + tests updated; `go test ./...` green.
+
+---
+
+## 2026-07-28 — Clean Session Handoff after configuration
+
+**Problem:** Running `/hero:start` in the same chat as `/hero:init` wastes the orchestrator context window on configuration grilling/Q&A before Research → Implementation.
+
+**Decision:** Soft UX guidance only (Cursor cannot hard-gate a new chat). After `/hero:init`, instruct the user to open a new empty chat, select the IDE agent/model to use as Hero orchestrator / grill-me, then run `/hero:start`. `/hero:start` bootstraps only from disk files. Documented in `hero-init.md`, `hero-start.md`, `orchestration_agent.md`, workflow-hero skill, `workflow-help.md`, README, and a Runtime asset contract test.
+
+**Outcome:** Runtime assets + docs updated; `go test ./...` green.
+
+---
+
 ## 2026-07-25 — Release script fix, bump to 0.5.1
 
 **Problem:** `scripts/release.sh` fell back to `dev` when no git tag existed; tag `v0.5.0` was created before the script fix was committed.

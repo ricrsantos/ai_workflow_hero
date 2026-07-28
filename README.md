@@ -108,7 +108,7 @@ Then, in Cursor chat:
 1. `/hero:sync` — activate Hero in an existing codebase (optional but recommended)
 2. `/hero:init` — start a new development cycle
 3. Edit `.workflow-hero/cycles/current/workflow-config.yml`
-4. `/hero:start` — run the configured stages
+4. Open a **new empty chat**, select the agent you want as the Hero **orchestrator / grill-me**, then `/hero:start`
 
 After install, read the full user guide at `.workflow-hero/docs/workflow-help.md` (philosophy, configuration, CLI and Runtime commands).
 
@@ -130,15 +130,15 @@ hero uninstall
 
 | Command | Purpose |
 |---|---|
-| `/hero:init` | Start a new development cycle |
-| `/hero:start` | Execute configured stages |
+| `/hero:init` | Start a new development cycle (then prefer a new chat for start) |
+| `/hero:start` | Execute configured stages (prefer new empty chat; select orchestrator / grill-me first) |
 | `/hero:approve` | Approve the current stage |
 | `/hero:reject` | Reject and request changes |
 | `/hero:cancel` | Cancel the stage and restore the git checkpoint |
 | `/hero:continue` | Grant extra iterations after escalation |
 | `/hero:back` | Reopen Planning after SDD ambiguity |
-| `/hero:finish` | Finish the cycle early |
-| `/hero:archive` | Archive the current cycle |
+| `/hero:finish` | Finish the cycle; writes Completed date used by archive naming |
+| `/hero:archive` | Archive the current cycle (folder date = workflow.md Completed) |
 | `/hero:resume` | Resume an archived cycle |
 | `/hero:sync` | Activate / re-sync Hero on an existing project |
 | `/hero:status` | Show cycle status in chat |
@@ -338,7 +338,7 @@ Em seguida, no chat do Cursor:
 1. `/hero:sync` — ativa o Hero em um codebase existente (opcional, mas recomendado)
 2. `/hero:init` — inicia um novo ciclo de desenvolvimento
 3. Edite `.workflow-hero/cycles/current/workflow-config.yml`
-4. `/hero:start` — executa os stages configurados
+4. Abra um **chat novo e vazio**, selecione o agente que deseja como **orchestrator / grill-me** do Hero, e então `/hero:start`
 
 Após a instalação, leia o guia completo em `.workflow-hero/docs/workflow-help.md` (filosofia, configuração, comandos CLI e Runtime).
 
@@ -360,15 +360,15 @@ hero uninstall
 
 | Comando | Finalidade |
 |---|---|
-| `/hero:init` | Inicia um novo ciclo de desenvolvimento |
-| `/hero:start` | Executa os stages configurados |
+| `/hero:init` | Inicia um novo ciclo de desenvolvimento (depois prefira um chat novo para o start) |
+| `/hero:start` | Executa os stages configurados (prefira chat limpo; selecione orchestrator / grill-me antes) |
 | `/hero:approve` | Aprova o stage atual |
 | `/hero:reject` | Rejeita e pede alterações |
 | `/hero:cancel` | Cancela o stage e restaura o checkpoint git |
 | `/hero:continue` | Concede iterações extras após escalonamento |
 | `/hero:back` | Reabre o Planning após ambiguidade no SDD |
-| `/hero:finish` | Encerra o ciclo antecipadamente |
-| `/hero:archive` | Arquiva o ciclo atual |
+| `/hero:finish` | Encerra o ciclo; grava a data Completed usada no nome do arquivo |
+| `/hero:archive` | Arquiva o ciclo atual (data da pasta = Completed em workflow.md) |
 | `/hero:resume` | Retoma um ciclo arquivado |
 | `/hero:sync` | Ativa / re-sincroniza o Hero em um projeto existente |
 | `/hero:status` | Mostra o status do ciclo no chat |

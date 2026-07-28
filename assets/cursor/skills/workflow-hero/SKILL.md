@@ -10,6 +10,10 @@ This skill is automatically active when working within a Hero-managed project.
 
 Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End
 
+## Clean Session Handoff
+
+After `/hero:init` (configuration ready): ask the user to open a **new empty chat**, select the IDE agent/model they want as the Hero **orchestrator / grill-me**, then run `/hero:start`. Soft guidance only. `/hero:start` must bootstrap from disk files, not from the init chat history.
+
 ## Stage Close Sequence
 
 Every stage closes with the same sequence (PRD §5.3):
@@ -17,7 +21,7 @@ Every stage closes with the same sequence (PRD §5.3):
 1. Summary + approval request (respect `require_human_approval`)
 2. Update `workflow.md`
 3. Update `metrics.md` via the **Metrics Procedure** in `orchestration_agent` (chars ÷ 4 × `models/*.yml` rates; never leave `—` for a stage that ran)
-4. Show the stage metrics summary in chat (tokens input/output/total, duration, cost) — required every stage
+4. Show the stage metrics summary in chat (tokens input/output/total, duration, cost) — required every stage — and include a clickable link to `[.workflow-hero/cycles/current/metrics.md](.workflow-hero/cycles/current/metrics.md)` noting that full details are in that file
 5. Advance to the next configured stage
 
 ## Key References

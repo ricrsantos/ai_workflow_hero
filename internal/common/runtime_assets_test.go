@@ -109,7 +109,7 @@ func TestRuntimeAssets_AgentFrontmatter(t *testing.T) {
 }
 
 // TestRuntimeAssets_ModelResolution verifies orchestrator and hero-start encode mandatory
-// Task tool model parameter resolution from workflow-config.yml.
+// Task tool model parameter resolution from workflow-config.yml as kebab slugs (not brackets).
 func TestRuntimeAssets_ModelResolution(t *testing.T) {
 	orch, err := fs.ReadFile(assets.FS, "cursor/agents/orchestration_agent.md")
 	if err != nil {
@@ -121,13 +121,19 @@ func TestRuntimeAssets_ModelResolution(t *testing.T) {
 		"workflow-config.yml",
 		"enable_fast_model",
 		"fallback_model",
-		"[fast=",
+		"kebab",
+		"-fast",
 		"never omit",
+		"never use",
+		"brackets",
 		"model",
 	} {
 		if !strings.Contains(orchStr, kw) {
 			t.Errorf("orchestration_agent.md missing Model Resolution keyword %q", kw)
 		}
+	}
+	if strings.Contains(orchStr, "<id>[fast=") {
+		t.Error("orchestration_agent.md must not instruct bracket Task model syntax")
 	}
 	if !strings.Contains(orchStr, "Task tool") {
 		t.Error("orchestration_agent.md must require Task tool model parameter")
@@ -138,10 +144,13 @@ func TestRuntimeAssets_ModelResolution(t *testing.T) {
 		t.Fatalf("read hero-start: %v", err)
 	}
 	startStr := string(start)
-	for _, kw := range []string{"Model Resolution", "workflow-config.yml", "enable_fast_model", "[fast=", "never omit"} {
+	for _, kw := range []string{"Model Resolution", "workflow-config.yml", "enable_fast_model", "kebab", "never omit", "never pass"} {
 		if !strings.Contains(startStr, kw) {
 			t.Errorf("hero-start.md missing Model Resolution keyword %q", kw)
 		}
+	}
+	if strings.Contains(startStr, "[fast=true]") || strings.Contains(startStr, "[fast=false]") {
+		t.Error("hero-start.md must not instruct bracket Task model syntax")
 	}
 }
 
@@ -169,6 +178,17 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 		!strings.Contains(orchStr, "required in chat every stage close") {
 		t.Error("orchestration_agent.md must require showing metrics (tokens + duration) in chat")
 	}
+	if !strings.Contains(orchStr, "[.workflow-hero/cycles/current/metrics.md](.workflow-hero/cycles/current/metrics.md)") {
+		t.Error("orchestration_agent.md must include a clickable markdown link to metrics.md")
+	}
+
+	initCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-init.md")
+	if err != nil {
+		t.Fatalf("read hero-init: %v", err)
+	}
+	if !strings.Contains(string(initCmd), "[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)") {
+		t.Error("hero-init.md must include a clickable markdown link to workflow-config.yml")
+	}
 
 	approve, err := fs.ReadFile(assets.FS, "cursor/commands/hero-approve.md")
 	if err != nil {
@@ -180,6 +200,9 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 	}
 	if !strings.Contains(approveStr, "Metrics Procedure") {
 		t.Error("hero-approve.md missing Metrics Procedure reference")
+	}
+	if !strings.Contains(approveStr, "[.workflow-hero/cycles/current/metrics.md](.workflow-hero/cycles/current/metrics.md)") {
+		t.Error("hero-approve.md must include a clickable markdown link to metrics.md")
 	}
 
 	taskAgents := []string{
@@ -333,6 +356,86 @@ func TestRuntimeAssets_ResearchPreDocumentGate(t *testing.T) {
 	for _, kw := range []string{"Pre-document gate", "add any more information", "evaluates the additions"} {
 		if !strings.Contains(skillStr, kw) {
 			t.Errorf("grilling/SKILL.md missing Pre-document gate keyword %q", kw)
+		}
+	}
+}
+
+// TestRuntimeAssets_CleanSessionHandoff verifies init/start encode the soft clean-chat
+// handoff (new empty chat + select orchestrator/grill-me) and disk-only bootstrap.
+func TestRuntimeAssets_CleanSessionHandoff(t *testing.T) {
+	initCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-init.md")
+	if err != nil {
+		t.Fatalf("read hero-init: %v", err)
+	}
+	initStr := string(initCmd)
+	for _, kw := range []string{
+		"Clean Session Handoff",
+		"new empty chat",
+		"orchestrator / grill-me",
+		"/hero:start",
+	} {
+		if !strings.Contains(initStr, kw) {
+			t.Errorf("hero-init.md missing Clean Session Handoff keyword %q", kw)
+		}
+	}
+
+	start, err := fs.ReadFile(assets.FS, "cursor/commands/hero-start.md")
+	if err != nil {
+		t.Fatalf("read hero-start: %v", err)
+	}
+	startStr := string(start)
+	for _, kw := range []string{
+		"Session Bootstrap",
+		"Do **not** rely on prior chat history",
+		"workflow-config.yml",
+		"orchestrator / grill-me",
+		"new empty chat",
+	} {
+		if !strings.Contains(startStr, kw) {
+			t.Errorf("hero-start.md missing Session Bootstrap keyword %q", kw)
+		}
+	}
+}
+
+// TestRuntimeAssets_ArchiveUsesCompletedDate verifies archive naming uses workflow.md
+// Completed date (cycle completion), not a hallucinated "today".
+func TestRuntimeAssets_ArchiveUsesCompletedDate(t *testing.T) {
+	archive, err := fs.ReadFile(assets.FS, "cursor/commands/hero-archive.md")
+	if err != nil {
+		t.Fatalf("read hero-archive: %v", err)
+	}
+	archStr := string(archive)
+	for _, kw := range []string{
+		"cycle completion date",
+		"Completed",
+		"date +%Y-%m-%d",
+		"Never",
+		"hallucinate",
+	} {
+		if !strings.Contains(archStr, kw) {
+			t.Errorf("hero-archive.md missing archive-date keyword %q", kw)
+		}
+	}
+
+	finish, err := fs.ReadFile(assets.FS, "cursor/commands/hero-finish.md")
+	if err != nil {
+		t.Fatalf("read hero-finish: %v", err)
+	}
+	finStr := string(finish)
+	for _, kw := range []string{"Completed", "date +%Y-%m-%d", "archive folder name"} {
+		if !strings.Contains(finStr, kw) {
+			t.Errorf("hero-finish.md missing Completed-date keyword %q", kw)
+		}
+	}
+
+	tmpl, err := fs.ReadFile(assets.FS, "templates/workflow.md")
+	if err != nil {
+		t.Fatalf("read workflow template: %v", err)
+	}
+	tmplStr := string(tmpl)
+	for _, kw := range []string{"**Started**", "**Completed**", "**Status**"} {
+		if !strings.Contains(tmplStr, kw) {
+			t.Errorf("templates/workflow.md missing header field %q", kw)
 		}
 	}
 }

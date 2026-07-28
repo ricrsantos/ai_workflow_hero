@@ -13,7 +13,7 @@ Only invokable during the Judge stage when the judge_agent identifies that the f
 1. Set the Planning stage `Status` back to `In Progress` in `workflow.md`.
 2. Reset Implementation, QA, and Judge stages to `Status=Waiting` in `workflow.md`.
 3. Invoke `planning_agent` via the Task tool (fresh isolated session) with the ambiguity report from `judge_agent`.
-   - Apply **Model Resolution** from `orchestration_agent`: pass Task `model` from `workflow-config.yml` → `agents.planning_agent` (`enable_fast_model` → `[fast=...]`; never omit `model`).
+   - Apply **Model Resolution** from `orchestration_agent`: pass Task `model` as a kebab slug from `workflow-config.yml` → `agents.planning_agent` (`enable_fast_model` → `<id>-fast`; never omit `model`; never use brackets).
 4. `planning_agent` edits the existing OpenSpec proposal in place (preserving change history — no archive/recreate).
 5. After the planning_agent completes, re-run Implementation → QA → Judge from scratch (every Task call still applies Model Resolution for the target agent).
 6. Update `workflow.md` after each stage completes.

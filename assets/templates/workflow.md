@@ -2,7 +2,9 @@
 
 **Title**: {{workflow.title}}
 **Objective**: {{workflow.objective}}
+**Status**: In Progress
 **Started**: {{workflow.startedAt}}
+**Completed**:
 
 ## Stages
 

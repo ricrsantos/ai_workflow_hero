@@ -34,5 +34,6 @@ Fall back to `fallback_model` if configured model is unavailable; warn the user 
   Input: <input_tokens> tokens | Output: <output_tokens> tokens | Total: <total_tokens> tokens
   Duration: <duration>
   Cost: ~$<cost_usd>
+→ Full details: [.workflow-hero/cycles/current/metrics.md](.workflow-hero/cycles/current/metrics.md)
 → Advancing to <Next Stage>...
 ```

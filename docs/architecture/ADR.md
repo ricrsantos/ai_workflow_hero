@@ -82,7 +82,7 @@ Only purely administrative commands may have equivalents in both (e.g. `hero sta
 
 **Decision**: Invoke every subagent (`backend_agent`, `frontend_agent`, `generic_agent`, `qa_agent`, `judge_agent`, `end2end_qa_agent`, `context_agent`) via the IDE's Task tool, in a **fresh, isolated session** that does not inherit the orchestrator's chat history. Subagents receive **file pointers** (paths to `AGENTS.md`, `current-state.md`, the relevant SDD/tasks) instead of pasted content. The orchestrator absorbs back only the subagent's final structured output (its documented "Output Format" section), not its intermediate reasoning. The `orchestration_agent`'s own main session remains continuous across the whole cycle — only subagents are session-scoped per call.
 
-**Model selection**: Agent `.md` files use Cursor YAML frontmatter with `model: inherit` (plus `name` / `description`). The **effective** model is not taken from frontmatter; the orchestrator must pass the Task tool `model` parameter from `workflow-config.yml` → `agents.<name>.model` on every invocation (including nested fan-out), applying `enable_fast_model` / `reasoning_effort` / `thinking` as Cursor bracket options (e.g. `id[fast=false,effort=high,thinking=false]`). On fallback, read `fallback_model.*` with the same rules. Omitting Task `model` incorrectly inherits the orchestrator session model. Fallback remains ADR-008. Cursor may still override unavailable or plan-restricted models; Hero cannot bypass IDE limits.
+**Model selection**: Agent `.md` files use Cursor YAML frontmatter with `model: inherit` (plus `name` / `description`). The **effective** model is not taken from frontmatter; the orchestrator must pass the Task tool `model` parameter from `workflow-config.yml` → `agents.<name>.model` on every invocation (including nested fan-out), applying `enable_fast_model` / `reasoning_effort` / `thinking` as **kebab Task slugs** (e.g. `cursor-grok-4.5-high`, `composer-2.5-fast`, `claude-sonnet-5-medium`) — **not** bracket options like `id[fast=false,effort=high]` (Cursor Task rejects brackets in current IDE versions). On fallback, read `fallback_model.*` with the same kebab rules. Omitting Task `model` incorrectly inherits the orchestrator session model. Fallback remains ADR-008. Cursor may still override unavailable or plan-restricted models; Hero cannot bypass IDE limits. When looking up pricing in `models/*.yml`, match the resolved slug or strip known suffixes (`-thinking`, `-fast`, `-high`, `-medium`, `-low`) to find a base rate entry.
 
 **Consequences**:
 - Token usage per subagent call is bounded by what it actually needs to read, not by the orchestrator's accumulated history.
@@ -364,7 +364,7 @@ agents:
     thinking: na
 
   backend_agent:
-    model: grok-4.5
+    model: cursor-grok-4.5
     reasoning_effort: high
     enable_fast_model: false
     thinking: na
@@ -415,7 +415,8 @@ workflow_rules:
 
 | Field | Allowed values |
 |---|---|
-| `Status` | `Waiting`, `Disable`, `In Progress`, `Completed`, `Cancelled`, `Paused` |
+| `Status` | `Waiting`, `Disable`, `In Progress`, `Completed`, `Cancelled`, `Paused` (also cycle-level `Finished by User` when closed via `/hero:finish` early) |
+| `Started` / `Completed` | `YYYY-MM-DD` local calendar dates. **Started** set on `/hero:init` via `date +%Y-%m-%d`. **Completed** set on `/hero:finish` (or when the cycle is marked completed) the same way. `/hero:archive` MUST use **Completed** as the date segment in `C<N>-YYYY-MM-DD-<slug>/` — never invent “today” from chat context. |
 | `Human Approval` | `N/A`, `Disable`, `Pending`, `Escalated`, `Rejected`, `Approved`, `Cancelled` |
 | `Extra Iterations Granted` | Integer, default `+0`, incremented on every `/hero:continue` for that stage |
 

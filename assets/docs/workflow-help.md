@@ -164,7 +164,13 @@ Typical first Runtime steps:
 1. `/hero:sync` — activate Hero on an existing codebase (recommended)
 2. `/hero:init` — start a new cycle (copies templates into `.workflow-hero/cycles/current/`)
 3. Edit `.workflow-hero/cycles/current/workflow-config.yml`
-4. `/hero:start` — run enabled stages
+4. Open a **new empty chat**, select the agent (model) you want as the Hero **orchestrator / grill-me**, then run `/hero:start`
+
+### 8.0 Clean session after configuration
+
+After `/hero:init`, prefer a **new empty chat** for `/hero:start` so the orchestrator session does not carry grilling/Q&A from configuration (saves context window for later stages). Soft guidance — Hero still works if you continue in the same chat, but a clean session is recommended.
+
+In the new chat, **select the IDE agent/model you want as the Hero orchestrator / grill-me** before `/hero:start`. That session model drives orchestration; specialized agents still use models from `workflow-config.yml` via the Task tool.
 
 ### 8.1 Key fields in `workflow-config.yml`
 
@@ -198,6 +204,8 @@ Typical first Runtime steps:
 1. Agent’s configured model  
 2. Top-level `fallback_model` (user is always warned)  
 3. Still unavailable → wait for `/hero:continue` after you fix config  
+
+Use **Cursor/Task model ids** in `agents.*.model` (e.g. `cursor-grok-4.5`, not the bare xAI id `grok-4.5`). The orchestrator passes Task a **kebab slug** built from `enable_fast_model` / `reasoning_effort` / `thinking` (e.g. `cursor-grok-4.5-high`, `composer-2.5-fast`). Bracket forms like `id[fast=false,effort=high]` are not accepted by Cursor Task.
 
 ---
 
@@ -238,8 +246,8 @@ hero update-models
 | `/hero:cancel` | Cancel stage and restore git checkpoint |
 | `/hero:continue` | Grant extra iterations after escalation |
 | `/hero:back` | Reopen Planning after SDD ambiguity |
-| `/hero:finish` | Finish the cycle early |
-| `/hero:archive` | Archive current cycle (even mid-progress) |
+| `/hero:finish` | Finish the cycle; writes **Completed** date (`date +%Y-%m-%d`) into `workflow.md` |
+| `/hero:archive` | Archive current cycle; folder date = **Completed** from `workflow.md` (completion date) |
 | `/hero:resume` | Restore an archived cycle |
 | `/hero:sync` | Activate / re-sync Hero on an existing project |
 | `/hero:status` | Show cycle status in chat |
@@ -317,6 +325,8 @@ hero install --tools cursor
 /hero:sync
 /hero:init
 # edit workflow-config.yml (scope, stages, models)
+
+# New empty chat → select orchestrator / grill-me agent → then:
 /hero:start
 ```
 
@@ -456,7 +466,9 @@ Atualiza assets com proteção por checksum (customizações locais não são so
 1. `/hero:sync` (recomendado em codebases existentes)
 2. `/hero:init`
 3. Editar `.workflow-hero/cycles/current/workflow-config.yml`
-4. `/hero:start`
+4. Abrir um **chat novo e vazio**, selecionar o agente (modelo) que deseja como **orchestrator / grill-me** do Hero, e então rodar `/hero:start`
+
+Após o `/hero:init`, prefira um chat limpo para o `/hero:start` (orientação soft) — evita carregar grilling/Q&A da configuração na janela de contexto. No chat novo, escolha o agente/modelo da sessão IDE que fará o papel de orchestrator / grill-me antes de iniciar.
 
 Configure `scope`, `stages`, `agents`, `fallback_model` e `stages.qa_end_to_end.use_playwright` conforme a seção em inglês (§8) — os campos são os mesmos.
 
@@ -492,6 +504,8 @@ hero install --tools cursor
 /hero:sync
 /hero:init
 # edite workflow-config.yml
+
+# Chat novo e vazio → selecione orchestrator / grill-me → depois:
 /hero:start
 ```
 

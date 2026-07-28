@@ -77,7 +77,7 @@ agents:
     thinking: na
 
   backend_agent:
-    model: grok-4.5
+    model: cursor-grok-4.5
     reasoning_effort: high
     enable_fast_model: false
     thinking: na
