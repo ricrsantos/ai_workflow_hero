@@ -56,7 +56,7 @@
 ## Pending Features
 
 - Archive OpenSpec change `browser-ui-validation` when ready.
-- Tag/publish `v0.6.1` via `./scripts/release.sh`.
+- Create GitHub Release for `v0.6.1` and upload `dist/` artifacts (binaries + checksums).
 - Optional further enrichment of Runtime narrative prompts.
 - Other post-V1 / V2 priorities not yet selected (see PRD §2.3).
 
@@ -83,7 +83,7 @@
 ## Next Steps
 
 1. Archive OpenSpec change `browser-ui-validation` (`/opsx:archive`).
-2. Tag/publish `v0.6.1` via `./scripts/release.sh`.
+2. Create GitHub Release for `v0.6.1` and upload `dist/` (4 binaries + `checksums.txt`).
 3. Optionally deepen other Runtime prompt content.
 
 ---

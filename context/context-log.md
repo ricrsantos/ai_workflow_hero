@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-07-28 — Tag and build release v0.6.1
+
+**Problem:** Cut patch release for updated Moonshot/Zhipu model pricing.
+
+**Outcome:** Tagged `v0.6.1` on `96ee544`, pushed to origin; `./scripts/release.sh` produced `dist/hero_v0.6.1_{linux,darwin}_{amd64,arm64}` + `checksums.txt`. GitHub Release upload still pending (DEPLOY §4.2 step 4).
+
+---
+
 ## 2026-07-28 — Add Kimi K3 / K2.7 Code / GLM 5.2 pricing
 
 **Problem:** Hero `models/*.yml` still had placeholder Moonshot/Zhipu ids (`moonshot-v1-*`, `glm-4*`) instead of current Cursor catalog models.
