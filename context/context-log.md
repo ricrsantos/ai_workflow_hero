@@ -12,7 +12,7 @@
 
 **Decision:** Increment SemVer patch `0.5.1` → `0.5.2` in `cmd/hero/main.go`.
 
-**Outcome:** Version bumped; commit and push requested.
+**Outcome:** Version bumped to `0.5.2`; committed (`568a56f`) and pushed to `origin/main`.
 
 ---
 
