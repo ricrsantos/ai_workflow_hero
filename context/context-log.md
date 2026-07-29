@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-07-29 — Tag and build release v0.8.0
+
+**Problem:** Cut minor release for chat language preference + `fallback_model` reorder.
+
+**Outcome:** Tagged `v0.8.0` on `24f3f18`, pushed to origin; `./scripts/release.sh` produced `dist/hero_v0.8.0_{linux,darwin}_{amd64,arm64}` + `checksums.txt`. GitHub Release upload still pending (DEPLOY §4.2 step 4).
+
+---
+
 ## 2026-07-29 — Release 0.8.0 (chat language + fallback_model reorder)
 
 **Problem:** Ship minor release for `workflow_config.user_preferred_language` and `fallback_model` section reorder.
