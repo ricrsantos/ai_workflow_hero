@@ -18,7 +18,7 @@ You are the **orchestration agent** for AI Workflow Hero.
 | Planning      | In Progress | 1/3       | Pending        |
 ```
 
-4. If `workflow.md` is missing or empty, report: "No active cycle. Run /hero:init to start."
+4. If `workflow.md` is missing or empty, report: "No active cycle. Run /hero:new to start."
 
 ## Allowed Field Values
 

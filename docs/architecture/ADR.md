@@ -164,7 +164,7 @@ Only purely administrative commands may have equivalents in both (e.g. `hero sta
 
 **Decision**: Every Runtime slash command has exactly one corresponding asset file named `hero-<command>.md` in `.cursor/commands/`, and every agent has exactly one `<agent_name>.md` file in `.cursor/agents/`. The full V1 lists are:
 
-- **Runtime command files** (13): `hero-init.md`, `hero-start.md`, `hero-approve.md`, `hero-reject.md`, `hero-cancel.md`, `hero-finish.md`, `hero-archive.md`, `hero-resume.md`, `hero-sync.md`, `hero-status.md`, `hero-help.md`, `hero-continue.md`, `hero-back.md`.
+- **Runtime command files** (13): `hero-new.md`, `hero-start.md`, `hero-approve.md`, `hero-reject.md`, `hero-cancel.md`, `hero-finish.md`, `hero-archive.md`, `hero-resume.md`, `hero-sync.md`, `hero-status.md`, `hero-help.md`, `hero-continue.md`, `hero-back.md`.
 - **Agent files** (11): `orchestration_agent.md`, `discover_agent.md`, `planning_agent.md`, `context_agent.md`, `backend_agent.md`, `frontend_agent.md`, `generic_agent.md`, `qa_agent.md`, `judge_agent.md`, `browser_ui_agent.md`, `end2end_qa_agent.md`.
 
 Every agent file is self-sufficient (per ADR-005): it documents its Role, Responsibilities, Rules, and an explicit Output Format section, since the agent starts each invocation with no prior chat context.
@@ -244,8 +244,8 @@ The project's own identity and advanced metadata.
 }
 ```
 
-- `workflow.cycle`: sequential global cycle counter, incremented by the `orchestration_agent` on every successful `/hero:init`. Used as the prefix (`C04`) in document numbering (`PRD-C04-001-slug.md`) and in archive folder names (`C04-yyyy-mm-dd-slug/`).
-- Advanced fields (`technology`, `platform`, `localization`, `ui`, `deployment`) are empty/`null` right after `hero install`; the `orchestration_agent` fills them during the first `/hero:init`, either by inferring from an existing codebase or by asking the user.
+- `workflow.cycle`: sequential global cycle counter, incremented by the `orchestration_agent` on every successful `/hero:new`. Used as the prefix (`C04`) in document numbering (`PRD-C04-001-slug.md`) and in archive folder names (`C04-yyyy-mm-dd-slug/`).
+- Advanced fields (`technology`, `platform`, `localization`, `ui`, `deployment`) are empty/`null` right after `hero install`; the `orchestration_agent` fills them during the first `/hero:new`, either by inferring from an existing codebase or by asking the user.
 
 ### `.workflow-hero/config/documents.json`
 
@@ -426,6 +426,7 @@ workflow_rules:
   - When Browser UI Validation is enabled, Browser Health always runs (Playwright required at execution); Visual Validation runs only when `visual_validation.enabled` is true and only after Health passes.
   - `stages.qa_end_to_end.use_playwright` may be true only when `scope.frontend` is true; otherwise block and ask for correction.
   - When `use_playwright` is true, `end2end_qa_agent` uses Playwright; when false, it uses direct HTTP calls.
+  - On `/hero:new` with prior cycles, import previous `fallback_model` + `stages` + `agents`; always reset `title`, `objective`, and `scope` to template defaults.
   - Do not change the architecture without an approved ADR.
   - Update workflow.md after completing each stage.
   - Before finishing the workflow, ensure current-state.md is up to date.
@@ -436,7 +437,7 @@ workflow_rules:
 | Field | Allowed values |
 |---|---|
 | `Status` | `Waiting`, `Disable`, `In Progress`, `Completed`, `Cancelled`, `Paused` (also cycle-level `Finished by User` when closed via `/hero:finish` early) |
-| `Started` / `Completed` | `YYYY-MM-DD` local calendar dates. **Started** set on `/hero:init` via `date +%Y-%m-%d`. **Completed** set on `/hero:finish` (or when the cycle is marked completed) the same way. `/hero:archive` MUST use **Completed** as the date segment in `C<N>-YYYY-MM-DD-<slug>/` — never invent “today” from chat context. |
+| `Started` / `Completed` | `YYYY-MM-DD` local calendar dates. **Started** set on `/hero:new` via `date +%Y-%m-%d`. **Completed** set on `/hero:finish` (or when the cycle is marked completed) the same way. `/hero:archive` MUST use **Completed** as the date segment in `C<N>-YYYY-MM-DD-<slug>/` — never invent “today” from chat context. |
 | `Human Approval` | `N/A`, `Disable`, `Pending`, `Escalated`, `Rejected`, `Approved`, `Cancelled` |
 | `Extra Iterations Granted` | Integer, default `+0`, incremented on every `/hero:continue` for that stage |
 

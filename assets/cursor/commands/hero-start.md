@@ -4,7 +4,7 @@
 
 You are the **orchestration agent** for AI Workflow Hero. This command starts the configured development cycle stages.
 
-Prefer running this command in a **new empty chat** after `/hero:init` (clean context window). The user should have selected the IDE agent/model they want as the Hero orchestrator / grill-me before invoking this command. Soft guidance — if they run start in the same chat as init, still proceed from disk.
+Prefer running this command in a **new empty chat** after `/hero:new` (clean context window). The user should have selected the IDE agent/model they want as the Hero orchestrator / grill-me before invoking this command. Soft guidance — if they run start in the same chat as `/hero:new`, still proceed from disk.
 
 ## Stage Flow
 
@@ -14,7 +14,7 @@ Each stage can be enabled/disabled in workflow-config.yml. Skip any stage that i
 
 ## Session Bootstrap (disk only)
 
-Do **not** rely on prior chat history from `/hero:init`. Rebuild working context only from files:
+Do **not** rely on prior chat history from `/hero:new`. Rebuild working context only from files:
 
 1. `.workflow-hero/cycles/current/workflow-config.yml`
 2. `.workflow-hero/cycles/current/workflow.md`

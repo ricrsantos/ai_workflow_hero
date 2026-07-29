@@ -14,7 +14,7 @@
 
 - [x] 3.1 Create `assets/cursor/agents/browser_ui_agent.md` (Health + Visual, Playwright, viewports, artifacts path, failure classification, metrics JSON, `model: inherit`)
 - [x] 3.2 Update `orchestration_agent.md` for new stage order, gates, dispatch, Health→skip Visual, failure routing front/back
-- [x] 3.3 Update Runtime commands/skills that hardcode stage order (`hero-start`, `hero-approve`, `hero-help`, `hero-init` if needed, `workflow-hero/SKILL.md`, other agents' Stage Flow lines)
+- [x] 3.3 Update Runtime commands/skills that hardcode stage order (`hero-start`, `hero-approve`, `hero-help`, `hero-new` if needed, `workflow-hero/SKILL.md`, other agents' Stage Flow lines)
 - [x] 3.4 Keep `end2end_qa_agent` Playwright journey semantics distinct; only refresh Stage Flow string
 
 ## 4. End-user documentation

@@ -12,7 +12,7 @@ Display a summary of all available Hero Runtime commands.
 
 | Command | Description |
 |---------|-------------|
-| /hero:init | Initialize a new development cycle (then open a new chat for start) |
+| /hero:new | Initialize a new development cycle (import prior models/stages; reset title/objective/scope; then open a new chat for start) |
 | /hero:start | Start the configured workflow stages (prefer new empty chat; select orchestrator / grill-me first) |
 | /hero:approve | Approve the current stage and advance |
 | /hero:reject | Reject the current stage and re-run |

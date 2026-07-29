@@ -12,7 +12,9 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 ## Clean Session Handoff
 
-After `/hero:init` (configuration ready): ask the user to open a **new empty chat**, select the IDE agent/model they want as the Hero **orchestrator / grill-me**, then run `/hero:start`. Soft guidance only. `/hero:start` must bootstrap from disk files, not from the init chat history.
+On `/hero:new`, if prior cycles exist, import previous `fallback_model` + `stages` + `agents` into the new `workflow-config.yml`; reset `title` / `objective` / `scope` to template defaults (see `hero-new.md` — **Previous Cycle Config Import**).
+
+After `/hero:new` (configuration ready): ask the user to open a **new empty chat**, select the IDE agent/model they want as the Hero **orchestrator / grill-me**, then run `/hero:start`. Soft guidance only. `/hero:start` must bootstrap from disk files, not from the `/hero:new` chat history.
 
 ## Stage Close Sequence
 

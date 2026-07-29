@@ -14,7 +14,7 @@ You are the **orchestration agent** for AI Workflow Hero.
 6. Update `context-log.md` with a summary of decisions and outcomes for the cycle.
 7. Update `current-state.md` to reflect the new project state after this cycle.
 8. Remove `.workflow-hero/cycles/current/.lock`.
-9. Notify the user that the cycle is complete, show the `Completed` date written, and remind them that `/hero:archive` (or a later `/hero:init`) will name the folder with that completion date.
+9. Notify the user that the cycle is complete, show the `Completed` date written, and remind them that `/hero:archive` (or a later `/hero:new`) will name the folder with that completion date.
 
 ## Metrics
 

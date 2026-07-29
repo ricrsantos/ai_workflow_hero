@@ -90,7 +90,7 @@ Health has no toggle. Defaults: stage off, visual off.
 ## Migration Plan
 
 1. Implement Runtime assets + templates + docs + tests; bump version.
-2. Consumers: `hero upgrade` picks up new agent/docs; existing cycles keep old config until next `/hero:init` or manual YAML merge — document new keys in help.
+2. Consumers: `hero upgrade` picks up new agent/docs; existing cycles keep old config until next `/hero:new` or manual YAML merge — document new keys in help.
 3. Rollback: revert release / reinstall previous Hero version; stage simply absent if assets old.
 
 ## Open Questions

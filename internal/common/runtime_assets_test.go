@@ -182,12 +182,12 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 		t.Error("orchestration_agent.md must include a clickable markdown link to metrics.md")
 	}
 
-	initCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-init.md")
+	newCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-new.md")
 	if err != nil {
-		t.Fatalf("read hero-init: %v", err)
+		t.Fatalf("read hero-new: %v", err)
 	}
-	if !strings.Contains(string(initCmd), "[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)") {
-		t.Error("hero-init.md must include a clickable markdown link to workflow-config.yml")
+	if !strings.Contains(string(newCmd), "[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)") {
+		t.Error("hero-new.md must include a clickable markdown link to workflow-config.yml")
 	}
 
 	approve, err := fs.ReadFile(assets.FS, "cursor/commands/hero-approve.md")
@@ -360,22 +360,22 @@ func TestRuntimeAssets_ResearchPreDocumentGate(t *testing.T) {
 	}
 }
 
-// TestRuntimeAssets_CleanSessionHandoff verifies init/start encode the soft clean-chat
+// TestRuntimeAssets_CleanSessionHandoff verifies new/start encode the soft clean-chat
 // handoff (new empty chat + select orchestrator/grill-me) and disk-only bootstrap.
 func TestRuntimeAssets_CleanSessionHandoff(t *testing.T) {
-	initCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-init.md")
+	newCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-new.md")
 	if err != nil {
-		t.Fatalf("read hero-init: %v", err)
+		t.Fatalf("read hero-new: %v", err)
 	}
-	initStr := string(initCmd)
+	newStr := string(newCmd)
 	for _, kw := range []string{
 		"Clean Session Handoff",
 		"new empty chat",
 		"orchestrator / grill-me",
 		"/hero:start",
 	} {
-		if !strings.Contains(initStr, kw) {
-			t.Errorf("hero-init.md missing Clean Session Handoff keyword %q", kw)
+		if !strings.Contains(newStr, kw) {
+			t.Errorf("hero-new.md missing Clean Session Handoff keyword %q", kw)
 		}
 	}
 
@@ -394,6 +394,55 @@ func TestRuntimeAssets_CleanSessionHandoff(t *testing.T) {
 		if !strings.Contains(startStr, kw) {
 			t.Errorf("hero-start.md missing Session Bootstrap keyword %q", kw)
 		}
+	}
+}
+
+// TestRuntimeAssets_PreviousCycleConfigImport verifies /hero:new mandates importing
+// fallback_model + stages + agents from the prior cycle while resetting cycle-specific fields.
+func TestRuntimeAssets_PreviousCycleConfigImport(t *testing.T) {
+	newCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-new.md")
+	if err != nil {
+		t.Fatalf("read hero-new: %v", err)
+	}
+	newStr := string(newCmd)
+	for _, kw := range []string{
+		"Previous Cycle Config Import",
+		"fallback_model",
+		"stages",
+		"agents",
+		"title",
+		"objective",
+		"scope",
+		"always",
+		"deep-merge",
+		".workflow-hero/templates/workflow-config.yml",
+	} {
+		if !strings.Contains(newStr, kw) {
+			t.Errorf("hero-new.md missing Previous Cycle Config Import keyword %q", kw)
+		}
+	}
+	if !strings.Contains(newStr, "never copy those three") && !strings.Contains(newStr, "Never copy those three") {
+		t.Error("hero-new.md must forbid copying title/objective/scope from the previous cycle")
+	}
+
+	orch, err := fs.ReadFile(assets.FS, "cursor/agents/orchestration_agent.md")
+	if err != nil {
+		t.Fatalf("read orchestration_agent: %v", err)
+	}
+	if !strings.Contains(string(orch), "Previous Cycle Config Import") {
+		t.Error("orchestration_agent.md must reference Previous Cycle Config Import")
+	}
+
+	help, err := fs.ReadFile(assets.FS, "docs/workflow-help.md")
+	if err != nil {
+		t.Fatalf("read workflow-help: %v", err)
+	}
+	helpStr := string(help)
+	if !strings.Contains(helpStr, "always imports") {
+		t.Error("workflow-help.md (EN) must document always imports of prior cycle config")
+	}
+	if !strings.Contains(helpStr, "sempre importa") {
+		t.Error("workflow-help.md (PT) must document sempre importa of prior cycle config")
 	}
 }
 

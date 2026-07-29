@@ -375,7 +375,7 @@ workflow-hero/
 │   └── cursor/
 │       │
 │       ├── commands/
-│       │   ├── hero-init.md
+│       │   ├── hero-new.md
 │       │   ├── hero-start.md
 │       │   ├── hero-approve.md
 │       │   ├── hero-reject.md
@@ -476,7 +476,7 @@ Inicialmente o CLI do Hero deve implementar os seguintes comandos:
 | CLI       | `hero update-models`          | —               | Atualiza os arquivos `models/*.yml` a partir de um arquivo de dados estruturado publicado no repositório oficial do Hero (sem scraping). |
 | CLI       | `hero status`                 | `/hero:status`  | Exibe (somente leitura, fora do chat) o estado atual do ciclo lendo `workflow.md`/`metrics.md`.                                          |
 | CLI       | `hero help`                   | `/hero:help`    | Lista todos os comandos disponíveis e uma breve descrição de cada um.                                                                    |
-| Runtime   | `/hero:init`                  | —               | Cria um novo ciclo de desenvolvimento. Na primeira execução também inicializa os artefatos do projeto (`AGENTS.md`, `context/`, etc.). Incrementa `project.json → workflow.cycle`. Se já houver um ciclo em andamento, avisa e pede confirmação antes de arquivar. |
+| Runtime   | `/hero:new`                  | —               | Cria um novo ciclo de desenvolvimento. Na primeira execução também inicializa os artefatos do projeto (`AGENTS.md`, `context/`, etc.). Incrementa `project.json → workflow.cycle`. Se já houver um ciclo em andamento, avisa e pede confirmação antes de arquivar. |
 | Runtime   | `/hero:start`                 | —               | Inicia a execução do ciclo conforme as etapas configuradas em `workflow-config.yml`. Valida dependências entre etapas antes de prosseguir. |
 | Runtime   | `/hero:approve`               | —               | Aprova o resultado da etapa atual quando ela exigir aprovação manual.                                                                   |
 | Runtime   | `/hero:reject`                | —               | Reprova a etapa atual e solicita sua reexecução.                                                                                        |
@@ -545,7 +545,7 @@ Projeto
 |	|   └── end2end_qa_agent.md
 |   |
 │   ├── commands/
-│   │   ├── hero-init.md
+│   │   ├── hero-new.md
 │   │   ├── hero-start.md
 │   │   ├── hero-approve.md
 │   │   ├── hero-reject.md
@@ -609,7 +609,7 @@ Projeto
 
 ### Bootstrap do Hero para um novo Ciclo de Desenvolvimento:
 
-1. O usuário inicializa um novo Ciclo no Hero através do comando `/hero:init`
+1. O usuário inicializa um novo Ciclo no Hero através do comando `/hero:new`
 
 >A partir daqui assume o **orchestration_agent** e inicia o processo de contagem dos elementos de estatística.
 
@@ -655,10 +655,10 @@ Projeto
 		 └── ...
 ```
 
- >[!question] Importar o arquivo de configuração do último ciclo executado? ✅ Resolvido (grilling 2026-07-20)
->Caso o usuário já tenha executado algum ciclo do Hero neste projeto, perguntar a ele se ele quer utilizar o mesmo arquivo de configuração do ciclo anterior. Se sim, copia as seções `stages` e `agents` (modelos, iterações, aprovação) do ciclo anterior para `.workflow-hero/cycles/current/workflow-config.yml`; os campos `title`, `objective` e `scope` sempre voltam para os valores padrão do template, pois são específicos de cada ciclo.
+ >[!question] Importar o arquivo de configuração do último ciclo executado? ✅ Resolvido (grilling 2026-07-20; esclarecido 2026-07-29)
+>Caso o usuário já tenha executado algum ciclo do Hero neste projeto, o `/hero:new` **sempre importa** as seções `fallback_model`, `stages` e `agents` (modelos, iterações, aprovação e opções aninhadas de stage) do ciclo anterior para `.workflow-hero/cycles/current/workflow-config.yml` — sem perguntar. Os campos `title`, `objective` e `scope` sempre voltam para os valores padrão do template, pois são específicos de cada ciclo. O arquivo novo parte do template instalado (para preservar chaves novas de upgrade) e faz deep-merge dessas seções.
 >
->Se já existir um ciclo em `cycles/current/` ainda em andamento (Status diferente de `Completed`/`Cancelled`/`Finished by User`), o `orchestration_agent` avisa o usuário, mostra a etapa atual, e pergunta explicitamente se ele quer arquivar mesmo assim (perdendo o progresso não finalizado) ou cancelar o `/hero:init` e continuar o ciclo atual com `/hero:start`.
+>Se já existir um ciclo em `cycles/current/` ainda em andamento (Status diferente de `Completed`/`Cancelled`/`Finished by User`), o `orchestration_agent` avisa o usuário, mostra a etapa atual, e pergunta explicitamente se ele quer arquivar mesmo assim (perdendo o progresso não finalizado) ou cancelar o `/hero:new` e continuar o ciclo atual com `/hero:start`.
 
 O resultado final dos arquivos e pastas criadas deve ser algo semelhante ao exemplo abaixo:
 ```
@@ -730,7 +730,7 @@ O resultado final dos arquivos e pastas criadas deve ser algo semelhante ao exem
 	- Número de tokens gastos;
 	- Custo aproximado. 
 
-> A etapa **Configuration** é sempre executada implicitamente (corresponde aos passos do `/hero:init` e `/hero:start`); nunca é configurável em `workflow-config.yml` e seu `Human Approval` é sempre `N/A`.
+> A etapa **Configuration** é sempre executada implicitamente (corresponde aos passos do `/hero:new` e `/hero:start`); nunca é configurável em `workflow-config.yml` e seu `Human Approval` é sempre `N/A`.
 
 7. O  **orchestration_agent** pede para o usuário escolher as opções que ele deseja utilizar no Ciclo través do preenchimento do arquivo `.workflow-hero/cycles/current/workflow-config.yml` e posteriormente utilizar o comando `/hero:start` para começar.
 
@@ -1105,7 +1105,7 @@ Armazena as informações relacionadas ao projeto, exemlo:
 }
 ```
 
-> `workflow.cycle`: contador sequencial global de ciclos, incrementado pelo `orchestration_agent` a cada `/hero:init` bem-sucedido. Usado como prefixo (`C04`) na numeração de documentos (`PRD-C04-001-slug.md`) e no nome da pasta de arquivamento (`C04-yyyy-mm-dd-slug/`). Campos avançados (`technology`, `platform`, `localization`, `ui`, `deployment`) ficam vazios/`null` na instalação via CLI e são preenchidos pelo `orchestration_agent` durante o primeiro `/hero:init`.
+> `workflow.cycle`: contador sequencial global de ciclos, incrementado pelo `orchestration_agent` a cada `/hero:new` bem-sucedido. Usado como prefixo (`C04`) na numeração de documentos (`PRD-C04-001-slug.md`) e no nome da pasta de arquivamento (`C04-yyyy-mm-dd-slug/`). Campos avançados (`technology`, `platform`, `localization`, `ui`, `deployment`) ficam vazios/`null` na instalação via CLI e são preenchidos pelo `orchestration_agent` durante o primeiro `/hero:new`.
 
 #### documents.json
 
@@ -2702,7 +2702,7 @@ ADR-C04-001-database-choice.md
 UI-C04-001-dashboard.md
 ```
 
-  - O contador de ciclo (`C04`) vem do campo `workflow.cycle` (numérico) em `project.json`, incrementado pelo `orchestration_agent` a cada `/hero:init` bem-sucedido (mesmo que o ciclo não chegue a criar nenhum documento).
+  - O contador de ciclo (`C04`) vem do campo `workflow.cycle` (numérico) em `project.json`, incrementado pelo `orchestration_agent` a cada `/hero:new` bem-sucedido (mesmo que o ciclo não chegue a criar nenhum documento).
   - Esse mesmo número de ciclo é adicionado ao nome da pasta de arquivamento: **`C[XX]-yyyy-mm-dd-[slug]/`** (número do ciclo primeiro), ex: `C04-2026-06-21-upload-imgurl/`.
   - O `[slug]` do nome da pasta de arquivo vem de um slug gerado automaticamente a partir do campo `title` do `workflow-config.yml` do ciclo arquivado.
 
@@ -2722,15 +2722,15 @@ UI-C04-001-dashboard.md
 
 35. **Regra de aprovação do PRD quando Research está desabilitado**: a regra "não iniciar Implementation sem PRD aprovado" só vale se `research.enabled=true`. Quando desabilitada, mesmo assim o Hero exige que o campo `objective` do `workflow-config.yml` esteja bem descrito, e o `orchestration_agent` pede confirmação explícita do usuário sobre o escopo antes de liberar Implementation (substituto leve de aprovação de PRD).
 
-36. **Etapa Configuration**: sempre executada implicitamente (corresponde aos passos do `/hero:init` e `/hero:start`), nunca configurável em `workflow-config.yml`, Human Approval sempre "N/A". Serve apenas de registro no `workflow.md`.
+36. **Etapa Configuration**: sempre executada implicitamente (corresponde aos passos do `/hero:new` e `/hero:start`), nunca configurável em `workflow-config.yml`, Human Approval sempre "N/A". Serve apenas de registro no `workflow.md`.
 
 37. **Timeout aplicado entre iterações**: o `timeout_minutes` não interrompe uma execução em andamento; o `orchestration_agent` registra o horário de início da etapa e, **antes de iniciar cada nova iteração/loop de correção**, verifica se o tempo decorrido já excedeu o timeout — se sim, trata como esgotamento (mesmo fluxo de escalonamento do `max_iterations`), mesmo com iterações sobrando.
 
-38. **Campos avançados do `project.json`** (stack, plataformas, idiomas, design de UI, domínio de deploy): ficam vazios/null na instalação (CLI) e são preenchidos pelo `orchestration_agent` durante o primeiro `/hero:init`, inferindo do repositório existente ou perguntando ao usuário quando não houver código.
+38. **Campos avançados do `project.json`** (stack, plataformas, idiomas, design de UI, domínio de deploy): ficam vazios/null na instalação (CLI) e são preenchidos pelo `orchestration_agent` durante o primeiro `/hero:new`, inferindo do repositório existente ou perguntando ao usuário quando não houver código.
 
-39. **Importar `workflow-config.yml` do ciclo anterior**: copia as seções `stages` e `agents` (modelos, iterações, aprovação) do ciclo anterior; `title`, `objective` e `scope` sempre voltam para os valores padrão do template, pois são específicos de cada ciclo.
+39. **Importar `workflow-config.yml` do ciclo anterior**: em todo `/hero:new` com ciclo(s) anterior(es), **sempre** importa `fallback_model`, `stages` e `agents` (modelos, iterações, aprovação) do ciclo anterior (deep-merge sobre o template); `title`, `objective` e `scope` sempre voltam para os valores padrão do template, pois são específicos de cada ciclo. Não perguntar — a importação é obrigatória.
 
-40. **`/hero:init` com ciclo em andamento**: avisa que há um ciclo em andamento, mostra a etapa atual, e pergunta explicitamente se o usuário quer arquivar mesmo assim (perdendo o progresso não finalizado) ou cancelar o `/hero:init` e continuar o ciclo atual com `/hero:start`.
+40. **`/hero:new` com ciclo em andamento**: avisa que há um ciclo em andamento, mostra a etapa atual, e pergunta explicitamente se o usuário quer arquivar mesmo assim (perdendo o progresso não finalizado) ou cancelar o `/hero:new` e continuar o ciclo atual com `/hero:start`.
 
 41. **Estimativa de tokens/custo**: heurística simples — o agente estima tokens contando/aproximando caracteres do que leu e escreveu (ex: ~4 caracteres por token) e multiplica pelo preço do modelo em `models/*.yml`.
 
@@ -2756,9 +2756,9 @@ UI-C04-001-dashboard.md
 
 ### Comandos, CLI e Assets
 
-49. **Fonte da verdade para nomenclatura de comandos**: a tabela de "Comandos" já existente no documento (seção "Comandos") é a fonte da verdade. Confirmado: CLI usa `hero install --tools cursor`; Runtime usa `/hero:init` para novo ciclo (arquivo de asset correspondente: `hero-init.md`, alinhado ao comando).
+49. **Fonte da verdade para nomenclatura de comandos**: a tabela de "Comandos" já existente no documento (seção "Comandos") é a fonte da verdade. Confirmado: CLI usa `hero install --tools cursor`; Runtime usa `/hero:new` para novo ciclo (arquivo de asset correspondente: `hero-new.md`, alinhado ao comando).
 
-50. **Lista de assets `commands/` corrigida**: um arquivo `.md` por comando Runtime, seguindo o padrão `hero-<comando>.md`. Lista completa (12 arquivos): `hero-init.md`, `hero-start.md`, `hero-approve.md`, `hero-reject.md`, `hero-cancel.md`, `hero-finish.md`, `hero-archive.md`, `hero-sync.md`, `hero-status.md`, `hero-help.md`, `hero-continue.md`, `hero-back.md`, mais os novos `hero-resume.md` (decisão #13).
+50. **Lista de assets `commands/` corrigida**: um arquivo `.md` por comando Runtime, seguindo o padrão `hero-<comando>.md`. Lista completa (12 arquivos): `hero-new.md`, `hero-start.md`, `hero-approve.md`, `hero-reject.md`, `hero-cancel.md`, `hero-finish.md`, `hero-archive.md`, `hero-sync.md`, `hero-status.md`, `hero-help.md`, `hero-continue.md`, `hero-back.md`, mais os novos `hero-resume.md` (decisão #13).
 
 51. **`hero status` e `hero help` também como comandos CLI**: adicionados como comandos CLI (sem IA, lendo direto `workflow.md`/`metrics.md` e imprimindo no terminal), úteis para quando o desenvolvedor não está numa sessão de chat.
 

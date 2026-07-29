@@ -83,7 +83,7 @@ func RequiredFiles() []string {
 // RequiredCommandFiles returns all required command asset files per ADR-011.
 func RequiredCommandFiles() []string {
 	commands := []string{
-		"hero-init", "hero-start", "hero-approve", "hero-reject",
+		"hero-new", "hero-start", "hero-approve", "hero-reject",
 		"hero-cancel", "hero-finish", "hero-archive", "hero-resume",
 		"hero-sync", "hero-status", "hero-help", "hero-continue", "hero-back",
 	}

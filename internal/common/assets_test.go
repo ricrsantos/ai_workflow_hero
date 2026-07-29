@@ -12,7 +12,7 @@ import (
 // TestAssets_CommandInventory verifies all ADR-011 command files exist in the embedded FS.
 func TestAssets_CommandInventory(t *testing.T) {
 	commands := []string{
-		"hero-init", "hero-start", "hero-approve", "hero-reject",
+		"hero-new", "hero-start", "hero-approve", "hero-reject",
 		"hero-cancel", "hero-finish", "hero-archive", "hero-resume",
 		"hero-sync", "hero-status", "hero-help", "hero-continue", "hero-back",
 	}
@@ -112,7 +112,7 @@ func TestAssets_UserGuide(t *testing.T) {
 		"hero uninstall",
 		"hero upgrade",
 		"workflow-config.yml",
-		"/hero:init",
+		"/hero:new",
 		"/hero:start",
 		"Architecture",
 		"Logging",

@@ -107,8 +107,8 @@ hero install --tools cursor --name "My Project" --summary "Short project summary
 Then, in Cursor chat:
 
 1. `/hero:sync` — activate Hero in an existing codebase (optional but recommended)
-2. `/hero:init` — start a new development cycle
-3. Edit `.workflow-hero/cycles/current/workflow-config.yml`
+2. `/hero:new` — start a new development cycle
+3. Edit `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`; prior cycles also re-import models/stages from the last cycle)
 4. Open a **new empty chat**, select the agent you want as the Hero **orchestrator / grill-me**, then `/hero:start`
 
 After install, read the full user guide at `.workflow-hero/docs/workflow-help.md` (philosophy, configuration, CLI and Runtime commands).
@@ -131,7 +131,7 @@ hero uninstall
 
 | Command | Purpose |
 |---|---|
-| `/hero:init` | Start a new development cycle (then prefer a new chat for start) |
+| `/hero:new` | Start a new development cycle (imports prior models/stages; reset title/objective/scope; then prefer a new chat for start) |
 | `/hero:start` | Execute configured stages (prefer new empty chat; select orchestrator / grill-me first) |
 | `/hero:approve` | Approve the current stage |
 | `/hero:reject` | Reject and request changes |
@@ -338,8 +338,8 @@ hero install --tools cursor --name "Meu Projeto" --summary "Resumo curto do proj
 Em seguida, no chat do Cursor:
 
 1. `/hero:sync` — ativa o Hero em um codebase existente (opcional, mas recomendado)
-2. `/hero:init` — inicia um novo ciclo de desenvolvimento
-3. Edite `.workflow-hero/cycles/current/workflow-config.yml`
+2. `/hero:new` — inicia um novo ciclo de desenvolvimento
+3. Edite `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`; ciclos anteriores também reimportam modelos/stages do último ciclo)
 4. Abra um **chat novo e vazio**, selecione o agente que deseja como **orchestrator / grill-me** do Hero, e então `/hero:start`
 
 Após a instalação, leia o guia completo em `.workflow-hero/docs/workflow-help.md` (filosofia, configuração, comandos CLI e Runtime).
@@ -362,7 +362,7 @@ hero uninstall
 
 | Comando | Finalidade |
 |---|---|
-| `/hero:init` | Inicia um novo ciclo de desenvolvimento (depois prefira um chat novo para o start) |
+| `/hero:new` | Inicia um novo ciclo de desenvolvimento (importa modelos/stages anteriores; reseta title/objective/scope; depois prefira um chat novo para o start) |
 | `/hero:start` | Executa os stages configurados (prefira chat limpo; selecione orchestrator / grill-me antes) |
 | `/hero:approve` | Aprova o stage atual |
 | `/hero:reject` | Rejeita e pede alterações |

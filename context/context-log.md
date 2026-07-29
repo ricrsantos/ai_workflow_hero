@@ -6,6 +6,36 @@
 
 ---
 
+## 2026-07-29 — Release 0.7.0 (`/hero:new` + previous-cycle import)
+
+**Problem:** Ship minor release for Runtime command rename and previous-cycle config import fix.
+
+**Decision:** SemVer minor bump `0.6.1` → `0.7.0` (user-facing Runtime behavior change).
+
+**Outcome:** Version default in `cmd/hero/main.go` set to `0.7.0`; tag/push/`release.sh` follow on this commit.
+
+---
+
+## 2026-07-29 — Fix previous-cycle workflow-config import on `/hero:new`
+
+**Problem:** `/hero:new` only copied the blank template into `workflow-config.yml`, so models/stages from the previous cycle were lost.
+
+**Decision:** Mandatory **Previous Cycle Config Import**: deep-merge previous `fallback_model` + `stages` + `agents` onto the installed template; always reset `title` / `objective` / `scope`. Documented in PRD §5.5, ADR workflow_rules, workflow-help, design decision #39 (no ask — always import).
+
+**Outcome:** Updated `hero-new.md`, orchestration/skill/help assets, docs, contract test; `go test ./...` green. Consumers need `hero upgrade` to pick up the fixed command.
+
+---
+
+## 2026-07-29 — Rename `/hero:init` → `/hero:new`
+
+**Problem:** Runtime command for starting a new cycle should be named `/hero:new` (asset `hero-new.md`) instead of `/hero:init`.
+
+**Decision:** Rename across assets, Go inventory/tests/CLI messages, README, PRD, ADR, workflow-help, design notes, and related prose (“init chat history” → “`/hero:new` chat history”).
+
+**Outcome:** `hero-init.md` → `hero-new.md`; all `/hero:init` / `hero-init` references updated; `go test ./...` green.
+
+---
+
 ## 2026-07-28 — Tag and build release v0.6.1
 
 **Problem:** Cut patch release for updated Moonshot/Zhipu model pricing.

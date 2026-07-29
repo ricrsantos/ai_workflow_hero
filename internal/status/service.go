@@ -103,7 +103,7 @@ func parseWorkflowMD(content string) (WorkflowStatus, error) {
 // PrintTable writes a human-readable table to w.
 func PrintTable(w io.Writer, ws WorkflowStatus) {
 	if len(ws.Stages) == 0 {
-		output.Progressf(w, "No active cycle. Run /hero:init to start.")
+		output.Progressf(w, "No active cycle. Run /hero:new to start.")
 		return
 	}
 	headers := []string{"Stage", "Status", "Iteration", "Human Approval"}

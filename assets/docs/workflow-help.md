@@ -162,13 +162,15 @@ Re-copies Hero assets from the binary. Files you customized are **not** silently
 Typical first Runtime steps:
 
 1. `/hero:sync` — activate Hero on an existing codebase (recommended)
-2. `/hero:init` — start a new cycle (copies templates into `.workflow-hero/cycles/current/`)
-3. Edit `.workflow-hero/cycles/current/workflow-config.yml`
+2. `/hero:new` — start a new cycle (writes `.workflow-hero/cycles/current/`)
+3. Edit `.workflow-hero/cycles/current/workflow-config.yml` (fill `title` / `objective` / `scope`)
 4. Open a **new empty chat**, select the agent (model) you want as the Hero **orchestrator / grill-me**, then run `/hero:start`
+
+When prior cycles exist, `/hero:new` **always imports** `fallback_model`, `stages`, and `agents` from the previous cycle’s `workflow-config.yml` into the new file. `title`, `objective`, and `scope` are always reset to template defaults (cycle-specific). The first cycle uses the blank template only.
 
 ### 8.0 Clean session after configuration
 
-After `/hero:init`, prefer a **new empty chat** for `/hero:start` so the orchestrator session does not carry grilling/Q&A from configuration (saves context window for later stages). Soft guidance — Hero still works if you continue in the same chat, but a clean session is recommended.
+After `/hero:new`, prefer a **new empty chat** for `/hero:start` so the orchestrator session does not carry grilling/Q&A from configuration (saves context window for later stages). Soft guidance — Hero still works if you continue in the same chat, but a clean session is recommended.
 
 In the new chat, **select the IDE agent/model you want as the Hero orchestrator / grill-me** before `/hero:start`. That session model drives orchestration; specialized agents still use models from `workflow-config.yml` via the Task tool.
 
@@ -253,7 +255,7 @@ hero update-models
 
 | Command | Purpose |
 |---------|---------|
-| `/hero:init` | Start a new development cycle |
+| `/hero:new` | Start a new development cycle |
 | `/hero:start` | Execute configured stages |
 | `/hero:approve` | Approve current stage and advance |
 | `/hero:reject` | Reject and re-run current stage |
@@ -338,7 +340,7 @@ hero install --tools cursor
 
 # In Cursor:
 /hero:sync
-/hero:init
+/hero:new
 # edit workflow-config.yml (scope, stages, models)
 
 # New empty chat → select orchestrator / grill-me agent → then:
@@ -479,11 +481,13 @@ Atualiza assets com proteção por checksum (customizações locais não são so
 ## 8. Configurar um ciclo
 
 1. `/hero:sync` (recomendado em codebases existentes)
-2. `/hero:init`
-3. Editar `.workflow-hero/cycles/current/workflow-config.yml`
+2. `/hero:new`
+3. Editar `.workflow-hero/cycles/current/workflow-config.yml` (preencher `title` / `objective` / `scope`)
 4. Abrir um **chat novo e vazio**, selecionar o agente (modelo) que deseja como **orchestrator / grill-me** do Hero, e então rodar `/hero:start`
 
-Após o `/hero:init`, prefira um chat limpo para o `/hero:start` (orientação soft) — evita carregar grilling/Q&A da configuração na janela de contexto. No chat novo, escolha o agente/modelo da sessão IDE que fará o papel de orchestrator / grill-me antes de iniciar.
+Quando já existem ciclos anteriores, o `/hero:new` **sempre importa** `fallback_model`, `stages` e `agents` do ciclo anterior; `title`, `objective` e `scope` voltam ao padrão do template.
+
+Após o `/hero:new`, prefira um chat limpo para o `/hero:start` (orientação soft) — evita carregar grilling/Q&A da configuração na janela de contexto. No chat novo, escolha o agente/modelo da sessão IDE que fará o papel de orchestrator / grill-me antes de iniciar.
 
 Configure `scope`, `stages`, `agents`, `fallback_model`, `stages.browser_ui_validation` e `stages.qa_end_to_end.use_playwright` conforme a seção em inglês (§8) — os campos são os mesmos. Browser UI Validation exige Playwright no projeto consumidor; artefatos em `.workflow-hero/cycles/current/browser-ui/`.
 
@@ -497,7 +501,7 @@ Configure `scope`, `stages`, `agents`, `fallback_model`, `stages.browser_ui_vali
 
 ## 10. Comandos Runtime (chat do Cursor)
 
-`/hero:init`, `/hero:start`, `/hero:approve`, `/hero:reject`, `/hero:cancel`, `/hero:continue`, `/hero:back`, `/hero:finish`, `/hero:archive`, `/hero:resume`, `/hero:sync`, `/hero:status`, `/hero:help` — ver tabela da §10 (inglês).
+`/hero:new`, `/hero:start`, `/hero:approve`, `/hero:reject`, `/hero:cancel`, `/hero:continue`, `/hero:back`, `/hero:finish`, `/hero:archive`, `/hero:resume`, `/hero:sync`, `/hero:status`, `/hero:help` — ver tabela da §10 (inglês).
 
 ---
 
@@ -517,7 +521,7 @@ hero install --tools cursor
 # leia .workflow-hero/docs/workflow-help.md
 
 /hero:sync
-/hero:init
+/hero:new
 # edite workflow-config.yml
 
 # Chat novo e vazio → selecione orchestrator / grill-me → depois:

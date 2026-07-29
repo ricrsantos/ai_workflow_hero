@@ -17,8 +17,9 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 ## Responsibilities
 
 - Read and validate `workflow-config.yml` before starting a cycle.
-- After `/hero:init`, guide a **Clean Session Handoff**: ask the user to open a new empty chat, select the IDE agent/model they want as the Hero orchestrator / grill-me, then run `/hero:start` (soft guidance — see `hero-init.md`).
-- On `/hero:start`, bootstrap only from disk files (do not depend on init chat history — see `hero-start.md`).
+- On `/hero:new`, when prior cycles exist, **always** import previous `workflow-config.yml` `fallback_model` + `stages` + `agents` into the new cycle; reset `title` / `objective` / `scope` to template defaults (see **Previous Cycle Config Import** in `hero-new.md`). Never seed a subsequent cycle from the blank template alone when a previous config is available.
+- After `/hero:new`, guide a **Clean Session Handoff**: ask the user to open a new empty chat, select the IDE agent/model they want as the Hero orchestrator / grill-me, then run `/hero:start` (soft guidance — see `hero-new.md`).
+- On `/hero:start`, bootstrap only from disk files (do not depend on `/hero:new` chat history — see `hero-start.md`).
 - For each enabled stage, invoke the responsible specialized agent via the Task tool (fresh isolated session, receiving file pointers not pasted content — ADR-005), applying the **Model Resolution** procedure on every Task call.
 - Enforce the approval and control loop (auto-advance or wait for human commands).
 - Update `workflow.md` after every stage transition.

@@ -113,6 +113,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 ### 5.5 Model Selection and Fallback
 
 - Each agent's model is configured per-cycle in `workflow-config.yml`.
+- On `/hero:new`, when prior cycles exist, the Runtime **always** imports `fallback_model`, `stages`, and `agents` from the previous cycle’s `workflow-config.yml` (deep-merged onto the installed template). `title`, `objective`, and `scope` are always reset to template defaults (cycle-specific). First cycle uses the blank template only.
 - Fallback chain (2 levels + escalation): 1) the agent's configured model → 2) `fallback_model` (top-level block in `workflow-config.yml`, with `model`, `reasoning_effort`, `enable_fast_model`, and `thinking`), **with an explicit warning to the user every time it activates** → 3) if still unavailable, warn the user and wait for `/hero:continue` after they fix the configuration.
 
 ### 5.6 Scope
@@ -136,7 +137,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 ### 5.9 Runtime Commands (require agent reasoning)
 
-`/hero:init`, `/hero:start`, `/hero:approve`, `/hero:reject`, `/hero:cancel`, `/hero:finish`, `/hero:archive`, `/hero:resume [cycle]`, `/hero:sync`, `/hero:status`, `/hero:help`, `/hero:continue`, `/hero:back`.
+`/hero:new`, `/hero:start`, `/hero:approve`, `/hero:reject`, `/hero:cancel`, `/hero:finish`, `/hero:archive`, `/hero:resume [cycle]`, `/hero:sync`, `/hero:status`, `/hero:help`, `/hero:continue`, `/hero:back`.
 
 Each Runtime command maps to exactly one embedded asset file (`hero-<command>.md` in `.cursor/commands/`), and each agent above maps to exactly one `<agent_name>.md` file in `.cursor/agents/` — see [ADR-011](../architecture/ADR.md#adr-011-one-asset-file-per-runtime-command-and-agent) for the full file lists.
 

@@ -4,8 +4,8 @@ objective: Describe the objective of this development cycle.
 # Fallback model used when an agent's configured model is unavailable.
 # The user is always warned explicitly when this fallback is used.
 fallback_model:
-  model: claude-sonnet-5
-  reasoning_effort: medium
+  model: cursor-grok-4.5
+  reasoning_effort: high
   enable_fast_model: false
   thinking: na
 
@@ -67,7 +67,7 @@ stages:
   qa_end_to_end:
     enabled: true
     purpose: Validate the complete feature end-to-end.
-    max_iterations: 1
+    max_iterations: 3
     timeout_minutes: 15
     require_human_approval: true
     # When true and scope.frontend is true, end2end_qa_agent uses Playwright
@@ -95,26 +95,26 @@ agents:
     thinking: na
 
   frontend_agent:
-    model: claude-sonnet-5
-    reasoning_effort: high
+    model: claude-sonnet-4.6
+    reasoning_effort: medium
     enable_fast_model: false
     thinking: false
 
   generic_agent:
-    model: claude-sonnet-5
-    reasoning_effort: medium
+    model: cursor-grok-4.5
+    reasoning_effort: high
     enable_fast_model: false
-    thinking: false
+    thinking: na
 
   qa_agent:
-    model: gpt-5.3-codex
-    reasoning_effort: medium
+    model: cursor-grok-4.5
+    reasoning_effort: high
     enable_fast_model: false
     thinking: na
 
   judge_agent:
-    model: claude-sonnet-5
-    reasoning_effort: high
+    model: gpt-5.3-codex
+    reasoning_effort: medium
     enable_fast_model: false
     thinking: false
 
@@ -139,6 +139,7 @@ workflow_rules:
   - When Browser UI Validation is enabled, Browser Health always runs (Playwright required at execution); Visual Validation runs only when visual_validation.enabled is true and only after Health passes.
   - stages.qa_end_to_end.use_playwright may be true only when scope.frontend is true; otherwise block and ask for correction.
   - When use_playwright is true, end2end_qa_agent uses Playwright; when false, it uses direct HTTP calls.
+  - On /hero:new with prior cycles, import previous fallback_model + stages + agents; always reset title, objective, and scope to template defaults.
   - Do not change the architecture without an approved ADR.
   - Update workflow.md after completing each stage.
   - Before finishing the workflow, ensure current-state.md is up to date.
