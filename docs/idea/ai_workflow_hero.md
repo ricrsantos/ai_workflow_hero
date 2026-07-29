@@ -656,7 +656,7 @@ Projeto
 ```
 
  >[!question] Importar o arquivo de configuração do último ciclo executado? ✅ Resolvido (grilling 2026-07-20; esclarecido 2026-07-29)
->Caso o usuário já tenha executado algum ciclo do Hero neste projeto, o `/hero:new` **sempre importa** as seções `fallback_model`, `stages` e `agents` (modelos, iterações, aprovação e opções aninhadas de stage) do ciclo anterior para `.workflow-hero/cycles/current/workflow-config.yml` — sem perguntar. Os campos `title`, `objective` e `scope` sempre voltam para os valores padrão do template, pois são específicos de cada ciclo. O arquivo novo parte do template instalado (para preservar chaves novas de upgrade) e faz deep-merge dessas seções.
+>Caso o usuário já tenha executado algum ciclo do Hero neste projeto, o `/hero:new` **sempre importa** as seções `workflow_config`, `fallback_model`, `stages` e `agents` (idioma de chat, modelos, iterações, aprovação e opções aninhadas de stage) do ciclo anterior para `.workflow-hero/cycles/current/workflow-config.yml` — sem perguntar. Os campos `title`, `objective` e `scope` sempre voltam para os valores padrão do template, pois são específicos de cada ciclo. O arquivo novo parte do template instalado (para preservar chaves novas de upgrade) e faz deep-merge dessas seções.
 >
 >Se já existir um ciclo em `cycles/current/` ainda em andamento (Status diferente de `Completed`/`Cancelled`/`Finished by User`), o `orchestration_agent` avisa o usuário, mostra a etapa atual, e pergunta explicitamente se ele quer arquivar mesmo assim (perdendo o progresso não finalizado) ou cancelar o `/hero:new` e continuar o ciclo atual com `/hero:start`.
 
@@ -2728,7 +2728,7 @@ UI-C04-001-dashboard.md
 
 38. **Campos avançados do `project.json`** (stack, plataformas, idiomas, design de UI, domínio de deploy): ficam vazios/null na instalação (CLI) e são preenchidos pelo `orchestration_agent` durante o primeiro `/hero:new`, inferindo do repositório existente ou perguntando ao usuário quando não houver código.
 
-39. **Importar `workflow-config.yml` do ciclo anterior**: em todo `/hero:new` com ciclo(s) anterior(es), **sempre** importa `fallback_model`, `stages` e `agents` (modelos, iterações, aprovação) do ciclo anterior (deep-merge sobre o template); `title`, `objective` e `scope` sempre voltam para os valores padrão do template, pois são específicos de cada ciclo. Não perguntar — a importação é obrigatória.
+39. **Importar `workflow-config.yml` do ciclo anterior**: em todo `/hero:new` com ciclo(s) anterior(es), **sempre** importa `workflow_config`, `fallback_model`, `stages` e `agents` (idioma de chat, modelos, iterações, aprovação) do ciclo anterior (deep-merge sobre o template); `title`, `objective` e `scope` sempre voltam para os valores padrão do template, pois são específicos de cada ciclo. Não perguntar — a importação é obrigatória.
 
 40. **`/hero:new` com ciclo em andamento**: avisa que há um ciclo em andamento, mostra a etapa atual, e pergunta explicitamente se o usuário quer arquivar mesmo assim (perdendo o progresso não finalizado) ou cancelar o `/hero:new` e continuar o ciclo atual com `/hero:start`.
 
@@ -2826,4 +2826,5 @@ UI-C04-001-dashboard.md
 
 70. **Mensagens de erro**: estrutura consistente — ícone/cor de erro + descrição clara do problema + sugestão de correção (quando aplicável) + código de saída não-zero. Stack traces de erros inesperados (panics) só aparecem com uma flag `--verbose`/`--debug`.
 
+71. **`workflow_config.user_preferred_language`**: seção `workflow_config` no `workflow-config.yml` (antes de `scope`) com default `EN`. Todos os agentes falam com o usuário no chat nessa língua, salvo pedido explícito do usuário em contrário. Artefatos de ciclo continuam em inglês. `fallback_model` fica depois de `agents` e antes de `workflow_rules`. Em `/hero:new`, `workflow_config` é importado do ciclo anterior junto com `fallback_model` / `stages` / `agents`.
 

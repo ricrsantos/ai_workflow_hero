@@ -35,6 +35,7 @@ QA failure loop: returns to the implementation agent(s) referenced in the error 
 
 ## Rules
 
+- When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
 - NEVER implement code.
 - NEVER change architecture.
 - Receive only file pointers — start each session fresh.

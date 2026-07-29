@@ -110,11 +110,12 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 - **`/hero:back`**: reopens Planning (the `planning_agent` edits the existing OpenSpec proposal in place). Implementation, QA, and Judge reset to `Waiting` and re-run from scratch.
 - **`/hero:archive` (manual)**: archives the current cycle even mid-progress, marking the in-progress stage as `Paused`. `/hero:resume [cycle]` restores it back to `cycles/current/`.
 
-### 5.5 Model Selection and Fallback
+### 5.5 Model Selection, Fallback, and Chat Language
 
 - Each agent's model is configured per-cycle in `workflow-config.yml`.
-- On `/hero:new`, when prior cycles exist, the Runtime **always** imports `fallback_model`, `stages`, and `agents` from the previous cycle’s `workflow-config.yml` (deep-merged onto the installed template). `title`, `objective`, and `scope` are always reset to template defaults (cycle-specific). First cycle uses the blank template only.
+- On `/hero:new`, when prior cycles exist, the Runtime **always** imports `workflow_config`, `fallback_model`, `stages`, and `agents` from the previous cycle’s `workflow-config.yml` (deep-merged onto the installed template). `title`, `objective`, and `scope` are always reset to template defaults (cycle-specific). First cycle uses the blank template only.
 - Fallback chain (2 levels + escalation): 1) the agent's configured model → 2) `fallback_model` (top-level block in `workflow-config.yml`, with `model`, `reasoning_effort`, `enable_fast_model`, and `thinking`), **with an explicit warning to the user every time it activates** → 3) if still unavailable, warn the user and wait for `/hero:continue` after they fix the configuration.
+- `workflow_config.user_preferred_language` (default `EN`) sets the language all agents use when communicating with the user in chat. The user may override for the session by explicitly asking. Cycle artifacts remain English (see §5.7).
 
 ### 5.6 Scope
 

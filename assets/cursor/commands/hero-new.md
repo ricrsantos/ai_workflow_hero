@@ -19,7 +19,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 6. **Build `workflow-config.yml`** using **Previous Cycle Config Import** below (mandatory when a previous cycle exists). Never leave a stale previous-cycle file in place as the new cycle config. Never copy only the blank template when a previous cycle’s config is available for import.
 7. Ask the user to review and edit the cycle config **using a clickable markdown link** to the file (Cursor opens it on click):
    `[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)`
-   Remind them that `title`, `objective`, and `scope` are cycle-specific (reset to template defaults) and must be filled for this cycle. Remind them to check stages (including `browser_ui_validation` / `qa_end_to_end.use_playwright` when frontend is in scope) and that imported `agents` / `fallback_model` / stage budgets came from the previous cycle when applicable. Also remind that `.env.example` is the committed template; real secrets stay in local `.env`.
+   Remind them that `title`, `objective`, and `scope` are cycle-specific (reset to template defaults) and must be filled for this cycle. Remind them to check `workflow_config.user_preferred_language` (chat language), stages (including `browser_ui_validation` / `qa_end_to_end.use_playwright` when frontend is in scope), and that imported `workflow_config` / `agents` / `fallback_model` / stage budgets came from the previous cycle when applicable. Also remind that `.env.example` is the committed template; real secrets stay in local `.env`.
    Never mention the path only as plain text without the markdown link when asking for review.
 8. Write `.workflow-hero/cycles/current/.lock` to prevent concurrent sessions.
 9. Initialize `workflow.md` with all stages in `Waiting` status. Set header **Status** to `In Progress`, **Started** to the local calendar date from `date +%Y-%m-%d` (never invent the date), and leave **Completed** empty.
@@ -42,19 +42,20 @@ Resolve the source file in this order (first match wins):
 
 | From previous cycle | From template defaults |
 |---|---|
-| `fallback_model` | `title` |
-| `stages` (enabled flags, budgets, approvals, nested stage options such as `visual_validation`, `use_playwright`) | `objective` |
-| `agents` (all agent model blocks: `model`, `reasoning_effort`, `enable_fast_model`, `thinking`) | `scope` |
+| `workflow_config` (e.g. `user_preferred_language`) | `title` |
+| `fallback_model` | `objective` |
+| `stages` (enabled flags, budgets, approvals, nested stage options such as `visual_validation`, `use_playwright`) | `scope` |
+| `agents` (all agent model blocks: `model`, `reasoning_effort`, `enable_fast_model`, `thinking`) | |
 
 Do **not** copy `title`, `objective`, or `scope` from the previous cycle. Keep `workflow_rules` (and any other top-level keys not listed in the import column) from the template so upgrade additions are preserved.
 
 ### Write the new config
 
 1. Start from `.workflow-hero/templates/workflow-config.yml` (so new template keys from upgrades are present).
-2. Overlay from the previous config: `fallback_model`, `stages`, and `agents` (deep-merge by key: previous values win for keys that exist there; keep template defaults for keys the previous file lacks — e.g. a new stage/agent added in a later Hero version).
+2. Overlay from the previous config: `workflow_config`, `fallback_model`, `stages`, and `agents` (deep-merge by key: previous values win for keys that exist there; keep template defaults for keys the previous file lacks — e.g. a new stage/agent added in a later Hero version).
 3. Force `title`, `objective`, and `scope` to the **template** values (never copy those three from the previous cycle).
 4. Write the result to `.workflow-hero/cycles/current/workflow-config.yml`.
-5. Tell the user briefly that models/stages/fallback were imported from cycle `C<N>` and that title/objective/scope were reset for this cycle.
+5. Tell the user briefly that workflow_config/models/stages/fallback were imported from cycle `C<N>` and that title/objective/scope were reset for this cycle.
 
 ## Clean Session Handoff
 
@@ -81,7 +82,7 @@ When later stages invoke subagents (after `/hero:start`), follow **Model Resolut
 
 ```
 → Initializing cycle C<N>...
-→ Previous cycle config: imported fallback_model + stages + agents from C<M> (title/objective/scope reset to template)
+→ Previous cycle config: imported workflow_config + fallback_model + stages + agents from C<M> (title/objective/scope reset to template)
 ✓ Cycle C<N> initialized.
 → Review and edit: [.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)
 

@@ -398,7 +398,7 @@ func TestRuntimeAssets_CleanSessionHandoff(t *testing.T) {
 }
 
 // TestRuntimeAssets_PreviousCycleConfigImport verifies /hero:new mandates importing
-// fallback_model + stages + agents from the prior cycle while resetting cycle-specific fields.
+// workflow_config + fallback_model + stages + agents from the prior cycle while resetting cycle-specific fields.
 func TestRuntimeAssets_PreviousCycleConfigImport(t *testing.T) {
 	newCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-new.md")
 	if err != nil {
@@ -407,6 +407,7 @@ func TestRuntimeAssets_PreviousCycleConfigImport(t *testing.T) {
 	newStr := string(newCmd)
 	for _, kw := range []string{
 		"Previous Cycle Config Import",
+		"workflow_config",
 		"fallback_model",
 		"stages",
 		"agents",

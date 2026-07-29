@@ -51,6 +51,7 @@ Browser UI Validation failure loop: returns to `frontend_agent` (or `backend_age
 
 ## Rules
 
+- When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
 - NEVER implement code.
 - NEVER change architecture.
 - NEVER overwrite files under `visual_validation.reference_dir`.

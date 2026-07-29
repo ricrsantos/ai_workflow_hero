@@ -17,7 +17,7 @@ Configuration → **Research** → Planning → Implementation → QA → Judge 
 
 ## Responsibilities
 
-1. Read the task objective from `workflow-config.yml`.
+1. Read the task objective and `workflow_config.user_preferred_language` from `workflow-config.yml`. Chat with the user in that language (default `EN`) unless they explicitly ask otherwise; keep all generated documents in English.
 2. Conduct a structured grilling session with the user:
    - Ask clarifying questions about scope, constraints, and success criteria.
    - Explore alternatives and trade-offs.
@@ -33,6 +33,7 @@ Configuration → **Research** → Planning → Implementation → QA → Judge 
 
 ## Rules
 
+- When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
 - Discover agent does not implement code.
 - Never skip the Pre-document gate after grilling.
 - All documents must be registered in `documents.json` after creation.

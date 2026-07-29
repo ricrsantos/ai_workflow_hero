@@ -6,6 +6,26 @@
 
 ---
 
+## 2026-07-29 — Release 0.8.0 (chat language + fallback_model reorder)
+
+**Problem:** Ship minor release for `workflow_config.user_preferred_language` and `fallback_model` section reorder.
+
+**Decision:** SemVer minor bump `0.7.0` → `0.8.0` (user-facing Runtime config/behavior change).
+
+**Outcome:** Version default in `cmd/hero/main.go` set to `0.8.0`; tag/push/`release.sh` follow on this commit.
+
+---
+
+## 2026-07-29 — workflow_config.user_preferred_language + fallback_model reorder
+
+**Problem:** Users need a default chat language for agents; `fallback_model` was placed awkwardly before `scope`.
+
+**Decision:** Add `workflow_config.user_preferred_language` (default `EN`) before `scope`; move `fallback_model` after `agents` / before `workflow_rules`. Agents must chat in the preferred language unless the user asks otherwise; cycle artifacts stay English. Import `workflow_config` on `/hero:new` with the other durable sections.
+
+**Outcome:** Template, Runtime agents/commands/skill, PRD/ADR/help/README/design notes, and contract tests updated.
+
+---
+
 ## 2026-07-29 — Tag and build release v0.7.0
 
 **Problem:** Cut minor release for `/hero:new` rename + previous-cycle config import.
@@ -28,7 +48,7 @@
 
 **Problem:** `/hero:new` only copied the blank template into `workflow-config.yml`, so models/stages from the previous cycle were lost.
 
-**Decision:** Mandatory **Previous Cycle Config Import**: deep-merge previous `fallback_model` + `stages` + `agents` onto the installed template; always reset `title` / `objective` / `scope`. Documented in PRD §5.5, ADR workflow_rules, workflow-help, design decision #39 (no ask — always import).
+**Decision:** Mandatory **Previous Cycle Config Import**: deep-merge previous `workflow_config` + `fallback_model` + `stages` + `agents` onto the installed template; always reset `title` / `objective` / `scope`. Documented in PRD §5.5, ADR workflow_rules, workflow-help, design decision #39 (no ask — always import).
 
 **Outcome:** Updated `hero-new.md`, orchestration/skill/help assets, docs, contract test; `go test ./...` green. Consumers need `hero upgrade` to pick up the fixed command.
 

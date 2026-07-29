@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | V1 complete; OpenSpec change `browser-ui-validation` implemented (ready to archive). Default CLI version `0.7.0`. |
+| **Phase** | V1 complete; OpenSpec change `browser-ui-validation` implemented (ready to archive). Default CLI version `0.8.0`. |
 
 ## Technology Stack
 
@@ -56,14 +56,16 @@
 ## Pending Features
 
 - Archive OpenSpec change `browser-ui-validation` when ready.
-- Create GitHub Release for `v0.7.0` and upload `dist/` artifacts (binaries + checksums).
+- Create GitHub Release for `v0.8.0` and upload `dist/` artifacts (binaries + checksums).
 - Optional further enrichment of Runtime narrative prompts.
 - Other post-V1 / V2 priorities not yet selected (see PRD §2.3).
 
 ## Recent Decisions
 
+- Release `0.8.0` (2026-07-29): minor bump for `workflow_config.user_preferred_language` + `fallback_model` reorder.
 - Release `0.7.0` (2026-07-29): minor bump for `/hero:new` rename + previous-cycle `workflow-config` import.
-- Previous-cycle config import (2026-07-29): `/hero:new` always imports prior `fallback_model` + `stages` + `agents`; resets `title` / `objective` / `scope` to template.
+- Previous-cycle config import (2026-07-29): `/hero:new` always imports prior `workflow_config` + `fallback_model` + `stages` + `agents`; resets `title` / `objective` / `scope` to template.
+- Chat language (2026-07-29): `workflow_config.user_preferred_language` (default `EN`); agents chat in that language unless user asks otherwise; cycle artifacts stay English. `fallback_model` sits after `agents`, before `workflow_rules`.
 - Runtime command rename (2026-07-29): `/hero:init` → `/hero:new` (asset `hero-new.md`); docs and inventory updated.
 - Model pricing catalog (2026-07-28): `moonshot.yml` now has `kimi-k2.7-code`, `kimi-k3`, `kimi-k3-max`; `zhipu.yml` has `glm-5.2`, `glm-5.2-high` (Cursor docs rates; Task effort variants included for metrics lookup). Patch bump to `0.6.1`.
 - Browser UI Validation (2026-07-28): new stage after Judge; Health always-on when enabled; Visual optional (agent vision); no `base_url`/`screens.yml`; failure routing front/back; SemVer `0.6.0`.
@@ -74,7 +76,7 @@
 - Go module path: `github.com/ricrsantos/ai_workflow_hero` (from git remote).
 - Subagent models: agent frontmatter stays `inherit`; effective model is Task `model` from per-cycle `workflow-config.yml` (ADR-005 / ADR-008).
 - Soft secrets hygiene: commit `.env.example` only; doctor warns, does not block.
-- CLI default version `0.7.0`.
+- CLI default version `0.8.0`.
 
 ## Known Technical Debt
 
@@ -86,7 +88,7 @@
 ## Next Steps
 
 1. Archive OpenSpec change `browser-ui-validation` (`/opsx:archive`).
-2. Create GitHub Release for `v0.7.0` and upload `dist/` (4 binaries + `checksums.txt`).
+2. Create GitHub Release for `v0.8.0` and upload `dist/` (4 binaries + `checksums.txt`).
 3. Optionally deepen other Runtime prompt content.
 
 ---

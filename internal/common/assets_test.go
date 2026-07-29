@@ -172,6 +172,42 @@ func TestAssets_WorkflowConfigFallbackModel(t *testing.T) {
 	if strings.Contains(content, "generic_model") {
 		t.Error("workflow-config.yml template still references generic_model")
 	}
+	// fallback_model must appear after agents and before workflow_rules
+	agentsIdx := strings.Index(content, "\nagents:")
+	fallbackIdx := strings.Index(content, "\nfallback_model:")
+	rulesIdx := strings.Index(content, "\nworkflow_rules:")
+	if agentsIdx < 0 || fallbackIdx < 0 || rulesIdx < 0 {
+		t.Fatal("workflow-config.yml missing agents, fallback_model, or workflow_rules section")
+	}
+	if !(agentsIdx < fallbackIdx && fallbackIdx < rulesIdx) {
+		t.Errorf("fallback_model must be after agents and before workflow_rules (agents=%d fallback=%d rules=%d)", agentsIdx, fallbackIdx, rulesIdx)
+	}
+}
+
+// TestAssets_WorkflowConfigUserPreferredLanguage verifies workflow_config.user_preferred_language defaults to EN and precedes scope.
+func TestAssets_WorkflowConfigUserPreferredLanguage(t *testing.T) {
+	data, err := fs.ReadFile(assets.FS, "templates/workflow-config.yml")
+	if err != nil {
+		t.Fatalf("read workflow-config template: %v", err)
+	}
+	content := string(data)
+	for _, kw := range []string{
+		"workflow_config:",
+		"user_preferred_language: EN",
+		"All agents must communicate with the user in chat using workflow_config.user_preferred_language",
+	} {
+		if !strings.Contains(content, kw) {
+			t.Errorf("workflow-config.yml template missing %q", kw)
+		}
+	}
+	cfgIdx := strings.Index(content, "\nworkflow_config:")
+	scopeIdx := strings.Index(content, "\nscope:")
+	if cfgIdx < 0 || scopeIdx < 0 {
+		t.Fatal("workflow-config.yml missing workflow_config or scope section")
+	}
+	if !(cfgIdx < scopeIdx) {
+		t.Errorf("workflow_config must appear before scope (workflow_config=%d scope=%d)", cfgIdx, scopeIdx)
+	}
 }
 
 // TestAssets_WorkflowConfigUsePlaywright verifies qa_end_to_end exposes use_playwright and related workflow rules.

@@ -32,6 +32,7 @@ The context agent can be invoked during any stage by the orchestrator to fetch c
 
 ## Rules
 
+- When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
 - NEVER implement code.
 - NEVER make architectural decisions.
 - NEVER modify files other than during /hero:sync (AGENTS.md, current-state.md, context-log.md, project.json, and soft secrets hygiene files `.env.example` / `.gitignore` when missing patterns).

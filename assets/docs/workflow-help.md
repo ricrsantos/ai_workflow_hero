@@ -163,10 +163,10 @@ Typical first Runtime steps:
 
 1. `/hero:sync` — activate Hero on an existing codebase (recommended)
 2. `/hero:new` — start a new cycle (writes `.workflow-hero/cycles/current/`)
-3. Edit `.workflow-hero/cycles/current/workflow-config.yml` (fill `title` / `objective` / `scope`)
+3. Edit `.workflow-hero/cycles/current/workflow-config.yml` (fill `title` / `objective` / `scope`; optionally set `workflow_config.user_preferred_language`)
 4. Open a **new empty chat**, select the agent (model) you want as the Hero **orchestrator / grill-me**, then run `/hero:start`
 
-When prior cycles exist, `/hero:new` **always imports** `fallback_model`, `stages`, and `agents` from the previous cycle’s `workflow-config.yml` into the new file. `title`, `objective`, and `scope` are always reset to template defaults (cycle-specific). The first cycle uses the blank template only.
+When prior cycles exist, `/hero:new` **always imports** `workflow_config`, `fallback_model`, `stages`, and `agents` from the previous cycle’s `workflow-config.yml` into the new file. `title`, `objective`, and `scope` are always reset to template defaults (cycle-specific). The first cycle uses the blank template only.
 
 ### 8.0 Clean session after configuration
 
@@ -179,12 +179,13 @@ In the new chat, **select the IDE agent/model you want as the Hero orchestrator 
 | Section | Purpose |
 |---------|---------|
 | `title` / `objective` | Cycle identity and goal |
-| `fallback_model` | Used when an agent’s model is unavailable (`model`, `reasoning_effort`, `enable_fast_model`, `thinking`) |
+| `workflow_config.user_preferred_language` | Chat language for all agents talking to the user (default `EN`). Cycle artifacts stay English. User may ask for a different chat language in-session. |
 | `scope` | Booleans: `backend`, `frontend`, `native`, `script`, `infrastructure` (at least one must be true when Implementation is enabled) |
 | `stages.*` | Per stage: `enabled`, `purpose`, `max_iterations`, `timeout_minutes`, `require_human_approval` |
 | `stages.browser_ui_validation` | Default `enabled: false`. Requires `scope.frontend: true` when enabled. Always runs **Browser Health** (Playwright). Optional nested `visual_validation.enabled` + `visual_validation.reference_dir` (default `docs/ui/visual_reference`) |
 | `stages.qa_end_to_end.use_playwright` | `true` → Playwright journeys (requires `scope.frontend: true`); `false` → direct HTTP. Independent of Browser UI Validation |
 | `agents.*` | Per-agent model settings |
+| `fallback_model` | Used when an agent’s model is unavailable (`model`, `reasoning_effort`, `enable_fast_model`, `thinking`) |
 | `workflow_rules` | Guardrails the orchestrator must follow |
 
 ### 8.2 Scope → implementation agent
@@ -299,6 +300,7 @@ Research decides which of PRD / ADR / UI / DEPLOY / TESTING to create and regist
 - Living docs (edited in place): `DEPLOY.md`, `TESTING.md`
 - Indexes: `docs/product/PRD.md`, `docs/architecture/ADR.md`
 - Cycle artifacts are written in **English** regardless of chat language
+- Chat language is set by `workflow_config.user_preferred_language` (default `EN`); agents follow it unless you ask otherwise
 
 ### Architecture
 
@@ -482,14 +484,14 @@ Atualiza assets com proteção por checksum (customizações locais não são so
 
 1. `/hero:sync` (recomendado em codebases existentes)
 2. `/hero:new`
-3. Editar `.workflow-hero/cycles/current/workflow-config.yml` (preencher `title` / `objective` / `scope`)
+3. Editar `.workflow-hero/cycles/current/workflow-config.yml` (preencher `title` / `objective` / `scope`; opcionalmente `workflow_config.user_preferred_language`)
 4. Abrir um **chat novo e vazio**, selecionar o agente (modelo) que deseja como **orchestrator / grill-me** do Hero, e então rodar `/hero:start`
 
-Quando já existem ciclos anteriores, o `/hero:new` **sempre importa** `fallback_model`, `stages` e `agents` do ciclo anterior; `title`, `objective` e `scope` voltam ao padrão do template.
+Quando já existem ciclos anteriores, o `/hero:new` **sempre importa** `workflow_config`, `fallback_model`, `stages` e `agents` do ciclo anterior; `title`, `objective` e `scope` voltam ao padrão do template.
 
 Após o `/hero:new`, prefira um chat limpo para o `/hero:start` (orientação soft) — evita carregar grilling/Q&A da configuração na janela de contexto. No chat novo, escolha o agente/modelo da sessão IDE que fará o papel de orchestrator / grill-me antes de iniciar.
 
-Configure `scope`, `stages`, `agents`, `fallback_model`, `stages.browser_ui_validation` e `stages.qa_end_to_end.use_playwright` conforme a seção em inglês (§8) — os campos são os mesmos. Browser UI Validation exige Playwright no projeto consumidor; artefatos em `.workflow-hero/cycles/current/browser-ui/`.
+Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`, `fallback_model`, `stages.browser_ui_validation` e `stages.qa_end_to_end.use_playwright` conforme a seção em inglês (§8) — os campos são os mesmos. Browser UI Validation exige Playwright no projeto consumidor; artefatos em `.workflow-hero/cycles/current/browser-ui/`.
 
 ---
 

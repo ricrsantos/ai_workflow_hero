@@ -108,7 +108,7 @@ Then, in Cursor chat:
 
 1. `/hero:sync` — activate Hero in an existing codebase (optional but recommended)
 2. `/hero:new` — start a new development cycle
-3. Edit `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`; prior cycles also re-import models/stages from the last cycle)
+3. Edit `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope` / optional `workflow_config.user_preferred_language`; prior cycles also re-import language/models/stages from the last cycle)
 4. Open a **new empty chat**, select the agent you want as the Hero **orchestrator / grill-me**, then `/hero:start`
 
 After install, read the full user guide at `.workflow-hero/docs/workflow-help.md` (philosophy, configuration, CLI and Runtime commands).
@@ -339,7 +339,7 @@ Em seguida, no chat do Cursor:
 
 1. `/hero:sync` — ativa o Hero em um codebase existente (opcional, mas recomendado)
 2. `/hero:new` — inicia um novo ciclo de desenvolvimento
-3. Edite `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`; ciclos anteriores também reimportam modelos/stages do último ciclo)
+3. Edite `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope` / opcional `workflow_config.user_preferred_language`; ciclos anteriores também reimportam idioma/modelos/stages do último ciclo)
 4. Abra um **chat novo e vazio**, selecione o agente que deseja como **orchestrator / grill-me** do Hero, e então `/hero:start`
 
 Após a instalação, leia o guia completo em `.workflow-hero/docs/workflow-help.md` (filosofia, configuração, comandos CLI e Runtime).

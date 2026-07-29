@@ -36,6 +36,7 @@ The orchestrator applies **Model Resolution** (see `orchestration_agent`): the T
 
 ## Rules
 
+- When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
 - Planning agent does not implement code.
 - All task items in the SDD must be independently testable.
 - SDD must reference approved PRD sections for traceability.

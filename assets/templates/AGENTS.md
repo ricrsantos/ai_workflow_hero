@@ -79,7 +79,8 @@ Follow the project's testing strategy in `docs/testing/TESTING.md` when present.
 ## Constraints
 
 - Do not change architecture without an approved ADR.
-- All documents are written in English.
+- All documents / cycle artifacts are written in English.
+- Chat with the user in `workflow-config.yml → workflow_config.user_preferred_language` (default `EN`), unless the user explicitly asks for a different chat language.
 - Tests must pass before marking a task complete.
 
 ## Secrets and Environment Variables

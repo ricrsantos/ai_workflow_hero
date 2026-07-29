@@ -17,7 +17,8 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 ## Responsibilities
 
 - Read and validate `workflow-config.yml` before starting a cycle.
-- On `/hero:new`, when prior cycles exist, **always** import previous `workflow-config.yml` `fallback_model` + `stages` + `agents` into the new cycle; reset `title` / `objective` / `scope` to template defaults (see **Previous Cycle Config Import** in `hero-new.md`). Never seed a subsequent cycle from the blank template alone when a previous config is available.
+- Communicate with the user in chat using `workflow_config.user_preferred_language` (default `EN`), unless the user explicitly asks for a different chat language. Cycle artifacts remain English. When dispatching Task subagents, include this language preference in the prompt so they follow it too.
+- On `/hero:new`, when prior cycles exist, **always** import previous `workflow-config.yml` `workflow_config` + `fallback_model` + `stages` + `agents` into the new cycle; reset `title` / `objective` / `scope` to template defaults (see **Previous Cycle Config Import** in `hero-new.md`). Never seed a subsequent cycle from the blank template alone when a previous config is available.
 - After `/hero:new`, guide a **Clean Session Handoff**: ask the user to open a new empty chat, select the IDE agent/model they want as the Hero orchestrator / grill-me, then run `/hero:start` (soft guidance — see `hero-new.md`).
 - On `/hero:start`, bootstrap only from disk files (do not depend on `/hero:new` chat history — see `hero-start.md`).
 - For each enabled stage, invoke the responsible specialized agent via the Task tool (fresh isolated session, receiving file pointers not pasted content — ADR-005), applying the **Model Resolution** procedure on every Task call.
@@ -42,6 +43,10 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 - QA / Browser UI Validation / QA End-to-End failures loop back to implementation agents.
 - Browser UI Validation: Health failure skips Visual; route `failure_class: frontend` → `frontend_agent`, `failure_class: backend` → `backend_agent`. Visual failures → `frontend_agent`. Missing PNG refs are warnings, not failures.
 - Judge SDD ambiguity → offer /hero:back or /hero:approve.
+
+## Communication Language
+
+Read `workflow-config.yml → workflow_config.user_preferred_language` (default `EN`). All chat messages to the user — including stage summaries, approvals, warnings, and metrics — MUST use that language, unless the user explicitly requests another chat language for the session. Do not change the language of cycle artifacts (PRD, ADR, SDD, workflow.md, etc.); those stay English (PRD §5.7).
 
 ## Scope Routing
 

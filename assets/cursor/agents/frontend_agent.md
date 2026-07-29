@@ -47,6 +47,7 @@ When implementing or changing frontend code, add application logs with explicit 
 
 ## Rules
 
+- When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
 - NEVER change architecture without an approved ADR.
 - NEVER skip running tests after implementation.
 - NEVER skip the Logging standard on new or changed code paths.

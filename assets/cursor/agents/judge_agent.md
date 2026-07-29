@@ -33,6 +33,7 @@ Configuration → Research → Planning → Implementation → QA → **Judge** 
 
 ## Rules
 
+- When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
 - NEVER assess code quality, style, or test coverage (that is qa_agent's job).
 - NEVER implement code.
 - NEVER change architecture.

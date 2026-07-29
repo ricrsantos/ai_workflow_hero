@@ -1,13 +1,11 @@
 title: New Feature
 objective: Describe the objective of this development cycle.
 
-# Fallback model used when an agent's configured model is unavailable.
-# The user is always warned explicitly when this fallback is used.
-fallback_model:
-  model: cursor-grok-4.5
-  reasoning_effort: high
-  enable_fast_model: false
-  thinking: na
+# Workflow-level preferences (chat language, etc.). Cycle artifacts stay English.
+workflow_config:
+  # Language agents use when talking to the user in chat (ISO-ish code, e.g. EN, PT-BR).
+  # Override only when the user explicitly asks for a different chat language.
+  user_preferred_language: EN
 
 scope:
   backend: true
@@ -130,6 +128,14 @@ agents:
     enable_fast_model: false
     thinking: false
 
+# Fallback model used when an agent's configured model is unavailable.
+# The user is always warned explicitly when this fallback is used.
+fallback_model:
+  model: cursor-grok-4.5
+  reasoning_effort: high
+  enable_fast_model: false
+  thinking: na
+
 workflow_rules:
   - Skip any stage that is not enabled.
   - Do not start implementation until the PRD has been approved, if the research stage is enabled.
@@ -139,7 +145,8 @@ workflow_rules:
   - When Browser UI Validation is enabled, Browser Health always runs (Playwright required at execution); Visual Validation runs only when visual_validation.enabled is true and only after Health passes.
   - stages.qa_end_to_end.use_playwright may be true only when scope.frontend is true; otherwise block and ask for correction.
   - When use_playwright is true, end2end_qa_agent uses Playwright; when false, it uses direct HTTP calls.
-  - On /hero:new with prior cycles, import previous fallback_model + stages + agents; always reset title, objective, and scope to template defaults.
+  - All agents must communicate with the user in chat using workflow_config.user_preferred_language (default EN), unless the user explicitly asks for a different chat language. Cycle artifacts remain English.
+  - On /hero:new with prior cycles, import previous workflow_config + fallback_model + stages + agents; always reset title, objective, and scope to template defaults.
   - Do not change the architecture without an approved ADR.
   - Update workflow.md after completing each stage.
   - Before finishing the workflow, ensure current-state.md is up to date.
