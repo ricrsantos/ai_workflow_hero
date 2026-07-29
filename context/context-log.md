@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-07-29 — Tag and build release v0.7.0
+
+**Problem:** Cut minor release for `/hero:new` rename + previous-cycle config import.
+
+**Outcome:** Tagged `v0.7.0` on `ade35c0`, pushed to origin; `./scripts/release.sh` produced `dist/hero_v0.7.0_{linux,darwin}_{amd64,arm64}` + `checksums.txt`. GitHub Release upload still pending (DEPLOY §4.2 step 4).
+
+---
+
 ## 2026-07-29 — Release 0.7.0 (`/hero:new` + previous-cycle import)
 
 **Problem:** Ship minor release for Runtime command rename and previous-cycle config import fix.
