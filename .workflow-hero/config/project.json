@@ -1,0 +1,15 @@
+{
+  "name": "AI Workflow Hero",
+  "summary": "The Workflow manager for AI code",
+  "createdAt": "2026-08-04T19:30:24Z",
+  "workflow": {
+    "name": "Feature Development",
+    "phase": "Research",
+    "cycle": 0
+  },
+  "technology": {
+    "stack": "",
+    "backend": "",
+    "languages": []
+  }
+}

@@ -6,11 +6,21 @@
 
 ---
 
+## 2026-08-04 — Publish GitHub Release v0.8.0
+
+**Problem:** Tag `v0.8.0` and local `dist/` existed, but the GitHub Release had never been created (DEPLOY §4.2 steps 4–5).
+
+**Investigation:** `go test ./...` green; tag already on origin at `24f3f18`; rebuilt artifacts via `./scripts/release.sh` on the tagged commit.
+
+**Outcome:** Published https://github.com/ricrsantos/ai_workflow_hero/releases/tag/v0.8.0 with 4 platform binaries + `checksums.txt` and release notes. Intermediate tags `v0.6.0`–`v0.7.0` remain unpublished on GitHub.
+
+---
+
 ## 2026-07-29 — Tag and build release v0.8.0
 
 **Problem:** Cut minor release for chat language preference + `fallback_model` reorder.
 
-**Outcome:** Tagged `v0.8.0` on `24f3f18`, pushed to origin; `./scripts/release.sh` produced `dist/hero_v0.8.0_{linux,darwin}_{amd64,arm64}` + `checksums.txt`. GitHub Release upload still pending (DEPLOY §4.2 step 4).
+**Outcome:** Tagged `v0.8.0` on `24f3f18`, pushed to origin; `./scripts/release.sh` produced `dist/hero_v0.8.0_{linux,darwin}_{amd64,arm64}` + `checksums.txt`. GitHub Release later published 2026-08-04.
 
 ---
 

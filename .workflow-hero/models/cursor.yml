@@ -1,0 +1,29 @@
+provider: cursor
+version: 1
+last_updated: 2026-07-28
+currency: usd
+unit: per_1m_tokens
+
+models:
+  composer-2.5:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+  composer-2.5-fast:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+  # Cursor IDE / Task slug for Grok 4.5 (same rates as xai.yml → grok-4.5).
+  cursor-grok-4.5:
+    input: 3.00
+    cache_write: 0.00
+    cache_read: 1.50
+    output: 15.00
+  # Task often exposes the high-effort variant as a distinct slug.
+  cursor-grok-4.5-high:
+    input: 3.00
+    cache_write: 0.00
+    cache_read: 1.50
+    output: 15.00

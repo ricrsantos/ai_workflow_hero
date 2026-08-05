@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | V1 complete; OpenSpec change `browser-ui-validation` implemented (ready to archive). Default CLI version `0.8.0`. |
+| **Phase** | V1 complete; OpenSpec change `browser-ui-validation` implemented (ready to archive). Default CLI version `0.8.0` — GitHub Release published. |
 
 ## Technology Stack
 
@@ -56,9 +56,9 @@
 ## Pending Features
 
 - Archive OpenSpec change `browser-ui-validation` when ready.
-- Create GitHub Release for `v0.8.0` and upload `dist/` artifacts (binaries + checksums).
 - Optional further enrichment of Runtime narrative prompts.
 - Other post-V1 / V2 priorities not yet selected (see PRD §2.3).
+- Note: GitHub Releases for `v0.6.0` / `v0.6.1` / `v0.7.0` were never published (only tags + local `dist/`); current latest published release is `v0.8.0`.
 
 ## Recent Decisions
 
@@ -88,8 +88,8 @@
 ## Next Steps
 
 1. Archive OpenSpec change `browser-ui-validation` (`/opsx:archive`).
-2. Create GitHub Release for `v0.8.0` and upload `dist/` (4 binaries + `checksums.txt`).
-3. Optionally deepen other Runtime prompt content.
+2. Optionally deepen other Runtime prompt content.
+3. Optionally backfill GitHub Releases for intermediate tags `v0.6.0`–`v0.7.0` if historical download links matter.
 
 ---
 
