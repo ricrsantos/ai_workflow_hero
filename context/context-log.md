@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-07 — Tag, build, and publish release v0.9.0
+
+**Problem:** Cut and publish minor release for nested subagent model config.
+
+**Outcome:** Tagged `v0.9.0` on `cc4a8b5`, pushed to origin; `./scripts/release.sh` produced `dist/hero_v0.9.0_{linux,darwin}_{amd64,arm64}` + `checksums.txt`; published https://github.com/ricrsantos/ai_workflow_hero/releases/tag/v0.9.0 with 4 binaries + checksums.
+
+---
+
 ## 2026-08-07 — Release 0.9.0 (nested subagent model config)
 
 **Problem:** Ship minor release for nested `agents.<name>.subagent` model configuration.
