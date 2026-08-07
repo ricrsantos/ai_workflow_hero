@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | V1 complete; OpenSpec change `browser-ui-validation` implemented (ready to archive). Default CLI version `0.8.0` — GitHub Release published. |
+| **Phase** | V1 complete; OpenSpec change `browser-ui-validation` implemented (ready to archive). Default CLI version `0.9.0` — nested subagent model config. |
 
 ## Technology Stack
 
@@ -47,7 +47,7 @@
 - Doctor / status / variables: table default + `--json`; doctor warn-only checks for secrets hygiene (tracked `.env`, missing `.env.example` / `.env` ignore).
 - `update-models`: fetches structured upstream model YAML (HTTP client injectable for tests).
 - Template renderer + inventory / Runtime-semantics asset tests.
-- Embedded Runtime assets: 13 `hero-*.md` commands, **11 agents** (incl. `browser_ui_agent`; Cursor YAML frontmatter with `model: inherit`), skills (`workflow-hero`, `grilling`), templates, 7 model pricing files, bilingual end-user guide (`assets/docs/workflow-help.md`); metrics use executable Metrics Procedure + subagent `input_chars`/`output_chars` contracts; **Model Resolution** builds **kebab Task slugs** from `workflow-config.yml`; stage order **QA → Judge → Browser UI Validation → QA End-to-End**; **Browser UI Validation** (`stages.browser_ui_validation`, default off) — Playwright Health + optional Visual vs PNGs (`visual_validation`, default `docs/ui/visual_reference`); requires `scope.frontend`; artifacts under `.workflow-hero/cycles/current/browser-ui/`; **QA End-to-End** Playwright journeys remain via `use_playwright` (distinct); **Logging standard**; **Clean Session Handoff**.
+- Embedded Runtime assets: 13 `hero-*.md` commands, **11 agents** (incl. `browser_ui_agent`; Cursor YAML frontmatter with `model: inherit`), skills (`workflow-hero`, `grilling`), templates, 7 model pricing files, bilingual end-user guide (`assets/docs/workflow-help.md`); metrics use executable Metrics Procedure + subagent `input_chars`/`output_chars` contracts; **Model Resolution** builds **kebab Task slugs** from `workflow-config.yml`; each `agents.<name>` may nest a **`subagent`** block (`same_of_agent` + model fields) for nested generic Task fan-out (named Hero agents keep their own top-level model); stage order **QA → Judge → Browser UI Validation → QA End-to-End**; **Browser UI Validation** (`stages.browser_ui_validation`, default off) — Playwright Health + optional Visual vs PNGs (`visual_validation`, default `docs/ui/visual_reference`); requires `scope.frontend`; artifacts under `.workflow-hero/cycles/current/browser-ui/`; **QA End-to-End** Playwright journeys remain via `use_playwright` (distinct); **Logging standard**; **Clean Session Handoff**.
 - `scripts/release.sh` + contract test for artifact naming / platforms / checksums.
 - `scripts/build_dev.sh` for local cross-compiles without a release tag (version `<latest-tag>_<short-commit>`).
 - Integration tests for install/upgrade/uninstall/doctor against `t.TempDir()`.
@@ -58,10 +58,12 @@
 - Archive OpenSpec change `browser-ui-validation` when ready.
 - Optional further enrichment of Runtime narrative prompts.
 - Other post-V1 / V2 priorities not yet selected (see PRD §2.3).
-- Note: GitHub Releases for `v0.6.0` / `v0.6.1` / `v0.7.0` were never published (only tags + local `dist/`); current latest published release is `v0.8.0`.
+- Note: GitHub Releases for `v0.6.0` / `v0.6.1` / `v0.7.0` were never published (only tags + local `dist/`); published releases include `v0.8.0` and `v0.9.0`.
 
 ## Recent Decisions
 
+- Release `0.9.0` (2026-08-07): minor bump for nested `agents.<name>.subagent` model config (cheap fan-out).
+- Nested subagent model config (2026-08-07): each `agents.<name>` may define nested `subagent` (`same_of_agent`, model fields). Orchestrator→agent uses top-level; agent→nested generic Task uses `subagent` (or parent if `same_of_agent: true` / missing); named Hero agents (e.g. `context_agent`) keep their own block. Default template: `same_of_agent: false`, `composer-2.5`.
 - Release `0.8.0` (2026-07-29): minor bump for `workflow_config.user_preferred_language` + `fallback_model` reorder.
 - Release `0.7.0` (2026-07-29): minor bump for `/hero:new` rename + previous-cycle `workflow-config` import.
 - Previous-cycle config import (2026-07-29): `/hero:new` always imports prior `workflow_config` + `fallback_model` + `stages` + `agents`; resets `title` / `objective` / `scope` to template.
@@ -74,9 +76,9 @@
 - Task Model Resolution (2026-07-28): Cursor Task rejects bracket slugs; Hero builds kebab variants (`cursor-grok-4.5-high`).
 - Clean Session Handoff (2026-07-28): after `/hero:new`, soft guidance to open a new empty chat, then `/hero:start`.
 - Go module path: `github.com/ricrsantos/ai_workflow_hero` (from git remote).
-- Subagent models: agent frontmatter stays `inherit`; effective model is Task `model` from per-cycle `workflow-config.yml` (ADR-005 / ADR-008).
+- Subagent models: agent frontmatter stays `inherit`; effective model is Task `model` from per-cycle `workflow-config.yml` (ADR-005 / ADR-008), including nested `agents.<name>.subagent` for fan-out.
 - Soft secrets hygiene: commit `.env.example` only; doctor warns, does not block.
-- CLI default version `0.8.0`.
+- CLI default version `0.9.0`.
 
 ## Known Technical Debt
 

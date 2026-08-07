@@ -32,7 +32,7 @@ Apply scope from workflow-config.yml: backend/frontend/native/script/infrastruct
 
 ## Model
 
-The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.planning_agent`. Fall back to `fallback_model` if the configured model is unavailable; the orchestrator handles fallback routing.
+The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.planning_agent`. Fall back to `fallback_model` if the configured model is unavailable; the orchestrator handles fallback routing. If this agent launches a **nested generic Task** (not a named Hero agent), resolve `agents.planning_agent.subagent` (`same_of_agent: true` or missing → reuse this agent's model; `same_of_agent: false` → use `subagent.model` + kebab rules / `fallback_model`). Named Hero agents (e.g. `context_agent`) always use their own top-level block. Prefer nested fan-out when the configured subagent model is cheaper.
 
 ## Rules
 

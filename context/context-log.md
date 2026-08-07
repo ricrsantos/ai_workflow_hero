@@ -6,6 +6,26 @@
 
 ---
 
+## 2026-08-07 — Release 0.9.0 (nested subagent model config)
+
+**Problem:** Ship minor release for nested `agents.<name>.subagent` model configuration.
+
+**Decision:** SemVer minor bump `0.8.0` → `0.9.0` (user-facing Runtime config/behavior change).
+
+**Outcome:** Version default in `cmd/hero/main.go` set to `0.9.0`; tag/push/`release.sh`/GitHub Release follow on this commit.
+
+---
+
+## 2026-08-07 — Nested subagent model configuration
+
+**Problem:** Agents hesitated to fan out nested Tasks because children reused the parent’s (often expensive) model; users need a cheaper per-agent nested model.
+
+**Decision:** Nest `subagent` under each `agents.<name>` in `workflow-config.yml` (`same_of_agent` + model fields). Orchestrator→agent uses top-level; nested generic Task uses `agents.<name>.subagent`; named Hero agents (e.g. `context_agent`) keep their own block. Defaults: `same_of_agent: false`, `composer-2.5`. Missing/`same_of_agent: true` → parent model (backward compatible).
+
+**Outcome:** Template, Model Resolution (orchestration + impl/planning agents), ADR-005/PRD/help/hero-new, and asset tests updated; `go test ./...` green.
+
+---
+
 ## 2026-08-04 — Publish GitHub Release v0.8.0
 
 **Problem:** Tag `v0.8.0` and local `dist/` existed, but the GitHub Release had never been created (DEPLOY §4.2 steps 4–5).

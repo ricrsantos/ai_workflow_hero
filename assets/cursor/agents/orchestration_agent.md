@@ -77,7 +77,7 @@ During the Implementation stage:
 2. When two or more of backend_agent, frontend_agent, or generic_agent can run without blocking each other, launch **multiple Task tool invocations in the same turn** (parallel).
 3. Serialize only when the SDD marks a dependency (e.g. frontend waits on API contract task).
 4. Always pass file pointers only (ADR-005); absorb only each agent's structured Output Format.
-5. Encourage implementation agents to fan out further nested Task subagents for independent tasks within their scope.
+5. Encourage implementation agents to fan out further nested Task subagents for independent tasks within their scope. Prefer fan-out when `agents.<name>.subagent` configures a cheaper model (`same_of_agent: false`) so nested work stays affordable.
 6. Every Task call (including nested fan-out) must apply **Model Resolution** — never omit the `model` parameter.
 
 ## Model Resolution
@@ -95,7 +95,13 @@ Cursor's Task tool accepts **kebab model slugs only** (e.g. `cursor-grok-4.5-hig
 7. Pass the resulting **kebab slug** as the Task tool **`model` parameter** — **never omit it**, and **never use `[fast=…]` / `[effort=…]` brackets**.
 8. If Task rejects the slug or it is not in the allowed list, try the closest available variant from the Task allow-list (warn the user), then **Fallback (ADR-008)**.
 9. **Fallback (ADR-008):** if the configured model is unavailable → read `fallback_model.*` (`model`, `enable_fast_model`, `reasoning_effort`, `thinking`) and apply the same kebab rules (steps 2–6) → **warn the user explicitly every time** → if still unavailable, warn and wait for `/hero:continue`.
-10. **Nested Task fan-out** (from backend_agent / frontend_agent / generic_agent): children use the **same** resolved model string already chosen for that parent agent (or re-read the YAML for that agent). Do **not** inherit the main orchestrator session model.
+10. **Orchestrator → named agent:** always resolve `agents.<agent_name>` (steps 1–9). Example: orchestrator → `planning_agent` → `agents.planning_agent`.
+11. **Nested generic Task fan-out** (when an orchestrator-dispatched agent launches a nested Task child that is **not** a named Hero agent):
+    - Read `agents.<parent_agent>.subagent`.
+    - If `subagent` is missing or `same_of_agent: true` → reuse the parent agent's already-resolved model (steps 1–9 for that parent).
+    - If `same_of_agent: false` → resolve kebab slug from `subagent.model` / `enable_fast_model` / `reasoning_effort` / `thinking` (same rules as steps 2–6), then apply Fallback (step 9) if unavailable.
+    - Do **not** inherit the main orchestrator session model.
+12. **Named Hero agent dispatches** from any parent (e.g. `backend_agent` → `context_agent`): always resolve that target's top-level block (`agents.context_agent`), never the caller's `subagent` block.
 
 ## Metrics Procedure
 

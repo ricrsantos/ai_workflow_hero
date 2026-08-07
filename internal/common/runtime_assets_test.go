@@ -127,10 +127,16 @@ func TestRuntimeAssets_ModelResolution(t *testing.T) {
 		"never use",
 		"brackets",
 		"model",
+		"subagent",
+		"same_of_agent",
+		"Nested generic Task fan-out",
 	} {
 		if !strings.Contains(orchStr, kw) {
 			t.Errorf("orchestration_agent.md missing Model Resolution keyword %q", kw)
 		}
+	}
+	if strings.Contains(orchStr, "children use the **same** resolved model string already chosen for that parent agent") {
+		t.Error("orchestration_agent.md must not require nested fan-out to always reuse the parent model")
 	}
 	if strings.Contains(orchStr, "<id>[fast=") {
 		t.Error("orchestration_agent.md must not instruct bracket Task model syntax")
@@ -282,10 +288,13 @@ func TestRuntimeAssets_ImplementationParallelism(t *testing.T) {
 			continue
 		}
 		content := string(data)
-		for _, kw := range []string{"Parallelism / nested Task", "Task tool", "context_agent", "independent"} {
+		for _, kw := range []string{"Parallelism / nested Task", "Task tool", "context_agent", "independent", "subagent", "same_of_agent"} {
 			if !strings.Contains(content, kw) {
 				t.Errorf("%s missing parallelism keyword %q", path, kw)
 			}
+		}
+		if strings.Contains(content, "Nested Task fan-out must reuse that same resolved model") {
+			t.Errorf("%s must not require nested fan-out to always reuse the parent model", path)
 		}
 	}
 }

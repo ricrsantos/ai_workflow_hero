@@ -184,6 +184,60 @@ func TestAssets_WorkflowConfigFallbackModel(t *testing.T) {
 	}
 }
 
+// TestAssets_WorkflowConfigNestedSubagent verifies every agent block has a nested subagent
+// config (same_of_agent + model fields) for nested Task fan-out.
+func TestAssets_WorkflowConfigNestedSubagent(t *testing.T) {
+	data, err := fs.ReadFile(assets.FS, "templates/workflow-config.yml")
+	if err != nil {
+		t.Fatalf("read workflow-config template: %v", err)
+	}
+	content := string(data)
+	agents := []string{
+		"planning_agent", "context_agent", "backend_agent", "frontend_agent",
+		"generic_agent", "qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent",
+	}
+	agentsIdx := strings.Index(content, "\nagents:")
+	fallbackIdx := strings.Index(content, "\nfallback_model:")
+	if agentsIdx < 0 || fallbackIdx < 0 || fallbackIdx <= agentsIdx {
+		t.Fatal("workflow-config.yml missing agents or fallback_model section")
+	}
+	agentsSection := content[agentsIdx:fallbackIdx]
+	subagentCount := strings.Count(agentsSection, "\n    subagent:")
+	sameOfCount := strings.Count(agentsSection, "\n      same_of_agent:")
+	if subagentCount != len(agents) {
+		t.Errorf("expected %d nested subagent: blocks under agents, got %d", len(agents), subagentCount)
+	}
+	if sameOfCount != len(agents) {
+		t.Errorf("expected %d same_of_agent: entries under agents, got %d", len(agents), sameOfCount)
+	}
+	for _, agent := range agents {
+		marker := "\n  " + agent + ":"
+		idx := strings.Index(agentsSection, marker)
+		if idx < 0 {
+			t.Errorf("agents section missing %s", agent)
+			continue
+		}
+		// Slice until the next top-level agent key (exactly two spaces after newline).
+		rest := agentsSection[idx+len(marker):]
+		nextAgent := -1
+		for i := 0; i+3 < len(rest); i++ {
+			if rest[i] == '\n' && rest[i+1] == ' ' && rest[i+2] == ' ' && rest[i+3] != ' ' {
+				nextAgent = i
+				break
+			}
+		}
+		block := rest
+		if nextAgent >= 0 {
+			block = rest[:nextAgent]
+		}
+		for _, kw := range []string{"subagent:", "same_of_agent:", "model:", "reasoning_effort:", "enable_fast_model:", "thinking:"} {
+			if !strings.Contains(block, kw) {
+				t.Errorf("%s block missing %q", agent, kw)
+			}
+		}
+	}
+}
+
 // TestAssets_WorkflowConfigUserPreferredLanguage verifies workflow_config.user_preferred_language defaults to EN and precedes scope.
 func TestAssets_WorkflowConfigUserPreferredLanguage(t *testing.T) {
 	data, err := fs.ReadFile(assets.FS, "templates/workflow-config.yml")

@@ -79,54 +79,110 @@ agents:
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
+    # Nested Task fan-out from this agent (not named Hero agents like context_agent).
+    # same_of_agent: true → reuse this agent's model; false → use subagent.model below.
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   context_agent:
     model: composer-2.5
     reasoning_effort: na
     enable_fast_model: false
     thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   backend_agent:
     model: cursor-grok-4.5
     reasoning_effort: high
     enable_fast_model: false
     thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   frontend_agent:
     model: claude-sonnet-4.6
     reasoning_effort: medium
     enable_fast_model: false
     thinking: false
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   generic_agent:
     model: cursor-grok-4.5
     reasoning_effort: high
     enable_fast_model: false
     thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   qa_agent:
     model: cursor-grok-4.5
     reasoning_effort: high
     enable_fast_model: false
     thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   judge_agent:
     model: gpt-5.3-codex
     reasoning_effort: medium
     enable_fast_model: false
     thinking: false
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   browser_ui_agent:
     model: claude-sonnet-5
     reasoning_effort: high
     enable_fast_model: false
     thinking: false
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   end2end_qa_agent:
     model: claude-4.6-sonnet
     reasoning_effort: medium
     enable_fast_model: false
     thinking: false
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
 # Fallback model used when an agent's configured model is unavailable.
 # The user is always warned explicitly when this fallback is used.

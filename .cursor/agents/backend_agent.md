@@ -61,7 +61,7 @@ Activated when `workflow-config.yml → scope.backend: true`.
 
 ## Model
 
-The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.backend_agent`. This agent uses whatever model is passed in the Task invocation. Nested Task fan-out must reuse that same resolved model — do not inherit the main orchestrator session model.
+The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.backend_agent`. This agent uses whatever model is passed in the Task invocation. For **nested generic Task fan-out**, resolve `agents.backend_agent.subagent` (`same_of_agent: true` or missing → reuse this agent's model; `same_of_agent: false` → use `subagent.model` + kebab rules / `fallback_model`). Named Hero agents (e.g. `context_agent`) always use their own top-level block (`agents.context_agent`), not this agent's `subagent`. Do not inherit the main orchestrator session model. Prefer nested fan-out when the configured subagent model is cheaper.
 
 ## Metrics (required in every completion report)
 

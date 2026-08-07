@@ -112,9 +112,9 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 ### 5.5 Model Selection, Fallback, and Chat Language
 
-- Each agent's model is configured per-cycle in `workflow-config.yml`.
+- Each agent's model is configured per-cycle in `workflow-config.yml`. Each agent may also define a nested `subagent` block (`same_of_agent`, `model`, `reasoning_effort`, `enable_fast_model`, `thinking`) used when that agent launches a **nested generic Task** (fan-out). Named Hero agents (e.g. `context_agent`) always use their own top-level model block. If `subagent` is missing or `same_of_agent: true`, nested children reuse the parent agent's model.
 - On `/hero:new`, when prior cycles exist, the Runtime **always** imports `workflow_config`, `fallback_model`, `stages`, and `agents` from the previous cycle’s `workflow-config.yml` (deep-merged onto the installed template). `title`, `objective`, and `scope` are always reset to template defaults (cycle-specific). First cycle uses the blank template only.
-- Fallback chain (2 levels + escalation): 1) the agent's configured model → 2) `fallback_model` (top-level block in `workflow-config.yml`, with `model`, `reasoning_effort`, `enable_fast_model`, and `thinking`), **with an explicit warning to the user every time it activates** → 3) if still unavailable, warn the user and wait for `/hero:continue` after they fix the configuration.
+- Fallback chain (2 levels + escalation): 1) the agent's (or nested `subagent`'s) configured model → 2) `fallback_model` (top-level block in `workflow-config.yml`, with `model`, `reasoning_effort`, `enable_fast_model`, and `thinking`), **with an explicit warning to the user every time it activates** → 3) if still unavailable, warn the user and wait for `/hero:continue` after they fix the configuration.
 - `workflow_config.user_preferred_language` (default `EN`) sets the language all agents use when communicating with the user in chat. The user may override for the session by explicitly asking. Cycle artifacts remain English (see §5.7).
 
 ### 5.6 Scope

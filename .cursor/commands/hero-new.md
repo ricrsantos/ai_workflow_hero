@@ -45,7 +45,7 @@ Resolve the source file in this order (first match wins):
 | `workflow_config` (e.g. `user_preferred_language`) | `title` |
 | `fallback_model` | `objective` |
 | `stages` (enabled flags, budgets, approvals, nested stage options such as `visual_validation`, `use_playwright`) | `scope` |
-| `agents` (all agent model blocks: `model`, `reasoning_effort`, `enable_fast_model`, `thinking`) | |
+| `agents` (all agent model blocks: `model`, `reasoning_effort`, `enable_fast_model`, `thinking`, and nested `subagent` with `same_of_agent` + model fields) | |
 
 Do **not** copy `title`, `objective`, or `scope` from the previous cycle. Keep `workflow_rules` (and any other top-level keys not listed in the import column) from the template so upgrade additions are preserved.
 

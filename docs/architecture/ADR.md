@@ -82,13 +82,13 @@ Only purely administrative commands may have equivalents in both (e.g. `hero sta
 
 **Decision**: Invoke every subagent (`backend_agent`, `frontend_agent`, `generic_agent`, `qa_agent`, `judge_agent`, `browser_ui_agent`, `end2end_qa_agent`, `context_agent`) via the IDE's Task tool, in a **fresh, isolated session** that does not inherit the orchestrator's chat history. Subagents receive **file pointers** (paths to `AGENTS.md`, `current-state.md`, the relevant SDD/tasks) instead of pasted content. The orchestrator absorbs back only the subagent's final structured output (its documented "Output Format" section), not its intermediate reasoning. The `orchestration_agent`'s own main session remains continuous across the whole cycle — only subagents are session-scoped per call.
 
-**Model selection**: Agent `.md` files use Cursor YAML frontmatter with `model: inherit` (plus `name` / `description`). The **effective** model is not taken from frontmatter; the orchestrator must pass the Task tool `model` parameter from `workflow-config.yml` → `agents.<name>.model` on every invocation (including nested fan-out), applying `enable_fast_model` / `reasoning_effort` / `thinking` as **kebab Task slugs** (e.g. `cursor-grok-4.5-high`, `composer-2.5-fast`, `claude-sonnet-5-medium`) — **not** bracket options like `id[fast=false,effort=high]` (Cursor Task rejects brackets in current IDE versions). On fallback, read `fallback_model.*` with the same kebab rules. Omitting Task `model` incorrectly inherits the orchestrator session model. Fallback remains ADR-008. Cursor may still override unavailable or plan-restricted models; Hero cannot bypass IDE limits. When looking up pricing in `models/*.yml`, match the resolved slug or strip known suffixes (`-thinking`, `-fast`, `-high`, `-medium`, `-low`) to find a base rate entry.
+**Model selection**: Agent `.md` files use Cursor YAML frontmatter with `model: inherit` (plus `name` / `description`). The **effective** model is not taken from frontmatter; it is passed as the Task tool `model` parameter from `workflow-config.yml`, applying `enable_fast_model` / `reasoning_effort` / `thinking` as **kebab Task slugs** (e.g. `cursor-grok-4.5-high`, `composer-2.5-fast`, `claude-sonnet-5-medium`) — **not** bracket options like `id[fast=false,effort=high]` (Cursor Task rejects brackets in current IDE versions). **Orchestrator → named agent** resolves `agents.<name>` (top-level model fields). **Nested generic Task fan-out** (when an orchestrator-dispatched agent launches a nested Task that is not a named Hero agent) resolves `agents.<name>.subagent`: if the block is missing or `same_of_agent: true`, reuse the parent agent's resolved model; if `same_of_agent: false`, resolve from `subagent.model` / `enable_fast_model` / `reasoning_effort` / `thinking`. **Named Hero agent** dispatches (e.g. `backend_agent` → `context_agent`) always use the target's top-level block, never the caller's `subagent`. On fallback, read `fallback_model.*` with the same kebab rules. Omitting Task `model` incorrectly inherits the orchestrator session model. Fallback remains ADR-008. Cursor may still override unavailable or plan-restricted models; Hero cannot bypass IDE limits. When looking up pricing in `models/*.yml`, match the resolved slug or strip known suffixes (`-thinking`, `-fast`, `-high`, `-medium`, `-low`) to find a base rate entry.
 
 **Consequences**:
 - Token usage per subagent call is bounded by what it actually needs to read, not by the orchestrator's accumulated history.
 - Each `*_agent.md` prompt must be self-sufficient: it must instruct the subagent to read the pointed-to files itself, since it starts with no prior context.
 - Debugging a subagent's reasoning requires inspecting its own session/logs, not the orchestrator's transcript.
-- Switching an agent's model requires only editing `workflow-config.yml`; agent asset frontmatter stays `inherit`.
+- Switching an agent's model (or its nested fan-out `subagent` model) requires only editing `workflow-config.yml`; agent asset frontmatter stays `inherit`.
 
 ---
 
@@ -365,54 +365,110 @@ agents:
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
+    # Nested Task fan-out from this agent (not named Hero agents like context_agent).
+    # same_of_agent: true → reuse this agent's model; false → use subagent.model below.
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   context_agent:
     model: composer-2.5
     reasoning_effort: na
     enable_fast_model: false
     thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   backend_agent:
     model: cursor-grok-4.5
     reasoning_effort: high
     enable_fast_model: false
     thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   frontend_agent:
     model: claude-sonnet-5
     reasoning_effort: high
     enable_fast_model: false
     thinking: false
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   generic_agent:
     model: claude-sonnet-5
     reasoning_effort: medium
     enable_fast_model: false
     thinking: false
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   qa_agent:
     model: gpt-5.3-codex
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   judge_agent:
     model: claude-sonnet-5
     reasoning_effort: high
     enable_fast_model: false
     thinking: false
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   browser_ui_agent:
     model: claude-sonnet-5
     reasoning_effort: high
     enable_fast_model: false
     thinking: false
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
   end2end_qa_agent:
     model: claude-4.6-sonnet
     reasoning_effort: medium
     enable_fast_model: false
     thinking: false
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
 
 # Fallback model used when an agent's configured model is unavailable.
 # The user is always warned explicitly when this fallback is used.

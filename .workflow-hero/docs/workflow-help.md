@@ -184,8 +184,8 @@ In the new chat, **select the IDE agent/model you want as the Hero orchestrator 
 | `stages.*` | Per stage: `enabled`, `purpose`, `max_iterations`, `timeout_minutes`, `require_human_approval` |
 | `stages.browser_ui_validation` | Default `enabled: false`. Requires `scope.frontend: true` when enabled. Always runs **Browser Health** (Playwright). Optional nested `visual_validation.enabled` + `visual_validation.reference_dir` (default `docs/ui/visual_reference`) |
 | `stages.qa_end_to_end.use_playwright` | `true` → Playwright journeys (requires `scope.frontend: true`); `false` → direct HTTP. Independent of Browser UI Validation |
-| `agents.*` | Per-agent model settings |
-| `fallback_model` | Used when an agent’s model is unavailable (`model`, `reasoning_effort`, `enable_fast_model`, `thinking`) |
+| `agents.*` | Per-agent model settings (`model`, `reasoning_effort`, `enable_fast_model`, `thinking`) plus nested `subagent` (`same_of_agent` + model fields) for nested Task fan-out |
+| `fallback_model` | Used when an agent’s or nested `subagent`’s model is unavailable (`model`, `reasoning_effort`, `enable_fast_model`, `thinking`) |
 | `workflow_rules` | Guardrails the orchestrator must follow |
 
 ### 8.2 Scope → implementation agent
@@ -222,7 +222,7 @@ QA End-to-End Playwright journeys (`use_playwright`) remain separate business fl
 2. Top-level `fallback_model` (user is always warned)  
 3. Still unavailable → wait for `/hero:continue` after you fix config  
 
-Use **Cursor/Task model ids** in `agents.*.model` (e.g. `cursor-grok-4.5`, not the bare xAI id `grok-4.5`). The orchestrator passes Task a **kebab slug** built from `enable_fast_model` / `reasoning_effort` / `thinking` (e.g. `cursor-grok-4.5-high`, `composer-2.5-fast`). Bracket forms like `id[fast=false,effort=high]` are not accepted by Cursor Task.
+Use **Cursor/Task model ids** in `agents.*.model` (e.g. `cursor-grok-4.5`, not the bare xAI id `grok-4.5`). The orchestrator passes Task a **kebab slug** built from `enable_fast_model` / `reasoning_effort` / `thinking` (e.g. `cursor-grok-4.5-high`, `composer-2.5-fast`). Bracket forms like `id[fast=false,effort=high]` are not accepted by Cursor Task. When an orchestrator-dispatched agent launches a **nested generic Task**, resolve `agents.*.subagent` (`same_of_agent: true` or missing → parent model; `false` → `subagent.model`). Named Hero agents (e.g. `context_agent`) always use their own top-level block.
 
 ---
 
