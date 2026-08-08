@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -80,6 +81,19 @@ func RunDefault(stdout, stderr io.Writer) error {
 		return e
 	}
 	defer svc.Close()
+
+	adapter, err := bootHarness(context.Background(), stdout, stderr, svc.ProjectDir, defaultHarnessBootDeps())
+	if err != nil {
+		if _, ok := err.(*harnessBootError); ok {
+			e := clierr.New("harness validation failed")
+			return e
+		}
+		e := clierr.New(err.Error())
+		clierr.Format(stderr, e)
+		return e
+	}
+	svc.Harness = adapter
+
 	if err := Run(svc); err != nil {
 		e := clierr.New(err.Error())
 		clierr.Format(stderr, e)

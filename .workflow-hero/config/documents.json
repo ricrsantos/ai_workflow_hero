@@ -55,6 +55,30 @@
       "slug": "tui-slash-command-parity",
       "path": "docs/product/UI-C02-001-tui-slash-command-parity.md",
       "title": "TUI Slash Command Parity & Imported Commands"
+    },
+    {
+      "category": "PRD",
+      "cycle": "C03",
+      "seq": 1,
+      "slug": "cursor-harness-tui-autonomy",
+      "path": "docs/product/PRD-C03-001-cursor-harness-tui-autonomy.md",
+      "title": "Cursor Harness Autonomy & TUI Orchestration"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C03",
+      "seq": 1,
+      "slug": "cursor-harness-tui-autonomy",
+      "path": "docs/architecture/ADR-C03-001-cursor-harness-tui-autonomy.md",
+      "title": "Cursor Harness Autonomy & TUI Orchestration (ADR-024–029)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C03",
+      "seq": 1,
+      "slug": "tui-harness-autonomy",
+      "path": "docs/product/UI-C03-001-tui-harness-autonomy.md",
+      "title": "TUI Harness Autonomy & Conversation UX"
     }
   ]
 }

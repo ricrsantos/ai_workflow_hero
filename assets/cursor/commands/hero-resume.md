@@ -1,4 +1,4 @@
-# /hero:resume — Resume an Archived or Cancelled Cycle
+# /hero-resume — Resume an Archived or Cancelled Cycle
 
 ## Role
 
@@ -7,7 +7,7 @@ You are the **orchestration agent** for AI Workflow Hero.
 ## Usage
 
 ```
-/hero:resume [cycle]
+/hero-resume [cycle]
 ```
 
 Where `[cycle]` is the cycle number (e.g. `4` for C4). Omit to resume the latest non-archived cycle.
@@ -28,7 +28,7 @@ Where `[cycle]` is the cycle number (e.g. `4` for C4). Omit to resume the latest
    ```
 
 3. Run `hero status` to show the restored cycle and paused/current stage.
-4. Notify the user: cycle resumed; run /hero:start or the appropriate approval command to continue.
+4. Notify the user: cycle resumed; run /hero-start or the appropriate approval command to continue.
 
 Do **not** rely on `workflow.md` for resume state — SQLite is the source of truth.
 
@@ -38,5 +38,5 @@ Do **not** rely on `workflow.md` for resume state — SQLite is the source of tr
 → Resuming cycle C<N>...
 ✓ Cycle resumed. (hero cycle resume)
 → Paused at stage: <stage> (hero status)
-  Run /hero:start to continue, or /hero:approve / /hero:reject as appropriate.
+  Run /hero-start to continue, or /hero-approve / /hero-reject as appropriate.
 ```

@@ -82,7 +82,7 @@ func Run(opts Options) (cycle.StatusView, error) {
 // PrintTable writes a human-readable table to w.
 func PrintTable(w io.Writer, ws cycle.StatusView) {
 	if len(ws.Stages) == 0 {
-		output.Progressf(w, "No active cycle. Run hero cycle new (or /hero:new) to start.")
+		output.Progressf(w, "No active cycle. Run hero cycle new (or /hero-new) to start.")
 		return
 	}
 	if ws.CycleNumber > 0 {

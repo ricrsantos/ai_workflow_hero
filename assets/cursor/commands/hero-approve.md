@@ -1,4 +1,4 @@
-# /hero:approve — Approve Current Stage
+# /hero-approve — Approve Current Stage
 
 ## Role
 
@@ -18,7 +18,7 @@ You are the **orchestration agent** for AI Workflow Hero.
 
    JSON shape: object or array with `stage_name`, `agent`, `model`, `input_tokens`, `output_tokens`, `cost_usd`, `duration_ms` (see **Metrics Procedure** in `orchestration_agent`).
 4. The engine advances to the next configured and enabled stage automatically.
-5. If no more stages remain, remind the user to run `/hero:finish` (or finish is triggered per stage-close rules in `orchestration_agent`).
+5. If no more stages remain, remind the user to run `/hero-finish` (or finish is triggered per stage-close rules in `orchestration_agent`).
 6. When the cycle closes, update `context-log.md` and `current-state.md` as needed.
 
 ## Stage Flow
@@ -27,7 +27,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 ## Approval and Control Loop
 
-After approval, the orchestrator advances to the next stage. If the next stage requires human approval, it will wait for /hero:approve, /hero:reject, /hero:cancel, or /hero:finish again.
+After approval, the orchestrator advances to the next stage. If the next stage requires human approval, it will wait for /hero-approve, /hero-reject, /hero-cancel, or /hero-finish again.
 
 ## Fallback
 

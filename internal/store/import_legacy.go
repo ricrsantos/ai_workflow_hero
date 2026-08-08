@@ -164,6 +164,63 @@ type legacyMetric struct {
 	DurationMS   int64
 }
 
+// LegacyMetricRow is one parsed metrics.md table row.
+type LegacyMetricRow struct {
+	Stage        string
+	Agent        string
+	Model        string
+	InputTokens  int64
+	OutputTokens int64
+	CostUSD      float64
+	DurationMS   int64
+}
+
+// LegacyMetricsMeta holds header fields parsed from metrics.md.
+type LegacyMetricsMeta struct {
+	Number int
+	Title  string
+}
+
+// ParseLegacyMetrics parses stage metric rows from metrics.md content.
+func ParseLegacyMetrics(content string) []LegacyMetricRow {
+	raw := parseLegacyMetrics(content)
+	out := make([]LegacyMetricRow, len(raw))
+	for i, m := range raw {
+		out[i] = LegacyMetricRow{
+			Stage:        m.Stage,
+			Agent:        m.Agent,
+			Model:        m.Model,
+			InputTokens:  m.InputTokens,
+			OutputTokens: m.OutputTokens,
+			CostUSD:      m.CostUSD,
+			DurationMS:   m.DurationMS,
+		}
+	}
+	return out
+}
+
+// ParseLegacyMetricsMeta extracts cycle number and title from metrics.md content.
+func ParseLegacyMetricsMeta(content string) LegacyMetricsMeta {
+	var meta LegacyMetricsMeta
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	for scanner.Scan() {
+		trimmed := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(trimmed, "# Metrics") {
+			if idx := strings.LastIndex(trimmed, "C"); idx >= 0 {
+				numStr := strings.TrimSpace(trimmed[idx+1:])
+				if n, err := strconv.Atoi(numStr); err == nil {
+					meta.Number = n
+				}
+			}
+			continue
+		}
+		if v, ok := fieldValue(trimmed, "**Title**"); ok {
+			meta.Title = v
+		}
+	}
+	return meta
+}
+
 func parseLegacyWorkflow(content string) (legacyWorkflow, error) {
 	var w legacyWorkflow
 	scanner := bufio.NewScanner(strings.NewReader(content))

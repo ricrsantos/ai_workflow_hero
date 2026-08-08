@@ -146,7 +146,7 @@ func TestRun_BasicInstall(t *testing.T) {
 		t.Fatalf("workflow-help.md not found: %v", err)
 	}
 	helpStr := string(helpData)
-	for _, kw := range []string{"Philosophy", "hero install", "workflow-config.yml", "/hero:start", "Logging"} {
+	for _, kw := range []string{"Philosophy", "hero install", "workflow-config.yml", "/hero-start", "Logging"} {
 		if !strings.Contains(helpStr, kw) {
 			t.Errorf("workflow-help.md missing %q", kw)
 		}

@@ -86,6 +86,7 @@ func RequiredCommandFiles() []string {
 		"hero-new", "hero-start", "hero-approve", "hero-reject",
 		"hero-cancel", "hero-finish", "hero-archive", "hero-resume",
 		"hero-sync", "hero-status", "hero-help", "hero-continue", "hero-back",
+		"hero-cycles", "hero-todos",
 	}
 	files := make([]string, len(commands))
 	for i, cmd := range commands {

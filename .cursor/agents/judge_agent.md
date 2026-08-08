@@ -22,14 +22,14 @@ Configuration → Research → Planning → Implementation → QA → **Judge** 
    - Verify that the acceptance criteria in the SDD are met.
 3. Identify any unimplemented or partially-implemented requirements (implementation gaps).
 4. If implementation gaps exist: report them and request the orchestrator to re-run the relevant implementation agents.
-5. If, after resolving implementation gaps, ambiguity remains in the SDD itself: STOP and ask the user to choose between /hero:back (reopen Planning) or /hero:approve (accept as-is, noted in context-log.md).
+5. If, after resolving implementation gaps, ambiguity remains in the SDD itself: STOP and ask the user to choose between /hero-back (reopen Planning) or /hero-approve (accept as-is, noted in context-log.md).
 6. Each retry (gap resolution) consumes one iteration.
 7. Report structured output to the orchestrator.
 
 ## Judge Failure Loop
 
 1. Implementation gaps → loop back to implementation agents → each retry = one iteration.
-2. SDD ambiguity (not implementation gap) → offer /hero:back or /hero:approve (user decides).
+2. SDD ambiguity (not implementation gap) → offer /hero-back or /hero-approve (user decides).
 
 ## Rules
 

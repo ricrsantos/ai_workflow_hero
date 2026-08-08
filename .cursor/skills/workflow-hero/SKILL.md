@@ -6,35 +6,38 @@ This skill provides the AI Workflow Hero runtime workflow context for the orches
 
 This skill is automatically active when working within a Hero-managed project.
 
+## Slash-first user vocabulary (ADR-024)
+
+Tell users to run **`/hero-<name>` slash commands** as the primary CTA (`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-continue`, `/hero-back`, `/hero-cycles`, `/hero-todos`, `/hero-help`). Use `hero …` CLI verbs only as implementation detail for agents. After `/hero-new`, the primary handoff is **`/hero-start`** in a new empty chat.
+
 ## Stage Flow
 
 Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
 ## Clean Session Handoff
 
-On `/hero:new`, if prior cycles exist, import previous `workflow_config` + `fallback_model` + `stages` + `agents` into the new `workflow-config.yml`; reset `title` / `objective` / `scope` to template defaults (see `hero-new.md` — **Previous Cycle Config Import**).
+On `/hero-new`, if prior cycles exist, import previous `workflow_config` + `fallback_model` + `stages` + `agents` into the new `workflow-config.yml`; reset `title` / `objective` / `scope` to template defaults (see `hero-new.md` — **Previous Cycle Config Import**).
 
 Chat with the user in `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask for a different chat language. Cycle artifacts stay English.
 
-After `/hero:new` (configuration ready): ask the user to open a **new empty chat**, select the IDE agent/model they want as the Hero **orchestrator / grill-me**, then run `/hero:start`. Soft guidance only. `/hero:start` must bootstrap from disk files, not from the `/hero:new` chat history.
+After `/hero-new` (configuration ready): ask the user to open a **new empty chat**, select the IDE agent/model they want as the Hero **orchestrator / grill-me**, then run `/hero-start`. Soft guidance only. `/hero-start` must bootstrap from disk files, not from the `/hero-new` chat history.
 
 ## Stage Close Sequence
 
-Every stage closes with the same sequence (PRD §5.3):
+Every stage closes with the same sequence (PRD-C01-001 §5.4):
 
 1. Summary + approval request (respect `require_human_approval`)
-2. Update `workflow.md`
-3. Update `metrics.md` via the **Metrics Procedure** in `orchestration_agent` (chars ÷ 4 × `models/*.yml` rates; never leave `—` for a stage that ran)
-4. Show the stage metrics summary in chat (tokens input/output/total, duration, cost) — required every stage — and include a clickable link to `[.workflow-hero/cycles/current/metrics.md](.workflow-hero/cycles/current/metrics.md)` noting that full details are in that file
-5. Advance to the next configured stage
+2. Persist stage transition + metrics to SQLite via the `hero` CLI (`hero approve|reject|finish|continue` with `--metrics-json` as needed) — do **not** write `workflow.md` / `metrics.md`
+3. Show the stage metrics summary in chat (tokens input/output/total, duration, cost) — required every stage — and point the user to `hero metrics` for full details
+4. Advance to the next configured stage (engine advances on approve / auto-complete)
 
 ## Key References
 
+- `.workflow-hero/hero.db` — SQLite operational store (cycle/stage status, events, metrics)
 - `.workflow-hero/cycles/current/workflow-config.yml` — cycle configuration (`workflow_config.user_preferred_language`, `scope`, stages, agents, `fallback_model`, `stages.browser_ui_validation`, `stages.qa_end_to_end.use_playwright`)
-- `.workflow-hero/cycles/current/workflow.md` — current stage status
-- `.workflow-hero/cycles/current/metrics.md` — per-cycle token/cost estimates
+- `hero status` / `hero metrics` / `hero events` — query operational state (table or `--json`)
 - `.workflow-hero/cycles/current/browser-ui/` — Browser UI Validation artifacts (when that stage runs)
-- `.workflow-hero/metrics-summary.md` — project-wide aggregated metrics
+- `.workflow-hero/metrics-summary.md` — project-wide aggregated metrics (optional summary file)
 - `.workflow-hero/models/*.yml` — model pricing (`unit: per_1m_tokens`)
 - `.workflow-hero/config/project.json` — project identity
 - `.workflow-hero/config/hero.json` — Hero installation metadata
@@ -46,12 +49,24 @@ Every stage closes with the same sequence (PRD §5.3):
 
 | Command | Meaning |
 |---------|---------|
-| /hero:approve | Approve current stage, advance |
-| /hero:reject | Reject and re-run current stage |
-| /hero:cancel | Cancel and rollback via git |
-| /hero:finish | Finish and close the cycle |
-| /hero:continue | Grant extra iterations after escalation |
-| /hero:back | Reopen Planning (SDD ambiguity) |
+| /hero-approve | Approve current stage via `hero approve`, advance |
+| /hero-reject | Reject via `hero reject` and re-run current stage |
+| /hero-cancel | Cancel via `hero cancel` and rollback via git |
+| /hero-finish | Finish via `hero finish` and close the cycle |
+| /hero-continue | Grant extra iterations via `hero continue` after escalation |
+| /hero-back | Reopen Planning (SDD ambiguity) |
+| /hero-cycles | List cycles with per-etapa metrics |
+| /hero-todos | Show pending items from `current-state.md` |
+| /hero-sync | Activate Hero in an existing project (Runtime only — no `hero sync` CLI) |
+| /hero-help | Show Runtime command reference |
+
+## Archive + OpenSpec
+
+`/hero-archive` runs OpenSpec archive first when linked (`openspec archive <name> -y`), then `hero cycle archive`. On OpenSpec failure: offer retry, `hero cycle archive --force` (alias `--skip-openspec`), and manual `openspec archive <name> -y`.
+
+## Sync + doctor
+
+`/hero-sync` completes with **`hero doctor`** so harness marker warnings surface. There is no `hero sync` CLI verb. When product/architecture docs change, users should run `/hero-sync` then `/hero-todos` to refresh pending items in `current-state.md` (ADR-029).
 
 ## Fallback
 

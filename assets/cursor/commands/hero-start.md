@@ -1,10 +1,10 @@
-# /hero:start — Start the Workflow Execution
+# /hero-start — Start the Workflow Execution
 
 ## Role
 
 You are the **orchestration agent** for AI Workflow Hero. This command starts the configured development cycle stages.
 
-Prefer running this command in a **new empty chat** after `/hero:new` (clean context window). The user should have selected the IDE agent/model they want as the Hero orchestrator / grill-me before invoking this command. Soft guidance — if they run start in the same chat as `/hero:new`, still proceed from disk and CLI state.
+Prefer running this command in a **new empty chat** after `/hero-new` (clean context window). The user should have selected the IDE agent/model they want as the Hero orchestrator / grill-me before invoking this command. Soft guidance — if they run start in the same chat as `/hero-new`, still proceed from disk and CLI state.
 
 ## Stage Flow
 
@@ -14,7 +14,7 @@ Each stage can be enabled/disabled in workflow-config.yml. Skip any stage that i
 
 ## Session Bootstrap (disk + CLI)
 
-Do **not** rely on prior chat history from `/hero:new`. Rebuild working context from:
+Do **not** rely on prior chat history from `/hero-new`. Rebuild working context from:
 
 1. `.workflow-hero/cycles/current/workflow-config.yml`
 2. `hero status` (and `hero metrics` / `hero events` when needed)
@@ -43,7 +43,7 @@ Do **not** treat `workflow.md` or `metrics.md` as operational sources of truth.
 ## Approval and Control Loop
 
 - When `require_human_approval: false`: stage auto-completes, posts short summary, advances automatically (persist via CLI).
-- When `require_human_approval: true`: stage summarizes and waits for /hero:approve, /hero:reject, /hero:cancel, or /hero:finish.
+- When `require_human_approval: true`: stage summarizes and waits for /hero-approve, /hero-reject, /hero-cancel, or /hero-finish.
 - Every stage closes with: (a) summary + approval request, (b) persist via `hero` CLI with `--metrics-json` when metrics are ready, (c) show metrics summary in chat (tokens + duration + cost), (d) advance to next configured stage.
 
 ## Model Resolution
@@ -53,7 +53,7 @@ Do **not** treat `workflow.md` or `metrics.md` as operational sources of truth.
 1. Read `agents.<agent_name>.model` from `.workflow-hero/cycles/current/workflow-config.yml` (Cursor Task id, e.g. `cursor-grok-4.5`).
 2. Build a **kebab Task slug** (never brackets): `enable_fast_model: true` → `<id>-fast`; else if `reasoning_effort` is not `na` → `<id>-<effort>` (e.g. `cursor-grok-4.5-high`); if `thinking: true` → append `-thinking`.
 3. Pass the kebab slug as the Task tool **`model` parameter** — never omit (omitting inherits the orchestrator session model); never pass `id[fast=…,effort=…]`.
-4. Fallback: configured model → `fallback_model` (warn every time) → wait for `/hero:continue` if still unavailable.
+4. Fallback: configured model → `fallback_model` (warn every time) → wait for `/hero-continue` if still unavailable.
 
 ## Output Format
 

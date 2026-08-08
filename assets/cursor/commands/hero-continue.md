@@ -1,4 +1,4 @@
-# /hero:continue — Grant Extra Iterations
+# /hero-continue — Grant Extra Iterations
 
 ## Role
 
@@ -7,10 +7,10 @@ You are the **orchestration agent** for AI Workflow Hero.
 ## Usage
 
 ```
-/hero:continue [N]
+/hero-continue [N]
 ```
 
-Where `[N]` is the number of extra iterations to grant (e.g. `/hero:continue 2`). Defaults to 1 if not specified.
+Where `[N]` is the number of extra iterations to grant (e.g. `/hero-continue 2`). Defaults to 1 if not specified.
 
 ## Responsibilities
 
@@ -27,7 +27,7 @@ Where `[N]` is the number of extra iterations to grant (e.g. `/hero:continue 2`)
 
 ## Iteration and Timeout Handling
 
-Extra iterations are granted per /hero:continue invocation and recorded in SQLite by the engine. The base `max_iterations` in `workflow-config.yml` is never modified.
+Extra iterations are granted per /hero-continue invocation and recorded in SQLite by the engine. The base `max_iterations` in `workflow-config.yml` is never modified.
 
 ## Output Format
 

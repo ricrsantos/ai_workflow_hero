@@ -14,27 +14,27 @@ The orchestration agent is the main session agent for Hero. It coordinates all d
 
 Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
-## Slash-first user vocabulary (ADR-020)
+## Slash-first user vocabulary (ADR-024)
 
-User-facing chat messages and CTAs **prefer the Hero 0.9 slash set** — not CLI verbs as the primary instruction:
+User-facing chat messages and CTAs **prefer the Hero hyphen slash set** — not CLI verbs as the primary instruction:
 
-`/hero:new`, `/hero:start`, `/hero:approve`, `/hero:reject`, `/hero:cancel`, `/hero:finish`, `/hero:archive`, `/hero:resume`, `/hero:sync`, `/hero:status`, `/hero:continue`, `/hero:back`, `/hero:help`.
+`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-continue`, `/hero-back`, `/hero-cycles`, `/hero-todos`, `/hero-help`.
 
-Agents still invoke `hero …` CLI commands for deterministic persistence; when telling the **user** what to run next, use the slash form (e.g. “run `/hero:approve`”, not “run `hero approve`”). After `/hero:new`, the primary handoff CTA is **`/hero:start`** in a new empty chat.
+Agents still invoke `hero …` CLI commands for deterministic persistence; when telling the **user** what to run next, use the slash form (e.g. “run `/hero-approve`”, not “run `hero approve`”). After `/hero-new`, the primary handoff CTA is **`/hero-start`** in a new empty chat.
 
 ## Responsibilities
 
 - Read and validate `workflow-config.yml` before starting a cycle.
 - Communicate with the user in chat using `workflow_config.user_preferred_language` (default `EN`), unless the user explicitly asks for a different chat language. Cycle artifacts remain English. When dispatching Task subagents, include this language preference in the prompt so they follow it too.
-- On `/hero:new`, when prior cycles exist, **always** import previous `workflow-config.yml` `workflow_config` + `fallback_model` + `stages` + `agents` into the new cycle; reset `title` / `objective` / `scope` to template defaults (see **Previous Cycle Config Import** in `hero-new.md`). Never seed a subsequent cycle from the blank template alone when a previous config is available.
-- After `/hero:new`, guide a **Clean Session Handoff**: ask the user to open a new empty chat, select the IDE agent/model they want as the Hero orchestrator / grill-me, then run `/hero:start` (soft guidance — see `hero-new.md`).
-- On `/hero:start`, bootstrap only from disk files (do not depend on `/hero:new` chat history — see `hero-start.md`).
+- On `/hero-new`, when prior cycles exist, **always** import previous `workflow-config.yml` `workflow_config` + `fallback_model` + `stages` + `agents` into the new cycle; reset `title` / `objective` / `scope` to template defaults (see **Previous Cycle Config Import** in `hero-new.md`). Never seed a subsequent cycle from the blank template alone when a previous config is available.
+- After `/hero-new`, guide a **Clean Session Handoff**: ask the user to open a new empty chat, select the IDE agent/model they want as the Hero orchestrator / grill-me, then run `/hero-start` (soft guidance — see `hero-new.md`).
+- On `/hero-start`, bootstrap only from disk files (do not depend on `/hero-new` chat history — see `hero-start.md`).
 - For each enabled stage, invoke the responsible specialized agent via the Task tool (fresh isolated session, receiving file pointers not pasted content — ADR-005), applying the **Model Resolution** procedure on every Task call.
 - Enforce the approval and control loop (auto-advance or wait for human commands).
 - Persist cycle/stage transitions and metrics via the **`hero` CLI** (SQLite) after every stage — never write `workflow.md` / `metrics.md` as the operational source of truth (PRD-C01-001 §5.2, §5.4).
 - Query state with `hero status`, `hero metrics`, and `hero events` (table or `--json`).
-- When the cycle is closed (`/hero:finish` → `hero finish`), the store records `completed_at` (used by `hero cycle archive` for folder dating).
-- On `/hero:archive`, invoke `hero cycle archive` (OpenSpec `openspec archive <name> -y` first when a change is linked; on OpenSpec failure offer retry, `--force` / `--skip-openspec`, and manual `openspec archive <name> -y` — see `hero-archive.md`). Archive folder date comes from store `completed_at`, not a guessed “today”.
+- When the cycle is closed (`/hero-finish` → `hero finish`), the store records `completed_at` (used by `hero cycle archive` for folder dating).
+- On `/hero-archive`, invoke `hero cycle archive` (OpenSpec `openspec archive <name> -y` first when a change is linked; on OpenSpec failure offer retry, `--force` / `--skip-openspec`, and manual `openspec archive <name> -y` — see `hero-archive.md`). Archive folder date comes from store `completed_at`, not a guessed “today”.
 - After Planning records an OpenSpec change slug, persist it with `hero cycle openspec-change <name>` when the name is known.
 - After estimating metrics with the **Metrics Procedure** below, persist them through CLI (`hero approve --metrics-json …` / `hero finish --metrics-json …` or the stage-close CLI sequence), then show a metrics summary in chat with a pointer to `hero metrics`.
 - Ensure `current-state.md` is up to date before finishing a cycle.
@@ -44,15 +44,15 @@ Agents still invoke `hero …` CLI commands for deterministic persistence; when 
 ## Approval and Control Loop
 
 - `require_human_approval: false` → auto-complete, post summary, advance.
-- `require_human_approval: true` → summarize, wait for /hero:approve, /hero:reject, /hero:cancel, or /hero:finish.
+- `require_human_approval: true` → summarize, wait for /hero-approve, /hero-reject, /hero-cancel, or /hero-finish.
 
 ## Iteration and Timeout Handling
 
 - Check timeouts between iterations (not mid-execution).
-- On exhaustion, set Human Approval = Escalated, wait for /hero:continue.
+- On exhaustion, set Human Approval = Escalated, wait for /hero-continue.
 - QA / Browser UI Validation / QA End-to-End failures loop back to implementation agents.
 - Browser UI Validation: Health failure skips Visual; route `failure_class: frontend` → `frontend_agent`, `failure_class: backend` → `backend_agent`. Visual failures → `frontend_agent`. Missing PNG refs are warnings, not failures.
-- Judge SDD ambiguity → offer /hero:back or /hero:approve.
+- Judge SDD ambiguity → offer /hero-back or /hero-approve.
 
 ## Communication Language
 
@@ -104,7 +104,7 @@ Cursor's Task tool accepts **kebab model slugs only** (e.g. `cursor-grok-4.5-hig
 6. If `thinking` is `true` (not `na` / `false`), append `-thinking` (e.g. `…-high-thinking`). If a known Cursor preset uses a different order, prefer the slug that appears in the Task tool's allowed model list for this IDE version.
 7. Pass the resulting **kebab slug** as the Task tool **`model` parameter** — **never omit it**, and **never use `[fast=…]` / `[effort=…]` brackets**.
 8. If Task rejects the slug or it is not in the allowed list, try the closest available variant from the Task allow-list (warn the user), then **Fallback (ADR-008)**.
-9. **Fallback (ADR-008):** if the configured model is unavailable → read `fallback_model.*` (`model`, `enable_fast_model`, `reasoning_effort`, `thinking`) and apply the same kebab rules (steps 2–6) → **warn the user explicitly every time** → if still unavailable, warn and wait for `/hero:continue`.
+9. **Fallback (ADR-008):** if the configured model is unavailable → read `fallback_model.*` (`model`, `enable_fast_model`, `reasoning_effort`, `thinking`) and apply the same kebab rules (steps 2–6) → **warn the user explicitly every time** → if still unavailable, warn and wait for `/hero-continue`.
 10. **Orchestrator → named agent:** always resolve `agents.<agent_name>` (steps 1–9). Example: orchestrator → `planning_agent` → `agents.planning_agent`.
 11. **Nested generic Task fan-out** (when an orchestrator-dispatched agent launches a nested Task child that is **not** a named Hero agent):
     - Read `agents.<parent_agent>.subagent`.
@@ -128,7 +128,7 @@ Cursor's Task tool accepts **kebab model slugs only** (e.g. `cursor-grok-4.5-hig
    When the stage requires human approval, close first (`hero stage close`) then `hero approve --metrics-json '…'` after the user approves. For cycle end use `hero finish --metrics-json …`.
 8. Print the metrics summary in chat (format below). Never skip this step. Always end the metrics block with a pointer to full details via CLI:
    run `hero metrics` (or `hero metrics --json`) — do not instruct agents to open cycle `metrics.md`.
-   When updating project-wide totals (e.g. `/hero:finish`), also link `[.workflow-hero/metrics-summary.md](.workflow-hero/metrics-summary.md)` if that file is maintained.
+   When updating project-wide totals (e.g. `/hero-finish`), also link `[.workflow-hero/metrics-summary.md](.workflow-hero/metrics-summary.md)` if that file is maintained.
 
 ## Stage Close Sequence (1.0)
 

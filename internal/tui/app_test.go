@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,7 +60,7 @@ func TestPaletteFilter(t *testing.T) {
 	}
 	found := false
 	for _, item := range items {
-		if item.Label == "/hero:approve" {
+		if item.Label == "/hero-approve" {
 			found = true
 			break
 		}
@@ -71,7 +72,12 @@ func TestPaletteFilter(t *testing.T) {
 
 func TestHeroPaletteSlashLabels(t *testing.T) {
 	m := NewTestModel(nil)
-	want := []string{"/hero:approve", "/hero:reject", "/hero:cancel", "/hero:finish", "/hero:archive", "/hero:resume", "/hero:help"}
+	want := []string{
+		"/hero-new", "/hero-start", "/hero-sync", "/hero-status",
+		"/hero-approve", "/hero-reject", "/hero-continue", "/hero-back",
+		"/hero-cancel", "/hero-finish", "/hero-archive", "/hero-resume",
+		"/hero-cycles", "/hero-todos", "/hero-help",
+	}
 	labels := map[string]bool{}
 	for _, item := range PaletteItemsForTest(m) {
 		labels[item.Label] = true
@@ -81,8 +87,8 @@ func TestHeroPaletteSlashLabels(t *testing.T) {
 			t.Fatalf("missing palette label %q; labels=%v", label, labels)
 		}
 	}
-	if labels["/hero:run"] {
-		t.Fatal("palette must not invent /hero:run")
+	if labels["/hero-run"] {
+		t.Fatal("palette must not invent /hero-run")
 	}
 }
 
@@ -90,8 +96,8 @@ func TestEmptyCycleHintMentionsHeroNew(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 80)
 	view := ViewForTest(m)
-	if !contains(view, "/hero:new") {
-		t.Fatalf("empty state missing /hero:new: %q", view)
+	if !contains(view, "/hero-new") {
+		t.Fatalf("empty state missing /hero-new: %q", view)
 	}
 }
 
@@ -127,8 +133,8 @@ func TestImportedCommandsInPalette(t *testing.T) {
 	if labels["/my-tool"] != "harness command · user (~/.cursor/commands)" {
 		t.Fatalf("my-tool hint: %q", labels["/my-tool"])
 	}
-	if _, ok := labels["/hero-approve"]; ok {
-		t.Fatal("hero-approve must not appear in imported list")
+	if labels["/hero-approve"] == "harness command · project" {
+		t.Fatal("hero-approve must not appear as an imported harness command")
 	}
 
 	svc := newTestServiceInDir(t, dir)
@@ -147,8 +153,17 @@ type recordingHarness struct {
 }
 
 func (h *recordingHarness) Name() string { return "recording" }
-func (h *recordingHarness) SupportsChat() bool {
-	return true
+func (h *recordingHarness) IsAvailable(context.Context) error { return nil }
+func (h *recordingHarness) CreateSession(context.Context, harness.SessionRequest) (*harness.Session, error) {
+	return &harness.Session{ID: "rec"}, nil
+}
+func (h *recordingHarness) ResumeSession(context.Context, string) error { return nil }
+func (h *recordingHarness) Execute(context.Context, harness.ExecuteRequest) (*harness.ExecutionResult, error) {
+	return &harness.ExecutionResult{Output: "ok", StreamDone: true}, nil
+}
+func (h *recordingHarness) Cancel(context.Context, string) error { return nil }
+func (h *recordingHarness) Status(context.Context, string) (*harness.ExecutionStatus, error) {
+	return &harness.ExecutionStatus{State: harness.StatusIdle}, nil
 }
 func (h *recordingHarness) Dispatch(_ context.Context, req harness.DispatchRequest) (harness.DispatchResult, error) {
 	h.lastPrompt = req.Prompt
@@ -228,8 +243,21 @@ func TestImportCommandDispatchUnavailable(t *testing.T) {
 
 type unavailableHarness struct{}
 
-func (unavailableHarness) Name() string        { return "unavailable" }
-func (unavailableHarness) SupportsChat() bool  { return true }
+func (unavailableHarness) Name() string { return "unavailable" }
+func (unavailableHarness) IsAvailable(context.Context) error {
+	return errors.New("unavailable")
+}
+func (unavailableHarness) CreateSession(context.Context, harness.SessionRequest) (*harness.Session, error) {
+	return nil, errors.New("unavailable")
+}
+func (unavailableHarness) ResumeSession(context.Context, string) error { return errors.New("unavailable") }
+func (unavailableHarness) Execute(context.Context, harness.ExecuteRequest) (*harness.ExecutionResult, error) {
+	return nil, errors.New("unavailable")
+}
+func (unavailableHarness) Cancel(context.Context, string) error { return nil }
+func (unavailableHarness) Status(context.Context, string) (*harness.ExecutionStatus, error) {
+	return &harness.ExecutionStatus{State: harness.StatusFailed}, nil
+}
 func (unavailableHarness) Dispatch(context.Context, harness.DispatchRequest) (harness.DispatchResult, error) {
 	return harness.DispatchResult{Dispatched: false, Message: "adapter offline"}, nil
 }

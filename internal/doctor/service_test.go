@@ -1,6 +1,8 @@
 package doctor_test
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -239,5 +241,81 @@ func TestDoctor_SupportedHarnessMarker_Ok(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected harness-markers ok when only cursor is present")
+	}
+}
+
+func TestDoctor_CursorCLIMissing_Warns(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0")
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+		CursorCLIProbe: func(context.Context, string) error {
+			return errors.New("cursor agent CLI not found on PATH (tried cursor-agent and cursor agent); harness unavailable")
+		},
+	})
+
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "cursor-cli" && c.Status == "warn" && strings.Contains(c.Message, "not found on PATH") {
+			found = true
+			if !strings.Contains(c.Message, "hero` TUI") {
+				t.Errorf("expected TUI hint in message: %q", c.Message)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("expected cursor-cli warn when CLI missing")
+	}
+	if !report.OK {
+		t.Error("cursor-cli warn must not fail the doctor report")
+	}
+}
+
+func TestDoctor_CursorCLIAuth_WarnsWithLoginHint(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0")
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+		CursorCLIProbe: func(context.Context, string) error {
+			return &cursoradapter.AuthError{Detail: "not logged in"}
+		},
+	})
+
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "cursor-cli-auth" && c.Status == "warn" && strings.Contains(c.Message, cursoradapter.LoginHint) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected cursor-cli-auth warn with login hint")
+	}
+	if !report.OK {
+		t.Error("cursor-cli-auth warn must not fail the doctor report")
+	}
+}
+
+func TestDoctor_CursorCLIOk(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0")
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+		CursorCLIProbe: func(context.Context, string) error { return nil },
+	})
+
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "cursor-cli" && c.Status == "ok" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected cursor-cli ok check")
 	}
 }

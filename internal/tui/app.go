@@ -21,6 +21,7 @@ const (
 	screenArtifacts
 	screenCosts
 	screenEvents
+	screenConversation
 	screenPalette
 )
 
@@ -42,6 +43,17 @@ type model struct {
 	paletteIndex  int
 	paletteItems  []paletteItem
 	prevScreen    screen
+
+	// Conversation screen (design D4 / UI-C03-001 §3).
+	conversationStage string
+	harnessSessionID  string
+	transcript        []convMessage
+	input             string
+	streaming         bool
+	streamInterrupted bool
+	convError         string
+	agentMsgIndex     int
+	convStreamCh      chan tea.Msg
 }
 
 type refreshDataMsg struct {
@@ -113,9 +125,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.refreshCmd()
 
+	case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
+		if m.screen == screenConversation {
+			return m.handleConversationMsg(msg)
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if m.screen == screenPalette {
 			return m.handlePaletteKey(msg)
+		}
+		if m.screen == screenConversation {
+			return m.handleConversationKey(msg)
 		}
 		return m.handleKey(msg)
 	}
@@ -162,6 +183,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "5":
 		m.screen = screenEvents
 		m.flash = ""
+		return m, nil
+	case "6":
+		m = m.enterConversation()
 		return m, nil
 	case "a":
 		if m.screen == screenApprovals {
@@ -242,16 +266,33 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	case actionReject:
 		m.screen = screenApprovals
 		return m, m.rejectCmd()
+	case actionNew:
+		return m, m.newCycleCmd()
+	case actionStart:
+		return m, m.startCmd()
+	case actionSync:
+		return m, m.heroAssetCmd("sync")
+	case actionStatus:
+		m.screen = screenStatus
+		m.paletteFilter = ""
+		m.paletteIndex = 0
+		return m, m.statusCmd()
+	case actionContinue:
+		return m, m.continueCmd()
+	case actionBack:
+		return m, m.heroAssetCmd("back")
 	case actionCancel:
 		return m, m.cancelCmd()
 	case actionFinish:
 		return m, m.finishCmd()
-	case actionDispatch:
-		return m, m.dispatchCmd()
 	case actionArchive:
 		return m, m.archiveCmd()
 	case actionResume:
 		return m, m.resumeCmd()
+	case actionCycles:
+		return m, m.cyclesCmd()
+	case actionTodos:
+		return m, m.todosCmd()
 	case actionHelp:
 		return m, m.helpCmd()
 	case actionImportCommand:
@@ -336,6 +377,119 @@ func (m model) finishCmd() tea.Cmd {
 	}
 }
 
+func (m model) newCycleCmd() tea.Cmd {
+	svc := m.svc
+	return func() tea.Msg {
+		res, err := svc.NewCycle("", "")
+		if err != nil {
+			return actionResultMsg{err: err}
+		}
+		return actionResultMsg{
+			success: fmt.Sprintf("Created cycle C%d — %s (%d stages).",
+				res.Cycle.Number, res.Cycle.Title, len(res.Stages)),
+		}
+	}
+}
+
+func (m model) startCmd() tea.Cmd {
+	return m.dispatchCmd()
+}
+
+func (m model) statusCmd() tea.Cmd {
+	svc := m.svc
+	return func() tea.Msg {
+		st, err := svc.Status()
+		if err != nil {
+			return actionResultMsg{err: err}
+		}
+		if st.CycleNumber == 0 {
+			return actionResultMsg{success: "No active cycle. Run /hero-new to start."}
+		}
+		return actionResultMsg{
+			success: fmt.Sprintf("Cycle C%d — %s (%s)", st.CycleNumber, st.Title, st.Status),
+		}
+	}
+}
+
+func (m model) continueCmd() tea.Cmd {
+	svc := m.svc
+	return func() tea.Msg {
+		if err := svc.Continue(1); err != nil {
+			return actionResultMsg{err: err}
+		}
+		return actionResultMsg{success: "Granted +1 extra iteration(s)."}
+	}
+}
+
+func (m model) cyclesCmd() tea.Cmd {
+	svc := m.svc
+	return func() tea.Msg {
+		text, err := formatCyclesList(svc)
+		if err != nil {
+			return actionResultMsg{err: err}
+		}
+		return actionResultMsg{success: text}
+	}
+}
+
+func (m model) todosCmd() tea.Cmd {
+	svc := m.svc
+	return func() tea.Msg {
+		text, err := formatTodosList(svc.ProjectDir)
+		if err != nil {
+			return actionResultMsg{err: err}
+		}
+		return actionResultMsg{success: text}
+	}
+}
+
+func (m model) heroAssetCmd(name string) tea.Cmd {
+	svc := m.svc
+	label := "/hero-" + name
+	return func() tea.Msg {
+		path := filepath.Join(svc.ProjectDir, cursoradapter.CommandsDir, "hero-"+name+".md")
+		prompt, err := cursoradapter.ReadCommandPrompt(path)
+		if err != nil {
+			slog.Error("tui hero command read failed", "path", path, "error", err)
+			return actionResultMsg{err: fmt.Errorf("read command %s: %w", label, err)}
+		}
+		return dispatchPromptMsg(svc, label, prompt)
+	}
+}
+
+func dispatchPromptMsg(svc *cycle.Service, label, prompt string) tea.Msg {
+	adapter := svc.Harness
+	if adapter == nil {
+		adapter = cursoradapter.NewAdapter(svc.ProjectDir)
+	}
+	res, err := adapter.Dispatch(context.Background(), harness.DispatchRequest{
+		ProjectDir: svc.ProjectDir,
+		Prompt:     prompt,
+	})
+	if err != nil {
+		slog.Error("tui command dispatch failed", "command", label, "error", err)
+		return actionResultMsg{
+			err: fmt.Errorf("dispatch failed for %s; run the same command in Cursor chat", label),
+		}
+	}
+	if !res.Dispatched {
+		msg := res.Message
+		if msg == "" {
+			msg = fmt.Sprintf("dispatch unavailable for %s", label)
+		}
+		slog.Info("tui command dispatch unavailable", "command", label, "message", msg)
+		return actionResultMsg{
+			err: fmt.Errorf("%s; run %s in Cursor chat", msg, label),
+		}
+	}
+	slog.Info("tui command dispatched", "command", label)
+	success := res.Message
+	if success == "" {
+		success = fmt.Sprintf("%s dispatched.", label)
+	}
+	return actionResultMsg{success: success}
+}
+
 func (m model) dispatchCmd() tea.Cmd {
 	svc := m.svc
 	return func() tea.Msg {
@@ -395,36 +549,7 @@ func (m model) importCommandCmd(item paletteItem) tea.Cmd {
 			slog.Error("tui import command read failed", "path", path, "error", err)
 			return actionResultMsg{err: fmt.Errorf("read command %s: %w", label, err)}
 		}
-		adapter := svc.Harness
-		if adapter == nil {
-			adapter = cursoradapter.NewAdapter(svc.ProjectDir)
-		}
-		res, err := adapter.Dispatch(context.Background(), harness.DispatchRequest{
-			ProjectDir: svc.ProjectDir,
-			Prompt:     prompt,
-		})
-		if err != nil {
-			slog.Error("tui import command dispatch failed", "command", label, "error", err)
-			return actionResultMsg{
-				err: fmt.Errorf("dispatch failed for %s; run the same command in Cursor chat", label),
-			}
-		}
-		if !res.Dispatched {
-			msg := res.Message
-			if msg == "" {
-				msg = fmt.Sprintf("dispatch unavailable for %s", label)
-			}
-			slog.Info("tui import command dispatch unavailable", "command", label, "message", msg)
-			return actionResultMsg{
-				err: fmt.Errorf("%s; run %s in Cursor chat", msg, label),
-			}
-		}
-		slog.Info("tui import command dispatched", "command", label)
-		success := res.Message
-		if success == "" {
-			success = fmt.Sprintf("%s dispatched.", label)
-		}
-		return actionResultMsg{success: success}
+		return dispatchPromptMsg(svc, label, prompt)
 	}
 }
 

@@ -11,13 +11,20 @@ type paletteAction int
 
 const (
 	actionGoScreen paletteAction = iota
+	actionNew
+	actionStart
+	actionSync
+	actionStatus
 	actionApprove
 	actionReject
+	actionContinue
+	actionBack
 	actionCancel
 	actionFinish
-	actionDispatch
 	actionArchive
 	actionResume
+	actionCycles
+	actionTodos
 	actionHelp
 	actionImportCommand
 	actionRefresh
@@ -40,14 +47,21 @@ func defaultHeroPaletteItems() []paletteItem {
 		{label: "Go: Artifacts", hint: "linked files", action: actionGoScreen, screen: screenArtifacts},
 		{label: "Go: Costs", hint: "token metrics", action: actionGoScreen, screen: screenCosts},
 		{label: "Go: Events", hint: "event log", action: actionGoScreen, screen: screenEvents},
-		{label: "/hero:approve", hint: "pending approval", action: actionApprove},
-		{label: "/hero:reject", hint: "send back", action: actionReject},
-		{label: "Dispatch", hint: "harness dispatch", action: actionDispatch},
-		{label: "/hero:cancel", hint: "abort active cycle", action: actionCancel},
-		{label: "/hero:finish", hint: "complete cycle", action: actionFinish},
-		{label: "/hero:archive", hint: "archive cycle", action: actionArchive},
-		{label: "/hero:resume", hint: "reactivate cycle", action: actionResume},
-		{label: "/hero:help", hint: "workflow guide", action: actionHelp},
+		{label: "/hero-new", hint: "create cycle", action: actionNew},
+		{label: "/hero-start", hint: "start workflow", action: actionStart},
+		{label: "/hero-sync", hint: "sync project", action: actionSync},
+		{label: "/hero-status", hint: "cycle status", action: actionStatus},
+		{label: "/hero-approve", hint: "pending approval", action: actionApprove},
+		{label: "/hero-reject", hint: "send back", action: actionReject},
+		{label: "/hero-continue", hint: "grant extra iterations", action: actionContinue},
+		{label: "/hero-back", hint: "reopen planning", action: actionBack},
+		{label: "/hero-cancel", hint: "abort active cycle", action: actionCancel},
+		{label: "/hero-finish", hint: "complete cycle", action: actionFinish},
+		{label: "/hero-archive", hint: "archive cycle", action: actionArchive},
+		{label: "/hero-resume", hint: "reactivate cycle", action: actionResume},
+		{label: "/hero-cycles", hint: "list cycles", action: actionCycles},
+		{label: "/hero-todos", hint: "pending items", action: actionTodos},
+		{label: "/hero-help", hint: "workflow guide", action: actionHelp},
 		{label: "Refresh", hint: "reload from store", action: actionRefresh},
 		{label: "Quit", hint: "exit TUI", action: actionQuit},
 	}

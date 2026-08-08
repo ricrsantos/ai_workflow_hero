@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,8 +32,10 @@ type Report struct {
 
 // Options holds doctor configuration.
 type Options struct {
-	ProjectDir     string
-	BinaryVersion  string
+	ProjectDir    string
+	BinaryVersion string
+	// CursorCLIProbe overrides the default Cursor Agent CLI availability check (tests).
+	CursorCLIProbe CursorCLIProbe
 }
 
 // Run performs all doctor checks and returns a report.
@@ -197,6 +200,11 @@ func Run(opts Options) Report {
 	// 10. Harness marker detection (warn-only; ADR-022; UI-C02-001 §5).
 	if len(configuredTools) > 0 {
 		addHarnessMarkerChecks(opts.ProjectDir, configuredTools, addCheck)
+	}
+
+	// 11. Cursor Agent CLI diagnostics (warn-only; PRD-C03-001 §4.10; complementary to TUI boot).
+	if heroInstalled {
+		addCursorCLIChecks(context.Background(), opts.ProjectDir, opts.CursorCLIProbe, addCheck)
 	}
 
 	return report

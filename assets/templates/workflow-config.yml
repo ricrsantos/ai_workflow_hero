@@ -202,7 +202,7 @@ workflow_rules:
   - stages.qa_end_to_end.use_playwright may be true only when scope.frontend is true; otherwise block and ask for correction.
   - When use_playwright is true, end2end_qa_agent uses Playwright; when false, it uses direct HTTP calls.
   - All agents must communicate with the user in chat using workflow_config.user_preferred_language (default EN), unless the user explicitly asks for a different chat language. Cycle artifacts remain English.
-  - On /hero:new with prior cycles, import previous workflow_config + fallback_model + stages + agents; always reset title, objective, and scope to template defaults.
+  - On /hero-new with prior cycles, import previous workflow_config + fallback_model + stages + agents; always reset title, objective, and scope to template defaults.
   - Do not change the architecture without an approved ADR.
   - Persist stage close and metrics via the hero CLI (SQLite), e.g. hero approve|reject|finish|continue with --metrics-json as needed; do not write workflow.md or metrics.md as operational stores.
   - Before finishing the workflow, ensure current-state.md is up to date.

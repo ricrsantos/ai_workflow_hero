@@ -20,6 +20,8 @@ func (m model) renderContent() string {
 		return m.renderCosts()
 	case screenEvents:
 		return m.renderEvents()
+	case screenConversation:
+		return m.renderConversation()
 	case screenPalette:
 		return m.renderPalette()
 	default:
@@ -30,7 +32,7 @@ func (m model) renderContent() string {
 func (m model) renderStatus() string {
 	var b strings.Builder
 	if m.status.CycleNumber == 0 && len(m.status.Stages) == 0 {
-		b.WriteString(mutedStyle.Render("No active cycle. Use /hero:new or `hero cycle new`."))
+		b.WriteString(mutedStyle.Render("No active cycle. Run /hero-new, then /hero-start (or `hero cycle new`)."))
 		return b.String()
 	}
 	b.WriteString(headerStyle.Render(fmt.Sprintf("Cycle C%d — %s", m.status.CycleNumber, m.status.Title)))
@@ -188,7 +190,7 @@ func (m model) renderFrame() string {
 }
 
 func screenTabBar(active screen) string {
-	names := []string{"Status", "Approvals", "Artifacts", "Costs", "Events"}
+	names := []string{"Status", "Approvals", "Artifacts", "Costs", "Events", "Chat"}
 	var parts []string
 	for i, name := range names {
 		if screen(i) == active {
@@ -204,7 +206,13 @@ func (m model) footerHints() string {
 	if m.screen == screenPalette {
 		return "esc close · enter select"
 	}
-	return "1-5 screens · / commands · ctrl+r refresh · d dispatch · q quit"
+	if m.screen == screenConversation {
+		if m.streaming {
+			return "ctrl+c interrupt · esc wait"
+		}
+		return "enter submit · esc clear · /hero-help · 1-6 screens · q quit"
+	}
+	return "1-6 screens · / commands · ctrl+r refresh · d dispatch · q quit"
 }
 
 func pendingApprovalStage(st cycle.StatusView) string {

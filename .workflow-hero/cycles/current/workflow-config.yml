@@ -1,0 +1,181 @@
+title: Correção de distorções na implementação da V1
+objective: Ocorreram vários problemas na implementação da V1. Principalmente com o Harness adapter do Cursor.
+workflow_config:
+  user_preferred_language: PT-BR
+scope:
+  backend: false
+  frontend: false
+  native: true
+  script: false
+  infrastructure: false
+stages:
+  research:
+    enabled: true
+    purpose: Collaborate with the user to gather requirements and produce the project specifications.
+    max_iterations: 30
+    timeout_minutes: 15
+    require_human_approval: false
+  planning:
+    enabled: true
+    purpose: Convert the approved specifications into a complete SDD ready for implementation.
+    max_iterations: 5
+    timeout_minutes: 30
+    require_human_approval: false
+  implementation:
+    enabled: true
+    purpose: Implement the approved SDD.
+    max_iterations: 4
+    timeout_minutes: 60
+    require_human_approval: false
+  qa:
+    enabled: true
+    purpose: Validate implementation quality (tests, coverage, architecture, lint, build).
+    max_iterations: 2
+    timeout_minutes: 15
+    require_human_approval: false
+  judge:
+    enabled: true
+    purpose: Verify SDD requirement coverage.
+    max_iterations: 3
+    timeout_minutes: 10
+    require_human_approval: false
+  browser_ui_validation:
+    enabled: false
+    purpose: Validate browser UI health (render, console, network/CSS) and optional visual comparison.
+    max_iterations: 2
+    timeout_minutes: 15
+    require_human_approval: false
+    visual_validation:
+      enabled: false
+      reference_dir: docs/ui/visual_reference
+  qa_end_to_end:
+    enabled: false
+    purpose: Validate the complete feature end-to-end.
+    max_iterations: 3
+    timeout_minutes: 15
+    require_human_approval: false
+    use_playwright: false
+agents:
+  planning_agent:
+    model: composer-2.5
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: true
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+  context_agent:
+    model: composer-2.5
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: true
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+  backend_agent:
+    model: cursor-grok-4.5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+  frontend_agent:
+    model: cursor-grok-4.5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+  generic_agent:
+    model: cursor-grok-4.5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+  qa_agent:
+    model: cursor-grok-4.5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: true
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+  judge_agent:
+    model: composer-2.5
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: false
+    subagent:
+      same_of_agent: true
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+  browser_ui_agent:
+    model: cursor-grok-4.5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: true
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+  end2end_qa_agent:
+    model: cursor-grok-4.5
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+fallback_model:
+  model: cursor-grok-4.5
+  reasoning_effort: high
+  enable_fast_model: false
+  thinking: na
+workflow_rules:
+- Skip any stage that is not enabled.
+- Do not start implementation until the PRD has been approved, if the research stage is enabled.
+- If the research stage is disabled, require the objective field above to be well described and ask the user for explicit
+  scope confirmation before starting implementation.
+- At least one of the five scope fields must be true when implementation is enabled.
+- stages.browser_ui_validation.enabled may be true only when scope.frontend is true; otherwise block and ask for correction.
+- When Browser UI Validation is enabled, Browser Health always runs (Playwright required at execution); Visual Validation
+  runs only when visual_validation.enabled is true and only after Health passes.
+- stages.qa_end_to_end.use_playwright may be true only when scope.frontend is true; otherwise block and ask for correction.
+- When use_playwright is true, end2end_qa_agent uses Playwright; when false, it uses direct HTTP calls.
+- All agents must communicate with the user in chat using workflow_config.user_preferred_language (default EN), unless the
+  user explicitly asks for a different chat language. Cycle artifacts remain English.
+- On /hero:new with prior cycles, import previous workflow_config + fallback_model + stages + agents; always reset title,
+  objective, and scope to template defaults.
+- Do not change the architecture without an approved ADR.
+- Persist stage close and metrics via the hero CLI (SQLite), e.g. hero approve|reject|finish|continue with --metrics-json
+  as needed; do not write workflow.md or metrics.md as operational stores.
+- Before finishing the workflow, ensure current-state.md is up to date.

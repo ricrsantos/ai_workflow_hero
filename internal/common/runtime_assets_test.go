@@ -28,7 +28,7 @@ func TestRuntimeAssets_StageOrder(t *testing.T) {
 // TestRuntimeAssets_ApproveRejectCancelFinish verifies control loop commands are documented.
 func TestRuntimeAssets_ApproveRejectCancelFinish(t *testing.T) {
 	keywords := []string{
-		"/hero:approve", "/hero:reject", "/hero:cancel", "/hero:finish",
+		"/hero-approve", "/hero-reject", "/hero-cancel", "/hero-finish",
 	}
 	allContent := loadAllAssetContent(t, "cursor")
 	for _, kw := range keywords {
@@ -40,7 +40,7 @@ func TestRuntimeAssets_ApproveRejectCancelFinish(t *testing.T) {
 
 // TestRuntimeAssets_ContinueAndBack verifies iteration/escalation commands are present.
 func TestRuntimeAssets_ContinueAndBack(t *testing.T) {
-	keywords := []string{"/hero:continue", "/hero:back"}
+	keywords := []string{"/hero-continue", "/hero-back"}
 	allContent := loadAllAssetContent(t, "cursor")
 	for _, kw := range keywords {
 		if !strings.Contains(allContent, kw) {
@@ -481,7 +481,7 @@ func TestRuntimeAssets_CleanSessionHandoff(t *testing.T) {
 		"Clean Session Handoff",
 		"new empty chat",
 		"orchestrator / grill-me",
-		"/hero:start",
+		"/hero-start",
 	} {
 		if !strings.Contains(newStr, kw) {
 			t.Errorf("hero-new.md missing Clean Session Handoff keyword %q", kw)
@@ -657,17 +657,29 @@ func TestRuntimeAssets_BrowserUIValidation(t *testing.T) {
 	}
 }
 
-// TestRuntimeAssets_SlashFirstVocabulary verifies Runtime assets prefer /hero:* slash CTAs (ADR-020).
-func TestRuntimeAssets_SlashFirstVocabulary(t *testing.T) {
+// TestRuntimeAssets_HyphenSlashVocabulary verifies Runtime assets prefer /hero-<name> (hyphen) CTAs (ADR-024).
+func TestRuntimeAssets_HyphenSlashVocabulary(t *testing.T) {
 	canonical := []string{
-		"/hero:new", "/hero:start", "/hero:approve", "/hero:reject", "/hero:cancel",
-		"/hero:finish", "/hero:archive", "/hero:resume", "/hero:sync", "/hero:status",
-		"/hero:continue", "/hero:back", "/hero:help",
+		"/hero-new", "/hero-start", "/hero-approve", "/hero-reject", "/hero-cancel",
+		"/hero-finish", "/hero-archive", "/hero-resume", "/hero-sync", "/hero-status",
+		"/hero-continue", "/hero-back", "/hero-help", "/hero-cycles", "/hero-todos",
 	}
 	allContent := loadAllAssetContent(t, "cursor")
 	for _, slash := range canonical {
 		if !strings.Contains(allContent, slash) {
-			t.Errorf("canonical slash command %q not found in Runtime assets", slash)
+			t.Errorf("canonical hyphen slash command %q not found in Runtime assets", slash)
+		}
+	}
+
+	// Ban colon-form user-facing labels (ADR-024 amends ADR-020).
+	colonBanned := []string{
+		"/hero:new", "/hero:start", "/hero:approve", "/hero:reject", "/hero:cancel",
+		"/hero:finish", "/hero:archive", "/hero:resume", "/hero:sync", "/hero:status",
+		"/hero:continue", "/hero:back", "/hero:help", "/hero:*",
+	}
+	for _, colon := range colonBanned {
+		if strings.Contains(allContent, colon) {
+			t.Errorf("colon-form slash command %q must not appear in Runtime assets (use hyphen form)", colon)
 		}
 	}
 
@@ -676,9 +688,9 @@ func TestRuntimeAssets_SlashFirstVocabulary(t *testing.T) {
 		t.Fatalf("read orchestration_agent: %v", err)
 	}
 	orchStr := string(orch)
-	for _, kw := range []string{"Slash-first user vocabulary", "ADR-020", "/hero:start"} {
+	for _, kw := range []string{"Slash-first user vocabulary", "ADR-024", "/hero-start", "/hero-cycles", "/hero-todos"} {
 		if !strings.Contains(orchStr, kw) {
-			t.Errorf("orchestration_agent.md missing slash-first keyword %q", kw)
+			t.Errorf("orchestration_agent.md missing hyphen slash keyword %q", kw)
 		}
 	}
 
@@ -687,9 +699,9 @@ func TestRuntimeAssets_SlashFirstVocabulary(t *testing.T) {
 		t.Fatalf("read workflow-hero skill: %v", err)
 	}
 	skillStr := string(skill)
-	for _, kw := range []string{"Slash-first user vocabulary", "/hero:start", "primary handoff"} {
+	for _, kw := range []string{"Slash-first user vocabulary", "/hero-start", "primary handoff", "/hero-cycles", "/hero-todos"} {
 		if !strings.Contains(skillStr, kw) {
-			t.Errorf("workflow-hero/SKILL.md missing slash-first keyword %q", kw)
+			t.Errorf("workflow-hero/SKILL.md missing hyphen slash keyword %q", kw)
 		}
 	}
 
@@ -698,8 +710,14 @@ func TestRuntimeAssets_SlashFirstVocabulary(t *testing.T) {
 		t.Fatalf("read hero-new: %v", err)
 	}
 	newStr := string(newCmd)
-	if !strings.Contains(newStr, "Run /hero:start") {
-		t.Error("hero-new.md output format must list /hero:start as the primary post-config CTA")
+	if !strings.Contains(newStr, "Run /hero-start") {
+		t.Error("hero-new.md output format must list /hero-start as the primary post-config CTA")
+	}
+
+	for _, name := range []string{"hero-cycles.md", "hero-todos.md"} {
+		if _, err := fs.ReadFile(assets.FS, "cursor/commands/"+name); err != nil {
+			t.Errorf("missing Runtime command asset %s: %v", name, err)
+		}
 	}
 }
 
@@ -718,7 +736,7 @@ func TestRuntimeAssets_ArchiveOpenSpecForce(t *testing.T) {
 		"hero cycle openspec-change",
 		"--force",
 		"--skip-openspec",
-		"retry /hero:archive",
+		"retry /hero-archive",
 		"Manual: openspec archive",
 	} {
 		if !strings.Contains(archStr, kw) {
@@ -731,7 +749,7 @@ func TestRuntimeAssets_ArchiveOpenSpecForce(t *testing.T) {
 		t.Fatalf("read orchestration_agent: %v", err)
 	}
 	if !strings.Contains(string(orch), "openspec archive") || !strings.Contains(string(orch), "--force") {
-		t.Error("orchestration_agent.md must reference OpenSpec archive and --force on /hero:archive")
+		t.Error("orchestration_agent.md must reference OpenSpec archive and --force on /hero-archive")
 	}
 
 	skill, err := fs.ReadFile(assets.FS, "cursor/skills/workflow-hero/SKILL.md")
@@ -758,7 +776,7 @@ func TestRuntimeAssets_PlanningOpenspecChangeHandoff(t *testing.T) {
 	}
 }
 
-// TestRuntimeAssets_SyncDoctorGuidance verifies /hero:sync recommends hero doctor and does not invent hero sync CLI.
+// TestRuntimeAssets_SyncDoctorGuidance verifies /hero-sync recommends hero doctor and does not invent hero sync CLI.
 func TestRuntimeAssets_SyncDoctorGuidance(t *testing.T) {
 	sync, err := fs.ReadFile(assets.FS, "cursor/commands/hero-sync.md")
 	if err != nil {
@@ -767,7 +785,7 @@ func TestRuntimeAssets_SyncDoctorGuidance(t *testing.T) {
 	syncStr := string(sync)
 	for _, kw := range []string{
 		"hero doctor",
-		"/hero:new",
+		"/hero-new",
 		"no `hero sync` CLI",
 	} {
 		if !strings.Contains(syncStr, kw) {
@@ -783,7 +801,44 @@ func TestRuntimeAssets_SyncDoctorGuidance(t *testing.T) {
 		t.Fatalf("read workflow-hero skill: %v", err)
 	}
 	if !strings.Contains(string(skill), "hero doctor") {
-		t.Error("workflow-hero/SKILL.md must reference hero doctor after /hero:sync")
+		t.Error("workflow-hero/SKILL.md must reference hero doctor after /hero-sync")
+	}
+}
+
+// TestRuntimeAssets_SyncPendingDocsScan verifies hero-sync merges pending items from product/architecture docs (ADR-029).
+func TestRuntimeAssets_SyncPendingDocsScan(t *testing.T) {
+	sync, err := fs.ReadFile(assets.FS, "cursor/commands/hero-sync.md")
+	if err != nil {
+		t.Fatalf("read hero-sync: %v", err)
+	}
+	syncStr := string(sync)
+	for _, kw := range []string{
+		"ADR-029",
+		"docs/product/",
+		"docs/architecture/",
+		"Pending docs scan",
+		"Dedupe",
+		"current-state.md",
+	} {
+		if !strings.Contains(syncStr, kw) {
+			t.Errorf("hero-sync.md missing pending-docs keyword %q", kw)
+		}
+	}
+
+	todos, err := fs.ReadFile(assets.FS, "cursor/commands/hero-todos.md")
+	if err != nil {
+		t.Fatalf("read hero-todos: %v", err)
+	}
+	todosStr := string(todos)
+	for _, kw := range []string{
+		"context/current-state.md",
+		"/hero-sync then /hero-todos",
+		"Do not",
+		"docs/product/",
+	} {
+		if !strings.Contains(todosStr, kw) {
+			t.Errorf("hero-todos.md missing keyword %q", kw)
+		}
 	}
 }
 

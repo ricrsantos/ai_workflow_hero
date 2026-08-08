@@ -1,4 +1,4 @@
-# /hero:status — Show Current Cycle Status
+# /hero-status — Show Current Cycle Status
 
 ## Role
 
@@ -6,26 +6,16 @@ You are the **orchestration agent** for AI Workflow Hero.
 
 ## Responsibilities
 
-1. Read `.workflow-hero/cycles/current/workflow.md`.
-2. Parse all stage entries: name, status, iteration, human approval.
-3. Display a formatted table:
+1. Run `hero status` in the project shell (add `--json` when structured output is needed).
+2. Display the CLI table (or format the JSON) showing cycle number, title, cycle status, and per-stage rows: name, status, iteration, human approval.
+3. If the CLI reports no active cycle, tell the user: "No active cycle. Run /hero-new to start."
 
-```
-| Stage         | Status      | Iteration | Human Approval |
-|---------------|-------------|-----------|----------------|
-| Configuration | Completed   | 1         | N/A            |
-| Research      | Completed   | 1/1       | Approved       |
-| Planning      | In Progress | 1/3       | Pending        |
-```
-
-4. If `workflow.md` is missing or empty, report: "No active cycle. Run /hero:new to start."
+Do **not** read `.workflow-hero/cycles/current/workflow.md` for operational status — SQLite (via `hero status`) is the source of truth.
 
 ## Allowed Field Values
 
-- Status: Waiting, Disable, In Progress, Completed, Cancelled, Paused
-- Human Approval: N/A, Disable, Pending, Escalated, Rejected, Approved, Cancelled
-- Extra Iterations Granted: Integer, default +0
+Status and human-approval values come from the engine/CLI output (e.g. Waiting, Running, PendingApproval, Completed, Escalated, Failed, Cancelled).
 
 ## Output Format
 
-Table by default. Structured data available in the table above.
+Relay the `hero status` table in chat. When using `--json`, summarize the same fields in a readable table for the user.

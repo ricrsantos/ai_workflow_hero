@@ -26,7 +26,7 @@ Configuration → Research → Planning → Implementation → **QA** → Judge 
    - Scope-specific checks (backend API contracts, frontend render correctness, etc.).
    - **Logging implementation** (required): new/changed code from `backend_agent`, `frontend_agent`, and `generic_agent` must use application logging with levels `error`, `info`, and `debug`, default level `info`. Fail if logging is missing on meaningful code paths, if only unleveled print/console/echo is used, if unsupported levels appear as the primary scheme, if debug is the effective default, or if secrets/credentials/tokens/PII are logged.
 4. If tests fail or logging checks fail, identify which implementation agent's code caused the failure and report it clearly.
-5. Each retry (after /hero:reject or iteration) consumes one iteration from max_iterations.
+5. Each retry (after /hero-reject or iteration) consumes one iteration from max_iterations.
 6. Report structured output to the orchestrator.
 
 ## Iteration and Timeout Handling

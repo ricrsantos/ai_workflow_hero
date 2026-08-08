@@ -1,6 +1,6 @@
 # Architecture Decision Records — AI Workflow Hero
 
-> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md).
+> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md). **C3 ADRs (024–029):** [ADR-C03-001-cursor-harness-tui-autonomy.md](ADR-C03-001-cursor-harness-tui-autonomy.md).
 
 | # | Title | Status |
 |---|---|---|
@@ -27,6 +27,12 @@
 | [ADR-021](ADR-C02-001-slash-parity-harness-archive.md#adr-021-non-hero-commands-execute-via-markdown-prompt-expansion) | Non-Hero commands execute via markdown prompt expansion | Accepted |
 | [ADR-022](ADR-C02-001-slash-parity-harness-archive.md#adr-022-harness-detection-filesystem-markers-vs-herojson) | Harness detection: filesystem markers vs hero.json | Accepted |
 | [ADR-023](ADR-C02-001-slash-parity-harness-archive.md#adr-023-hero-archive-couples-openspec-archive-with-force-escape) | Hero archive couples OpenSpec archive with force escape | Accepted |
+| [ADR-024](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-024-hero-slash-vocabulary-uses-hyphen-not-colon) | Hero slash vocabulary uses hyphen, not colon | Accepted |
+| [ADR-025](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-025-full-harnessadapter-contract-in-v1) | Full HarnessAdapter contract in V1 | Accepted |
+| [ADR-026](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-026-tui-orchestrates-via-harness-not-chat) | TUI orchestrates via harness, not chat | Accepted |
+| [ADR-027](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-027-tui-harness-selection-at-boot) | TUI harness selection at boot | Accepted |
+| [ADR-028](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-028-hero-cycles-and-hero-todos-runtime-commands) | `hero-cycles` and `hero-todos` Runtime commands | Accepted |
+| [ADR-029](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-029-hero-sync-scans-product-and-architecture-pending-items) | `hero-sync` scans product and architecture pending items | Accepted |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 

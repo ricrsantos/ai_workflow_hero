@@ -6,9 +6,9 @@ This skill provides the AI Workflow Hero runtime workflow context for the orches
 
 This skill is automatically active when working within a Hero-managed project.
 
-## Slash-first user vocabulary (ADR-020)
+## Slash-first user vocabulary (ADR-024)
 
-Tell users to run **`/hero:*` slash commands** as the primary CTA (`/hero:new`, `/hero:start`, `/hero:approve`, `/hero:reject`, `/hero:cancel`, `/hero:finish`, `/hero:archive`, `/hero:resume`, `/hero:sync`, `/hero:status`, `/hero:continue`, `/hero:back`, `/hero:help`). Use `hero …` CLI verbs only as implementation detail for agents. After `/hero:new`, the primary handoff is **`/hero:start`** in a new empty chat.
+Tell users to run **`/hero-<name>` slash commands** as the primary CTA (`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-continue`, `/hero-back`, `/hero-cycles`, `/hero-todos`, `/hero-help`). Use `hero …` CLI verbs only as implementation detail for agents. After `/hero-new`, the primary handoff is **`/hero-start`** in a new empty chat.
 
 ## Stage Flow
 
@@ -16,11 +16,11 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 ## Clean Session Handoff
 
-On `/hero:new`, if prior cycles exist, import previous `workflow_config` + `fallback_model` + `stages` + `agents` into the new `workflow-config.yml`; reset `title` / `objective` / `scope` to template defaults (see `hero-new.md` — **Previous Cycle Config Import**).
+On `/hero-new`, if prior cycles exist, import previous `workflow_config` + `fallback_model` + `stages` + `agents` into the new `workflow-config.yml`; reset `title` / `objective` / `scope` to template defaults (see `hero-new.md` — **Previous Cycle Config Import**).
 
 Chat with the user in `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask for a different chat language. Cycle artifacts stay English.
 
-After `/hero:new` (configuration ready): ask the user to open a **new empty chat**, select the IDE agent/model they want as the Hero **orchestrator / grill-me**, then run `/hero:start`. Soft guidance only. `/hero:start` must bootstrap from disk files, not from the `/hero:new` chat history.
+After `/hero-new` (configuration ready): ask the user to open a **new empty chat**, select the IDE agent/model they want as the Hero **orchestrator / grill-me**, then run `/hero-start`. Soft guidance only. `/hero-start` must bootstrap from disk files, not from the `/hero-new` chat history.
 
 ## Stage Close Sequence
 
@@ -49,22 +49,24 @@ Every stage closes with the same sequence (PRD-C01-001 §5.4):
 
 | Command | Meaning |
 |---------|---------|
-| /hero:approve | Approve current stage via `hero approve`, advance |
-| /hero:reject | Reject via `hero reject` and re-run current stage |
-| /hero:cancel | Cancel via `hero cancel` and rollback via git |
-| /hero:finish | Finish via `hero finish` and close the cycle |
-| /hero:continue | Grant extra iterations via `hero continue` after escalation |
-| /hero:back | Reopen Planning (SDD ambiguity) |
-| /hero:sync | Activate Hero in an existing project (Runtime only — no `hero sync` CLI) |
-| /hero:help | Show Runtime command reference |
+| /hero-approve | Approve current stage via `hero approve`, advance |
+| /hero-reject | Reject via `hero reject` and re-run current stage |
+| /hero-cancel | Cancel via `hero cancel` and rollback via git |
+| /hero-finish | Finish via `hero finish` and close the cycle |
+| /hero-continue | Grant extra iterations via `hero continue` after escalation |
+| /hero-back | Reopen Planning (SDD ambiguity) |
+| /hero-cycles | List cycles with per-etapa metrics |
+| /hero-todos | Show pending items from `current-state.md` |
+| /hero-sync | Activate Hero in an existing project (Runtime only — no `hero sync` CLI) |
+| /hero-help | Show Runtime command reference |
 
 ## Archive + OpenSpec
 
-`/hero:archive` runs OpenSpec archive first when linked (`openspec archive <name> -y`), then `hero cycle archive`. On OpenSpec failure: offer retry, `hero cycle archive --force` (alias `--skip-openspec`), and manual `openspec archive <name> -y`.
+`/hero-archive` runs OpenSpec archive first when linked (`openspec archive <name> -y`), then `hero cycle archive`. On OpenSpec failure: offer retry, `hero cycle archive --force` (alias `--skip-openspec`), and manual `openspec archive <name> -y`.
 
 ## Sync + doctor
 
-`/hero:sync` completes with **`hero doctor`** so harness marker warnings surface. There is no `hero sync` CLI verb.
+`/hero-sync` completes with **`hero doctor`** so harness marker warnings surface. There is no `hero sync` CLI verb. When product/architecture docs change, users should run `/hero-sync` then `/hero-todos` to refresh pending items in `current-state.md` (ADR-029).
 
 ## Fallback
 

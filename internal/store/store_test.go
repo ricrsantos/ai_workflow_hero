@@ -282,7 +282,7 @@ func TestMigrateV1ToV2AddsOpenspecChange(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "hero.db")
 
-	// Simulate a Hero 1.0 (schema v1) database, then open with C2 migrator.
+	// Simulate a Hero 1.0 (schema v1) database, then open with current migrator.
 	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
 	if err != nil {
 		t.Fatal(err)
@@ -310,8 +310,8 @@ VALUES(1, 'Legacy', 'obj', ?, '{}')`, CycleStatusActive); err != nil {
 	}
 	defer s2.Close()
 	v, err := s2.SchemaVersion()
-	if err != nil || v != 2 {
-		t.Fatalf("schema version = %d %v, want 2", v, err)
+	if err != nil || v != currentSchemaVersion {
+		t.Fatalf("schema version = %d %v, want %d", v, err, currentSchemaVersion)
 	}
 	c, err := s2.GetActiveCycle()
 	if err != nil {
@@ -326,5 +326,105 @@ VALUES(1, 'Legacy', 'obj', ?, '{}')`, CycleStatusActive); err != nil {
 	c, err = s2.GetCycle(c.ID)
 	if err != nil || c.OpenspecChange != "hero-1-0" {
 		t.Fatalf("post-migration set: %+v %v", c, err)
+	}
+}
+
+func TestHarnessSessionIDRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(filepath.Join(dir, "hero.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	id, err := s.CreateCycle(Cycle{
+		Number: 1, Title: "C3", Status: CycleStatusActive,
+		StartedAt: nowRFC3339(), ConfigSnapshotJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateStages([]Stage{
+		{CycleID: id, Name: "research", Status: StageWaiting, MaxIterations: 50, SortOrder: 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := s.GetStage(id, "research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.HarnessSessionID != "" {
+		t.Fatalf("default harness_session_id = %q", st.HarnessSessionID)
+	}
+
+	if err := s.SetStageHarnessSessionID(id, "research", "sess-xyz"); err != nil {
+		t.Fatal(err)
+	}
+	st, err = s.GetStage(id, "research")
+	if err != nil || st.HarnessSessionID != "sess-xyz" {
+		t.Fatalf("set session = %+v %v", st, err)
+	}
+
+	if err := s.ClearStageHarnessSessionID(id, "research"); err != nil {
+		t.Fatal(err)
+	}
+	st, err = s.GetStage(id, "research")
+	if err != nil || st.HarnessSessionID != "" {
+		t.Fatalf("cleared session = %+v %v", st, err)
+	}
+}
+
+func TestMigrateV2ToV3AddsHarnessSessionID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hero.db")
+
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  applied_at TEXT NOT NULL
+)`); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{db: db, log: slog.Default()}
+	if err := s.applyMigration(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.applyMigration(2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO cycles(number, title, objective, status, config_snapshot_json, openspec_change)
+VALUES(1, 'C2', 'obj', ?, '{}', '')`, CycleStatusActive); err != nil {
+		t.Fatal(err)
+	}
+	var cycleID int64
+	if err := s.db.QueryRow(`SELECT id FROM cycles LIMIT 1`).Scan(&cycleID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO stages(cycle_id, name, status, sort_order) VALUES(?, 'research', ?, 0)`,
+		cycleID, StageWaiting); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open after v2: %v", err)
+	}
+	defer s2.Close()
+	v, err := s2.SchemaVersion()
+	if err != nil || v != 3 {
+		t.Fatalf("schema version = %d %v, want 3", v, err)
+	}
+	st, err := s2.GetStage(cycleID, "research")
+	if err != nil || st.HarnessSessionID != "" {
+		t.Fatalf("migrated stage = %+v %v", st, err)
+	}
+	if err := s2.SetStageHarnessSessionID(cycleID, "research", "after-migrate"); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -49,7 +49,7 @@ func withService(run func(cmd *cobra.Command, svc *Service) error) func(cmd *cob
 
 func mapCLIError(err error) *clierr.HeroError {
 	if errors.Is(err, store.ErrNoActiveCycle) {
-		return clierr.NewWithSuggestion("no active cycle.", "Run `hero cycle new` or `/hero:new` first.")
+		return clierr.NewWithSuggestion("no active cycle.", "Run `hero cycle new` or `/hero-new` first.")
 	}
 	if errors.Is(err, store.ErrBusy) {
 		return clierr.NewWithSuggestion("cycle is locked by another session.", "Wait for the other session to finish or clear the lock.")

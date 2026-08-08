@@ -6,6 +6,46 @@
 
 ---
 
+## 2026-08-08 — C3 Judge: todos shared parser + RequiredCommandFiles
+
+**Problem:** Judge gaps — TUI `/hero-todos` duplicated pending-item parsing instead of `internal/todos`; `RequiredCommandFiles()` omitted `hero-cycles.md` / `hero-todos.md` (13 vs 15).
+
+**Decision / Outcome:** `formatTodosList` calls `todos.ReadProject` + `todos.Format`; paths list adds both command files (15 total). `go test ./...` green.
+
+---
+
+## 2026-08-08 — C3 QA: cycles TUI + hyphen slash + tasks.md
+
+**Problem:** QA found TUI `/hero-cycles` listed SQLite-only (missed archive folders); leftover `/hero:start`/`/hero:new` in CLI user strings; OpenSpec tasks.md not fully checked.
+
+**Decision / Outcome:** `formatCyclesList` now calls `svc.Cycles()` + `cycle.FormatCycles`; hyphen slash in `runPrompt`, status empty-state, cycle command suggestion; all tasks 1–3 marked `[x]` including 3.4. `go test ./...` green.
+
+---
+
+## 2026-08-08 — C3 §3: Doctor Cursor CLI checks
+
+**Problem:** C3 needs complementary `hero doctor` diagnostics for Cursor Agent CLI availability without making doctor a TUI boot prerequisite (PRD-C03-001 §4.10).
+
+**Decision / Outcome:** Added warn-only `cursor-cli` / `cursor-cli-auth` checks in `internal/doctor` when Hero is installed: PATH discovery + login hint via shared adapter `IsAvailable` probe; injectable `CursorCLIProbe` for tests. Boot-abort and dispatch-with-mock-runner coverage already present in `internal/tui` and `internal/adapters/cursor` tests. `go test ./...` green. Tasks 3.1–3.3 checked.
+
+---
+
+## 2026-08-08 — C3 §2B: TUI conversation orchestration
+
+**Problem:** C3 needs a TUI conversation surface for harness-driven interações within an etapa (stream-json, session resume, interrupt).
+
+**Decision / Outcome:** Added `screenConversation` (key `6` / Chat tab): transcript + input; goroutine-driven `Execute` with `OnStreamDelta`; persists/resumes `harness_session_id` via `cycle.Service` + store; Ctrl+C during stream calls harness `Cancel` and shows interrupted state. Colocated tests with `streamingHarness` mock. `go test ./...` green. Tasks 2B.1–2B.3 checked.
+
+---
+
+## 2026-08-08 — C3 §1: HarnessAdapter + Cursor CLI runner
+
+**Problem:** C1 shipped `Dispatch`-only adapter with nil Pusher (always chat fallback). C3 needs full harness contract + working Cursor Agent CLI execution.
+
+**Decision / Outcome:** Expanded `internal/harness` (D2); Cursor discovery (`cursor-agent` then `cursor agent`), `IsAvailable` + auth/`cursor agent login` hints, injectable `CommandRunner`, `Execute` with `--print`/json/stream-json/`--resume`, default Dispatch→Execute; SQLite migration v3 `harness_session_id` + store helpers. Fixture-based unit tests; `go test ./...` green. Tasks 1.1–1.4 checked. §2 TUI/slash/cycles still pending.
+
+---
+
 ## 2026-08-08 — README updated for C2 TUI docs
 
 **Problem:** README lacked “no active cycle” flow and C2 TUI/archive details after slash-parity cycle.

@@ -1,4 +1,4 @@
-# /hero:new — Start a New Development Cycle
+# /hero-new — Start a New Development Cycle
 
 ## Role
 
@@ -13,7 +13,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 1. Read `.workflow-hero/config/project.json` and `.workflow-hero/config/hero.json`.
 2. If this is the first cycle, populate `project.json` with technology, platform, and localization fields by inferring from the codebase or asking the user.
-3. **In-progress current cycle**: run `hero status`. If an active cycle exists and is not completed/cancelled, warn the user, show the current stage, and ask whether to archive anyway (losing unfinished progress) via `/hero:archive`, or cancel `/hero:new` and continue with `/hero:start`. Do not proceed until the user chooses.
+3. **In-progress current cycle**: run `hero status`. If an active cycle exists and is not completed/cancelled, warn the user, show the current stage, and ask whether to archive anyway (losing unfinished progress) via `/hero-archive`, or cancel `/hero-new` and continue with `/hero-start`. Do not proceed until the user chooses.
 4. Create `.workflow-hero/cycles/current/` directory if it does not exist.
 5. **Build `workflow-config.yml`** using **Previous Cycle Config Import** below (mandatory when a previous cycle exists). Never leave a stale previous-cycle file in place as the new cycle config. Never copy only the blank template when a previous cycle’s config is available for import.
 6. Ask the user to review and edit the cycle config **using a clickable markdown link** to the file (Cursor opens it on click):
@@ -69,19 +69,19 @@ After configuration is ready, tell the user to continue in a **new empty chat** 
 Required message content (adapt wording; keep all points):
 
 1. Cycle is initialized; config is ready — include the clickable link `[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)`.
-2. Open a **new empty chat** (do not continue `/hero:start` in this configuration session).
+2. Open a **new empty chat** (do not continue `/hero-start` in this configuration session).
 3. In that new chat, **select the agent (model) they want to use as the Hero orchestrator / grill-me** — that IDE session model drives orchestration and Research grilling.
-4. Then run `/hero:start`.
+4. Then run `/hero-start`.
 
 ## Approval and Control Loop
 
 - When `require_human_approval: false`: stage auto-completes and advances automatically (persist via `hero` CLI per **Stage Close Sequence** in `orchestration_agent`).
-- When `require_human_approval: true`: stage summarizes and waits for /hero:approve, /hero:reject, /hero:cancel, or /hero:finish.
+- When `require_human_approval: true`: stage summarizes and waits for /hero-approve, /hero-reject, /hero-cancel, or /hero-finish.
 - Every stage closes with: (a) summary + approval request, (b) persist via `hero` CLI with `--metrics-json` when applicable, (c) show metrics summary in chat, (d) advance to next configured stage.
 
 ## Fallback / Model Resolution
 
-When later stages invoke subagents (after `/hero:start`), follow **Model Resolution** in `orchestration_agent`: always pass Task `model` as a **kebab slug** from `workflow-config.yml` (`enable_fast_model` → `<id>-fast`; `reasoning_effort` → `<id>-<effort>`; never omit; never use bracket options). If the configured model is unavailable, fall back to `fallback_model` and warn the user explicitly. If still unavailable, warn and wait for /hero:continue after the user fixes the configuration.
+When later stages invoke subagents (after `/hero-start`), follow **Model Resolution** in `orchestration_agent`: always pass Task `model` as a **kebab slug** from `workflow-config.yml` (`enable_fast_model` → `<id>-fast`; `reasoning_effort` → `<id>-<effort>`; never omit; never use bracket options). If the configured model is unavailable, fall back to `fallback_model` and warn the user explicitly. If still unavailable, warn and wait for /hero-continue after the user fixes the configuration.
 
 ## Output Format
 
@@ -95,7 +95,7 @@ When later stages invoke subagents (after `/hero:start`), follow **Model Resolut
 → Next (clean session handoff):
   1. Open a new empty chat (do not continue here).
   2. In that chat, select the agent you want as the Hero orchestrator / grill-me.
-  3. Run /hero:start.
+  3. Run /hero-start.
 ```
 
 (Omit the “Previous cycle config” line on the very first cycle.)

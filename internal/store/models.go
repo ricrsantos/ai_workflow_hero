@@ -65,6 +65,8 @@ type Stage struct {
 	CompletedAt          string
 	Summary              string
 	SortOrder            int
+	// HarnessSessionID is the Cursor CLI session id for --resume within an etapa (schema v3).
+	HarnessSessionID string
 }
 
 // Event is an append-only operational event.

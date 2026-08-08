@@ -1,18 +1,21 @@
 package tui
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 )
 
 // Exported screen aliases for tests.
 const (
-	ScreenStatus    = screenStatus
-	ScreenApprovals = screenApprovals
-	ScreenArtifacts = screenArtifacts
-	ScreenCosts     = screenCosts
-	ScreenEvents    = screenEvents
-	ScreenPalette   = screenPalette
+	ScreenStatus       = screenStatus
+	ScreenApprovals    = screenApprovals
+	ScreenArtifacts    = screenArtifacts
+	ScreenCosts        = screenCosts
+	ScreenEvents       = screenEvents
+	ScreenConversation = screenConversation
+	ScreenPalette      = screenPalette
 )
 
 // PaletteItemView is a test-facing palette item.
@@ -132,4 +135,47 @@ func RefreshDataForTest(st cycle.StatusView) refreshDataMsg {
 // PendingApprovalForTest exposes pending stage detection.
 func PendingApprovalForTest(st cycle.StatusView) string {
 	return pendingApprovalStage(st)
+}
+
+// EnterConversationForTest switches to the conversation screen.
+func EnterConversationForTest(m model) model {
+	return m.enterConversation()
+}
+
+// SetConversationInput sets the conversation input buffer.
+func SetConversationInput(m model, input string) model {
+	m.input = input
+	return m
+}
+
+// ConversationTranscriptForTest returns agent transcript text for tests.
+func ConversationTranscriptForTest(m model) string {
+	var parts []string
+	for _, msg := range m.transcript {
+		if msg.role == convRoleAgent {
+			parts = append(parts, msg.content)
+		}
+	}
+	return strings.Join(parts, "")
+}
+
+// IsConversationStreaming reports whether conversation is streaming.
+func IsConversationStreaming(m model) bool {
+	return m.streaming
+}
+
+// HarnessSessionIDForTest returns the in-memory harness session id.
+func HarnessSessionIDForTest(m model) string {
+	return m.harnessSessionID
+}
+
+// SubmitConversationForTest submits the current input (test helper).
+func SubmitConversationForTest(m model) (model, tea.Cmd) {
+	return m.submitConversation()
+}
+
+// CancelConversationStreamForTest interrupts an active stream.
+func CancelConversationStreamForTest(m model) (model, tea.Cmd) {
+	next, cmd := m.handleConversationKey(tea.KeyMsg{Type: tea.KeyCtrlC})
+	return next.(model), cmd
 }

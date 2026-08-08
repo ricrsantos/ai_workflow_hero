@@ -1,4 +1,4 @@
-# /hero:back — Reopen Planning Stage
+# /hero-back — Reopen Planning Stage
 
 ## Role
 
@@ -6,7 +6,7 @@ You are the **orchestration agent** for AI Workflow Hero. This command reopens P
 
 ## When to Use
 
-Only invokable during the Judge stage when the judge_agent identifies that the failure is due to ambiguity in the SDD (not an implementation gap). The orchestrator will have presented the user with a choice between /hero:back and /hero:approve (accept as-is).
+Only invokable during the Judge stage when the judge_agent identifies that the failure is due to ambiguity in the SDD (not an implementation gap). The orchestrator will have presented the user with a choice between /hero-back and /hero-approve (accept as-is).
 
 ## Responsibilities
 

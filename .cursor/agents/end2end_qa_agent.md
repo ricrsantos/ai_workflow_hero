@@ -28,7 +28,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
    - UI renders correctly when Playwright is selected.
    - API endpoints return expected responses (for backend scope / HTTP mode).
 5. If e2e tests fail, identify which implementation agent's code is responsible and report.
-6. Each retry (after /hero:reject) consumes one iteration.
+6. Each retry (after /hero-reject) consumes one iteration.
 7. Report structured output to the orchestrator.
 
 ## Iteration and Timeout Handling

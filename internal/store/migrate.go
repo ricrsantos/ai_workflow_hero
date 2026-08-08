@@ -6,7 +6,7 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 2
+const currentSchemaVersion = 3
 
 func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`
@@ -115,6 +115,11 @@ func (s *Store) applyMigration(version int) error {
 	case 2:
 		// ADR-023 / C2: persist OpenSpec change name on the cycle.
 		if _, err := tx.Exec(`ALTER TABLE cycles ADD COLUMN openspec_change TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+	case 3:
+		// ADR-C03 / D6: Cursor CLI --resume continuity within an etapa.
+		if _, err := tx.Exec(`ALTER TABLE stages ADD COLUMN harness_session_id TEXT NOT NULL DEFAULT ''`); err != nil {
 			return fmt.Errorf("migration %d: %w", version, err)
 		}
 	default:

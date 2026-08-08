@@ -1,4 +1,4 @@
-# /hero:finish — Finish and Close the Current Cycle
+# /hero-finish — Finish and Close the Current Cycle
 
 ## Role
 
@@ -18,7 +18,7 @@ You are the **orchestration agent** for AI Workflow Hero.
 4. Optionally update `metrics-summary.md` (project-wide) with aggregated totals from `hero metrics`.
 5. Update `context-log.md` with a summary of decisions and outcomes for the cycle.
 6. Update `current-state.md` to reflect the new project state after this cycle.
-7. Notify the user that the cycle is complete; show completion via `hero status` and remind them to run **`/hero:archive`** when ready (OpenSpec archive runs first when linked; folder date from store `completed_at`).
+7. Notify the user that the cycle is complete; show completion via `hero status` and remind them to run **`/hero-archive`** when ready (OpenSpec archive runs first when linked; folder date from store `completed_at`).
 
 ## Metrics
 
@@ -31,5 +31,5 @@ Compute metrics per **Metrics Procedure** in `orchestration_agent` (chars÷4, mo
 → Completion recorded in SQLite (hero finish).
 → Metrics summary: run `hero metrics`
 → Project totals: [.workflow-hero/metrics-summary.md](.workflow-hero/metrics-summary.md) (if maintained)
-→ Archive with /hero:archive when ready (folder date from store completed_at)
+→ Archive with /hero-archive when ready (folder date from store completed_at)
 ```

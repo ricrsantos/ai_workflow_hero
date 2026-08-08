@@ -1,10 +1,12 @@
 package cycle_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
@@ -170,6 +172,11 @@ func TestServiceRunRecordsHarnessInvokedFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
+
+	// Force CLI-missing path so the test does not depend on a live cursor-agent on PATH.
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "", errors.New("not found") }
+	svc.Harness = adapter
 
 	if _, err := svc.NewCycle("", ""); err != nil {
 		t.Fatal(err)

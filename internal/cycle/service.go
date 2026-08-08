@@ -524,7 +524,52 @@ func (s *Service) resolveRunStage(cycleID int64, stage string) (string, error) {
 }
 
 func runPrompt(cycleNumber int, stage string) string {
-	return fmt.Sprintf("Hero cycle C%d stage %q — continue in Cursor chat with /hero:start if not already running.", cycleNumber, stage)
+	return fmt.Sprintf("Hero cycle C%d stage %q — continue in Cursor chat with /hero-start if not already running.", cycleNumber, stage)
+}
+
+// ActiveRunStage returns the name of the stage that should receive harness work
+// (running, escalated, pending approval, or waiting — same precedence as Run).
+func (s *Service) ActiveRunStage() (string, error) {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return "", err
+	}
+	return s.resolveRunStage(c.ID, "")
+}
+
+// StageHarnessSessionID returns the stored harness session id for a stage.
+func (s *Service) StageHarnessSessionID(stageName string) (string, error) {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return "", err
+	}
+	st, err := s.Store.GetStage(c.ID, stageName)
+	if err != nil {
+		return "", err
+	}
+	return st.HarnessSessionID, nil
+}
+
+// SetStageHarnessSessionID persists a harness session id for the active cycle stage.
+func (s *Service) SetStageHarnessSessionID(stageName, sessionID string) error {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	return s.Store.SetStageHarnessSessionID(c.ID, stageName, sessionID)
+}
+
+// ConversationContext returns the active run stage and its harness session id.
+func (s *Service) ConversationContext() (stageName, sessionID string, err error) {
+	stageName, err = s.ActiveRunStage()
+	if err != nil {
+		return "", "", err
+	}
+	sessionID, err = s.StageHarnessSessionID(stageName)
+	if err != nil {
+		return "", "", err
+	}
+	return stageName, sessionID, nil
 }
 
 // RecordHarnessInvoked appends a harness_invoked event.

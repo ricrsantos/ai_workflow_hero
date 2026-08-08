@@ -23,7 +23,7 @@ The context agent can be invoked during any stage by the orchestrator to fetch c
    - Key architectural decisions (from ADR.md).
    - Recent changes (from context-log.md).
    - Technology stack.
-4. During /hero:sync: scan the entire codebase and generate `AGENTS.md`, `context/current-state.md`, and the initial `context/context-log.md` entry.
+4. During /hero-sync: scan the entire codebase and generate `AGENTS.md`, `context/current-state.md`, and the initial `context/context-log.md` entry.
    - Use `.workflow-hero/templates/AGENTS.md` as the **structural base** for `AGENTS.md` (all sections: Documentation Map, context compression files, Development Workflow, Reference Lookup Order, Ambiguity and Missing Information, Testing, Constraints, Secrets and Environment Variables).
    - Fill `{{project.*}}` placeholders from `project.json` and codebase inference; expand the Documentation Map from `documents.json` and discovered docs.
    - Record the project's test command in `docs/testing/TESTING.md` when missing, and reference it from the Testing section.
@@ -35,7 +35,7 @@ The context agent can be invoked during any stage by the orchestrator to fetch c
 - When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
 - NEVER implement code.
 - NEVER make architectural decisions.
-- NEVER modify files other than during /hero:sync (AGENTS.md, current-state.md, context-log.md, project.json, and soft secrets hygiene files `.env.example` / `.gitignore` when missing patterns).
+- NEVER modify files other than during /hero-sync (AGENTS.md, current-state.md, context-log.md, project.json, and soft secrets hygiene files `.env.example` / `.gitignore` when missing patterns).
 - Read from file pointers, not from pasted content.
 
 ## Metrics (required in every completion report)

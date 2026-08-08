@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   Project: AI Workflow Hero (Hero) — the Hero CLI + Runtime assets themselves.
   This is Hero's own source code repository, not a project that consumes Hero.
-  Phase: Cycle C2 — Slash Command Parity, TUI Harness Commands & Archive Coupling.
+  Phase: Cycle C3 — Cursor Harness Autonomy & TUI Orchestration.
 
   Authoritative sources — read before planning or writing any artifact:
     - AGENTS.md (project summary, doc map, reference lookup order, testing loop, ambiguity policy)
@@ -14,58 +14,38 @@ context: |
     - context/current-state.md (current implementation status, architecture summary, pending features)
     - context/context-log.md (recent decisions and session history)
     - Cycle documents (from .workflow-hero/config/documents.json):
-      - docs/product/PRD-C01-001-hero-1-0.md — Hero 1.0: Harness Orchestrator, AI Loop, TUI & SQLite (PRD)
-      - docs/architecture/ADR-C01-001-hero-1-0.md — Hero 1.0 Architecture Decisions (ADR-012–019) (ADR)
-      - docs/product/UI-C01-001-hero-tui.md — Hero 1.0 TUI & CLI Query UX (UI)
-      - docs/deployment/DEPLOY.md — Build, Release, and Distribution (updated for 1.0 upgrade) (DEPLOY)
-      - docs/product/PRD-C02-001-slash-parity-tui-harness.md — Slash Command Parity, TUI Harness Commands & Archive Coupling (PRD)
-      - docs/architecture/ADR-C02-001-slash-parity-harness-archive.md — Slash Parity, Harness Command Expansion & Archive Coupling (ADR-020–023) (ADR)
-      - docs/product/UI-C02-001-tui-slash-command-parity.md — TUI Slash Command Parity & Imported Commands (UI)
-    - Research checkpoint: .workflow-hero/cycles/current/research-checkpoint.md (decisions + Deferred items)
-    - docs/idea/archive/v1/ (inspiration only; non-normative)
+      - docs/product/PRD-C01-001-hero-1-0.md — Hero 1.0 (PRD)
+      - docs/architecture/ADR-C01-001-hero-1-0.md — Hero 1.0 ADRs (ADR)
+      - docs/product/UI-C01-001-hero-tui.md — Hero 1.0 TUI (UI)
+      - docs/product/PRD-C02-001-slash-parity-tui-harness.md — C2 slash parity (PRD)
+      - docs/architecture/ADR-C02-001-slash-parity-harness-archive.md — ADR-020–023 (ADR)
+      - docs/product/UI-C02-001-tui-slash-command-parity.md — C2 TUI (UI)
+      - docs/product/PRD-C03-001-cursor-harness-tui-autonomy.md — C3 harness autonomy (PRD)
+      - docs/architecture/ADR-C03-001-cursor-harness-tui-autonomy.md — ADR-024–029 (ADR)
+      - docs/product/UI-C03-001-tui-harness-autonomy.md — C3 TUI conversation UX (UI)
+    - docs/idea/archive/v1/06_harness_adapter.md, 07_cursor_adapter.md (design reference; non-normative)
 
-  Do not invent requirements. If any of the documents above are silent or ambiguous on a topic,
-  ask the user before proceeding — do not assume a default (see AGENTS.md § Ambiguity and Missing
-  Information). Respect Deferred items from Research — do not plan implementing deferred multi-harness
-  adapters (D1), IDE chat injection, skill palette listing, or soft dual-mode 0.9 markdown cycles (D11).
+  Terminology: **etapa** = workflow stage; **interação** = one conversational round within an etapa.
 
-  Stack: Go, Cobra (CLI), Go `embed.FS` (asset embedding), Feature Based + Vertical Slice
-  architecture (internal/<feature>/ packages), charmbracelet/huh + Bubble Tea (TUI),
-  SQLite for Hero operational store (ADR-013). Target platforms: Linux and macOS, amd64 and arm64.
-  No Node/npm for the product binary — test command is `go test ./...`. Scope for this cycle:
-  native=true (generic_agent for implementation). Prior OpenSpec change `hero-1-0` may still be
-  active — do not overwrite it; C2 is a separate change.
+  Do not invent requirements. Respect Deferred D1 multi-harness adapters, IDE chat injection,
+  Go LLM reasoning, and Windows. Scope: native=true (generic_agent).
+
+  Stack: Go, Cobra, embed.FS, Feature Based + Vertical Slice, huh + Bubble Tea, SQLite (ADR-013).
+  Test command: `go test ./...`. Active OpenSpec change: `cursor-harness-tui-autonomy`.
 
 rules:
   proposal:
-    - Reference PRD-C02-001 / PRD sections by number (e.g. "PRD-C02-001 §5.1"); cite ADR-020–023
-    - State what is in scope vs. out of scope for this change; explicitly exclude D1 multi-harness
-      implementation, IDE chat injection, skill palette listing, and D11 soft dual-mode
-    - Classify the change as CLI (deterministic, internal/<feature>/) or Runtime (agent/skill/command
-      asset) per ADR-003 (as amended); call out when both are touched
-    - List which new/modified capabilities require a corresponding internal/<feature>/ package
-    - Trace to ADR-020–023 (and amended ADR-007 / ADR-015–017 / ADR-016) where architectural
+    - Reference PRD-C03-001 sections; cite ADR-024–029
+    - State in/out of scope; exclude D1, IDE inject, Go LLM, Windows
+    - Classify CLI vs Runtime per ADR-003
 
   specs:
     - Use WHEN/THEN acceptance scenarios (exactly 4 hashtags for `#### Scenario:`)
-    - Align capabilities with PRD-C02-001 acceptance criteria and ADR-020–023 constraints
-    - For CLI/TUI-facing behavior, cross-reference UI.md / UI-C02-001 conventions (icons, `--json`,
-      error format, non-interactive flags, slash labels)
-    - Do not require Deferred D1 adapter implementation or IDE chat injection
+    - Align with PRD-C03-001 and UI-C03-001
 
   design:
-    - Follow ADR-002 (Feature Based + Vertical Slice), ADR-003 as amended (CLI never reasons),
-      ADR-020–023; call out amendments to ADR-007 / ADR-015–017 / ADR-016
-    - Call out which ADR(s) the design extends or, if none fit, note that a new ADR is needed
-    - Reference the Appendix schemas in ADR.md for any file format the design touches
-      (hero.json / project.json / documents.json / workflow-config.yml / models/*.yml)
-    - SQLite schema changes (e.g. openspec_change on cycles) and CLI flag names must be concrete
-      enough for implementation tasks
+    - Follow ADR-002, ADR-003, ADR-024–029; layer separation: only cursor adapter execs CLI
 
   tasks:
-    - Atomic, ordered checklist; include `go test ./...` as a task where relevant (see ADR-009)
-    - Mark which tasks can run in parallel vs. must run in series, and prefer delegating
-      implementation tasks to subagents via the Task tool when applicable (see ADR-005)
-    - Scope is native → map implementation work to generic_agent
-    - Every task group touching `internal/<feature>/` must include a colocated `_test.go` task
-    - Do not schedule Deferred D1 multi-harness adapter work or skill palette listing
+    - Atomic checklist; `go test ./...`; mark PARALLEL vs SERIES
+    - Scope native → generic_agent; colocated _test.go per package touched
