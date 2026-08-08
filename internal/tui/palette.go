@@ -1,0 +1,105 @@
+package tui
+
+import (
+	"log/slog"
+	"strings"
+
+	"github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+)
+
+type paletteAction int
+
+const (
+	actionGoScreen paletteAction = iota
+	actionApprove
+	actionReject
+	actionCancel
+	actionFinish
+	actionDispatch
+	actionArchive
+	actionResume
+	actionHelp
+	actionImportCommand
+	actionRefresh
+	actionQuit
+)
+
+type paletteItem struct {
+	label        string
+	hint         string
+	action       paletteAction
+	screen       screen
+	commandPath  string
+	commandLabel string
+}
+
+func defaultHeroPaletteItems() []paletteItem {
+	return []paletteItem{
+		{label: "Go: Status", hint: "cycle overview", action: actionGoScreen, screen: screenStatus},
+		{label: "Go: Approvals", hint: "approve or reject", action: actionGoScreen, screen: screenApprovals},
+		{label: "Go: Artifacts", hint: "linked files", action: actionGoScreen, screen: screenArtifacts},
+		{label: "Go: Costs", hint: "token metrics", action: actionGoScreen, screen: screenCosts},
+		{label: "Go: Events", hint: "event log", action: actionGoScreen, screen: screenEvents},
+		{label: "/hero:approve", hint: "pending approval", action: actionApprove},
+		{label: "/hero:reject", hint: "send back", action: actionReject},
+		{label: "Dispatch", hint: "harness dispatch", action: actionDispatch},
+		{label: "/hero:cancel", hint: "abort active cycle", action: actionCancel},
+		{label: "/hero:finish", hint: "complete cycle", action: actionFinish},
+		{label: "/hero:archive", hint: "archive cycle", action: actionArchive},
+		{label: "/hero:resume", hint: "reactivate cycle", action: actionResume},
+		{label: "/hero:help", hint: "workflow guide", action: actionHelp},
+		{label: "Refresh", hint: "reload from store", action: actionRefresh},
+		{label: "Quit", hint: "exit TUI", action: actionQuit},
+	}
+}
+
+func buildPaletteItems(projectDir string) []paletteItem {
+	return buildPaletteItemsWithHome(projectDir, "")
+}
+
+func buildPaletteItemsWithHome(projectDir, userHome string) []paletteItem {
+	items := defaultHeroPaletteItems()
+	if projectDir == "" {
+		return items
+	}
+	imported, err := cursor.DiscoverCommands(projectDir, userHome)
+	if err != nil {
+		slog.Debug("tui command discovery failed", "error", err)
+		return items
+	}
+	for _, cmd := range imported {
+		hint := sourceHint(cmd.Source)
+		items = append(items, paletteItem{
+			label:        cmd.Label,
+			hint:         hint,
+			action:       actionImportCommand,
+			commandPath:  cmd.Path,
+			commandLabel: cmd.Label,
+		})
+	}
+	return items
+}
+
+func sourceHint(source cursor.CommandSource) string {
+	switch source {
+	case cursor.CommandSourceUser:
+		return "harness command · user (~/.cursor/commands)"
+	default:
+		return "harness command · project"
+	}
+}
+
+func (m model) filteredPaletteItems() []paletteItem {
+	filter := strings.ToLower(strings.TrimSpace(m.paletteFilter))
+	if filter == "" {
+		return m.paletteItems
+	}
+	var out []paletteItem
+	for _, item := range m.paletteItems {
+		if strings.Contains(strings.ToLower(item.label), filter) ||
+			strings.Contains(strings.ToLower(item.hint), filter) {
+			out = append(out, item)
+		}
+	}
+	return out
+}

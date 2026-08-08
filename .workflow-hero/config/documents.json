@@ -1,3 +1,60 @@
 {
-  "documents": []
+  "documents": [
+    {
+      "category": "PRD",
+      "cycle": "C01",
+      "seq": 1,
+      "slug": "hero-1-0",
+      "path": "docs/product/PRD-C01-001-hero-1-0.md",
+      "title": "Hero 1.0: Harness Orchestrator, AI Loop, TUI & SQLite"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C01",
+      "seq": 1,
+      "slug": "hero-1-0",
+      "path": "docs/architecture/ADR-C01-001-hero-1-0.md",
+      "title": "Hero 1.0 Architecture Decisions (ADR-012–019)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C01",
+      "seq": 1,
+      "slug": "hero-tui",
+      "path": "docs/product/UI-C01-001-hero-tui.md",
+      "title": "Hero 1.0 TUI & CLI Query UX"
+    },
+    {
+      "category": "DEPLOY",
+      "cycle": "C01",
+      "seq": 0,
+      "slug": "living",
+      "path": "docs/deployment/DEPLOY.md",
+      "title": "Build, Release, and Distribution (updated for 1.0 upgrade)"
+    },
+    {
+      "category": "PRD",
+      "cycle": "C02",
+      "seq": 1,
+      "slug": "slash-parity-tui-harness",
+      "path": "docs/product/PRD-C02-001-slash-parity-tui-harness.md",
+      "title": "Slash Command Parity, TUI Harness Commands & Archive Coupling"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C02",
+      "seq": 1,
+      "slug": "slash-parity-harness-archive",
+      "path": "docs/architecture/ADR-C02-001-slash-parity-harness-archive.md",
+      "title": "Slash Parity, Harness Command Expansion & Archive Coupling (ADR-020–023)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C02",
+      "seq": 1,
+      "slug": "tui-slash-command-parity",
+      "path": "docs/product/UI-C02-001-tui-slash-command-parity.md",
+      "title": "TUI Slash Command Parity & Imported Commands"
+    }
+  ]
 }

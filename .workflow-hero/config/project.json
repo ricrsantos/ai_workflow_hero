@@ -1,15 +1,44 @@
 {
   "name": "AI Workflow Hero",
   "summary": "The Workflow manager for AI code",
+  "repository": "github.com/ricrsantos/ai_workflow_hero",
   "createdAt": "2026-08-04T19:30:24Z",
   "workflow": {
     "name": "Feature Development",
-    "phase": "Research",
-    "cycle": 0
+    "phase": "Completed",
+    "cycle": 2
   },
   "technology": {
-    "stack": "",
-    "backend": "",
-    "languages": []
+    "stack": "Go CLI (Cobra) + embedded Cursor Runtime assets",
+    "backend": "Go single-binary CLI (hero)",
+    "languages": [
+      "Go"
+    ]
+  },
+  "platform": {
+    "targets": [
+      "linux/amd64",
+      "linux/arm64",
+      "darwin/amd64",
+      "darwin/arm64"
+    ]
+  },
+  "localization": {
+    "languages": [
+      "EN",
+      "PT-BR"
+    ],
+    "defaultLanguage": "EN"
+  },
+  "ui": {
+    "design": "CLI prompts (charmbracelet/huh) + Bubble Tea TUI; Cursor chat Runtime",
+    "theme": {
+      "default": "terminal",
+      "supportsDarkMode": true
+    }
+  },
+  "deployment": {
+    "target": "GitHub Releases (cross-compiled binaries)",
+    "domain": null
   }
 }

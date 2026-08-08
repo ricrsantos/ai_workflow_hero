@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,9 @@ import (
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 // Options holds upgrade configuration.
@@ -27,9 +30,11 @@ type Options struct {
 
 // Result reports the outcome of an upgrade operation.
 type Result struct {
-	Updated   []string
-	Skipped   []string // skipped due to local customization
-	Migrated  []string // workflow-config.yml files migrated from generic_model
+	Updated         []string
+	Skipped         []string // skipped due to local customization
+	Migrated        []string // workflow-config.yml files migrated from generic_model
+	LegacyImported  bool
+	LegacyCycleNum  int
 }
 
 // Run performs the upgrade: re-copies assets, protecting customized files.
@@ -116,6 +121,10 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 	}
 	result.Migrated = migrated
 
+	if err := ensureStoreAndImportLegacy(opts, &result, stderr); err != nil {
+		return result, err
+	}
+
 	// Soft secrets hygiene for projects upgraded from older Hero versions.
 	if err := envhygiene.EnsureProjectRoot(opts.ProjectDir, opts.AssetsFS); err != nil {
 		return result, fmt.Errorf("env hygiene: %w", err)
@@ -167,4 +176,28 @@ func loadChecksums(path string) (install.Checksums, error) {
 func sha256hex(data []byte) string {
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
+}
+
+// ensureStoreAndImportLegacy opens hero.db and, when the store has no cycles yet,
+// imports legacy workflow.md / metrics.md from the current cycle directory.
+func ensureStoreAndImportLegacy(opts Options, result *Result, stderr io.Writer) error {
+	s, ensureRes, err := cycle.EnsureOperationalStore(opts.ProjectDir)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	slog.Info("operational store ready", "path", filepath.Join(opts.ProjectDir, store.RelativeDBPath))
+
+	if ensureRes.LegacyImported {
+		output.Warningf(stderr,
+			"Imported legacy cycle — operational state now lives in %s; markdown is no longer canonical.",
+			store.RelativeDBPath,
+		)
+		result.LegacyImported = true
+		result.LegacyCycleNum = ensureRes.LegacyCycleNum
+		slog.Info("legacy cycle imported", "cycle", ensureRes.LegacyCycleNum)
+	}
+
+	return nil
 }

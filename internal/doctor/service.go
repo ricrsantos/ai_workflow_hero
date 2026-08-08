@@ -4,13 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 // CheckResult represents the outcome of a single doctor check.
@@ -55,7 +58,27 @@ func Run(opts Options) Report {
 		addCheck("git-repo", "fail", "not a git repository — run `git init` or `hero install --git-init`")
 	}
 
-	// 2. Hero config files.
+	// 2. Operational store (hero.db) — auto-create when Hero is installed.
+	heroInstalled := false
+	if _, err := os.Stat(filepath.Join(opts.ProjectDir, cursoradapter.HeroJSONPath)); err == nil {
+		heroInstalled = true
+	}
+	dbPath := filepath.Join(opts.ProjectDir, store.RelativeDBPath)
+	if heroInstalled {
+		s, err := store.OpenProject(opts.ProjectDir)
+		if err != nil {
+			addCheck("operational-store", "fail", fmt.Sprintf("cannot open/create %s: %v", store.RelativeDBPath, err))
+		} else {
+			_ = s.Close()
+			if _, err := os.Stat(dbPath); err != nil {
+				addCheck("operational-store", "fail", fmt.Sprintf("missing %s after open", store.RelativeDBPath))
+			} else {
+				addCheck("operational-store", "ok", store.RelativeDBPath)
+			}
+		}
+	}
+
+	// 3. Hero config files.
 	requiredFiles := []string{
 		cursoradapter.HeroJSONPath,
 		cursoradapter.ProjectJSONPath,
@@ -73,7 +96,7 @@ func Run(opts Options) Report {
 		}
 	}
 
-	// 3. Command files (ADR-011 inventory).
+	// 4. Command files (ADR-011 inventory).
 	for _, f := range cursoradapter.RequiredCommandFiles() {
 		full := filepath.Join(opts.ProjectDir, f)
 		if _, err := os.Stat(full); err != nil {
@@ -83,7 +106,7 @@ func Run(opts Options) Report {
 		}
 	}
 
-	// 4. Agent files (ADR-011 inventory).
+	// 5. Agent files (ADR-011 inventory).
 	for _, f := range cursoradapter.RequiredAgentFiles() {
 		full := filepath.Join(opts.ProjectDir, f)
 		if _, err := os.Stat(full); err != nil {
@@ -93,7 +116,7 @@ func Run(opts Options) Report {
 		}
 	}
 
-	// 5. Skill files.
+	// 6. Skill files.
 	skillFiles := []string{
 		filepath.Join(cursoradapter.WorkflowHeroSkillDir, "SKILL.md"),
 		filepath.Join(cursoradapter.GrillingSkillDir, "SKILL.md"),
@@ -107,7 +130,8 @@ func Run(opts Options) Report {
 		}
 	}
 
-	// 6. hero.json version vs binary version.
+	// 7. hero.json version vs binary version.
+	var configuredTools []string
 	heroPath := filepath.Join(opts.ProjectDir, cursoradapter.HeroJSONPath)
 	heroData, err := os.ReadFile(heroPath)
 	if err == nil {
@@ -115,6 +139,7 @@ func Run(opts Options) Report {
 		if jsonErr := json.Unmarshal(heroData, &heroJSON); jsonErr != nil {
 			addCheck("hero-json-parse", "fail", "hero.json is not valid JSON: "+jsonErr.Error())
 		} else {
+			configuredTools = heroJSON.CLI.Tools
 			if heroJSON.CLI.Version != opts.BinaryVersion {
 				addCheck("version-match", "warn", fmt.Sprintf(
 					"installed version %q differs from binary version %q — run `hero upgrade`",
@@ -126,7 +151,7 @@ func Run(opts Options) Report {
 		}
 	}
 
-	// 7. Parse config JSON files.
+	// 8. Parse config JSON files.
 	jsonFiles := []string{
 		cursoradapter.ProjectJSONPath,
 		cursoradapter.DocumentsJSONPath,
@@ -144,7 +169,7 @@ func Run(opts Options) Report {
 		}
 	}
 
-	// 8. Soft secrets hygiene (warn only — never fails the report).
+	// 9. Soft secrets hygiene (warn only — never fails the report).
 	if !envhygiene.HasEnvExample(opts.ProjectDir) {
 		addCheck("secrets-env-example", "warn", "missing .env.example — commit placeholders only; keep real secrets in local .env")
 	} else {
@@ -169,7 +194,39 @@ func Run(opts Options) Report {
 		addCheck("secrets-tracked", "ok", "no sensitive files tracked by git")
 	}
 
+	// 10. Harness marker detection (warn-only; ADR-022; UI-C02-001 §5).
+	if len(configuredTools) > 0 {
+		addHarnessMarkerChecks(opts.ProjectDir, configuredTools, addCheck)
+	}
+
 	return report
+}
+
+func addHarnessMarkerChecks(projectDir string, configuredTools []string, addCheck func(name, status, message string)) {
+	res, err := harness.DetectMarkers(projectDir, configuredTools)
+	if err != nil {
+		slog.Error("harness marker detection failed", "error", err)
+		addCheck("harness-markers", "warn", "could not scan harness markers: "+err.Error())
+		return
+	}
+
+	configured := map[string]bool{}
+	for _, t := range configuredTools {
+		configured[t] = true
+	}
+
+	if len(res.UnsupportedPresent) == 0 {
+		addCheck("harness-markers", "ok", "no unsupported harness markers detected")
+		return
+	}
+
+	for _, m := range res.UnsupportedPresent {
+		addCheck(
+			"harness-marker:"+m.ToolID,
+			"warn",
+			harness.UnsupportedMarkerMessage(m, configured[m.ToolID]),
+		)
+	}
 }
 
 // PrintTable writes a human-readable table of check results to w.

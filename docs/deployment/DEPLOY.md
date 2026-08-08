@@ -1,6 +1,6 @@
 # DEPLOY.md — Build, Release, and Distribution
 
-> Living document for the Hero CLI's build and release process. Edited in place as the process evolves; history of changes lives in `context/context-log.md` and git, not in this file. Source: grilling session decisions, 2026-07-20.
+> Living document for the Hero CLI's build and release process. Edited in place as the process evolves; history of changes lives in `context/context-log.md` and git, not in this file. Source: grilling session decisions, 2026-07-20. **Hero 1.0:** breaking major from 0.9.x — see §3.1 and [ADR-018](../architecture/ADR-C01-001-hero-1-0.md#adr-018-breaking-major-upgrade-from-09x).
 
 ## 1. Distribution Model
 
@@ -20,6 +20,14 @@ Windows is **out of scope for V1** (see [PRD.md §2.3](../product/PRD.md#23-v2-s
 ## 3. Versioning
 
 - Hero follows **Semantic Versioning** (`vMAJOR.MINOR.PATCH`, e.g. `v1.2.0`).
+- **Hero 1.0.0** is a **breaking major** relative to 0.9.x: SQLite becomes the sole Hero operational store; cycle markdown (`workflow.md` / `metrics.md`) ceases to be canonical; Runtime assets must call the CLI API for state transitions ([PRD-C01-001](../product/PRD-C01-001-hero-1-0.md), ADR-013/014/018).
+
+### 3.1 Upgrade from 0.9.x (1.0)
+
+- `hero upgrade` must create/migrate the SQLite store under `.workflow-hero/`, refresh embedded Runtime assets, and document any one-time migration of in-flight cycles.
+- Soft dual-mode (running forever on 0.9.x markdown cycles) is **out of scope** for 1.0.
+- Platforms remain Linux/macOS amd64/arm64; release script and checksum flow unchanged (§4).
+
 - The version is not hardcoded in source; it is injected at build time from the current git tag via linker flags:
 
 ```bash

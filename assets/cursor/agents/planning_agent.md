@@ -24,7 +24,8 @@ Configuration → Research → **Planning** → Implementation → QA → Judge 
 6. Prefer plans that encourage subagent use whenever independent work units exist — never force a fixed backend-first order unless the SDD requires it.
 7. Iterate with the user for refinement if needed (max_iterations from workflow-config.yml).
 8. When /hero:back is triggered: edit the existing OpenSpec proposal in place (do not archive and recreate).
-9. Report the SDD location, summary, and parallel groups to the orchestrator.
+9. After creating or confirming the OpenSpec change slug, persist it on the active cycle via `hero cycle openspec-change <slug>` (e.g. `hero cycle openspec-change slash-parity-tui-harness`) so archive can run `openspec archive <slug> -y` before Hero archive (ADR-023).
+10. Report the SDD location, summary, and parallel groups to the orchestrator.
 
 ## Scope Routing
 

@@ -162,7 +162,7 @@ func TestRuntimeAssets_ModelResolution(t *testing.T) {
 
 // TestRuntimeAssets_Metrics verifies metrics-related keywords and executable procedure appear.
 func TestRuntimeAssets_Metrics(t *testing.T) {
-	keywords := []string{"metrics.md", "metrics-summary.md"}
+	keywords := []string{"metrics-summary.md", "hero metrics", "Metrics Procedure"}
 	allContent := loadAllAssetContent(t, "cursor")
 	for _, kw := range keywords {
 		if !strings.Contains(allContent, kw) {
@@ -175,7 +175,7 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 		t.Fatalf("read orchestration_agent: %v", err)
 	}
 	orchStr := string(orch)
-	for _, kw := range []string{"Metrics Procedure", "input_chars", "1_000_000", "per_1m_tokens", "Duration:", "Total:"} {
+	for _, kw := range []string{"Metrics Procedure", "input_chars", "1_000_000", "per_1m_tokens", "Duration:", "Total:", "--metrics-json", "hero metrics"} {
 		if !strings.Contains(orchStr, kw) {
 			t.Errorf("orchestration_agent.md missing Metrics Procedure keyword %q", kw)
 		}
@@ -184,8 +184,11 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 		!strings.Contains(orchStr, "required in chat every stage close") {
 		t.Error("orchestration_agent.md must require showing metrics (tokens + duration) in chat")
 	}
-	if !strings.Contains(orchStr, "[.workflow-hero/cycles/current/metrics.md](.workflow-hero/cycles/current/metrics.md)") {
-		t.Error("orchestration_agent.md must include a clickable markdown link to metrics.md")
+	if strings.Contains(orchStr, "Replace the stage row(s) in `.workflow-hero/cycles/current/metrics.md`") {
+		t.Error("orchestration_agent.md must not mandate writing metrics.md")
+	}
+	if !strings.Contains(orchStr, "hero metrics") {
+		t.Error("orchestration_agent.md must point users to hero metrics")
 	}
 
 	newCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-new.md")
@@ -207,8 +210,11 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 	if !strings.Contains(approveStr, "Metrics Procedure") {
 		t.Error("hero-approve.md missing Metrics Procedure reference")
 	}
-	if !strings.Contains(approveStr, "[.workflow-hero/cycles/current/metrics.md](.workflow-hero/cycles/current/metrics.md)") {
-		t.Error("hero-approve.md must include a clickable markdown link to metrics.md")
+	if !strings.Contains(approveStr, "hero approve") || !strings.Contains(approveStr, "--metrics-json") {
+		t.Error("hero-approve.md must invoke hero approve --metrics-json")
+	}
+	if strings.Contains(approveStr, "Update `metrics.md`") || strings.Contains(approveStr, "update metrics.md") {
+		t.Error("hero-approve.md must not instruct writing metrics.md")
 	}
 
 	taskAgents := []string{
@@ -231,6 +237,7 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 		}
 	}
 
+	// Legacy template may still ship for upgrade import fixtures; formula kept for Metrics Procedure docs.
 	tmpl, err := fs.ReadFile(assets.FS, "templates/metrics.md")
 	if err != nil {
 		t.Fatalf("read metrics template: %v", err)
@@ -238,6 +245,99 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 	tmplStr := string(tmpl)
 	if !strings.Contains(tmplStr, "1_000_000") {
 		t.Error("templates/metrics.md missing explicit cost formula (1_000_000)")
+	}
+}
+
+// TestRuntimeAssets_CLIAPIStageClose verifies 1.0 CLI persistence (no mandatory workflow.md/metrics.md writes).
+func TestRuntimeAssets_CLIAPIStageClose(t *testing.T) {
+	orch, err := fs.ReadFile(assets.FS, "cursor/agents/orchestration_agent.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orchStr := string(orch)
+	for _, kw := range []string{"Stage Close Sequence", "hero stage close", "hero approve", "--metrics-json", "SQLite"} {
+		if !strings.Contains(orchStr, kw) {
+			t.Errorf("orchestration_agent.md missing CLI stage-close keyword %q", kw)
+		}
+	}
+	for _, banned := range []string{
+		"Update `workflow.md` after every stage",
+		"Update `metrics.md` after every stage",
+		"writing `metrics.md` alone is not enough",
+	} {
+		if strings.Contains(orchStr, banned) {
+			t.Errorf("orchestration_agent.md still mandates markdown ops: %q", banned)
+		}
+	}
+
+	skill, err := fs.ReadFile(assets.FS, "cursor/skills/workflow-hero/SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	skillStr := string(skill)
+	if !strings.Contains(skillStr, "hero") || !strings.Contains(skillStr, "SQLite") {
+		t.Error("workflow-hero SKILL.md must reference hero CLI / SQLite ops")
+	}
+	if strings.Contains(skillStr, "Update `workflow.md`") {
+		t.Error("SKILL.md must not mandate updating workflow.md")
+	}
+
+	cmds := []string{
+		"hero-status.md", "hero-approve.md", "hero-reject.md", "hero-cancel.md",
+		"hero-finish.md", "hero-continue.md", "hero-new.md", "hero-archive.md", "hero-resume.md",
+	}
+	for _, name := range cmds {
+		data, err := fs.ReadFile(assets.FS, "cursor/commands/"+name)
+		if err != nil {
+			t.Errorf("read %s: %v", name, err)
+			continue
+		}
+		s := string(data)
+		if strings.Contains(s, "Update `workflow.md`") || strings.Contains(s, "Initialize `workflow.md`") {
+			t.Errorf("%s still instructs writing workflow.md", name)
+		}
+		if strings.Contains(s, "Update `metrics.md`") || strings.Contains(s, "Initialize `metrics.md`") {
+			t.Errorf("%s still instructs writing metrics.md", name)
+		}
+	}
+
+	cfg, err := fs.ReadFile(assets.FS, "templates/workflow-config.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgStr := string(cfg)
+	for _, banned := range []string{
+		"Update `workflow.md`",
+		"Update workflow.md",
+		"Update `metrics.md`",
+		"Update metrics.md",
+	} {
+		if strings.Contains(cfgStr, banned) {
+			t.Errorf("templates/workflow-config.yml still mandates operational markdown update: %q", banned)
+		}
+	}
+	if !strings.Contains(cfgStr, "hero") || !strings.Contains(cfgStr, "--metrics-json") {
+		t.Error("templates/workflow-config.yml must guide CLI/SQLite stage persistence (--metrics-json)")
+	}
+
+	discover, err := fs.ReadFile(assets.FS, "cursor/agents/discover_agent.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	discoverStr := string(discover)
+	for _, banned := range []string{
+		"fill `metrics.md`",
+		"fill metrics.md",
+		"orchestrator can fill `metrics.md`",
+	} {
+		if strings.Contains(discoverStr, banned) {
+			t.Errorf("discover_agent.md still mandates filling metrics.md: %q", banned)
+		}
+	}
+	for _, kw := range []string{"--metrics-json", "SQLite", `"metrics"`} {
+		if !strings.Contains(discoverStr, kw) {
+			t.Errorf("discover_agent.md missing structured metrics keyword %q", kw)
+		}
 	}
 }
 
@@ -557,8 +657,138 @@ func TestRuntimeAssets_BrowserUIValidation(t *testing.T) {
 	}
 }
 
-// TestRuntimeAssets_ArchiveUsesCompletedDate verifies archive naming uses workflow.md
-// Completed date (cycle completion), not a hallucinated "today".
+// TestRuntimeAssets_SlashFirstVocabulary verifies Runtime assets prefer /hero:* slash CTAs (ADR-020).
+func TestRuntimeAssets_SlashFirstVocabulary(t *testing.T) {
+	canonical := []string{
+		"/hero:new", "/hero:start", "/hero:approve", "/hero:reject", "/hero:cancel",
+		"/hero:finish", "/hero:archive", "/hero:resume", "/hero:sync", "/hero:status",
+		"/hero:continue", "/hero:back", "/hero:help",
+	}
+	allContent := loadAllAssetContent(t, "cursor")
+	for _, slash := range canonical {
+		if !strings.Contains(allContent, slash) {
+			t.Errorf("canonical slash command %q not found in Runtime assets", slash)
+		}
+	}
+
+	orch, err := fs.ReadFile(assets.FS, "cursor/agents/orchestration_agent.md")
+	if err != nil {
+		t.Fatalf("read orchestration_agent: %v", err)
+	}
+	orchStr := string(orch)
+	for _, kw := range []string{"Slash-first user vocabulary", "ADR-020", "/hero:start"} {
+		if !strings.Contains(orchStr, kw) {
+			t.Errorf("orchestration_agent.md missing slash-first keyword %q", kw)
+		}
+	}
+
+	skill, err := fs.ReadFile(assets.FS, "cursor/skills/workflow-hero/SKILL.md")
+	if err != nil {
+		t.Fatalf("read workflow-hero skill: %v", err)
+	}
+	skillStr := string(skill)
+	for _, kw := range []string{"Slash-first user vocabulary", "/hero:start", "primary handoff"} {
+		if !strings.Contains(skillStr, kw) {
+			t.Errorf("workflow-hero/SKILL.md missing slash-first keyword %q", kw)
+		}
+	}
+
+	newCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-new.md")
+	if err != nil {
+		t.Fatalf("read hero-new: %v", err)
+	}
+	newStr := string(newCmd)
+	if !strings.Contains(newStr, "Run /hero:start") {
+		t.Error("hero-new.md output format must list /hero:start as the primary post-config CTA")
+	}
+}
+
+// TestRuntimeAssets_ArchiveOpenSpecForce verifies archive assets document OpenSpec-first sequence and force path.
+func TestRuntimeAssets_ArchiveOpenSpecForce(t *testing.T) {
+	archive, err := fs.ReadFile(assets.FS, "cursor/commands/hero-archive.md")
+	if err != nil {
+		t.Fatalf("read hero-archive: %v", err)
+	}
+	archStr := string(archive)
+	for _, kw := range []string{
+		"OpenSpec archive",
+		"openspec archive",
+		"-y",
+		"openspec_change",
+		"hero cycle openspec-change",
+		"--force",
+		"--skip-openspec",
+		"retry /hero:archive",
+		"Manual: openspec archive",
+	} {
+		if !strings.Contains(archStr, kw) {
+			t.Errorf("hero-archive.md missing OpenSpec/force keyword %q", kw)
+		}
+	}
+
+	orch, err := fs.ReadFile(assets.FS, "cursor/agents/orchestration_agent.md")
+	if err != nil {
+		t.Fatalf("read orchestration_agent: %v", err)
+	}
+	if !strings.Contains(string(orch), "openspec archive") || !strings.Contains(string(orch), "--force") {
+		t.Error("orchestration_agent.md must reference OpenSpec archive and --force on /hero:archive")
+	}
+
+	skill, err := fs.ReadFile(assets.FS, "cursor/skills/workflow-hero/SKILL.md")
+	if err != nil {
+		t.Fatalf("read workflow-hero skill: %v", err)
+	}
+	skillStr := string(skill)
+	if !strings.Contains(skillStr, "openspec archive") || !strings.Contains(skillStr, "--skip-openspec") {
+		t.Error("workflow-hero/SKILL.md must document OpenSpec archive coupling and force flags")
+	}
+}
+
+// TestRuntimeAssets_PlanningOpenspecChangeHandoff verifies Planning persists the OpenSpec change slug.
+func TestRuntimeAssets_PlanningOpenspecChangeHandoff(t *testing.T) {
+	planning, err := fs.ReadFile(assets.FS, "cursor/agents/planning_agent.md")
+	if err != nil {
+		t.Fatalf("read planning_agent: %v", err)
+	}
+	planStr := string(planning)
+	for _, kw := range []string{"hero cycle openspec-change", "openspec archive"} {
+		if !strings.Contains(planStr, kw) {
+			t.Errorf("planning_agent.md missing openspec-change handoff keyword %q", kw)
+		}
+	}
+}
+
+// TestRuntimeAssets_SyncDoctorGuidance verifies /hero:sync recommends hero doctor and does not invent hero sync CLI.
+func TestRuntimeAssets_SyncDoctorGuidance(t *testing.T) {
+	sync, err := fs.ReadFile(assets.FS, "cursor/commands/hero-sync.md")
+	if err != nil {
+		t.Fatalf("read hero-sync: %v", err)
+	}
+	syncStr := string(sync)
+	for _, kw := range []string{
+		"hero doctor",
+		"/hero:new",
+		"no `hero sync` CLI",
+	} {
+		if !strings.Contains(syncStr, kw) {
+			t.Errorf("hero-sync.md missing sync/doctor keyword %q", kw)
+		}
+	}
+	if strings.Contains(syncStr, "hero sync") && !strings.Contains(syncStr, "no `hero sync` CLI") {
+		t.Error("hero-sync.md must not present hero sync as a CLI verb without negation")
+	}
+
+	skill, err := fs.ReadFile(assets.FS, "cursor/skills/workflow-hero/SKILL.md")
+	if err != nil {
+		t.Fatalf("read workflow-hero skill: %v", err)
+	}
+	if !strings.Contains(string(skill), "hero doctor") {
+		t.Error("workflow-hero/SKILL.md must reference hero doctor after /hero:sync")
+	}
+}
+
+// TestRuntimeAssets_ArchiveUsesCompletedDate verifies archive naming uses store completed_at
+// (cycle completion), not a hallucinated "today".
 func TestRuntimeAssets_ArchiveUsesCompletedDate(t *testing.T) {
 	archive, err := fs.ReadFile(assets.FS, "cursor/commands/hero-archive.md")
 	if err != nil {
@@ -567,8 +797,8 @@ func TestRuntimeAssets_ArchiveUsesCompletedDate(t *testing.T) {
 	archStr := string(archive)
 	for _, kw := range []string{
 		"cycle completion date",
-		"Completed",
-		"date +%Y-%m-%d",
+		"completed_at",
+		"hero cycle archive",
 		"Never",
 		"hallucinate",
 	} {
@@ -582,20 +812,9 @@ func TestRuntimeAssets_ArchiveUsesCompletedDate(t *testing.T) {
 		t.Fatalf("read hero-finish: %v", err)
 	}
 	finStr := string(finish)
-	for _, kw := range []string{"Completed", "date +%Y-%m-%d", "archive folder name"} {
+	for _, kw := range []string{"completed_at", "hero finish", "archive"} {
 		if !strings.Contains(finStr, kw) {
 			t.Errorf("hero-finish.md missing Completed-date keyword %q", kw)
-		}
-	}
-
-	tmpl, err := fs.ReadFile(assets.FS, "templates/workflow.md")
-	if err != nil {
-		t.Fatalf("read workflow template: %v", err)
-	}
-	tmplStr := string(tmpl)
-	for _, kw := range []string{"**Started**", "**Completed**", "**Status**"} {
-		if !strings.Contains(tmplStr, kw) {
-			t.Errorf("templates/workflow.md missing header field %q", kw)
 		}
 	}
 }

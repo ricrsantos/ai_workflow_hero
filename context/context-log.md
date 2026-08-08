@@ -6,6 +6,130 @@
 
 ---
 
+## 2026-08-08 — README updated for C2 TUI docs
+
+**Problem:** README lacked “no active cycle” flow and C2 TUI/archive details after slash-parity cycle.
+
+**Outcome:** EN+PT-BR README: dual-entry lede, C2 feature bullets, TUI no-cycle → `/hero:new`, slash palette + imported commands, finish/archive wording, internal/ layout packages.
+
+---
+
+## 2026-08-08 — Cycle C2 archived
+
+**Outcome:** `/hero:archive` ran `openspec archive slash-parity-tui-harness -y` (specs merged), then Hero archive to `.workflow-hero/cycles/archive/C2-2026-08-08-corre-o-dos-comandos-do-hero-ap-s-cria-o/`. OpenSpec folder: `openspec/changes/archive/2026-08-08-slash-parity-tui-harness`.
+
+---
+
+## 2026-08-08 — Cycle C2 finished
+
+**Outcome:** Research→Planning→Implementation→QA→Judge complete for `slash-parity-tui-harness`. `hero finish` recorded `completed_at` 2026-08-08. Totals ~160354 tokens / ~$0.8482 (project grand ~541k / ~$3.02). Next: `/hero:archive`.
+
+---
+
+## 2026-08-07 — Cycle C2 Implementation: slash-parity-tui-harness
+
+**Problem:** Deliver OpenSpec change `slash-parity-tui-harness` (native): slash-first UX, TUI command import, harness marker warnings, OpenSpec-coupled archive.
+
+**Investigation:** Nested generic fan-out (2A–2E) landed most slices; parent fixed cycle `resolveArchiveCycle` pointer bug and closed §3 (tests, context, `hero cycle openspec-change`).
+
+**Decision / Outcome:** Schema v2 `openspec_change`; `hero cycle openspec-change` + archive `--force`/`--skip-openspec`/`--openspec-change`; Runtime slash-first assets; doctor/install harness warn-only; Cursor `DiscoverCommands` + Dispatch prompt fallback; TUI `/hero:*` palette + imported commands. `go test ./...` green. Ready for QA/Judge.
+
+---
+
+## 2026-08-07 — Cycle C2 Research: slash parity + harness commands + archive
+
+**Problem:** After 1.0, user-facing copy and TUI labels drifted from 0.9 `/hero:*` names; users want TUI to run other Cursor commands, harness detection suggestions, and OpenSpec archive coupled to `/hero:archive`.
+
+**Decision:** Slash-first vocabulary (ADR-020); non-Hero commands via `.md` expansion from `.cursor/commands` + `~/.cursor/commands` (ADR-021); detect markers vs `cli.tools` on install/sync/doctor, warn-only for unsupported (ADR-022); `openspec archive -y` before Hero archive with `--force` escape (ADR-023).
+
+**Outcome:** Docs PRD/ADR/UI C02 registered; Research closed (~35k/8.5k tokens, ~$0.23). Next: Planning SDD.
+
+---
+
+## 2026-08-07 — Default `hero` TUI + auto SQLite ensure
+
+**Problem:** Users should not run a separate command to create `hero.db`; `hero` with no args should open the TUI; uninstalled projects must be blocked with install guidance.
+
+**Decision:** `EnsureOperationalStore` on OpenService (create/migrate + one-shot legacy import); doctor auto-creates DB; root command `RunE` → TUI (`hero tui` remains alias); `ErrNotInstalled` with install suggestion.
+
+**Outcome:** README EN/PT-BR **Hero TUI** section; `go test ./...` green.
+
+---
+
+## 2026-08-07 — Cycle C1 completed (Hero 1.0)
+
+**Outcome:** Research→Planning→Implementation→QA→Judge→E2E complete. OpenSpec `hero-1-0` delivered (SQLite, AI Loop, CLI-as-API, TUI, Cursor adapter, upgrade path). Grand total ~381k tokens / ~$2.17. Completed date 2026-08-07. Next: `/opsx:archive`, `/hero:archive`, optional `v1.0.0` release.
+
+---
+
+## 2026-08-07 — Judge fix: engine timeout + discover_agent metrics
+
+**Problem:** `timeout_minutes` stored but never compared to elapsed wall-clock; `discover_agent.md` still told orchestrator to fill `metrics.md`.
+
+**Decision:** Check timeout between iterations in `StartStage`/`EscalateIfExhausted` (preserve first `StartedAt`; clear on `Continue`); update discover_agent Metrics to CLI/`--metrics-json`/SQLite; ban fill-metrics.md wording in asset test.
+
+**Outcome:** Colocated engine timeout tests; assets + `.cursor` discover_agent synced; `go test ./...` green.
+
+---
+
+## 2026-08-07 — QA fix: workflow-config CLI persistence rule
+
+**Problem:** QA found `workflow_rules` still said `Update workflow.md after completing each stage`; asset test did not cover `templates/workflow-config.yml`.
+
+**Decision:** Replace with hero CLI / `--metrics-json` SQLite guidance; extend `TestRuntimeAssets_CLIAPIStageClose` to ban backtick and plain `Update workflow.md` / `Update metrics.md`.
+
+**Outcome:** Template + current-cycle config updated; `go test ./...` green.
+
+---
+
+## 2026-08-07 — Hero 1.0 implementation (OpenSpec hero-1-0)
+
+**Problem:** Ship Hero 1.0 harness orchestrator: Go AI Loop, SQLite ops store, CLI-as-API, Cursor adapter, Bubble Tea TUI, Runtime CLI persistence.
+
+**Decision:** Vertical slices `store`/`engine`/`cycle`/`harness`/`tui`; pure-Go SQLite; Runtime slash commands shell out to `hero`; TUI calls services in-process; deferred D1–D13 excluded; stage close via `hero stage start|close` + `approve`/`finish` with `--metrics-json`.
+
+**Outcome:** All 34 tasks in `openspec/changes/hero-1-0/tasks.md` complete; `go test ./...` green; CLI default `1.0.0`. Ready for QA/Judge.
+
+---
+
+## 2026-08-07 — Hero 1.0 TUI (OpenSpec §8)
+
+**Problem:** Implement Bubble Tea TUI with parity to CLI-as-API for cycle control and inspection.
+
+**Decision:** `internal/tui` Bubble Tea app calling `cycle.Service` in-process; refuse when `NO_COLOR` or stdout not TTY (`clierr`); lipgloss colors per UI.md.
+
+**Outcome:** Tasks 8.1–8.5 complete — screens (status, approvals, artifacts, costs, events), command palette, dispatch via `Service.Run`, `Service.Artifacts()` helper, unit tests.
+
+---
+
+## 2026-08-07 — Cycle C1 Implementation completed (hero-1-0)
+
+**Outcome:** 34/34 OpenSpec tasks via generic_agent; SQLite store, AI Loop engine, CLI-as-API, Cursor harness, TUI, Runtime CLI persistence; version `1.0.0`; `go test ./...` green. Advance to QA.
+
+---
+
+## 2026-08-07 — Cycle C1 Planning completed (OpenSpec hero-1-0)
+
+**Outcome:** SDD at `openspec/changes/hero-1-0/` (proposal, design, 8 specs, 34 tasks). Deferred D1–D13 excluded. Auto-advance to Implementation (`generic_agent`).
+
+---
+
+## 2026-08-07 — Cycle C1 Research completed (Hero 1.0 specs)
+
+**Outcome:** PRD/ADR/UI C01-001 written; DEPLOY §3.1 upgrade notes; `docs/idea/v1` → `docs/idea/archive/v1`; deferred D1–D13 in research-checkpoint.
+
+---
+
+## 2026-08-07 — Cycle C1 Research paused (Hero 1.0 grilling)
+
+**Problem:** Start C1 for Hero 1.0 (TUI + harness orchestrator + AI Loop); refine `docs/idea/v1/` against current Hero.
+
+**Decisions so far:** Dual UI (chat + TUI) on one core; SQLite = Hero ops store; project `context/*.md` stay first-class (no project kidnap); Cursor-only + `HarnessAdapter`; Go owns state machine, harness executes stages (hybrid C); 1.0 package = core + usable TUI (integrations/multi-harness/rich notifications out).
+
+**Outcome:** Research paused after Q6. Checkpoint: `.workflow-hero/cycles/current/research-checkpoint.md`. Resume grilling at Pergunta 7 (chat↔Go bridge, etc.). Docs not generated yet.
+
+---
+
 ## 2026-08-07 — Tag, build, and publish release v0.9.0
 
 **Problem:** Cut and publish minor release for nested subagent model config.

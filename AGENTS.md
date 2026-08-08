@@ -22,7 +22,8 @@ Always read project documentation **before** writing code or making architectura
 | Terminal UX Spec | [docs/product/UI.md](docs/product/UI.md) | CLI visual style, output formats, prompts, error conventions |
 | Architecture Decision Records | [docs/architecture/ADR.md](docs/architecture/ADR.md) | All architectural decisions, rationale, and full data-file schemas |
 | Deployment Guide | [docs/deployment/DEPLOY.md](docs/deployment/DEPLOY.md) | Target platforms, build/release process, versioning, checksums |
-| Design Notes (source) | [docs/idea/ai_workflow_hero.md](docs/idea/ai_workflow_hero.md) | Full design discussion and grilling session decisions log |
+| Design Notes (source) | [docs/idea/v0/ai_workflow_hero.md](docs/idea/v0/ai_workflow_hero.md) | Full design discussion and grilling session decisions log (pre-1.0) |
+| Idea archive (non-normative) | [docs/idea/archive/v1/](docs/idea/archive/v1/) | Archived 1.0 idea drafts; superseded by cycle PRD/ADR/UI |
 
 **Context compression files** (this repo's own state — see below) must be **kept up to date after every code-affecting interaction**:
 

@@ -1,6 +1,13 @@
 # UI Spec — Hero CLI Terminal UX
 
-> "UI" for Hero means the terminal user experience of the `hero` CLI, plus the shared visual conventions also used by agents in the Runtime (chat). Hero has no graphical interface. Source: grilling session decisions, 2026-07-20.
+> "UI" for Hero means the terminal user experience of the `hero` CLI, plus the shared visual conventions also used by agents in the Runtime (chat). Baseline (0.9.x): grilling 2026-07-20. **Hero 1.0 TUI + CLI query UX:** [UI-C01-001-hero-tui.md](UI-C01-001-hero-tui.md). **C2 slash/TUI command parity:** [UI-C02-001-tui-slash-command-parity.md](UI-C02-001-tui-slash-command-parity.md).
+
+## Cycle UI specs
+
+| Document | Cycle | Summary |
+|---|---|---|
+| [UI-C01-001-hero-tui.md](UI-C01-001-hero-tui.md) | C1 | TUI screens, dual entry parity, CLI status/metrics/events replacing cycle markdown |
+| [UI-C02-001-tui-slash-command-parity.md](UI-C02-001-tui-slash-command-parity.md) | C2 | `/hero:*` TUI labels, imported Cursor commands, archive force UX, harness doctor warnings |
 
 ## 1. Scope
 

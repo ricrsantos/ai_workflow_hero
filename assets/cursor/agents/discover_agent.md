@@ -42,12 +42,12 @@ Configuration → **Research** → Planning → Implementation → QA → Judge 
 
 ## Metrics (required in every completion report)
 
-Estimate character usage for this invocation and include it so the orchestrator can fill `metrics.md`:
+Estimate character usage for this invocation and include a structured `metrics` object in the completion report so the orchestrator can persist via the hero CLI (`--metrics-json` → SQLite):
 
 - `input_chars` ≈ size of the effective prompt + files read
 - `output_chars` ≈ size of the response + documents written in this invocation
 
-The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
+The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`, then persists with `--metrics-json` (not cycle `metrics.md`).
 
 ## Output Format
 

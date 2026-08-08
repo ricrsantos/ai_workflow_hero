@@ -1,20 +1,32 @@
 # Architecture Decision Records — AI Workflow Hero
 
-> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from `docs/idea/ai_workflow_hero.md`. Each ADR follows the standard Context / Decision / Consequences format.
+> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md).
 
 | # | Title | Status |
 |---|---|---|
 | [ADR-001](#adr-001-go-cobra-and-embedfs-for-cli-distribution) | Go, Cobra, and `embed.FS` for CLI distribution | Accepted |
 | [ADR-002](#adr-002-repository-architecture-feature-based--vertical-slice) | Repository architecture: Feature Based + Vertical Slice | Accepted |
-| [ADR-003](#adr-003-cli-vs-runtime-separation) | CLI vs. Runtime separation | Accepted |
+| [ADR-003](#adr-003-cli-vs-runtime-separation) | CLI vs. Runtime separation | Accepted (amended C1 — see ADR-C01-001) |
 | [ADR-004](#adr-004-git-as-a-mandatory-prerequisite) | Git as a mandatory prerequisite | Accepted |
 | [ADR-005](#adr-005-subagent-invocation-via-task-tool-with-clean-sessions) | Subagent invocation via Task tool, with clean sessions | Accepted |
 | [ADR-006](#adr-006-simple-placeholder-templating-no-loop-engine) | Simple placeholder templating, no loop engine | Accepted |
-| [ADR-007](#adr-007-openspec-as-the-sdd-framework) | OpenSpec as the SDD framework | Accepted |
+| [ADR-007](#adr-007-openspec-as-the-sdd-framework) | OpenSpec as the SDD framework | Accepted (amended C2 — see ADR-C02-001 / ADR-023) |
 | [ADR-008](#adr-008-three-level-model-fallback-chain) | Three-level model fallback chain | Accepted |
 | [ADR-009](#adr-009-test-real-dependencies-over-mocks) | Test real dependencies over mocks | Accepted |
 | [ADR-010](#adr-010-manual-release-process-via-a-single-script) | Manual release process via a single script | Accepted |
 | [ADR-011](#adr-011-one-asset-file-per-runtime-command-and-agent) | One asset file per Runtime command and per agent | Accepted |
+| [ADR-012](ADR-C01-001-hero-1-0.md#adr-012-go-owns-deterministic-ai-loop-state-machine) | Go owns deterministic AI Loop state machine | Accepted |
+| [ADR-013](ADR-C01-001-hero-1-0.md#adr-013-sqlite-as-sole-hero-operational-store) | SQLite as sole Hero operational store | Accepted |
+| [ADR-014](ADR-C01-001-hero-1-0.md#adr-014-cli-as-api-no-daemon-in-10) | CLI as API; no daemon in 1.0 | Accepted |
+| [ADR-015](ADR-C01-001-hero-1-0.md#adr-015-dual-entry-ui-chat-and-tui-parity) | Dual entry UI: chat and TUI parity | Accepted |
+| [ADR-016](ADR-C01-001-hero-1-0.md#adr-016-harness-adapter-interface-cursor-only-impl) | HarnessAdapter interface; Cursor-only impl | Accepted |
+| [ADR-017](ADR-C01-001-hero-1-0.md#adr-017-bubble-tea-tui-claude-code-inspired) | Bubble Tea TUI; Claude Code inspired | Accepted |
+| [ADR-018](ADR-C01-001-hero-1-0.md#adr-018-breaking-major-upgrade-from-09x) | Breaking major upgrade from 0.9.x | Accepted |
+| [ADR-019](ADR-C01-001-hero-1-0.md#adr-019-archive-idea-v1-cycle-docs-canonical) | Archive idea v1; cycle docs canonical | Accepted |
+| [ADR-020](ADR-C02-001-slash-parity-harness-archive.md#adr-020-user-facing-vocabulary-is-hero-slash-commands) | User-facing vocabulary is Hero slash commands | Accepted |
+| [ADR-021](ADR-C02-001-slash-parity-harness-archive.md#adr-021-non-hero-commands-execute-via-markdown-prompt-expansion) | Non-Hero commands execute via markdown prompt expansion | Accepted |
+| [ADR-022](ADR-C02-001-slash-parity-harness-archive.md#adr-022-harness-detection-filesystem-markers-vs-herojson) | Harness detection: filesystem markers vs hero.json | Accepted |
+| [ADR-023](ADR-C02-001-slash-parity-harness-archive.md#adr-023-hero-archive-couples-openspec-archive-with-force-escape) | Hero archive couples OpenSpec archive with force escape | Accepted |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 

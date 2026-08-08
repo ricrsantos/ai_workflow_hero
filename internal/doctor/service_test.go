@@ -11,6 +11,7 @@ import (
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/doctor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 func makeInstalledDir(t *testing.T, version string) string {
@@ -152,5 +153,91 @@ func TestDoctor_NotGitRepo_Fails(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected git-repo fail check")
+	}
+}
+
+func TestDoctor_MissingDB_AutoCreates(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0")
+
+	dbPath := filepath.Join(dir, store.RelativeDBPath)
+	if err := os.Remove(dbPath); err != nil {
+		t.Fatalf("remove hero.db: %v", err)
+	}
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+	})
+
+	if !report.OK {
+		t.Fatalf("expected doctor OK after auto-creating hero.db; checks=%+v", report.Checks)
+	}
+
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("expected hero.db to be created: %v", err)
+	}
+
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "operational-store" && c.Status == "ok" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected operational-store ok check after auto-create")
+	}
+}
+
+func TestDoctor_UnsupportedHarnessMarker_Warns(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0")
+
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+	})
+
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "harness-marker:claude" && c.Status == "warn" {
+			found = true
+			if !strings.Contains(c.Message, "⚠ Detected .claude/ but cli.tools does not include it") {
+				t.Errorf("unexpected message: %q", c.Message)
+			}
+			if !strings.Contains(c.Message, "unsupported in this Hero version") {
+				t.Errorf("expected unsupported wording in: %q", c.Message)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("expected harness-marker:claude warn check")
+	}
+	if !report.OK {
+		t.Error("harness marker warn must not fail the doctor report")
+	}
+}
+
+func TestDoctor_SupportedHarnessMarker_Ok(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0")
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+	})
+
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "harness-markers" && c.Status == "ok" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected harness-markers ok when only cursor is present")
 	}
 }

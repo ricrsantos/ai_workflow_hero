@@ -10,6 +10,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/ricrsantos/ai_workflow_hero/internal/uninstall"
 )
 
@@ -79,6 +80,11 @@ func TestUninstall_RemovesHeroOwnedPaths(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, cmdFile)); !os.IsNotExist(err) {
 			t.Errorf("expected command file %s to be removed", cmdFile)
 		}
+	}
+
+	// hero.db removed with .workflow-hero/.
+	if _, err := os.Stat(filepath.Join(dir, store.RelativeDBPath)); !os.IsNotExist(err) {
+		t.Error("expected hero.db to be removed after uninstall")
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 func makeGitRepo(t *testing.T) string {
@@ -162,6 +163,23 @@ func TestRun_BasicInstall(t *testing.T) {
 	if !strings.Contains(string(gi), ".env") {
 		t.Error(".gitignore missing .env after install")
 	}
+
+	// Operational store (hero.db) created on install.
+	if _, err := os.Stat(filepath.Join(dir, store.RelativeDBPath)); err != nil {
+		t.Errorf("hero.db missing after install: %v", err)
+	}
+	s, err := store.OpenProject(dir)
+	if err != nil {
+		t.Fatalf("OpenProject after install: %v", err)
+	}
+	defer s.Close()
+	cycles, err := s.ListCycles()
+	if err != nil {
+		t.Fatalf("ListCycles: %v", err)
+	}
+	if len(cycles) != 0 {
+		t.Errorf("fresh install should have no cycles, got %d", len(cycles))
+	}
 }
 
 func TestRun_NoGitRepo_WithGitInit(t *testing.T) {
@@ -253,4 +271,42 @@ func checksumKeys(m install.Checksums) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+func TestRun_UnsupportedHarnessMarker_Warns(t *testing.T) {
+	dir := makeGitRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, ".windsurf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := install.Options{
+		ProjectDir: dir,
+		Name:       "Marker Project",
+		Summary:    "test harness markers",
+		Tools:      []string{"cursor"},
+		Version:    "1.0.0",
+		GitInit:    false,
+		AssetsFS:   assets.FS,
+	}
+
+	var out, errOut strings.Builder
+	if err := install.Run(opts, &out, &errOut); err != nil {
+		t.Fatalf("install.Run failed: %v", err)
+	}
+
+	stderr := errOut.String()
+	if !strings.Contains(stderr, "Detected .windsurf/ but cli.tools does not include it") {
+		t.Errorf("stderr missing windsurf warning: %q", stderr)
+	}
+	if !strings.Contains(stderr, "Supported today: cursor") {
+		t.Errorf("stderr missing supported-tools hint: %q", stderr)
+	}
+
+	// Cursor assets still installed; no windsurf pack materialized.
+	if _, err := os.Stat(filepath.Join(dir, ".windsurf", "commands")); err == nil {
+		t.Error("expected no windsurf commands directory from Hero install")
+	}
+	if _, err := os.Stat(filepath.Join(dir, cursoradapter.CommandsDir)); err != nil {
+		t.Errorf("cursor commands should be installed: %v", err)
+	}
 }

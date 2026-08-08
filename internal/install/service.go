@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,9 @@ import (
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 // Options holds the resolved options for an install operation.
@@ -220,7 +224,41 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 		return fmt.Errorf("env hygiene: %w", err)
 	}
 
+	// 16. Create/migrate operational SQLite store (hero.db).
+	s, err := store.OpenProject(opts.ProjectDir)
+	if err != nil {
+		return fmt.Errorf("open operational store: %w", err)
+	}
+	if err := s.Close(); err != nil {
+		return fmt.Errorf("close operational store: %w", err)
+	}
+	slog.Info("operational store ready", "path", filepath.Join(opts.ProjectDir, store.RelativeDBPath))
+
+	emitHarnessMarkerWarnings(opts.ProjectDir, opts.Tools, stderr)
+
 	return nil
+}
+
+func emitHarnessMarkerWarnings(projectDir string, configuredTools []string, stderr io.Writer) {
+	res, err := harness.DetectMarkers(projectDir, configuredTools)
+	if err != nil {
+		slog.Error("harness marker detection failed", "error", err)
+		return
+	}
+	if len(res.UnsupportedPresent) == 0 {
+		return
+	}
+
+	configured := map[string]bool{}
+	for _, t := range configuredTools {
+		configured[t] = true
+	}
+
+	fmt.Fprintln(stderr)
+	for _, m := range res.UnsupportedPresent {
+		output.Warning(stderr, harness.UnsupportedMarkerWarningText(m, configured[m.ToolID]))
+		output.Progress(stderr, harness.UnsupportedMarkerSuggestionText())
+	}
 }
 
 // runGitInit runs `git init` in the given directory.

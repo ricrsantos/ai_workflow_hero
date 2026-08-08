@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | V1 complete; OpenSpec change `browser-ui-validation` implemented (ready to archive). Default CLI version `0.9.0` — nested subagent model config. |
+| **Phase** | Hero **1.0.0** + **C2 complete** (2026-08-08). OpenSpec `slash-parity-tui-harness` delivered (slash-first UX, TUI command import, harness detection, OpenSpec-coupled archive). Dual UI, SQLite, Go AI Loop, CLI-as-API. |
 
 ## Technology Stack
 
@@ -25,6 +25,8 @@
 | CLI framework | [Cobra](https://github.com/spf13/cobra) |
 | Asset embedding | Go `embed.FS` (`assets` package) |
 | Interactive prompts | [charmbracelet/huh](https://github.com/charmbracelet/huh) |
+| TUI | [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) + [lipgloss](https://github.com/charmbracelet/lipgloss) |
+| Operational store | SQLite (`modernc.org/sqlite`) |
 | YAML | `gopkg.in/yaml.v3` |
 | SDD / planning framework | [OpenSpec](https://github.com/Fission-AI/OpenSpec) |
 | Target IDE/harness (V1) | Cursor only |
@@ -33,18 +35,20 @@
 
 ## Architecture Summary
 
-- **Feature Based + Vertical Slice**: `cmd/hero` + `internal/<feature>/` (`install`, `upgrade`, `uninstall`, `doctor`, `status`, `variables`, `update_models`) with `command.go` / `service.go` / `validator.go` as needed; Cursor paths in `internal/adapters/cursor/`; shared helpers in `internal/common/` (clierr, output, template).
+- **Feature Based + Vertical Slice**: `cmd/hero` + `internal/<feature>/` (`install`, `upgrade`, `uninstall`, `doctor`, `status`, `variables`, `update_models`, `cycle`, `store`, `engine`, `tui`, `harness`) with `command.go` / `service.go` as needed; Cursor adapter in `internal/adapters/cursor/`; shared helpers in `internal/common/` (clierr, output, template).
 - **Strict CLI vs Runtime**: CLI is deterministic only; Runtime orchestration lives in embedded markdown under `assets/cursor/`.
 - **Simple templating**: `internal/common/template` supports `{{path.key}}` only (ADR-006).
 - **Assets**: `assets/` embedded via `assets.FS`; install copies into `.cursor/` and `.workflow-hero/`.
 
 ## Implemented Features
 
-- CLI commands: `install --tools cursor`, `upgrade`, `uninstall`, `doctor`, `version`, `variables`, `update-models`, `status`, `help` (plus global `--verbose`/`--debug`).
-- Install: git prerequisite (`--git-init` / huh confirm), name/summary flags or prompts, asset materialization, `hero.json` / `project.json` / `documents.json`, checksum tracking, `metrics-summary.md`, soft secrets hygiene (`.env.example` + `.gitignore` patterns), end-user guide at `.workflow-hero/docs/workflow-help.md` (path printed after successful install).
+- CLI commands: `install --tools cursor`, `upgrade`, `uninstall`, `doctor`, `version`, `variables`, `update-models`, `status`, `help`, plus Hero 1.0 operational API (`metrics`, `events`, `approve`, `reject`, `cancel`, `finish`, `continue`, `stage`, `cycle`, `run`, `tui`) (plus global `--verbose`/`--debug`). Cycle API includes `hero cycle openspec-change` / `--clear` and `hero cycle archive --force|--skip-openspec|--openspec-change`.
+- **Bubble Tea TUI** (`hero tui`): Status, Approvals, Artifacts, Costs, Events screens; command palette with `/hero:*` action labels + imported non-Hero Cursor commands (markdown expansion → Dispatch); empty-state `/hero:new`; in-process `cycle.Service`; refuses launch when `NO_COLOR` or non-TTY.
+- **SQLite operational store** (schema v2: `cycles.openspec_change`) + workflow engine + CLI-as-API cycle service with OpenSpec-coupled archive.
+- Install: git prerequisite (`--git-init` / huh confirm), name/summary flags or prompts, asset materialization, `hero.json` / `project.json` / `documents.json`, checksum tracking, `metrics-summary.md`, soft secrets hygiene, harness-marker warn-only suggestions; end-user guide at `.workflow-hero/docs/workflow-help.md`.
 - Upgrade: checksum-based non-overwrite of customized files with warnings; also ensures env hygiene files/patterns; refreshes `docs/workflow-help.md` when not customized.
 - Uninstall: removes only Hero-owned paths; preserves `AGENTS.md`, `context/`, `docs/`, `openspec/`, `.env.example`, `.gitignore`.
-- Doctor / status / variables: table default + `--json`; doctor warn-only checks for secrets hygiene (tracked `.env`, missing `.env.example` / `.env` ignore).
+- Doctor / status / variables: table default + `--json` (`openspec_change` in status); doctor warn-only checks for secrets hygiene and unsupported harness markers (`.claude/` / `.windsurf/` / `.codex/`).
 - `update-models`: fetches structured upstream model YAML (HTTP client injectable for tests).
 - Template renderer + inventory / Runtime-semantics asset tests.
 - Embedded Runtime assets: 13 `hero-*.md` commands, **11 agents** (incl. `browser_ui_agent`; Cursor YAML frontmatter with `model: inherit`), skills (`workflow-hero`, `grilling`), templates, 7 model pricing files, bilingual end-user guide (`assets/docs/workflow-help.md`); metrics use executable Metrics Procedure + subagent `input_chars`/`output_chars` contracts; **Model Resolution** builds **kebab Task slugs** from `workflow-config.yml`; each `agents.<name>` may nest a **`subagent`** block (`same_of_agent` + model fields) for nested generic Task fan-out (named Hero agents keep their own top-level model); stage order **QA → Judge → Browser UI Validation → QA End-to-End**; **Browser UI Validation** (`stages.browser_ui_validation`, default off) — Playwright Health + optional Visual vs PNGs (`visual_validation`, default `docs/ui/visual_reference`); requires `scope.frontend`; artifacts under `.workflow-hero/cycles/current/browser-ui/`; **QA End-to-End** Playwright journeys remain via `use_playwright` (distinct); **Logging standard**; **Clean Session Handoff**.
@@ -55,43 +59,29 @@
 
 ## Pending Features
 
-- Archive OpenSpec change `browser-ui-validation` when ready.
-- Optional further enrichment of Runtime narrative prompts.
-- Other post-V1 / V2 priorities not yet selected (see PRD §2.3).
-- Note: GitHub Releases for `v0.6.0` / `v0.6.1` / `v0.7.0` were never published (only tags + local `dist/`); published releases include `v0.8.0` and `v0.9.0`.
+- Archive OpenSpec change `hero-1-0` (still active) when convenient.
+- Tag/publish GitHub Release `v1.0.0` when ready.
+- Post-1.0 deferred D1–D13 (multi-harness adapters, integrations, daemon/RPC, etc.).
+- Note: intermediate tags `v0.6.0`–`v0.7.0` never published on GitHub; `v0.8.0` / `v0.9.0` published.
 
 ## Recent Decisions
 
-- Release `0.9.0` (2026-08-07): minor bump for nested `agents.<name>.subagent` model config (cheap fan-out).
-- Nested subagent model config (2026-08-07): each `agents.<name>` may define nested `subagent` (`same_of_agent`, model fields). Orchestrator→agent uses top-level; agent→nested generic Task uses `subagent` (or parent if `same_of_agent: true` / missing); named Hero agents (e.g. `context_agent`) keep their own block. Default template: `same_of_agent: false`, `composer-2.5`.
-- Release `0.8.0` (2026-07-29): minor bump for `workflow_config.user_preferred_language` + `fallback_model` reorder.
-- Release `0.7.0` (2026-07-29): minor bump for `/hero:new` rename + previous-cycle `workflow-config` import.
-- Previous-cycle config import (2026-07-29): `/hero:new` always imports prior `workflow_config` + `fallback_model` + `stages` + `agents`; resets `title` / `objective` / `scope` to template.
-- Chat language (2026-07-29): `workflow_config.user_preferred_language` (default `EN`); agents chat in that language unless user asks otherwise; cycle artifacts stay English. `fallback_model` sits after `agents`, before `workflow_rules`.
-- Runtime command rename (2026-07-29): `/hero:init` → `/hero:new` (asset `hero-new.md`); docs and inventory updated.
-- Model pricing catalog (2026-07-28): `moonshot.yml` now has `kimi-k2.7-code`, `kimi-k3`, `kimi-k3-max`; `zhipu.yml` has `glm-5.2`, `glm-5.2-high` (Cursor docs rates; Task effort variants included for metrics lookup). Patch bump to `0.6.1`.
-- Browser UI Validation (2026-07-28): new stage after Judge; Health always-on when enabled; Visual optional (agent vision); no `base_url`/`screens.yml`; failure routing front/back; SemVer `0.6.0`.
-- Clickable chat links (2026-07-28): init review and metrics summaries must use markdown `[path](path)` so Cursor opens the file on click.
-- Archive folder date (2026-07-28): `C<N>-YYYY-MM-DD-<slug>` uses `workflow.md` **Completed** (set on `/hero:finish` via `date +%Y-%m-%d`), not a guessed “today”.
-- Task Model Resolution (2026-07-28): Cursor Task rejects bracket slugs; Hero builds kebab variants (`cursor-grok-4.5-high`).
-- Clean Session Handoff (2026-07-28): after `/hero:new`, soft guidance to open a new empty chat, then `/hero:start`.
-- Go module path: `github.com/ricrsantos/ai_workflow_hero` (from git remote).
-- Subagent models: agent frontmatter stays `inherit`; effective model is Task `model` from per-cycle `workflow-config.yml` (ADR-005 / ADR-008), including nested `agents.<name>.subagent` for fan-out.
-- Soft secrets hygiene: commit `.env.example` only; doctor warns, does not block.
-- CLI default version `0.9.0`.
+- Cycle C2 complete (2026-08-08): slash-first Runtime/TUI; Cursor command import (md expansion); harness detect warn-only; schema v2 `openspec_change`; archive OpenSpec-first with `--force` (ADR-020–023). ~160k tokens / ~$0.85.
+- Cycle C1 complete (2026-08-07): Hero 1.0 — SQLite, AI Loop, CLI-as-API, TUI, Cursor adapter (~381k tokens / ~$2.17).
+- ADRs 012–023; prior 0.9.x Runtime conventions.
 
 ## Known Technical Debt
 
 - Runtime asset prompts remain concise; fuller narrative prompts from `docs/idea/ai_workflow_hero.md` can be deepened later without changing CLI APIs. Metrics still agent-estimated, not API usage.
+- Cursor Dispatch remains best-effort; chat path is the reliable baseline (ADR-016).
 - Cursor may still override Task/`frontmatter` models on some plans (known IDE limits).
 - `update-models` upstream URL assumes `main` branch raw assets on this GitHub repo.
 - Global `--verbose`/`--debug` are registered but not yet wired into panic/stack-trace printing paths.
 
 ## Next Steps
 
-1. Archive OpenSpec change `browser-ui-validation` (`/opsx:archive`).
-2. Optionally deepen other Runtime prompt content.
-3. Optionally backfill GitHub Releases for intermediate tags `v0.6.0`–`v0.7.0` if historical download links matter.
+1. Tag/publish GitHub Release `v1.0.0` when ready; archive leftover OpenSpec `hero-1-0` if needed.
+2. Post-1.0: deferred D1–D13.
 
 ---
 

@@ -5,9 +5,11 @@ import (
 
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/doctor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/status"
+	"github.com/ricrsantos/ai_workflow_hero/internal/tui"
 	"github.com/ricrsantos/ai_workflow_hero/internal/uninstall"
 	"github.com/ricrsantos/ai_workflow_hero/internal/update_models"
 	"github.com/ricrsantos/ai_workflow_hero/internal/upgrade"
@@ -16,7 +18,7 @@ import (
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>".
-var version = "0.9.0"
+var version = "1.0.0"
 
 func main() {
 	root := newRootCommand()
@@ -44,9 +46,16 @@ func newRootCommand() *cobra.Command {
 It bootstraps a project with commands, skills, prompts, and templates for
 Cursor AI, enabling reproducible, multi-agent development cycles.
 
+Running hero with no arguments opens the interactive TUI (requires Hero
+installed in the current project via hero install).
+
 Stages: Configuration → Research → Planning → Implementation → QA → Judge → QA End-to-End`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		Args:          cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return tui.RunDefault(cmd.OutOrStdout(), cmd.ErrOrStderr())
+		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			// verbose/debug flags are available globally; features can query them.
 			_ = verbose
@@ -66,8 +75,12 @@ Stages: Configuration → Research → Planning → Implementation → QA → Ju
 		status.NewCommand(),
 		variables.NewCommand(),
 		update_models.NewCommand(),
+		tui.NewCommand(),
 		newVersionCommand(),
 	)
+	for _, c := range cycle.NewCommands() {
+		root.AddCommand(c)
+	}
 
 	return root
 }

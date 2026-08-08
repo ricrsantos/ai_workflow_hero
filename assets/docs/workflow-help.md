@@ -263,8 +263,8 @@ hero update-models
 | `/hero:cancel` | Cancel stage and restore git checkpoint |
 | `/hero:continue` | Grant extra iterations after escalation |
 | `/hero:back` | Reopen Planning after SDD ambiguity |
-| `/hero:finish` | Finish the cycle; writes **Completed** date (`date +%Y-%m-%d`) into `workflow.md` |
-| `/hero:archive` | Archive current cycle; folder date = **Completed** from `workflow.md` (completion date) |
+| `/hero:finish` | Finish the cycle via `hero finish` (records `completed_at` in SQLite) |
+| `/hero:archive` | Archive current cycle via `hero cycle archive` (folder date from store `completed_at`) |
 | `/hero:resume` | Restore an archived cycle |
 | `/hero:sync` | Activate / re-sync Hero on an existing project |
 | `/hero:status` | Show cycle status in chat |
@@ -322,15 +322,16 @@ Never log secrets, tokens, or PII. Prefer the project’s existing logger; other
 
 ## 13. Metrics and context files
 
-| File | Purpose |
+| File / command | Purpose |
 |------|---------|
-| `.workflow-hero/cycles/current/metrics.md` | Per-cycle stage metrics |
-| `.workflow-hero/metrics-summary.md` | Aggregated across cycles |
+| `.workflow-hero/hero.db` | SQLite operational store (cycle/stage status, events, metrics) |
+| `hero status` / `hero metrics` / `hero events` | Query operational state (table or `--json`) |
+| `.workflow-hero/metrics-summary.md` | Aggregated across cycles (optional project summary) |
 | `context/current-state.md` | Long-lived project truth |
 | `context/context-log.md` | Short/medium decision log |
 | `AGENTS.md` | Stable agent instructions for the project |
 
-Token/cost estimates use character count ÷ ~4 × prices from `.workflow-hero/models/*.yml`.
+Token/cost estimates use character count ÷ ~4 × prices from `.workflow-hero/models/*.yml`, then persist via `hero … --metrics-json` (not cycle `metrics.md`).
 
 ---
 

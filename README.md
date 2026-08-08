@@ -31,7 +31,7 @@
 
 **AI Workflow Hero (Hero)** is an open-source framework for AI-augmented software development. It does **not** replace your coding agent — it coordinates specialized subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider.
 
-Hero ships as a single Go CLI binary (`hero`) that bootstraps a project with commands, skills, prompts, and templates for **Cursor** (V1). Once installed, the reasoning-driven workflow runs entirely in the IDE chat via `/hero:*` slash commands — never inside the CLI binary.
+Hero ships as a single Go CLI binary (`hero`) that bootstraps a project with commands, skills, prompts, and templates for **Cursor** (V1). After install you can drive the same cycle from **Cursor chat** (`/hero:*` slash commands) or the **Hero TUI** (`hero` in a terminal). LLM reasoning stays in the harness agents — never inside the CLI binary.
 
 Designed for an open-source workflow, it helps you move through:
 
@@ -41,7 +41,11 @@ Designed for an open-source workflow, it helps you move through:
 
 ## Features
 
-- Deterministic CLI for install, upgrade, uninstall, doctor, status, variables, and model pricing updates
+- Deterministic CLI for install, upgrade, uninstall, doctor, status, metrics, events, cycle lifecycle, variables, and model pricing updates
+- **Hero TUI** (default `hero` command): Bubble Tea UI for cycle status, approvals, artifacts, costs, and events — SQLite store is created automatically on install and on first CLI/TUI use
+- TUI command palette uses `/hero:*` labels; can also list non-Hero Cursor commands from `.cursor/commands` (and `~/.cursor/commands`) and run them by expanding the markdown into the harness agent
+- `hero doctor` / install warn when other harness folders are detected but unsupported (Cursor-only assets in V1)
+- `/hero:archive` archives the linked OpenSpec change first (`openspec archive -y`), then the Hero cycle folder (force path if OpenSpec fails)
 - Cursor Runtime assets: 13 `/hero:*` commands and 11 specialized agents
 - Configurable stage flow with human approval, iteration limits, timeouts, and escalation
 - Scope routing to `backend_agent`, `frontend_agent`, or `generic_agent`
@@ -116,14 +120,107 @@ After install, read the full user guide at `.workflow-hero/docs/workflow-help.md
 Useful CLI commands after install:
 
 ```bash
+hero                 # open the Hero TUI (default)
+hero tui             # same as default
 hero doctor
 hero status
 hero status --json
+hero metrics
+hero events
 hero variables
 hero upgrade
 hero update-models
 hero uninstall
 ```
+
+Cycle control from the CLI (same API the TUI and chat agents use) includes `hero approve`, `hero reject`, `hero finish`, `hero cycle archive`, and related verbs — see `.workflow-hero/docs/workflow-help.md`.
+
+---
+
+## Hero TUI
+
+The **Hero Terminal UI** is the interactive front door for the CLI after the project is bootstrapped. It shares the same Go state machine and SQLite store (`.workflow-hero/hero.db`) as `hero status`, `hero approve`, and the other deterministic commands.
+
+### Prerequisites
+
+1. Hero binary on your `PATH` (release or built from source). Use a **1.0+** binary (`hero version`) — older 0.9 installs on `PATH` will not open this TUI.
+2. Project already initialized: `hero install --tools cursor` (creates `.workflow-hero/` **and** `hero.db`).
+3. A real interactive terminal (TTY). The integrated Cursor terminal works; piping or `NO_COLOR=1` will refuse to launch the TUI.
+
+The operational database is **never** a manual step: `hero install` creates it, and any later `hero` / `hero status` / `hero doctor` run will create or migrate it automatically (including a one-shot import of legacy `workflow.md` when upgrading from 0.9.x layouts).
+
+### Launch
+
+```bash
+cd /path/to/your/project
+hero          # preferred — default command
+# or explicitly:
+hero tui
+```
+
+If Hero is **not** installed in the current project:
+
+```text
+✗ Error: Hero is not installed in this project — run: hero install --tools cursor.
+→ Suggestion: Install Hero in this project first, then run `hero` again to open the TUI.
+```
+
+If the session is not a TTY (or `NO_COLOR` is set), use plain CLI instead:
+
+```bash
+hero status
+hero metrics --json
+hero events
+```
+
+### No active cycle
+
+The TUI **does not** create a development cycle. If Status shows *No active cycle*, start one in **Cursor chat** first:
+
+1. `/hero:new` — prepare `workflow-config.yml` and create the cycle in SQLite
+2. Edit `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`)
+3. Prefer a **new empty chat**, pick the orchestrator / grill-me agent, then `/hero:start`
+
+After that, reopen or refresh the TUI (`Ctrl+R`) to see the active cycle. You can keep the TUI open while chat agents run stages.
+
+### Screens and shortcuts
+
+| Key | Action |
+|---|---|
+| `1` | **Status** — cycle title, objective, stage table (`openspec_change` when set) |
+| `2` | **Approvals** — pending stage; approve / reject / finish / cancel |
+| `3` | **Artifacts** — artifact metadata from the store |
+| `4` | **Costs** — token / cost metrics |
+| `5` | **Events** — recent operational event log |
+| `/` | **Commands** menu — press `/`, type to filter, Enter to run (Claude Code–style; use this instead of `Ctrl+P`, which opens Cursor’s palette in the IDE terminal) |
+| `Ctrl+R` / `F5` | Refresh from SQLite |
+| `a` | Approve (on Approvals screen) |
+| `r` | Reject (on Approvals screen) |
+| `f` | Finish cycle (on Approvals screen) |
+| `c` | Cancel cycle (on Approvals screen) |
+| `d` | Dispatch harness (`hero run` / Cursor adapter, best-effort) |
+| `q` / `Ctrl+C` | Quit |
+| `Esc` | Close the Commands menu |
+
+The Commands menu lists Hero actions with **`/hero:*` labels** (for example `/hero:approve`, `/hero:finish`, `/hero:archive`) plus screen navigation (`Go: Status`, …). It can also list **imported** Cursor custom commands from the project’s `.cursor/commands/` and your user `~/.cursor/commands/` (excluding Hero’s own `hero-*.md`). Selecting an imported command expands that markdown file and dispatches it to the Cursor agent (best-effort) — the same idea as typing the slash in chat, without injecting into an already-open IDE panel.
+
+Project skills under `.cursor/skills/` are **not** listed in the TUI; the Cursor agent loads them automatically when a dispatch runs with the project as cwd.
+
+### Dual entry with Cursor chat
+
+You can drive the same cycle from either:
+
+- **TUI** — `hero` in the terminal (monitor, approve, finish, dispatch, imported commands)
+- **Chat** — `/hero:*` slash commands in Cursor (grilling, planning, implementation reasoning; agents call the same CLI/SQLite API)
+
+Pick one entry UI per session for control actions; both read and write `.workflow-hero/hero.db`. New cycles still start with `/hero:new` in chat.
+
+### Tips
+
+- In Cursor’s integrated terminal, open Hero commands with **`/`**, not `Ctrl+P` (that shortcut belongs to the IDE).
+- Keep the TUI open while agents work in Cursor to watch status, events, and costs update after you refresh (`Ctrl+R`).
+- Scripting and CI should use `hero status --json` / `hero metrics --json`, not the TUI.
+- Uninstall removes `.workflow-hero/` (including the DB); project docs and `context/` stay.
 
 ---
 
@@ -138,8 +235,8 @@ hero uninstall
 | `/hero:cancel` | Cancel the stage and restore the git checkpoint |
 | `/hero:continue` | Grant extra iterations after escalation |
 | `/hero:back` | Reopen Planning after SDD ambiguity |
-| `/hero:finish` | Finish the cycle; writes Completed date used by archive naming |
-| `/hero:archive` | Archive the current cycle (folder date = workflow.md Completed) |
+| `/hero:finish` | Finish the cycle; records `completed_at` in SQLite (used by archive naming) |
+| `/hero:archive` | Archive OpenSpec change (when linked) then the Hero cycle folder (date = `completed_at`) |
 | `/hero:resume` | Resume an archived cycle |
 | `/hero:sync` | Activate / re-sync Hero on an existing project |
 | `/hero:status` | Show cycle status in chat |
@@ -154,7 +251,7 @@ hero uninstall
 - Linux or macOS (`amd64` or `arm64`)
 - [Cursor](https://cursor.com) IDE (V1)
 - Git (required; `hero install` can run `git init` with consent)
-- [OpenSpec](https://github.com/Fission-AI/OpenSpec) for Planning-stage workflows (installed with user consent when needed)
+- [OpenSpec](https://github.com/Fission-AI/OpenSpec) for Planning-stage workflows and for `/hero:archive` when a change is linked (installed with user consent when needed)
 
 ### Development
 
@@ -194,16 +291,21 @@ Cross-compiled release artifacts (4 platforms + `checksums.txt`):
 
 ```text
 .
-├── cmd/hero/                 # CLI entrypoint (Cobra)
+├── cmd/hero/                 # CLI entrypoint (Cobra); default → TUI
 ├── internal/
 │   ├── install/              # hero install
 │   ├── upgrade/              # hero upgrade
 │   ├── uninstall/            # hero uninstall
 │   ├── doctor/               # hero doctor
 │   ├── status/               # hero status
+│   ├── cycle/                # cycle lifecycle + CLI-as-API
+│   ├── store/                # SQLite operational store
+│   ├── engine/               # AI Loop state machine
+│   ├── tui/                  # Bubble Tea Hero TUI
+│   ├── harness/              # HarnessAdapter interface
 │   ├── variables/            # hero variables
 │   ├── update_models/        # hero update-models
-│   ├── adapters/cursor/      # Cursor path layout
+│   ├── adapters/cursor/      # Cursor adapter + path layout
 │   ├── common/               # errors, output, templates
 │   └── integration/          # lightweight e2e tests
 ├── assets/                   # embed.FS (commands, agents, skills, templates, models)
@@ -262,7 +364,7 @@ BSD 2-Clause. See [LICENSE](LICENSE).
 
 **AI Workflow Hero (Hero)** é um framework open-source para desenvolvimento de software aumentado por IA. Ele **não** substitui o agente de código — ele coordena subagentes especializados, organiza artefatos do projeto, comprime contexto e torna ciclos de desenvolvimento com IA mais reproduzíveis e menos dependentes de um único provedor de LLM.
 
-O Hero é distribuído como um binário CLI em Go (`hero`) que prepara o projeto com comandos, skills, prompts e templates para o **Cursor** (V1). Depois de instalado, o fluxo que exige raciocínio roda inteiramente no chat da IDE via comandos `/hero:*` — nunca dentro do binário CLI.
+O Hero é distribuído como um binário CLI em Go (`hero`) que prepara o projeto com comandos, skills, prompts e templates para o **Cursor** (V1). Depois de instalado, você conduz o mesmo ciclo pelo **chat do Cursor** (comandos `/hero:*`) ou pela **Hero TUI** (`hero` no terminal). O raciocínio com LLM fica nos agentes do harness — nunca dentro do binário CLI.
 
 Projetado para um fluxo open source, ele ajuda você a avançar em:
 
@@ -272,7 +374,11 @@ Projetado para um fluxo open source, ele ajuda você a avançar em:
 
 ## Recursos
 
-- CLI determinística para install, upgrade, uninstall, doctor, status, variables e atualização de preços de modelos
+- CLI determinística para install, upgrade, uninstall, doctor, status, metrics, events, ciclo, variables e atualização de preços de modelos
+- **Hero TUI** (comando padrão `hero`): interface Bubble Tea para status do ciclo, aprovações, artefatos, custos e eventos — o store SQLite é criado automaticamente no install e no primeiro uso da CLI/TUI
+- Palette da TUI com labels `/hero:*`; também lista commands Cursor de `.cursor/commands` (e `~/.cursor/commands`) e os executa expandindo o markdown para o agente do harness
+- `hero doctor` / install avisam quando detectam pastas de outros harnesses ainda não suportados (V1 só materializa Cursor)
+- `/hero:archive` arquiva primeiro o change OpenSpec ligado (`openspec archive -y`) e depois a pasta do ciclo Hero (com caminho de force se o OpenSpec falhar)
 - Assets de Runtime no Cursor: 13 comandos `/hero:*` e 11 agentes especializados
 - Fluxo de stages configurável com aprovação humana, limites de iteração, timeouts e escalonamento
 - Roteamento de scope para `backend_agent`, `frontend_agent` ou `generic_agent`
@@ -347,14 +453,107 @@ Após a instalação, leia o guia completo em `.workflow-hero/docs/workflow-help
 Comandos CLI úteis após a instalação:
 
 ```bash
+hero                 # abre a Hero TUI (padrão)
+hero tui             # igual ao padrão
 hero doctor
 hero status
 hero status --json
+hero metrics
+hero events
 hero variables
 hero upgrade
 hero update-models
 hero uninstall
 ```
+
+O controle de ciclo pela CLI (a mesma API que a TUI e os agentes do chat usam) inclui `hero approve`, `hero reject`, `hero finish`, `hero cycle archive` e afins — veja `.workflow-hero/docs/workflow-help.md`.
+
+---
+
+## Hero TUI
+
+A **Hero Terminal UI** é a porta de entrada interativa da CLI depois que o projeto foi preparado. Ela usa a mesma máquina de estados Go e o mesmo store SQLite (`.workflow-hero/hero.db`) que `hero status`, `hero approve` e os demais comandos determinísticos.
+
+### Pré-requisitos
+
+1. Binário `hero` no `PATH` (release ou build local). Use um binário **1.0+** (`hero version`) — instalações 0.9 no `PATH` não abrem esta TUI.
+2. Projeto já inicializado: `hero install --tools cursor` (cria `.workflow-hero/` **e** `hero.db`).
+3. Terminal interativo de verdade (TTY). O terminal integrado do Cursor serve; pipe ou `NO_COLOR=1` impedem a TUI.
+
+O banco operacional **não** é um passo manual: `hero install` cria o arquivo, e qualquer `hero` / `hero status` / `hero doctor` posterior cria ou migra automaticamente (incluindo import único de `workflow.md` legado ao subir de layouts 0.9.x).
+
+### Como abrir
+
+```bash
+cd /caminho/do/seu/projeto
+hero          # preferido — comando padrão
+# ou explicitamente:
+hero tui
+```
+
+Se o Hero **não** estiver instalado no projeto atual:
+
+```text
+✗ Error: Hero is not installed in this project — run: hero install --tools cursor.
+→ Suggestion: Install Hero in this project first, then run `hero` again to open the TUI.
+```
+
+Se a sessão não for TTY (ou `NO_COLOR` estiver definido), use a CLI em texto:
+
+```bash
+hero status
+hero metrics --json
+hero events
+```
+
+### Sem ciclo ativo
+
+A TUI **não cria** um ciclo de desenvolvimento. Se o Status mostrar *No active cycle*, inicie um ciclo no **chat do Cursor** primeiro:
+
+1. `/hero:new` — prepara o `workflow-config.yml` e cria o ciclo no SQLite
+2. Edite `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`)
+3. Prefira um **chat novo e vazio**, escolha o agente orchestrator / grill-me, e então `/hero:start`
+
+Depois disso, reabra ou atualize a TUI (`Ctrl+R`) para ver o ciclo ativo. Você pode manter a TUI aberta enquanto os agentes rodam stages no chat.
+
+### Telas e atalhos
+
+| Tecla | Ação |
+|---|---|
+| `1` | **Status** — título, objetivo, tabela de stages (`openspec_change` quando definido) |
+| `2` | **Approvals** — stage pendente; approve / reject / finish / cancel |
+| `3` | **Artifacts** — metadados de artefatos no store |
+| `4` | **Costs** — métricas de tokens / custo |
+| `5` | **Events** — log recente de eventos operacionais |
+| `/` | Menu de **Commands** — pressione `/`, digite para filtrar, Enter para executar (estilo Claude Code; use isto em vez de `Ctrl+P`, que abre a palette do Cursor no terminal da IDE) |
+| `Ctrl+R` / `F5` | Atualizar a partir do SQLite |
+| `a` | Approve (na tela Approvals) |
+| `r` | Reject (na tela Approvals) |
+| `f` | Finish do ciclo (na tela Approvals) |
+| `c` | Cancel do ciclo (na tela Approvals) |
+| `d` | Dispatch do harness (`hero run` / adapter Cursor, best-effort) |
+| `q` / `Ctrl+C` | Sair |
+| `Esc` | Fechar o menu de Commands |
+
+O menu Commands lista ações do Hero com labels **`/hero:*`** (por exemplo `/hero:approve`, `/hero:finish`, `/hero:archive`) e navegação de telas (`Go: Status`, …). Também pode listar **commands importados** de `.cursor/commands/` do projeto e de `~/.cursor/commands/` do usuário (exceto os `hero-*.md` do próprio Hero). Ao selecionar um command importado, a TUI expande o markdown e despacha para o agente Cursor (best-effort) — o mesmo efeito prático de digitar o slash no chat, sem injetar no painel já aberto da IDE.
+
+Skills em `.cursor/skills/` **não** aparecem na TUI; o agente Cursor as carrega sozinho quando o dispatch roda com o cwd do projeto.
+
+### Entrada dupla com o chat do Cursor
+
+Você pode conduzir o mesmo ciclo por:
+
+- **TUI** — `hero` no terminal (monitorar, aprovar, finish, dispatch, commands importados)
+- **Chat** — comandos `/hero:*` no Cursor (grilling, planning, implementação; os agentes usam a mesma API CLI/SQLite)
+
+Escolha uma UI por sessão para ações de controle; ambas leem e escrevem `.workflow-hero/hero.db`. Novos ciclos ainda começam com `/hero:new` no chat.
+
+### Dicas
+
+- No terminal integrado do Cursor, abra os comandos do Hero com **`/`**, não com `Ctrl+P` (esse atalho é da IDE).
+- Deixe a TUI aberta enquanto os agentes trabalham no Cursor e use `Ctrl+R` para ver status, eventos e custos.
+- Em scripts/CI use `hero status --json` / `hero metrics --json`, não a TUI.
+- O uninstall remove `.workflow-hero/` (incluindo o DB); docs do projeto e `context/` permanecem.
 
 ---
 
@@ -369,8 +568,8 @@ hero uninstall
 | `/hero:cancel` | Cancela o stage e restaura o checkpoint git |
 | `/hero:continue` | Concede iterações extras após escalonamento |
 | `/hero:back` | Reabre o Planning após ambiguidade no SDD |
-| `/hero:finish` | Encerra o ciclo; grava a data Completed usada no nome do arquivo |
-| `/hero:archive` | Arquiva o ciclo atual (data da pasta = Completed em workflow.md) |
+| `/hero:finish` | Encerra o ciclo; grava `completed_at` no SQLite (usada no nome do archive) |
+| `/hero:archive` | Arquiva o change OpenSpec (quando ligado) e depois a pasta do ciclo Hero (data = `completed_at`) |
 | `/hero:resume` | Retoma um ciclo arquivado |
 | `/hero:sync` | Ativa / re-sincroniza o Hero em um projeto existente |
 | `/hero:status` | Mostra o status do ciclo no chat |
@@ -385,7 +584,7 @@ hero uninstall
 - Linux ou macOS (`amd64` ou `arm64`)
 - IDE [Cursor](https://cursor.com) (V1)
 - Git (obrigatório; `hero install` pode executar `git init` com consentimento)
-- [OpenSpec](https://github.com/Fission-AI/OpenSpec) para o fluxo de Planning (instalado com consentimento quando necessário)
+- [OpenSpec](https://github.com/Fission-AI/OpenSpec) para o fluxo de Planning e para `/hero:archive` quando houver change ligado (instalado com consentimento quando necessário)
 
 ### Desenvolvimento
 
@@ -425,16 +624,21 @@ Artefatos de release cross-compilados (4 plataformas + `checksums.txt`):
 
 ```text
 .
-├── cmd/hero/                 # Entrypoint da CLI (Cobra)
+├── cmd/hero/                 # Entrypoint da CLI (Cobra); padrão → TUI
 ├── internal/
 │   ├── install/              # hero install
 │   ├── upgrade/              # hero upgrade
 │   ├── uninstall/            # hero uninstall
 │   ├── doctor/               # hero doctor
 │   ├── status/               # hero status
+│   ├── cycle/                # ciclo de vida + CLI-as-API
+│   ├── store/                # store operacional SQLite
+│   ├── engine/               # máquina de estados do AI Loop
+│   ├── tui/                  # Hero TUI (Bubble Tea)
+│   ├── harness/              # interface HarnessAdapter
 │   ├── variables/            # hero variables
 │   ├── update_models/        # hero update-models
-│   ├── adapters/cursor/      # layout de paths do Cursor
+│   ├── adapters/cursor/      # adapter Cursor + layout de paths
 │   ├── common/               # erros, output, templates
 │   └── integration/          # testes e2e leves
 ├── assets/                   # embed.FS (commands, agents, skills, templates, models)

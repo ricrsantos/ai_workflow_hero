@@ -13,6 +13,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/ricrsantos/ai_workflow_hero/internal/upgrade"
 )
 
@@ -155,5 +156,75 @@ func TestUpgrade_CustomizedFileIsSkipped(t *testing.T) {
 	customizedHash := sha256hex(customized)
 	if afterHash != customizedHash {
 		t.Error("customized file was overwritten by upgrade")
+	}
+}
+
+func TestUpgrade_ImportsLegacyCycleFrom09LikeFixture(t *testing.T) {
+	dir := makeInstalledDir(t)
+
+	cycleDir := filepath.Join(dir, cursoradapter.HeroCurrentCycleDir)
+	workflow := `# Workflow — Cycle C2
+
+**Title**: Legacy Upgrade
+**Objective**: Import on upgrade
+**Status**: In Progress
+**Started**: 2026-07-01
+**Completed**:
+
+## Stages
+
+| Stage | Status | Iteration | Human Approval | Extra Iterations Granted |
+|-------|--------|-----------|----------------|--------------------------|
+| Research | Completed | 1/50 | Auto | +0 |
+| Planning | In Progress | 1/3 | N/A | +0 |
+`
+	if err := os.WriteFile(filepath.Join(cycleDir, "workflow.md"), []byte(workflow), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate 0.9.x: workflow.md present but no hero.db.
+	dbPath := filepath.Join(dir, store.RelativeDBPath)
+	if err := os.Remove(dbPath); err != nil {
+		t.Fatalf("remove hero.db: %v", err)
+	}
+
+	var out strings.Builder
+	result, err := upgrade.Run(upgrade.Options{
+		ProjectDir: dir,
+		Version:    "1.0.0",
+		AssetsFS:   assets.FS,
+	}, &out, &out)
+	if err != nil {
+		t.Fatalf("upgrade failed: %v", err)
+	}
+	if !result.LegacyImported {
+		t.Fatal("expected legacy cycle import")
+	}
+	if result.LegacyCycleNum != 2 {
+		t.Errorf("legacy cycle number = %d, want 2", result.LegacyCycleNum)
+	}
+	if !strings.Contains(out.String(), "no longer canonical") {
+		t.Error("expected legacy markdown warning in output")
+	}
+
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("hero.db not created after upgrade: %v", err)
+	}
+
+	s, err := store.OpenProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	cycles, err := s.ListCycles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 1 {
+		t.Fatalf("cycles len = %d, want 1", len(cycles))
+	}
+	if cycles[0].Title != "Legacy Upgrade" {
+		t.Errorf("cycle title = %q, want Legacy Upgrade", cycles[0].Title)
 	}
 }

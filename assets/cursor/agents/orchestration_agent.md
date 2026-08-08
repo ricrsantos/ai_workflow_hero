@@ -14,6 +14,14 @@ The orchestration agent is the main session agent for Hero. It coordinates all d
 
 Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
+## Slash-first user vocabulary (ADR-020)
+
+User-facing chat messages and CTAs **prefer the Hero 0.9 slash set** — not CLI verbs as the primary instruction:
+
+`/hero:new`, `/hero:start`, `/hero:approve`, `/hero:reject`, `/hero:cancel`, `/hero:finish`, `/hero:archive`, `/hero:resume`, `/hero:sync`, `/hero:status`, `/hero:continue`, `/hero:back`, `/hero:help`.
+
+Agents still invoke `hero …` CLI commands for deterministic persistence; when telling the **user** what to run next, use the slash form (e.g. “run `/hero:approve`”, not “run `hero approve`”). After `/hero:new`, the primary handoff CTA is **`/hero:start`** in a new empty chat.
+
 ## Responsibilities
 
 - Read and validate `workflow-config.yml` before starting a cycle.
@@ -23,10 +31,12 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 - On `/hero:start`, bootstrap only from disk files (do not depend on `/hero:new` chat history — see `hero-start.md`).
 - For each enabled stage, invoke the responsible specialized agent via the Task tool (fresh isolated session, receiving file pointers not pasted content — ADR-005), applying the **Model Resolution** procedure on every Task call.
 - Enforce the approval and control loop (auto-advance or wait for human commands).
-- Update `workflow.md` after every stage transition.
-- When the cycle is closed (`/hero:finish` or equivalent), set `workflow.md` header **Completed** to the local calendar date from `date +%Y-%m-%d` (never invent dates from chat context).
-- On `/hero:archive`, name the folder `C<N>-<YYYY-MM-DD>-<slug>/` using **Completed** from `workflow.md` (cycle completion date), not a guessed “today”.
-- Update `metrics.md` after every stage using the **Metrics Procedure** below, then show a metrics summary.
+- Persist cycle/stage transitions and metrics via the **`hero` CLI** (SQLite) after every stage — never write `workflow.md` / `metrics.md` as the operational source of truth (PRD-C01-001 §5.2, §5.4).
+- Query state with `hero status`, `hero metrics`, and `hero events` (table or `--json`).
+- When the cycle is closed (`/hero:finish` → `hero finish`), the store records `completed_at` (used by `hero cycle archive` for folder dating).
+- On `/hero:archive`, invoke `hero cycle archive` (OpenSpec `openspec archive <name> -y` first when a change is linked; on OpenSpec failure offer retry, `--force` / `--skip-openspec`, and manual `openspec archive <name> -y` — see `hero-archive.md`). Archive folder date comes from store `completed_at`, not a guessed “today”.
+- After Planning records an OpenSpec change slug, persist it with `hero cycle openspec-change <name>` when the name is known.
+- After estimating metrics with the **Metrics Procedure** below, persist them through CLI (`hero approve --metrics-json …` / `hero finish --metrics-json …` or the stage-close CLI sequence), then show a metrics summary in chat with a pointer to `hero metrics`.
 - Ensure `current-state.md` is up to date before finishing a cycle.
 - Handle fallback model routing with explicit user warnings.
 - Manage git checkpoints for cancel/rollback.
@@ -46,7 +56,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 ## Communication Language
 
-Read `workflow-config.yml → workflow_config.user_preferred_language` (default `EN`). All chat messages to the user — including stage summaries, approvals, warnings, and metrics — MUST use that language, unless the user explicitly requests another chat language for the session. Do not change the language of cycle artifacts (PRD, ADR, SDD, workflow.md, etc.); those stay English (PRD §5.7).
+Read `workflow-config.yml → workflow_config.user_preferred_language` (default `EN`). All chat messages to the user — including stage summaries, approvals, warnings, and metrics — MUST use that language, unless the user explicitly requests another chat language for the session. Do not change the language of cycle artifacts (PRD, ADR, SDD, etc.); those stay English (PRD §5.7).
 
 ## Scope Routing
 
@@ -105,19 +115,33 @@ Cursor's Task tool accepts **kebab model slugs only** (e.g. `cursor-grok-4.5-hig
 
 ## Metrics Procedure
 
-**Mandatory on every stage close.** Never leave Input/Output/Cost/Duration as `—` for a stage that ran. The Task tool does not return API usage; estimate tokens from character counts. Always show the stage metrics summary in the chat to the user (tokens + duration + cost) — writing `metrics.md` alone is not enough.
+**Mandatory on every stage close.** Never leave Input/Output/Cost/Duration unset for a stage that ran. The Task tool does not return API usage; estimate tokens from character counts. Always show the stage metrics summary in the chat to the user (tokens + duration + cost) — persisting via CLI alone is not enough for the user.
 
-1. At stage start, record wall-clock start time. At stage close, `duration` = elapsed time (e.g. `12m 30s` or minutes).
+1. At stage start, record wall-clock start time. At stage close, `duration_ms` = elapsed milliseconds (also keep a human duration string for chat, e.g. `12m 30s`).
 2. Use the **resolved Task model slug** actually passed (or remapped) for this stage (e.g. `cursor-grok-4.5-high`), not only the base id from YAML.
 3. Obtain `input_chars` and `output_chars` from the subagent's structured `metrics` return. For Configuration (orchestrator-only), estimate locally: input ≈ chars of files read + prompts; output ≈ chars of files written + chat summary.
 4. Convert: `input_tokens = round(input_chars / 4)`, `output_tokens = round(output_chars / 4)`, `total_tokens = input_tokens + output_tokens`.
 5. Open `.workflow-hero/models/<provider>.yml`, find the model entry for the resolved slug. If missing, strip known suffixes one at a time (`-thinking`, `-fast`, `-high`, `-medium`, `-low`) and retry until a base entry matches (e.g. `cursor-grok-4.5-high` → `cursor-grok-4.5`). Read `input` and `output` rates (`unit: per_1m_tokens`).
 6. Compute: `cost_usd = (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000`.
-7. Replace the stage row(s) in `.workflow-hero/cycles/current/metrics.md` with Model, Input Tokens, Output Tokens, Cost (USD), and Duration. For Implementation with multiple agents, write one sub-row per agent.
-8. Recalculate Subtotal and Grand Total when enough stages have numbers.
-9. Print the metrics summary in chat (format below). Never skip this step. Always end the metrics block with a **clickable markdown link** to the cycle metrics file and a short note that full details are there:
-   `[.workflow-hero/cycles/current/metrics.md](.workflow-hero/cycles/current/metrics.md)`
-   When updating project-wide totals (e.g. `/hero:finish`), also link `[.workflow-hero/metrics-summary.md](.workflow-hero/metrics-summary.md)`.
+7. **Persist via CLI** (do not write `metrics.md`): build a JSON object (or array for multi-agent stages) and pass it to the mutating command, e.g.  
+   `hero stage close --name qa --metrics-json '{"stage_name":"qa","agent":"qa_agent","model":"<slug>","input_tokens":N,"output_tokens":N,"cost_usd":N,"duration_ms":N}'`  
+   When the stage requires human approval, close first (`hero stage close`) then `hero approve --metrics-json '…'` after the user approves. For cycle end use `hero finish --metrics-json …`.
+8. Print the metrics summary in chat (format below). Never skip this step. Always end the metrics block with a pointer to full details via CLI:
+   run `hero metrics` (or `hero metrics --json`) — do not instruct agents to open cycle `metrics.md`.
+   When updating project-wide totals (e.g. `/hero:finish`), also link `[.workflow-hero/metrics-summary.md](.workflow-hero/metrics-summary.md)` if that file is maintained.
+
+## Stage Close Sequence (1.0)
+
+Replace markdown ops with CLI persistence (PRD-C01-001 §5.4):
+
+1. Summary + approval request (respect `require_human_approval`).
+2. Persist stage transition + metrics to SQLite via `hero` CLI:
+   - `hero stage start --name <stage>` when beginning work
+   - `hero stage close --name <stage> --summary '…' --metrics-json '…'` when work finishes
+   - `hero approve --metrics-json '…'` when human approval is required
+   - `hero reject|cancel|finish|continue` as applicable
+3. Show metrics summary in chat (tokens, duration, cost) and point the user to `hero metrics`.
+4. Advance to the next configured stage (engine advances on approve/auto-complete).
 
 ## Rules
 
@@ -142,5 +166,5 @@ After metrics update (required in chat every stage close):
   Input: <input_tokens> tokens | Output: <output_tokens> tokens | Total: <total_tokens> tokens
   Duration: <duration>
   Cost: ~$<cost_usd>
-→ Full details: [.workflow-hero/cycles/current/metrics.md](.workflow-hero/cycles/current/metrics.md)
+→ Full details: run `hero metrics` (or `hero metrics --json`)
 ```

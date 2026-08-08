@@ -44,7 +44,7 @@ func TestRootCommand_Help(t *testing.T) {
 func TestRootCommand_AllSubcommandsRegistered(t *testing.T) {
 	root := newRootCommand()
 
-	want := []string{"install", "upgrade", "uninstall", "doctor", "status", "variables", "update-models", "version"}
+	want := []string{"install", "upgrade", "uninstall", "doctor", "status", "variables", "update-models", "version", "tui"}
 	registered := make(map[string]bool)
 	for _, cmd := range root.Commands() {
 		registered[cmd.Name()] = true
@@ -54,6 +54,24 @@ func TestRootCommand_AllSubcommandsRegistered(t *testing.T) {
 		if !registered[name] {
 			t.Errorf("command %q is not registered", name)
 		}
+	}
+}
+
+func TestRootCommand_DefaultRunsTUIEntry(t *testing.T) {
+	root := newRootCommand()
+	if root.RunE == nil {
+		t.Fatal("root RunE must launch TUI by default")
+	}
+
+	var errOut bytes.Buffer
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&errOut)
+	root.SetArgs([]string{})
+
+	// No Hero install + non-TTY → RunDefault should fail with a HeroError, not panic.
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when running hero with no args outside an installed project / TTY")
 	}
 }
 
