@@ -32,17 +32,19 @@ type cliUsageJSON struct {
 }
 
 type cliStreamEvent struct {
-	Type      string `json:"type"`
-	Subtype   string `json:"subtype"`
-	SessionID string `json:"session_id"`
-	Result    string `json:"result"`
-	IsError   bool   `json:"is_error"`
-	DurationMS int64 `json:"duration_ms"`
-	Usage     *cliUsageJSON `json:"usage"`
-	Message   *cliMessage   `json:"message"`
+	Type       string          `json:"type"`
+	Subtype    string          `json:"subtype"`
+	SessionID  string          `json:"session_id"`
+	Result     string          `json:"result"`
+	IsError    bool            `json:"is_error"`
+	DurationMS int64           `json:"duration_ms"`
+	Usage      *cliUsageJSON   `json:"usage"`
+	Message    *cliMessage     `json:"message"`
+	Text       string          `json:"text"` // thinking delta
+	ToolCall   json.RawMessage `json:"tool_call"`
 	// Partial-stream filters (docs): skip when model_call_id set or timestamp absent on final flush.
-	TimestampMS  *int64  `json:"timestamp_ms"`
-	ModelCallID  *string `json:"model_call_id"`
+	TimestampMS *int64  `json:"timestamp_ms"`
+	ModelCallID *string `json:"model_call_id"`
 }
 
 type cliMessage struct {
@@ -95,8 +97,10 @@ func ParseJSONResult(data []byte) (*harness.ExecutionResult, error) {
 }
 
 // ParseStreamJSON reads NDJSON stream-json events and builds an ExecutionResult.
-// When onDelta is non-nil, assistant text chunks are forwarded (partial deltas preferred).
-func ParseStreamJSON(r io.Reader, onDelta func(string)) (*harness.ExecutionResult, error) {
+// When onDelta is non-nil, thinking, tool activity, and assistant text are forwarded
+// (partial assistant deltas preferred). Thinking/tools are display-only and not
+// included in ExecutionResult.Output.
+func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.ExecutionResult, error) {
 	sc := bufio.NewScanner(r)
 	// Cursor stream lines can be large (tool payloads); raise limit.
 	buf := make([]byte, 0, 64*1024)
@@ -108,6 +112,13 @@ func ParseStreamJSON(r io.Reader, onDelta func(string)) (*harness.ExecutionResul
 		assistant  strings.Builder
 		sawPartial bool
 	)
+
+	emit := func(kind harness.StreamKind, text string) {
+		if onDelta == nil || text == "" {
+			return
+		}
+		onDelta(harness.StreamDelta{Kind: kind, Text: text})
+	}
 
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
@@ -123,20 +134,35 @@ func ParseStreamJSON(r io.Reader, onDelta func(string)) (*harness.ExecutionResul
 			sessionID = ev.SessionID
 		}
 		switch ev.Type {
+		case "thinking":
+			if ev.Subtype == "completed" {
+				continue
+			}
+			text := ev.Text
+			if text == "" {
+				text = extractContentText(ev, "thinking", "reasoning")
+			}
+			emit(harness.StreamKindThinking, text)
+		case "tool_call":
+			if ev.Subtype != "" && ev.Subtype != "started" {
+				continue
+			}
+			emit(harness.StreamKindTool, formatToolCall(ev.ToolCall))
 		case "assistant":
+			if ev.TimestampMS != nil {
+				sawPartial = true
+			}
+			if thinking := extractContentText(ev, "thinking", "reasoning"); thinking != "" && shouldEmitDelta(ev, sawPartial) {
+				emit(harness.StreamKindThinking, thinking)
+			}
 			text := extractAssistantText(ev)
 			if text == "" {
 				continue
 			}
-			if ev.TimestampMS != nil {
-				sawPartial = true
-			}
 			if !shouldEmitDelta(ev, sawPartial) {
 				continue
 			}
-			if onDelta != nil {
-				onDelta(text)
-			}
+			emit(harness.StreamKindText, text)
 			assistant.WriteString(text)
 		case "result":
 			if ev.IsError || ev.Subtype == "error" {
@@ -178,16 +204,113 @@ func ParseStreamJSON(r io.Reader, onDelta func(string)) (*harness.ExecutionResul
 }
 
 func extractAssistantText(ev cliStreamEvent) string {
+	return extractContentText(ev, "text", "")
+}
+
+func extractContentText(ev cliStreamEvent, types ...string) string {
 	if ev.Message == nil {
 		return ""
 	}
+	want := make(map[string]struct{}, len(types))
+	for _, t := range types {
+		want[t] = struct{}{}
+	}
 	var b strings.Builder
 	for _, p := range ev.Message.Content {
-		if p.Type == "text" || p.Type == "" {
+		if _, ok := want[p.Type]; ok {
 			b.WriteString(p.Text)
 		}
 	}
 	return b.String()
+}
+
+func formatToolCall(raw json.RawMessage) string {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return ""
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return ""
+	}
+	if fn, ok := obj["function"]; ok {
+		var f struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		}
+		if json.Unmarshal(fn, &f) == nil && strings.TrimSpace(f.Name) != "" {
+			if summary := toolArgSummaryFromJSON(f.Arguments); summary != "" {
+				return f.Name + " " + summary
+			}
+			return f.Name
+		}
+	}
+	preferred := []string{
+		"readToolCall", "writeToolCall", "editToolCall", "grepToolCall",
+		"globToolCall", "shellToolCall", "deleteToolCall", "searchToolCall",
+	}
+	for _, key := range preferred {
+		if val, ok := obj[key]; ok {
+			return formatNamedTool(key, val)
+		}
+	}
+	for key, val := range obj {
+		if strings.HasSuffix(key, "ToolCall") {
+			return formatNamedTool(key, val)
+		}
+	}
+	return ""
+}
+
+func formatNamedTool(key string, val json.RawMessage) string {
+	name := humanizeToolName(strings.TrimSuffix(key, "ToolCall"))
+	var wrap struct {
+		Args map[string]any `json:"args"`
+	}
+	if json.Unmarshal(val, &wrap) != nil || wrap.Args == nil {
+		return name
+	}
+	if summary := toolArgSummary(wrap.Args); summary != "" {
+		return name + " " + summary
+	}
+	return name
+}
+
+func humanizeToolName(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "Tool"
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func toolArgSummary(args map[string]any) string {
+	for _, k := range []string{"path", "file_path", "query", "pattern", "glob", "command", "url", "name"} {
+		v, ok := args[k]
+		if !ok {
+			continue
+		}
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		s = strings.TrimSpace(s)
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func toolArgSummaryFromJSON(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var args map[string]any
+	if json.Unmarshal([]byte(raw), &args) != nil {
+		return ""
+	}
+	return toolArgSummary(args)
 }
 
 // shouldEmitDelta follows Cursor stream-partial-output guidance:

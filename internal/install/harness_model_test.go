@@ -75,3 +75,44 @@ func TestHarnessModelSlugForProject(t *testing.T) {
 		t.Fatalf("missing file default=%q", got)
 	}
 }
+
+func TestSaveHarnessModel(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, filepath.Dir(cursoradapter.HeroJSONPath))
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hero := HeroJSON{
+		CLI: CLIInfo{Version: "1.0.0", Tools: []string{"cursor"}},
+		Harnesses: map[string]HarnessConfig{
+			"cursor": {Model: "composer-2.5", EnableFastModel: true},
+		},
+	}
+	data, _ := json.MarshalIndent(hero, "", "  ")
+	if err := os.WriteFile(filepath.Join(dir, cursoradapter.HeroJSONPath), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveHarnessModel(dir, "cursor", "cursor-grok-4.5-high"); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := loaded.Harnesses["cursor"]
+	if cfg.Model != "cursor-grok-4.5-high" {
+		t.Fatalf("model=%q", cfg.Model)
+	}
+	if cfg.EnableFastModel {
+		t.Fatal("enable_fast_model should be false after SaveHarnessModel")
+	}
+	if got := HarnessModelSlugForProject(dir, "cursor"); got != "cursor-grok-4.5-high" {
+		t.Fatalf("slug=%q", got)
+	}
+}
+
+func TestSaveHarnessModel_RequiresSlug(t *testing.T) {
+	if err := SaveHarnessModel(t.TempDir(), "cursor", "  "); err == nil {
+		t.Fatal("expected error")
+	}
+}

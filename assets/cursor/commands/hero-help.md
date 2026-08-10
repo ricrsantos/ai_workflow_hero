@@ -26,6 +26,7 @@ Display a summary of all available Hero Runtime commands.
 | /hero-back | Reopen Planning (SDD ambiguity; orchestrator-driven, no dedicated CLI verb) |
 | /hero-cycles | List cycles with per-etapa metrics (SQLite + archive folders) |
 | /hero-todos | Show pending items from `context/current-state.md` (run `/hero-sync` first when docs changed) |
+| /hero-model | Select TUI chat model (Hero TUI palette; persists to `hero.json`) |
 | /hero-help | Show this help |
 
 ## CLI query helpers

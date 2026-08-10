@@ -148,9 +148,15 @@ func emptyCycleScreenMessage(kind string, cycleNumber int) string {
 
 func (m model) renderPalette() string {
 	var b strings.Builder
-	b.WriteString(headerStyle.Render("Commands"))
-	b.WriteByte('\n')
-	b.WriteString(mutedStyle.Render("Type to filter · ↑↓ navigate · PgUp/PgDn · enter run · esc close"))
+	if m.pickingModel {
+		b.WriteString(headerStyle.Render("Models"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("Type to filter · ↑↓ navigate · enter select · esc close"))
+	} else {
+		b.WriteString(headerStyle.Render("Commands"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("Type to filter · ↑↓ navigate · PgUp/PgDn · enter run · esc close"))
+	}
 	b.WriteByte('\n')
 	prompt := "/"
 	if m.paletteFilter != "" {
@@ -162,7 +168,11 @@ func (m model) renderPalette() string {
 
 	items := m.filteredPaletteItems()
 	if len(items) == 0 {
-		b.WriteString(mutedStyle.Render("No matching commands."))
+		if m.pickingModel {
+			b.WriteString(mutedStyle.Render("No matching models."))
+		} else {
+			b.WriteString(mutedStyle.Render("No matching commands."))
+		}
 		return b.String()
 	}
 
@@ -261,7 +271,7 @@ func (m model) ensurePaletteVisible() model {
 
 func (m model) renderFrame() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Hero TUI"))
+	b.WriteString(titleStyle.Render("AI Hero"))
 	b.WriteString(mutedStyle.Render("  ·  "))
 	b.WriteString(screenTabBar(m.screen))
 	b.WriteByte('\n')
@@ -304,9 +314,9 @@ func (m model) footerHints() string {
 		if m.streaming {
 			return "ctrl+c interrupt · esc wait"
 		}
-		return "enter submit · esc clear · /hero-help · 1-6 screens · q quit"
+		return "tab mode · enter send · /hero-model · alt+1-6 screens · ctrl+q quit"
 	}
-	return "1-6 screens · / commands · ctrl+r refresh · d dispatch · q quit"
+	return "alt+1-6 screens · / commands · ctrl+r refresh · d dispatch · ctrl+q quit"
 }
 
 func pendingApprovalStage(st cycle.StatusView) string {

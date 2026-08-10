@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 )
@@ -35,6 +36,13 @@ type CommandRunner interface {
 	Run(ctx context.Context, dir string, path string, args []string) (RunResult, error)
 }
 
+// StreamingCommandRunner streams stdout to stdoutDest while the process runs
+// so callers can parse NDJSON deltas live. Stdout is still captured in RunResult.
+type StreamingCommandRunner interface {
+	CommandRunner
+	RunStreaming(ctx context.Context, dir, path string, args []string, stdoutDest io.Writer) (RunResult, error)
+}
+
 // ExecCommandRunner runs real processes via os/exec.
 type ExecCommandRunner struct{}
 
@@ -56,6 +64,46 @@ func (ExecCommandRunner) Run(ctx context.Context, dir string, path string, args 
 			res.ExitCode = -1
 		}
 		return res, err
+	}
+	return res, nil
+}
+
+// RunStreaming implements StreamingCommandRunner: copies stdout to stdoutDest as it arrives.
+func (ExecCommandRunner) RunStreaming(ctx context.Context, dir, path string, args []string, stdoutDest io.Writer) (RunResult, error) {
+	cmd := exec.CommandContext(ctx, path, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return RunResult{ExitCode: -1}, fmt.Errorf("stdout pipe: %w", err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		return RunResult{Stderr: stderr.Bytes(), ExitCode: -1}, err
+	}
+
+	var captured bytes.Buffer
+	writers := []io.Writer{&captured}
+	if stdoutDest != nil {
+		writers = append(writers, stdoutDest)
+	}
+	_, copyErr := io.Copy(io.MultiWriter(writers...), stdoutPipe)
+	waitErr := cmd.Wait()
+
+	res := RunResult{Stdout: captured.Bytes(), Stderr: stderr.Bytes()}
+	if waitErr != nil {
+		if ee, ok := waitErr.(*exec.ExitError); ok {
+			res.ExitCode = ee.ExitCode()
+		} else {
+			res.ExitCode = -1
+		}
+		return res, waitErr
+	}
+	if copyErr != nil {
+		return res, copyErr
 	}
 	return res, nil
 }

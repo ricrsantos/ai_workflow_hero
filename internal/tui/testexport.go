@@ -153,13 +153,14 @@ func PendingApprovalForTest(st cycle.StatusView) string {
 // EnterConversationForTest switches to the conversation screen.
 func EnterConversationForTest(m model) model {
 	next, _ := m.enterConversation()
-	next.cursorBlinkOn = true
 	return next
 }
 
 // SetConversationInput sets the conversation input buffer.
 func SetConversationInput(m model, input string) model {
 	m.input = input
+	m.inputCursor = runeLen(input)
+	m.chatInputFocused = true
 	return m
 }
 
@@ -277,4 +278,42 @@ func SetHeight(m model, h int) model {
 func CancelConversationStreamForTest(m model) (model, tea.Cmd) {
 	next, cmd := m.handleConversationKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	return next.(model), cmd
+}
+
+// ChatModeForTest returns the active chat mode.
+func ChatModeForTest(m model) string {
+	return m.chatMode
+}
+
+// InputCursorForTest returns the input caret rune offset.
+func InputCursorForTest(m model) int {
+	return m.inputCursor
+}
+
+// ChatInputFocusedForTest reports whether the chat input has focus.
+func ChatInputFocusedForTest(m model) bool {
+	return m.chatInputFocused
+}
+
+// SetChatModeForTest sets the chat mode.
+func SetChatModeForTest(m model, mode string) model {
+	m.chatMode = mode
+	return m
+}
+
+// SetChatModelSlugForTest sets the active chat model slug.
+func SetChatModelSlugForTest(m model, slug string) model {
+	m.chatModelSlug = slug
+	return m
+}
+
+// SetAvailableModelsForTest sets the harness model catalog.
+func SetAvailableModelsForTest(m model, models []string) model {
+	m.availableModels = append([]string(nil), models...)
+	return m
+}
+
+// PickingModelForTest reports whether the model picker is open.
+func PickingModelForTest(m model) bool {
+	return m.pickingModel
 }

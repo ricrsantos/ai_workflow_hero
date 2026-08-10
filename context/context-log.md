@@ -43,3 +43,45 @@
 **Decision / Outcome**: Verified `AGENTS.md`, `current-state.md`, `project.json`, `docs/testing/TESTING.md`, secrets hygiene (`.env.example`, `.gitignore` Hero block). Registered `docs/testing/TESTING.md` in `documents.json`.
 
 **Rationale**: ADR-029 — keep compression files and doc registry current after sync.
+
+---
+
+## 2026-08-10 — TUI title rename
+
+**Decision / Outcome**: TUI header title changed from "Hero TUI" to "AI Hero" (`internal/tui/screens.go`, loading message in `app.go`). Tests green (`go test ./internal/tui/...`).
+
+---
+
+## 2026-08-10 — TUI Chat OpenCode UX + `/hero-model`
+
+**Decision / Outcome**: Chat input redesigned (boxed accent bar, Build/Plan via Tab → Cursor `--mode plan`); boot lists models via `agent models` (`harness.ModelLister`); `/hero-model` picker persists slug to `hero.json` harnesses; `ExecuteRequest.Mode` + `SaveHarnessModel`. Docs: UI-C03-001 §3; asset `hero-model.md`.
+
+---
+
+## 2026-08-10 — Chat input polish
+
+**Decision / Outcome**: Homogeneous `chatBg` inside the input box; blank line between text and Build/model status; removed `type here` and blink/`|` caret; focus-based filled vs hollow caret; ←→ (and Home/End) navigate `inputCursor` for insert/backspace.
+
+---
+
+## 2026-08-10 — Chat accent bar + white caret + no Esc clear
+
+**Decision / Outcome**: Accent bar flush left on every row (solid bg cell, no left padding); white filled caret; Esc no longer clears chat input (hints updated).
+
+---
+
+## 2026-08-10 — Screen/quit shortcuts use modifiers
+
+**Decision / Outcome**: Bare `q` / `1–6` removed (typed into chat). Quit is `ctrl+q`. Screen nav matches `ctrl+N` and `alt+N` (Bubble Tea v1 cannot distinguish Ctrl+digit on most terminals — Alt+digit is the reliable binding; hints show `alt+1-6`). Removed chat empty-input special-case for bare digits/`q`.
+
+---
+
+## 2026-08-10 — Live harness streaming in TUI chat
+
+**Decision / Outcome**: Stream executes no longer wait for full buffered stdout. Cursor `Execute` with `Stream: true` passes `--stream-partial-output` and uses `StreamingCommandRunner.RunStreaming` → `io.Pipe` → `ParseStreamJSON` so `OnStreamDelta` fires while the agent runs. TUI `executeDoneMsg` overwrites agent transcript with canonical `result.Output`. Tests cover flag + mid-run deltas.
+
+---
+
+## 2026-08-10 — Stream thinking + tool activity in TUI chat
+
+**Decision / Outcome**: `OnStreamDelta` now carries `StreamDelta{Kind, Text}` (`text` / `thinking` / `tool`). Parser forwards Cursor `thinking` deltas and `tool_call` started events (plus thinking content parts on assistant messages). TUI shows muted italic `Thinking:` and `→ Read path` above the agent answer; completion still replaces only the agent bubble with `result.Output`. Note: Cursor docs say thinking is suppressed in `--print`, but stream-json examples from Cursor staff include `thinking` events — parse them when present.

@@ -31,11 +31,11 @@ func TestBootHarness_PersistsCursorOnFirstLaunch(t *testing.T) {
 	deps.versionLabel = func(_, _ string) string { return "cursor-agent v1.2.3" }
 
 	var stdout bytes.Buffer
-	adapterOut, err := bootHarness(context.Background(), &stdout, &bytes.Buffer{}, dir, deps)
+	result, err := bootHarness(context.Background(), &stdout, &bytes.Buffer{}, dir, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if adapterOut != adapter {
+	if result.Adapter != adapter {
 		t.Fatal("expected injected adapter")
 	}
 	if !strings.Contains(stdout.String(), "Cursor harness ready") {
@@ -116,6 +116,44 @@ func TestBootHarness_CLIUnavailableAborts(t *testing.T) {
 	}
 	if strings.Contains(stderr.String(), cursoradapter.LoginHint) {
 		t.Fatalf("should not suggest login for missing CLI: %q", stderr.String())
+	}
+}
+
+func TestBootHarness_ListsModelsAndWarnsWhenMissing(t *testing.T) {
+	dir := writeHeroJSONForBootTest(t, []string{"cursor"})
+	// Seed harnesses.cursor.model to something not in the catalog.
+	hero, err := readHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hero.Harnesses = map[string]install.HarnessConfig{
+		"cursor": {Model: "missing-model", EnableFastModel: false},
+	}
+	encoded, _ := json.MarshalIndent(hero, "", "  ")
+	if err := os.WriteFile(filepath.Join(dir, cursoradapter.HeroJSONPath), append(encoded, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	deps := defaultHarnessBootDeps()
+	deps.newAdapter = func(_ string, _ string) (harness.HarnessAdapter, error) {
+		return &bootOKHarness{}, nil
+	}
+	deps.listModels = func(_ context.Context, _ harness.HarnessAdapter) ([]string, error) {
+		return []string{"composer-2.5", "auto"}, nil
+	}
+
+	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Models) != 2 {
+		t.Fatalf("models=%v", result.Models)
+	}
+	if result.ModelSlug != "missing-model" {
+		t.Fatalf("slug=%q", result.ModelSlug)
+	}
+	if result.ModelWarn == "" {
+		t.Fatal("expected model warn")
 	}
 }
 

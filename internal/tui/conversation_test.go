@@ -6,17 +6,20 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
 type streamingHarness struct {
 	deltas        []string
+	events        []harness.StreamDelta
 	sessionID     string
 	cancelCalled  bool
 	lastPrompt    string
 	lastSessionID string
 	lastModel     string
+	lastMode      string
 	lastStageName string
 }
 
@@ -30,12 +33,24 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 	h.lastPrompt = req.Prompt
 	h.lastSessionID = req.SessionID
 	h.lastModel = req.Model
+	h.lastMode = req.Mode
 	h.lastStageName = req.StageName
 	out := ""
-	for _, d := range h.deltas {
-		out += d
-		if req.OnStreamDelta != nil {
-			req.OnStreamDelta(d)
+	if len(h.events) > 0 {
+		for _, ev := range h.events {
+			if ev.Kind == harness.StreamKindText || ev.Kind == "" {
+				out += ev.Text
+			}
+			if req.OnStreamDelta != nil {
+				req.OnStreamDelta(ev)
+			}
+		}
+	} else {
+		for _, d := range h.deltas {
+			out += d
+			if req.OnStreamDelta != nil {
+				req.OnStreamDelta(harness.StreamDelta{Kind: harness.StreamKindText, Text: d})
+			}
 		}
 	}
 	if h.sessionID != "" {
@@ -106,7 +121,7 @@ stages:
 
 func TestConversationScreenNavigation(t *testing.T) {
 	m := NewTestModel(nil)
-	next, _ := HandleTestKey(m, "6")
+	next, _ := HandleTestKey(m, "ctrl+6")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen = %v", CurrentScreen(next))
 	}
@@ -237,6 +252,44 @@ func TestConversationViewWhileStreaming(t *testing.T) {
 	}
 }
 
+func TestConversationThinkingAndToolActivity(t *testing.T) {
+	svc, h := newConversationTestService(t)
+	h.deltas = nil
+	h.events = []harness.StreamDelta{
+		{Kind: harness.StreamKindThinking, Text: "Let me inspect the parser."},
+		{Kind: harness.StreamKindTool, Text: "Read parse.go"},
+		{Kind: harness.StreamKindText, Text: "Looks good."},
+	}
+	h.sessionID = "sess-think"
+
+	m := NewTestModel(svc)
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "check stream")
+	next, cmd := SubmitConversationForTest(m)
+	for IsConversationStreaming(next) {
+		msg := cmd()
+		next2, nextCmd := next.Update(msg)
+		next = next2.(model)
+		cmd = nextCmd
+		if cmd == nil && IsConversationStreaming(next) {
+			t.Fatal("streaming stalled")
+		}
+	}
+	if got := ConversationTranscriptForTest(next); got != "Looks good." {
+		t.Fatalf("agent transcript = %q", got)
+	}
+	view := ViewForTest(next)
+	if !strings.Contains(view, "Thinking:") || !strings.Contains(view, "Let me inspect the parser.") {
+		t.Fatalf("view missing thinking: %q", view)
+	}
+	if !strings.Contains(view, "Read parse.go") {
+		t.Fatalf("view missing tool activity: %q", view)
+	}
+	if !strings.Contains(view, "Looks good.") {
+		t.Fatalf("view missing agent answer: %q", view)
+	}
+}
+
 func TestConversationEmptyStageShowsInput(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
@@ -245,18 +298,62 @@ func TestConversationEmptyStageShowsInput(t *testing.T) {
 	if !strings.Contains(view, "Free chat") {
 		t.Fatalf("expected freechat header: %q", view)
 	}
-	if !strings.Contains(view, "> hello") {
+	if !strings.Contains(view, "hello") {
 		t.Fatalf("expected visible input: %q", view)
 	}
 	if !strings.Contains(view, "composer-2.5") {
-		t.Fatalf("expected default model in header: %q", view)
+		t.Fatalf("expected default model in input status: %q", view)
 	}
-	if !strings.Contains(view, "Message") {
-		t.Fatalf("expected Message label: %q", view)
+	if !strings.Contains(view, "Build") {
+		t.Fatalf("expected Build mode label: %q", view)
 	}
-	// Caret is either a blue block cell or a pipe between blinks.
-	if !strings.Contains(view, "|") && !strings.Contains(view, "> hello") {
-		t.Fatalf("expected input line: %q", view)
+	if !strings.Contains(view, "tab mode") {
+		t.Fatalf("expected tab hint: %q", view)
+	}
+}
+
+func TestConversationTabTogglesMode(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	if ChatModeForTest(m) != harness.ModeBuild {
+		t.Fatalf("mode=%q", ChatModeForTest(m))
+	}
+	next, _ := HandleTestKey(m, "tab")
+	if ChatModeForTest(next) != harness.ModePlan {
+		t.Fatalf("after tab mode=%q", ChatModeForTest(next))
+	}
+	view := ViewForTest(next)
+	if !strings.Contains(view, "Plan") {
+		t.Fatalf("expected Plan label: %q", view)
+	}
+	next2, _ := HandleTestKey(next, "tab")
+	if ChatModeForTest(next2) != harness.ModeBuild {
+		t.Fatalf("toggle back mode=%q", ChatModeForTest(next2))
+	}
+}
+
+func TestConversationSubmitPassesModePlan(t *testing.T) {
+	svc, h := newConversationTestService(t)
+	m := NewTestModel(svc)
+	m = EnterConversationForTest(m)
+	m = SetChatModeForTest(m, harness.ModePlan)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m = SetConversationInput(m, "plan please")
+	next, cmd := SubmitConversationForTest(m)
+	for IsConversationStreaming(next) {
+		msg := cmd()
+		next2, nextCmd := next.Update(msg)
+		next = next2.(model)
+		cmd = nextCmd
+		if cmd == nil && IsConversationStreaming(next) {
+			t.Fatal("streaming stalled")
+		}
+	}
+	if h.lastMode != harness.ModePlan {
+		t.Fatalf("mode=%q", h.lastMode)
+	}
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("model=%q", h.lastModel)
 	}
 }
 
@@ -264,26 +361,84 @@ func TestConversationInputGuidanceWhenEmpty(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	view := ViewForTest(m)
-	if !strings.Contains(view, "type here") {
-		t.Fatalf("expected placeholder: %q", view)
+	if strings.Contains(view, "type here") {
+		t.Fatalf("placeholder must be removed: %q", view)
 	}
-	if !strings.Contains(view, "Enter send") {
+	if !strings.Contains(view, "enter send") {
 		t.Fatalf("expected input hints: %q", view)
 	}
-	if !strings.Contains(view, "|") && !strings.Contains(view, "> ") {
-		t.Fatalf("expected caret/prompt: %q", view)
+	if !strings.Contains(view, "Build") {
+		t.Fatalf("expected Build mode: %q", view)
+	}
+	if !strings.Contains(view, "tab mode") {
+		t.Fatalf("expected tab hint: %q", view)
+	}
+	if !ChatInputFocusedForTest(m) {
+		t.Fatal("expected chat input focused on conversation screen")
+	}
+}
+
+func TestConversationArrowKeysMoveCursor(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "abcd")
+	if InputCursorForTest(m) != 4 {
+		t.Fatalf("cursor=%d", InputCursorForTest(m))
+	}
+	next, _ := HandleTestKey(m, "left")
+	if InputCursorForTest(next) != 3 {
+		t.Fatalf("after left cursor=%d", InputCursorForTest(next))
+	}
+	next, _ = HandleTestKey(next, "left")
+	next, _ = HandleTestKey(next, "left")
+	if InputCursorForTest(next) != 1 {
+		t.Fatalf("cursor=%d", InputCursorForTest(next))
+	}
+	// Insert in the middle.
+	next, _ = HandleTestKeyMsg(next, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	if ConversationInputForTest(next) != "aXbcd" {
+		t.Fatalf("input=%q", ConversationInputForTest(next))
+	}
+	if InputCursorForTest(next) != 2 {
+		t.Fatalf("cursor after insert=%d", InputCursorForTest(next))
+	}
+	next, _ = HandleTestKey(next, "home")
+	if InputCursorForTest(next) != 0 {
+		t.Fatalf("home cursor=%d", InputCursorForTest(next))
+	}
+	next, _ = HandleTestKey(next, "end")
+	if InputCursorForTest(next) != 5 {
+		t.Fatalf("end cursor=%d", InputCursorForTest(next))
+	}
+}
+
+func TestConversationFocusCaretNoBlinkPipe(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	view := ViewForTest(m)
+	if strings.Contains(view, "type here") {
+		t.Fatalf("unexpected placeholder: %q", view)
+	}
+	// Leave chat → hollow caret when returning via view of unfocused model.
+	next, _ := HandleTestKey(m, "ctrl+1")
+	if ChatInputFocusedForTest(next) {
+		t.Fatal("expected focus lost on Status")
+	}
+	next = EnterConversationForTest(next)
+	if !ChatInputFocusedForTest(next) {
+		t.Fatal("expected focus restored")
 	}
 }
 
 func TestConversationScreenNavFromEmptyInput(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
-	next, _ := HandleTestKey(m, "1")
+	next, _ := HandleTestKey(m, "ctrl+1")
 	if CurrentScreen(next) != ScreenStatus {
 		t.Fatalf("screen = %v, want Status", CurrentScreen(next))
 	}
 	m = EnterConversationForTest(m)
-	next, _ = HandleTestKey(m, "5")
+	next, _ = HandleTestKey(m, "ctrl+5")
 	if CurrentScreen(next) != ScreenEvents {
 		t.Fatalf("screen = %v, want Events", CurrentScreen(next))
 	}
@@ -298,6 +453,32 @@ func TestConversationDigitsTypeWhenInputNonEmpty(t *testing.T) {
 		t.Fatalf("screen = %v, want Conversation", CurrentScreen(next))
 	}
 	if ConversationInputForTest(next) != "opt 1" {
+		t.Fatalf("input = %q", ConversationInputForTest(next))
+	}
+}
+
+func TestConversationBareDigitDoesNotNavigateWhenEmpty(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	next, _ := HandleTestKey(m, "1")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen = %v, want Conversation (bare 1 types)", CurrentScreen(next))
+	}
+	if ConversationInputForTest(next) != "1" {
+		t.Fatalf("input = %q", ConversationInputForTest(next))
+	}
+}
+
+func TestConversationBareQTypesNotQuit(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	next, cmd := HandleTestKey(m, "q")
+	if cmd != nil {
+		if _, ok := cmd().(tea.QuitMsg); ok {
+			t.Fatal("bare q must not quit")
+		}
+	}
+	if ConversationInputForTest(next) != "q" {
 		t.Fatalf("input = %q", ConversationInputForTest(next))
 	}
 }

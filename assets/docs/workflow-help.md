@@ -270,6 +270,7 @@ hero update-models
 | `/hero-status` | Show cycle status in chat |
 | `/hero-cycles` | List all cycles with per-etapa metrics (SQLite + archive folders) |
 | `/hero-todos` | Show pending items from `context/current-state.md` (run `/hero-sync` first when docs changed) |
+| `/hero-model` | Select TUI chat model (persists to `hero.json`; TUI Chat screen) |
 | `/hero-help` | List Runtime commands |
 
 ---
@@ -506,7 +507,7 @@ Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`
 
 ## 10. Comandos Runtime (chat do Cursor)
 
-`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-continue`, `/hero-back`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-cycles`, `/hero-todos`, `/hero-help` — ver tabela da §10 (inglês).
+`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-continue`, `/hero-back`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-cycles`, `/hero-todos`, `/hero-model`, `/hero-help` — ver tabela da §10 (inglês).
 
 ---
 

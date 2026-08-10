@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
 func TestParseJSONResult(t *testing.T) {
@@ -32,8 +33,10 @@ func TestParseStreamJSONPartialSkipsDuplicates(t *testing.T) {
 	}, "\n") + "\n"
 
 	var deltas []string
-	res, err := cursoradapter.ParseStreamJSON(strings.NewReader(ndjson), func(d string) {
-		deltas = append(deltas, d)
+	res, err := cursoradapter.ParseStreamJSON(strings.NewReader(ndjson), func(d harness.StreamDelta) {
+		if d.Kind == harness.StreamKindText || d.Kind == "" {
+			deltas = append(deltas, d.Text)
+		}
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +46,42 @@ func TestParseStreamJSONPartialSkipsDuplicates(t *testing.T) {
 	}
 	if strings.Join(deltas, "") != "Hello" {
 		t.Fatalf("deltas=%v", deltas)
+	}
+}
+
+func TestParseStreamJSONThinkingAndToolCalls(t *testing.T) {
+	ndjson := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"s"}`,
+		`{"type":"thinking","subtype":"delta","text":"The user ","session_id":"s"}`,
+		`{"type":"thinking","subtype":"delta","text":"wants a summary.","session_id":"s"}`,
+		`{"type":"thinking","subtype":"completed","session_id":"s"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I will read "}]},"session_id":"s","timestamp_ms":1}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"the file."}]},"session_id":"s","timestamp_ms":2}`,
+		`{"type":"tool_call","subtype":"started","call_id":"c1","tool_call":{"readToolCall":{"args":{"path":"README.md"}}},"session_id":"s"}`,
+		`{"type":"tool_call","subtype":"completed","call_id":"c1","tool_call":{"readToolCall":{"args":{"path":"README.md"},"result":{"success":{"content":"# Hi"}}}},"session_id":"s"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","text":"Looks good. "},{"type":"text","text":"Done."}]},"session_id":"s","timestamp_ms":3}`,
+		`{"type":"result","subtype":"success","is_error":false,"duration_ms":5,"result":"I will read the file.Done.","session_id":"s"}`,
+	}, "\n") + "\n"
+
+	var kinds []string
+	var texts []string
+	res, err := cursoradapter.ParseStreamJSON(strings.NewReader(ndjson), func(d harness.StreamDelta) {
+		kinds = append(kinds, string(d.Kind))
+		texts = append(texts, d.Text)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Output != "I will read the file.Done." {
+		t.Fatalf("output=%q", res.Output)
+	}
+	wantKinds := []string{"thinking", "thinking", "text", "text", "tool", "thinking", "text"}
+	wantTexts := []string{"The user ", "wants a summary.", "I will read ", "the file.", "Read README.md", "Looks good. ", "Done."}
+	if strings.Join(kinds, "|") != strings.Join(wantKinds, "|") {
+		t.Fatalf("kinds=%v want %v", kinds, wantKinds)
+	}
+	if strings.Join(texts, "|") != strings.Join(wantTexts, "|") {
+		t.Fatalf("texts=%v want %v", texts, wantTexts)
 	}
 }
 

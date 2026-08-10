@@ -9,32 +9,54 @@ var (
 	colorRed    = lipgloss.Color("1")
 	colorBlue   = lipgloss.Color("4")
 	colorMuted  = lipgloss.Color("8")
+	chatBg      = lipgloss.Color("236")
 )
 
 var (
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
-	headerStyle = lipgloss.NewStyle().Bold(true).Underline(true)
-	footerStyle = lipgloss.NewStyle().Foreground(colorMuted)
+	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
+	headerStyle  = lipgloss.NewStyle().Bold(true).Underline(true)
+	footerStyle  = lipgloss.NewStyle().Foreground(colorMuted)
 	successStyle = lipgloss.NewStyle().Foreground(colorGreen)
-	warnStyle = lipgloss.NewStyle().Foreground(colorYellow)
-	errorStyle = lipgloss.NewStyle().Foreground(colorRed)
-	infoStyle = lipgloss.NewStyle().Foreground(colorBlue)
+	warnStyle    = lipgloss.NewStyle().Foreground(colorYellow)
+	errorStyle   = lipgloss.NewStyle().Foreground(colorRed)
+	infoStyle    = lipgloss.NewStyle().Foreground(colorBlue)
+	thinkingStyle = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
 	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue).Background(lipgloss.Color("236"))
-	mutedStyle = lipgloss.NewStyle().Foreground(colorMuted)
-	// Reverse block caret for the conversation input (UI-C03-001 §3).
-	caretStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("15")).
-			Background(colorBlue).
-			Bold(true)
+	mutedStyle   = lipgloss.NewStyle().Foreground(colorMuted)
+	// Filled caret when chat input has focus (white — distinct from accent bar).
+	caretFilledStyle = lipgloss.NewStyle().
+				Foreground(chatBg).
+				Background(lipgloss.Color("15")).
+				Bold(true)
+	// Outline caret when chat input lost focus.
+	caretHollowStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("15")).
+				Background(chatBg).
+				Bold(true)
 	promptStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
+	// OpenCode-style chat input: no left padding so accent bar sits on the edge.
+	chatBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Background(chatBg).
+			Padding(0, 1, 0, 0) // top, right, bottom, left — flush left for accent
+	chatLineStyle = lipgloss.NewStyle().Background(chatBg)
+	chatModeBuildStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue).Background(chatBg)
+	chatModePlanStyle  = lipgloss.NewStyle().Bold(true).Foreground(colorYellow).Background(chatBg)
+	// Solid 1-cell accent bar (full-height when painted on every row).
+	chatAccentBuild = lipgloss.NewStyle().Background(colorBlue).Foreground(colorBlue)
+	chatAccentPlan  = lipgloss.NewStyle().Background(colorYellow).Foreground(colorYellow)
+	chatTextStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(chatBg)
+	chatMutedInBox = lipgloss.NewStyle().Foreground(colorMuted).Background(chatBg)
+	chatModelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(chatBg)
 	// Output panel body: soft readable text (not raw default black/white).
-	outputBodyStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "236", Dark: "252"})
+	outputBodyStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "236", Dark: "252"})
 	outputCycleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
 	outputTotalStyle = lipgloss.NewStyle().Foreground(colorGreen)
 	outputPanelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBlue).
-			Padding(0, 1)
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colorBlue).
+				Padding(0, 1)
 )
 
 func stageStatusStyle(status string) lipgloss.Style {

@@ -42,12 +42,15 @@ New screen (or primary mode when an etapa requires interações):
 
 | Region | Content |
 |---|---|
-| Header | With etapa: Cycle C{N}, etapa name, iteration, model slug, harness session. Without etapa (**freechat**): `Free chat · harness <tool> · model <slug>` |
-| Transcript | User and agent messages; agent text **streams** as `stream-json` deltas arrive |
-| Input | Multiline prompt; Enter submits **interação**; Esc cancels input |
-| Footer | Hints: `/hero-help`, 1–6 screens, etapa controls when applicable |
+| Header | With etapa: Cycle C{N}, etapa name, iteration, harness session. Without etapa (**freechat**): `Free chat · harness <tool>` |
+| Transcript | User, **thinking** (muted), **tool activity**, and agent answer; all stream as `stream-json` events arrive |
+
+| Input | OpenCode-style boxed prompt with colored accent bar; status line shows **Build** or **Plan**, model slug, and harness name; Enter submits **interação**; Esc clears input; **Tab** toggles Build ↔ Plan (Plan → Cursor Agent CLI `--mode plan`) |
+| Footer | Hints: `tab mode`, `/hero-model`, `alt+1–6` screens, `ctrl+q` quit |
 
 Chat **works without an active cycle/etapa** using `hero.json` → `harnesses.<tool>` defaults (Cursor: `composer-2.5`, `enable_fast_model: false`). Freechat session ids stay in TUI memory for the process lifetime.
+
+At TUI boot, after harness validation, Hero calls the harness model catalog (`agent models` / `--list-models` for Cursor). Models are available via `/hero-model` in the palette; selection updates the Chat screen and persists to `hero.json` → `harnesses.<tool>.model`. If listing fails, boot continues with the configured slug (no hard fail).
 
 During harness execution:
 
@@ -78,6 +81,7 @@ Replaces UI-C02 colon labels. All Hero palette action labels:
 | Help | `/hero-help` |
 | List cycles | `/hero-cycles` |
 | Show todos | `/hero-todos` |
+| Select chat model | `/hero-model` |
 
 Screen navigation (`Go: Status`, …) may remain for non-slash jumps.
 
@@ -117,7 +121,9 @@ Include archive-only cycles from `.workflow-hero/cycles/archive/` when absent fr
 
 ## 7. Streaming rules
 
-- Use harness `stream-json` when TUI conversation is active.
+- Use harness `stream-json` with `--stream-partial-output` when TUI conversation is active.
+- Pipe CLI stdout into the NDJSON parser **while the process runs** so transcript deltas appear before exit (not only after buffered `Run`).
+- Forward `thinking` deltas (muted italic `Thinking:`) and `tool_call` started events (`→ Read path`) in addition to assistant text. Thinking/tools stay in the transcript after completion; the agent bubble is replaced with canonical `result.Output`.
 - Buffer partial lines; update transcript incrementally (lipgloss-safe wrapping).
 - On Ctrl+C during stream: call harness `Cancel` if supported; show `Interrupted`.
 

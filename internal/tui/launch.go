@@ -44,6 +44,11 @@ func CanLaunch(stdout io.Writer) *LaunchRefusal {
 
 // Run launches the Bubble Tea application using an opened cycle service.
 func Run(svc *cycle.Service) error {
+	return RunWithChat(svc, nil, "", "")
+}
+
+// RunWithChat launches the TUI with optional harness model catalog from boot.
+func RunWithChat(svc *cycle.Service, models []string, modelSlug, modelWarn string) error {
 	if svc == nil {
 		return fmt.Errorf("cycle service is nil")
 	}
@@ -52,7 +57,7 @@ func Run(svc *cycle.Service) error {
 	defer restoreLog()
 
 	slog.Info("starting hero tui")
-	m := newModel(svc)
+	m := newModelWithChat(svc, models, modelSlug, modelWarn)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		slog.Error("tui exited with error", "error", err)
@@ -122,9 +127,9 @@ func RunDefault(stdout, stderr io.Writer) error {
 		clierr.Format(stderr, e)
 		return e
 	}
-	svc.Harness = adapter
+	svc.Harness = adapter.Adapter
 
-	if err := Run(svc); err != nil {
+	if err := RunWithChat(svc, adapter.Models, adapter.ModelSlug, adapter.ModelWarn); err != nil {
 		e := clierr.New(err.Error())
 		clierr.Format(stderr, e)
 		return e

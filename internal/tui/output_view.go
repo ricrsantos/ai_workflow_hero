@@ -116,8 +116,17 @@ func (m model) handleOutputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.outputTitle = ""
 		m.outputErr = false
 		return m, nil
-	case "ctrl+c", "q":
+	case "ctrl+c", "ctrl+q":
 		return m, tea.Quit
+	case "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5", "ctrl+6",
+		"alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6",
+		"ctrl+r", "f5":
+		m.outputLines = nil
+		m.outputRaw = ""
+		m.outputOffset = 0
+		m.outputTitle = ""
+		m.outputErr = false
+		return m.handleKey(msg)
 	case "up", "ctrl+p":
 		if m.outputOffset > 0 {
 			m.outputOffset--

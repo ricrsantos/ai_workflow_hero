@@ -1,9 +1,9 @@
 package cursor
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -180,8 +180,15 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		format = "stream-json"
 	}
 	args := []string{"--print", "--output-format", format}
+	if req.Stream {
+		// Character-level assistant deltas while the process runs.
+		args = append(args, "--stream-partial-output")
+	}
 	if model := strings.TrimSpace(req.Model); model != "" {
 		args = append(args, "--model", model)
+	}
+	if mode := strings.TrimSpace(strings.ToLower(req.Mode)); mode == harness.ModePlan || mode == "plan" {
+		args = append(args, "--mode", "plan")
 	}
 	if sessionID != "" {
 		args = append(args, "--resume="+sessionID)
@@ -198,10 +205,22 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	a.setRunning(trackID, cancel)
 	defer a.clearRunning(trackID, cancel)
 
-	a.log().Info("cursor agent execute start", "format", format, "stage", req.StageName, "resume", sessionID != "")
+	a.log().Info("cursor agent execute start", "format", format, "stage", req.StageName, "resume", sessionID != "", "stream", req.Stream)
 	start := time.Now()
 	runner := a.runner()
-	res, err := runner.Run(runCtx, dir, spec.Path, fullArgs)
+
+	var (
+		parsed *harness.ExecutionResult
+		res    RunResult
+	)
+	if req.Stream {
+		parsed, res, err = a.executeStreamLive(runCtx, runner, dir, spec.Path, fullArgs, req.OnStreamDelta)
+	} else {
+		res, err = runner.Run(runCtx, dir, spec.Path, fullArgs)
+		if err == nil {
+			parsed, err = ParseJSONResult(res.Stdout)
+		}
+	}
 	elapsed := time.Since(start)
 
 	stdout, stderr := string(res.Stdout), string(res.Stderr)
@@ -218,16 +237,9 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		a.log().Error("cursor agent execute failed", "error", err, "stderr", firstLine(stderr, ""))
 		return nil, fmt.Errorf("cursor agent execute failed: %w (%s)", err, firstLine(stderr, stdout))
 	}
-
-	var parsed *harness.ExecutionResult
-	if req.Stream {
-		parsed, err = ParseStreamJSON(bytes.NewReader(res.Stdout), req.OnStreamDelta)
-	} else {
-		parsed, err = ParseJSONResult(res.Stdout)
-	}
-	if err != nil {
-		a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: err.Error()})
-		return nil, err
+	if parsed == nil {
+		a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: "empty parse result"})
+		return nil, fmt.Errorf("cursor agent execute failed: empty parse result")
 	}
 	if parsed.Duration == 0 {
 		parsed.Duration = elapsed
@@ -238,6 +250,51 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	a.rememberSession(parsed.SessionID, req, harness.StatusCompleted, "ok")
 	a.log().Info("cursor agent execute done", "session_id", parsed.SessionID, "duration_ms", parsed.Duration.Milliseconds())
 	return parsed, nil
+}
+
+// executeStreamLive pipes CLI stdout into ParseStreamJSON while the process runs
+// so OnStreamDelta fires before the agent exits.
+func (a *Adapter) executeStreamLive(
+	ctx context.Context,
+	runner CommandRunner,
+	dir, path string,
+	args []string,
+	onDelta func(harness.StreamDelta),
+) (*harness.ExecutionResult, RunResult, error) {
+	pr, pw := io.Pipe()
+	type parseOut struct {
+		res *harness.ExecutionResult
+		err error
+	}
+	parsedCh := make(chan parseOut, 1)
+	go func() {
+		res, err := ParseStreamJSON(pr, onDelta)
+		parsedCh <- parseOut{res: res, err: err}
+	}()
+
+	var (
+		runRes RunResult
+		runErr error
+	)
+	if sr, ok := runner.(StreamingCommandRunner); ok {
+		runRes, runErr = sr.RunStreaming(ctx, dir, path, args, pw)
+	} else {
+		// Fallback: buffer then feed the parser (deltas still fire, but only after exit).
+		runRes, runErr = runner.Run(ctx, dir, path, args)
+		if len(runRes.Stdout) > 0 {
+			_, _ = pw.Write(runRes.Stdout)
+		}
+	}
+	_ = pw.Close()
+	out := <-parsedCh
+
+	if runErr != nil {
+		return out.res, runRes, runErr
+	}
+	if out.err != nil {
+		return nil, runRes, out.err
+	}
+	return out.res, runRes, nil
 }
 
 // Cancel implements harness.HarnessAdapter.

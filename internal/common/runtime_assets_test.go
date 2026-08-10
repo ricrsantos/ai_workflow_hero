@@ -662,7 +662,7 @@ func TestRuntimeAssets_HyphenSlashVocabulary(t *testing.T) {
 	canonical := []string{
 		"/hero-new", "/hero-start", "/hero-approve", "/hero-reject", "/hero-cancel",
 		"/hero-finish", "/hero-archive", "/hero-resume", "/hero-sync", "/hero-status",
-		"/hero-continue", "/hero-back", "/hero-help", "/hero-cycles", "/hero-todos",
+		"/hero-continue", "/hero-back", "/hero-help", "/hero-cycles", "/hero-todos", "/hero-model",
 	}
 	allContent := loadAllAssetContent(t, "cursor")
 	for _, slash := range canonical {

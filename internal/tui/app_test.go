@@ -37,7 +37,7 @@ func TestNavigateScreens(t *testing.T) {
 	if CurrentScreen(m) != ScreenStatus {
 		t.Fatalf("screen = %v", CurrentScreen(m))
 	}
-	next, _ := HandleTestKey(m, "3")
+	next, _ := HandleTestKey(m, "ctrl+3")
 	if CurrentScreen(next) != ScreenArtifacts {
 		t.Fatalf("artifacts screen = %v", CurrentScreen(next))
 	}
@@ -78,7 +78,7 @@ func TestHeroPaletteSlashLabels(t *testing.T) {
 		"/hero-new", "/hero-start", "/hero-sync", "/hero-status",
 		"/hero-approve", "/hero-reject", "/hero-continue", "/hero-back",
 		"/hero-cancel", "/hero-finish", "/hero-archive", "/hero-resume",
-		"/hero-cycles", "/hero-todos", "/hero-help",
+		"/hero-cycles", "/hero-todos", "/hero-model", "/hero-help",
 	}
 	labels := map[string]bool{}
 	for _, item := range PaletteItemsForTest(m) {
@@ -471,4 +471,72 @@ stages:
 		t.Fatal(err)
 	}
 	return svc
+}
+
+func TestHeroModelPickerSelectsAndPersists(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hero := []byte(`{
+  "cli": {"version": "1.0.0", "installedAt": "2026-01-01T00:00:00Z", "tools": ["cursor"]},
+  "assets": {"version": "1.0.0", "installedAt": "2026-01-01T00:00:00Z"},
+  "harnesses": {"cursor": {"model": "composer-2.5", "enable_fast_model": false}}
+}
+`)
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), hero, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".workflow-hero", "cycles", "current"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := []byte(`title: Model Picker
+objective: test
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+`)
+	if err := os.WriteFile(filepath.Join(dir, ".workflow-hero", "cycles", "current", "workflow-config.yml"), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	m := NewTestModel(svc)
+	m = SetAvailableModelsForTest(m, []string{"composer-2.5", "cursor-grok-4.5-high"})
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	next, _ := RunPaletteItemForTest(m, "/hero-model")
+	if !PickingModelForTest(next) {
+		t.Fatal("expected model picker open")
+	}
+	view := ViewForTest(next)
+	if !strings.Contains(view, "Models") || !strings.Contains(view, "cursor-grok-4.5-high") {
+		t.Fatalf("picker view=%q", view)
+	}
+	next = SetPaletteFilter(next, "grok")
+	items := FilteredPalette(next)
+	if len(items) != 1 || items[0].Label != "cursor-grok-4.5-high" {
+		t.Fatalf("filtered=%v", items)
+	}
+	next = SetPaletteIndexForTest(next, 0)
+	next, _ = HandleTestKey(next, "enter")
+	if PickingModelForTest(next) {
+		t.Fatal("picker should close after select")
+	}
+	data, err := os.ReadFile(filepath.Join(cfgDir, "hero.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"model": "cursor-grok-4.5-high"`) {
+		t.Fatalf("hero.json not updated: %s", data)
+	}
+	if StatusKindForTest(next) != "ok" {
+		t.Fatalf("status=%s", StatusKindForTest(next))
+	}
 }

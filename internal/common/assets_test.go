@@ -15,7 +15,7 @@ func TestAssets_CommandInventory(t *testing.T) {
 		"hero-new", "hero-start", "hero-approve", "hero-reject",
 		"hero-cancel", "hero-finish", "hero-archive", "hero-resume",
 		"hero-sync", "hero-status", "hero-help", "hero-continue", "hero-back",
-		"hero-cycles", "hero-todos",
+		"hero-cycles", "hero-todos", "hero-model",
 	}
 
 	for _, cmd := range commands {
@@ -128,7 +128,7 @@ func TestAssets_UserGuide(t *testing.T) {
 	}
 }
 
-// TestAssets_OneFilePerCommand verifies command count matches ADR-028 (15 commands).
+// TestAssets_OneFilePerCommand verifies command count (ADR-028 inventory + /hero-model).
 func TestAssets_OneFilePerCommand(t *testing.T) {
 	count := 0
 	_ = fs.WalkDir(assets.FS, "cursor/commands", func(path string, d fs.DirEntry, err error) error {
@@ -138,8 +138,8 @@ func TestAssets_OneFilePerCommand(t *testing.T) {
 		count++
 		return nil
 	})
-	if count != 15 {
-		t.Errorf("expected 15 command files, got %d", count)
+	if count != 16 {
+		t.Errorf("expected 16 command files, got %d", count)
 	}
 }
 

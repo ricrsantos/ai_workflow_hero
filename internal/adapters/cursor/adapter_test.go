@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
@@ -195,7 +198,7 @@ type fakeCall struct {
 	capture   *[]string
 }
 
-func (f *fakeRunner) Run(_ context.Context, _ string, _ string, args []string) (cursoradapter.RunResult, error) {
+func (f *fakeRunner) match(args []string) (cursoradapter.RunResult, error) {
 	for i, h := range f.handlers {
 		if h.matchArgs == nil || h.matchArgs(args) {
 			if h.capture != nil {
@@ -211,6 +214,26 @@ func (f *fakeRunner) Run(_ context.Context, _ string, _ string, args []string) (
 	}
 	f.t.Fatalf("unexpected Run args: %v", args)
 	return cursoradapter.RunResult{}, errors.New("unexpected")
+}
+
+func (f *fakeRunner) Run(_ context.Context, _ string, _ string, args []string) (cursoradapter.RunResult, error) {
+	return f.match(args)
+}
+
+// RunStreaming writes stdout to dest line-by-line so ParseStreamJSON can emit live deltas.
+func (f *fakeRunner) RunStreaming(_ context.Context, _ string, _ string, args []string, stdoutDest io.Writer) (cursoradapter.RunResult, error) {
+	res, err := f.match(args)
+	if stdoutDest != nil && len(res.Stdout) > 0 {
+		for _, line := range bytes.SplitAfter(res.Stdout, []byte("\n")) {
+			if len(line) == 0 {
+				continue
+			}
+			if _, werr := stdoutDest.Write(line); werr != nil {
+				return res, werr
+			}
+		}
+	}
+	return res, err
 }
 
 func withCursorAssets(t *testing.T) string {
@@ -348,6 +371,58 @@ func TestExecutePassesModelFlag(t *testing.T) {
 	}
 }
 
+func TestExecutePassesModePlanFlag(t *testing.T) {
+	dir := withCursorAssets(t)
+	fixture := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"ok","session_id":"s-mode"}`
+	var gotArgs []string
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool { return true },
+		result:    cursoradapter.RunResult{Stdout: []byte(fixture)},
+		capture:   &gotArgs,
+	}}}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt: "plan this",
+		Model:  "composer-2.5",
+		Mode:   harness.ModePlan,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsArg(gotArgs, "--model") || !containsArg(gotArgs, "composer-2.5") {
+		t.Fatalf("expected --model, args=%v", gotArgs)
+	}
+	if !containsArg(gotArgs, "--mode") || !containsArg(gotArgs, "plan") {
+		t.Fatalf("expected --mode plan, args=%v", gotArgs)
+	}
+}
+
+func TestExecuteOmitsModeForBuild(t *testing.T) {
+	dir := withCursorAssets(t)
+	fixture := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"ok","session_id":"s-build"}`
+	var gotArgs []string
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool { return true },
+		result:    cursoradapter.RunResult{Stdout: []byte(fixture)},
+		capture:   &gotArgs,
+	}}}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt: "build this",
+		Mode:   harness.ModeBuild,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsArg(gotArgs, "--mode") {
+		t.Fatalf("build mode must omit --mode, args=%v", gotArgs)
+	}
+}
+
 func TestExecuteResumeFlag(t *testing.T) {
 	dir := withCursorAssets(t)
 	fixture := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"ok","session_id":"sess-1"}`
@@ -380,19 +455,23 @@ func TestExecuteStreamJSONFixture(t *testing.T) {
 	stream.WriteString(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"world"}]},"session_id":"s1"}` + "\n")
 	stream.WriteString(`{"type":"result","subtype":"success","is_error":false,"duration_ms":9,"result":"Hello world","session_id":"s1"}` + "\n")
 
+	var gotArgs []string
 	var deltas []string
 	adapter := cursoradapter.NewAdapter(dir)
 	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
 	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
 		matchArgs: func(args []string) bool { return containsArg(args, "stream-json") },
 		result:    cursoradapter.RunResult{Stdout: stream.Bytes()},
+		capture:   &gotArgs,
 	}}}
 
 	res, err := adapter.Execute(context.Background(), harness.ExecuteRequest{
 		Prompt: "hi",
 		Stream: true,
-		OnStreamDelta: func(d string) {
-			deltas = append(deltas, d)
+		OnStreamDelta: func(d harness.StreamDelta) {
+			if d.Kind == harness.StreamKindText || d.Kind == "" {
+				deltas = append(deltas, d.Text)
+			}
 		},
 	})
 	if err != nil {
@@ -404,6 +483,75 @@ func TestExecuteStreamJSONFixture(t *testing.T) {
 	if strings.Join(deltas, "") != "Hello world" {
 		t.Fatalf("deltas=%v", deltas)
 	}
+	if !containsArg(gotArgs, "--stream-partial-output") {
+		t.Fatalf("expected --stream-partial-output, args=%v", gotArgs)
+	}
+}
+
+func TestExecuteStreamDeltasArriveBeforeProcessEnds(t *testing.T) {
+	dir := withCursorAssets(t)
+	line1 := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"live"}]},"session_id":"s2"}` + "\n"
+	line2 := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"live","session_id":"s2"}` + "\n"
+
+	var processDone atomic.Bool
+	var sawLiveDelta atomic.Bool
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.Runner = &slowStreamRunner{
+		t: t,
+		stdout: []byte(line1 + line2),
+		betweenLines: 20 * time.Millisecond,
+		onFinished: func() { processDone.Store(true) },
+	}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt: "hi",
+		Stream: true,
+		OnStreamDelta: func(d harness.StreamDelta) {
+			if d.Text == "live" && !processDone.Load() {
+				sawLiveDelta.Store(true)
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sawLiveDelta.Load() {
+		t.Fatal("expected OnStreamDelta before process finished writing")
+	}
+}
+
+// slowStreamRunner writes NDJSON lines with a delay so live parse can observe mid-run deltas.
+type slowStreamRunner struct {
+	t            *testing.T
+	stdout       []byte
+	betweenLines time.Duration
+	onFinished   func()
+}
+
+func (s *slowStreamRunner) Run(context.Context, string, string, []string) (cursoradapter.RunResult, error) {
+	s.t.Fatal("Run should not be called when RunStreaming is available")
+	return cursoradapter.RunResult{}, errors.New("unexpected Run")
+}
+
+func (s *slowStreamRunner) RunStreaming(_ context.Context, _ string, _ string, _ []string, stdoutDest io.Writer) (cursoradapter.RunResult, error) {
+	for i, line := range bytes.SplitAfter(s.stdout, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		if i > 0 && s.betweenLines > 0 {
+			time.Sleep(s.betweenLines)
+		}
+		if stdoutDest != nil {
+			if _, err := stdoutDest.Write(line); err != nil {
+				return cursoradapter.RunResult{Stdout: s.stdout}, err
+			}
+		}
+	}
+	if s.onFinished != nil {
+		s.onFinished()
+	}
+	return cursoradapter.RunResult{Stdout: s.stdout}, nil
 }
 
 func TestDispatchDefaultPusherUsesExecute(t *testing.T) {

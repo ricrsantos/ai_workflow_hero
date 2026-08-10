@@ -29,6 +29,8 @@ const (
 	actionImportCommand
 	actionRefresh
 	actionQuit
+	actionModel
+	actionSelectModel
 )
 
 type paletteItem struct {
@@ -61,6 +63,7 @@ func defaultHeroPaletteItems() []paletteItem {
 		{label: "/hero-resume", hint: "reactivate cycle", action: actionResume},
 		{label: "/hero-cycles", hint: "list cycles", action: actionCycles},
 		{label: "/hero-todos", hint: "pending items", action: actionTodos},
+		{label: "/hero-model", hint: "select chat model", action: actionModel},
 		{label: "/hero-help", hint: "workflow guide", action: actionHelp},
 		{label: "Refresh", hint: "reload from store", action: actionRefresh},
 		{label: "Quit", hint: "exit TUI", action: actionQuit},

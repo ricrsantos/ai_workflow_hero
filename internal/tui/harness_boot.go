@@ -19,6 +19,14 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 )
 
+// harnessBootResult is the outcome of bootHarness before the Bubble Tea loop.
+type harnessBootResult struct {
+	Adapter   harness.HarnessAdapter
+	Models    []string
+	ModelSlug string
+	ModelWarn string
+}
+
 // harnessBootDeps groups injectable dependencies for harness boot (tests).
 type harnessBootDeps struct {
 	readHeroJSON  func(projectDir string) (install.HeroJSON, error)
@@ -26,6 +34,7 @@ type harnessBootDeps struct {
 	promptTool    func(stdout io.Writer, projectDir string) (string, error)
 	newAdapter    func(projectDir, toolID string) (harness.HarnessAdapter, error)
 	versionLabel  func(projectDir, toolID string) string
+	listModels    func(ctx context.Context, adapter harness.HarnessAdapter) ([]string, error)
 }
 
 func defaultHarnessBootDeps() harnessBootDeps {
@@ -35,15 +44,16 @@ func defaultHarnessBootDeps() harnessBootDeps {
 		promptTool:    promptHarnessTool,
 		newAdapter:    newHarnessAdapter,
 		versionLabel:  cursorVersionLabel,
+		listModels:    listHarnessModels,
 	}
 }
 
 // bootHarness selects (when needed), validates, and persists the harness before TUI start (design D5).
-func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir string, deps harnessBootDeps) (harness.HarnessAdapter, error) {
+func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir string, deps harnessBootDeps) (harnessBootResult, error) {
 	hero, err := deps.readHeroJSON(projectDir)
 	if err != nil {
 		slog.Error("harness boot read hero.json failed", "error", err)
-		return nil, fmt.Errorf("read hero.json: %w", err)
+		return harnessBootResult{}, fmt.Errorf("read hero.json: %w", err)
 	}
 
 	tools := nonEmptyTools(hero.CLI.Tools)
@@ -55,7 +65,7 @@ func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir strin
 		selected, err = deps.promptTool(stdout, projectDir)
 		if err != nil {
 			slog.Error("harness boot prompt failed", "error", err)
-			return nil, err
+			return harnessBootResult{}, err
 		}
 		persist = true
 	} else {
@@ -65,19 +75,19 @@ func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir strin
 	adapter, err := deps.newAdapter(projectDir, selected)
 	if err != nil {
 		slog.Error("harness boot adapter init failed", "tool", selected, "error", err)
-		return nil, err
+		return harnessBootResult{}, err
 	}
 
 	if err := adapter.IsAvailable(ctx); err != nil {
 		slog.Error("harness boot validation failed", "tool", selected, "error", err)
 		formatHarnessBootFailure(stderr, selected, err)
-		return nil, &harnessBootError{tool: selected, cause: err}
+		return harnessBootResult{}, &harnessBootError{tool: selected, cause: err}
 	}
 
 	if persist {
 		if err := deps.writeCLITools(projectDir, []string{selected}); err != nil {
 			slog.Error("harness boot persist cli.tools failed", "error", err)
-			return nil, fmt.Errorf("persist cli.tools: %w", err)
+			return harnessBootResult{}, fmt.Errorf("persist cli.tools: %w", err)
 		}
 		slog.Info("harness boot persisted cli.tools", "tool", selected)
 	}
@@ -91,8 +101,48 @@ func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir strin
 		}
 	}
 
-	slog.Info("harness boot ready", "tool", selected, "adapter", adapter.Name())
-	return adapter, nil
+	slug := install.HarnessModelSlugForProject(projectDir, selected)
+	models := []string{}
+	modelWarn := ""
+	listFn := deps.listModels
+	if listFn == nil {
+		listFn = listHarnessModels
+	}
+	listed, listErr := listFn(ctx, adapter)
+	if listErr != nil {
+		slog.Warn("harness boot list models failed", "tool", selected, "error", listErr)
+	} else {
+		models = listed
+		if slug != "" && len(models) > 0 && !containsString(models, slug) {
+			modelWarn = fmt.Sprintf("configured model %q not in harness catalog", slug)
+			slog.Warn("harness boot model not in catalog", "model", slug)
+		}
+	}
+
+	slog.Info("harness boot ready", "tool", selected, "adapter", adapter.Name(), "models", len(models))
+	return harnessBootResult{
+		Adapter:   adapter,
+		Models:    models,
+		ModelSlug: slug,
+		ModelWarn: modelWarn,
+	}, nil
+}
+
+func listHarnessModels(ctx context.Context, adapter harness.HarnessAdapter) ([]string, error) {
+	lister, ok := adapter.(harness.ModelLister)
+	if !ok {
+		return nil, fmt.Errorf("harness %q does not support model listing", adapter.Name())
+	}
+	return lister.ListModels(ctx)
+}
+
+func containsString(items []string, want string) bool {
+	for _, s := range items {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 type harnessBootError struct {

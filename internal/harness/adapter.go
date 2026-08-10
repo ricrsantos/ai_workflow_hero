@@ -45,8 +45,25 @@ type ExecuteRequest struct {
 	AgentName  string
 	// Model is the harness CLI model slug (e.g. composer-2.5). Empty leaves harness default.
 	Model string
-	// OnStreamDelta receives assistant text chunks when Stream is true (optional).
-	OnStreamDelta func(delta string)
+	// Mode is the agent mode: "build" (default/agent) or "plan". Empty means build.
+	Mode string
+	// OnStreamDelta receives live stream events when Stream is true (optional).
+	OnStreamDelta func(delta StreamDelta)
+}
+
+// StreamKind classifies a live harness stream event for TUI display.
+type StreamKind string
+
+const (
+	StreamKindText     StreamKind = "text"
+	StreamKindThinking StreamKind = "thinking"
+	StreamKindTool     StreamKind = "tool"
+)
+
+// StreamDelta is a live event emitted during Execute when Stream is true.
+type StreamDelta struct {
+	Kind StreamKind
+	Text string
 }
 
 // Usage holds optional token counts parsed from harness output.
@@ -93,3 +110,14 @@ type HarnessAdapter interface {
 	Status(ctx context.Context, sessionID string) (*ExecutionStatus, error)
 	Dispatch(ctx context.Context, req DispatchRequest) (DispatchResult, error)
 }
+
+// ModelLister is implemented by harness adapters that can enumerate available models.
+type ModelLister interface {
+	ListModels(ctx context.Context) ([]string, error)
+}
+
+// Chat mode constants for ExecuteRequest.Mode.
+const (
+	ModeBuild = "build"
+	ModePlan  = "plan"
+)

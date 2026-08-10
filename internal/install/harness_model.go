@@ -2,6 +2,7 @@ package install
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,4 +113,34 @@ func HarnessModelSlugForProject(projectDir, toolID string) string {
 		return ResolveHarnessModelSlug(DefaultHarnesses()["cursor"])
 	}
 	return ResolveHarnessModelSlug(HarnessConfigForTool(hero, toolID))
+}
+
+// SaveHarnessModel updates harnesses.<toolID>.model in hero.json.
+// The slug is stored as-is with enable_fast_model=false (slug is already resolved).
+func SaveHarnessModel(projectDir, toolID, slug string) error {
+	toolID = strings.TrimSpace(toolID)
+	if toolID == "" {
+		toolID = "cursor"
+	}
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return fmt.Errorf("model slug is required")
+	}
+	hero, err := LoadHeroJSON(projectDir)
+	if err != nil {
+		return err
+	}
+	if hero.Harnesses == nil {
+		hero.Harnesses = make(map[string]HarnessConfig)
+	}
+	cfg := hero.Harnesses[toolID]
+	cfg.Model = slug
+	cfg.EnableFastModel = false
+	hero.Harnesses[toolID] = cfg
+	path := filepath.Join(projectDir, cursoradapter.HeroJSONPath)
+	encoded, err := json.MarshalIndent(hero, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(encoded, '\n'), 0o644)
 }
