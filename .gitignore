@@ -24,8 +24,15 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# BEGIN Hero secrets hygiene
+# Real secrets stay local. Commit `.env.example` only.
 .env
+.env.*
+!.env.example
+*.pem
+credentials.json
+secrets.json
+# END Hero secrets hygiene
 
 # Editor/IDE
 # .idea/

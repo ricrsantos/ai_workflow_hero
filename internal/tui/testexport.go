@@ -205,6 +205,58 @@ func ApplyActionResultForTest(m model, msg actionResultMsg) (model, tea.Cmd) {
 	return next.(model), cmd
 }
 
+// RunCmdForTest executes a tea.Cmd, expanding BatchMsg into nested cmds, and
+// returns the first non-tick business message (preferring actionResultMsg).
+func RunCmdForTest(cmd tea.Cmd) tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	var found tea.Msg
+	var walk func(tea.Cmd)
+	walk = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		msg := c()
+		switch m := msg.(type) {
+		case tea.BatchMsg:
+			for _, nested := range m {
+				walk(nested)
+			}
+		case statusTickMsg:
+			// ignore ticker
+		default:
+			if found == nil {
+				found = msg
+			}
+			if _, ok := msg.(actionResultMsg); ok {
+				found = msg
+			}
+		}
+	}
+	walk(cmd)
+	return found
+}
+
+// StatusKindForTest returns the footer status kind name.
+func StatusKindForTest(m model) string {
+	switch m.statusKind {
+	case statusRunning:
+		return "running"
+	case statusOK:
+		return "ok"
+	case statusErr:
+		return "err"
+	default:
+		return "idle"
+	}
+}
+
+// ActionBusyForTest reports whether a palette/dispatch action is in flight.
+func ActionBusyForTest(m model) bool {
+	return m.actionBusy
+}
+
 // OutputOffsetForTest returns the output panel scroll offset.
 func OutputOffsetForTest(m model) int {
 	return m.outputOffset

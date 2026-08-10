@@ -111,7 +111,11 @@ func TestShortActionResultStaysFlash(t *testing.T) {
 	if CurrentScreen(next) == ScreenOutput {
 		t.Fatal("short success must not open output panel")
 	}
-	if !strings.Contains(ViewForTest(next), "Stage approved.") {
-		t.Fatalf("expected flash: %q", ViewForTest(next))
+	view := ViewForTest(next)
+	if !strings.Contains(view, "Stage approved.") {
+		t.Fatalf("expected status bar: %q", view)
+	}
+	if StatusKindForTest(next) != "ok" {
+		t.Fatalf("status=%s", StatusKindForTest(next))
 	}
 }

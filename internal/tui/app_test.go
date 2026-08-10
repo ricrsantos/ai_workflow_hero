@@ -194,10 +194,16 @@ func TestImportCommandDispatch(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected import cmd")
 	}
-	if !contains(ViewForTest(next), "markdown expansion") {
-		t.Fatalf("expected progress flash: %q", ViewForTest(next))
+	if CurrentScreen(next) == ScreenPalette {
+		t.Fatal("palette should close after selecting command")
 	}
-	msg := cmd()
+	if StatusKindForTest(next) != "running" {
+		t.Fatalf("expected running status, got %s view=%q", StatusKindForTest(next), ViewForTest(next))
+	}
+	if !contains(ViewForTest(next), "/opsx-archive") || !contains(ViewForTest(next), "running") {
+		t.Fatalf("expected status bar running: %q", ViewForTest(next))
+	}
+	msg := RunCmdForTest(cmd)
 	result, ok := msg.(actionResultMsg)
 	if !ok {
 		t.Fatalf("msg type %T", msg)
@@ -209,8 +215,9 @@ func TestImportCommandDispatch(t *testing.T) {
 		t.Fatalf("prompt = %q", rec.lastPrompt)
 	}
 	next2, _ := next.Update(result)
-	if !contains(ViewForTest(next2.(model)), "import ok") {
-		t.Fatalf("view: %q", ViewForTest(next2.(model)))
+	view := ViewForTest(next2.(model))
+	if !contains(view, "import ok") {
+		t.Fatalf("view: %q", view)
 	}
 }
 
@@ -233,7 +240,7 @@ func TestImportCommandDispatchUnavailable(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected cmd")
 	}
-	msg := cmd()
+	msg := RunCmdForTest(cmd)
 	result := msg.(actionResultMsg)
 	if result.err == nil {
 		t.Fatal("expected dispatch unavailable error")
@@ -308,7 +315,7 @@ func TestApproveActionWithService(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected approve cmd")
 	}
-	msg := cmd()
+	msg := RunCmdForTest(cmd)
 	result, ok := msg.(actionResultMsg)
 	if !ok {
 		t.Fatalf("msg type %T", msg)
@@ -317,8 +324,9 @@ func TestApproveActionWithService(t *testing.T) {
 		t.Fatal(result.err)
 	}
 	next2, _ := next.Update(result)
-	if next2.(model).View() == "" {
-		t.Fatal("expected view after approve")
+	view := next2.(model).View()
+	if !contains(view, "Stage approved") && !contains(view, "approved") {
+		t.Fatalf("expected status result: %q", view)
 	}
 }
 
@@ -329,7 +337,7 @@ func TestDispatchActionWithService(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected dispatch cmd")
 	}
-	msg := cmd()
+	msg := RunCmdForTest(cmd)
 	result, ok := msg.(actionResultMsg)
 	if !ok {
 		t.Fatalf("msg type %T", msg)
@@ -381,7 +389,7 @@ func TestPaletteScrollKeepsSelectionVisible(t *testing.T) {
 		t.Fatalf("expected range caption: %q", view)
 	}
 	// Top item should no longer be the selected line when scrolled.
-	if strings.Contains(view, "▸  Go: Status") || strings.Contains(view, "▸ Go: Status") {
+	if strings.Contains(view, "▸  Go to - Status") || strings.Contains(view, "▸ Go to - Status") {
 		t.Fatalf("scrolled view should not keep first item selected: %q", view)
 	}
 }

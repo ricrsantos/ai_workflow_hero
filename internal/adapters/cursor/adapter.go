@@ -172,11 +172,8 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	}
 
 	sessionID := strings.TrimSpace(req.SessionID)
-	a.mu.Lock()
-	if sessionID == "" {
-		sessionID = a.resumeID
-	}
-	a.mu.Unlock()
+	// Only resume when the caller passes SessionID explicitly (conversation).
+	// Do not inject adapter.resumeID — that leaked chat/sync sessions into palette Dispatch.
 
 	format := "json"
 	if req.Stream {
@@ -349,12 +346,9 @@ func (a *Adapter) defaultPush(ctx context.Context, req harness.DispatchRequest) 
 		a.log().Error("cursor default push failed", "stage", req.StageName, "error", err)
 		return harness.DispatchResult{}, err
 	}
-	msg := execRes.Summary
+	msg := strings.TrimSpace(execRes.Output)
 	if msg == "" {
-		msg = execRes.Output
-	}
-	if len(msg) > 240 {
-		msg = msg[:237] + "..."
+		msg = strings.TrimSpace(execRes.Summary)
 	}
 	a.log().Info("cursor dispatch via execute", "stage", req.StageName, "session_id", execRes.SessionID)
 	return harness.DispatchResult{Dispatched: true, Message: msg}, nil
@@ -425,7 +419,7 @@ func (a *Adapter) rememberSession(sessionID string, req harness.ExecuteRequest, 
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.resumeID = sessionID
+	// Do not arm resumeID here — callers that need resume pass SessionID explicitly.
 	a.sessions[sessionID] = &sessionState{
 		session: harness.Session{
 			ID:         sessionID,

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
@@ -37,8 +38,12 @@ type model struct {
 	events    cycle.EventsView
 	artifacts cycle.ArtifactsView
 
-	flash    string
-	flashErr bool
+	// Fixed footer status bar (running / result / error).
+	statusKind    statusKind
+	statusLabel   string
+	statusText    string
+	statusStarted time.Time
+	actionBusy    bool
 
 	paletteFilter string
 	paletteIndex  int
@@ -118,8 +123,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case refreshDataMsg:
 		if msg.err != nil {
-			m.flash = msg.err.Error()
-			m.flashErr = true
+			m = m.setStatusResult(false, "refresh", msg.err.Error())
 			slog.Error("tui refresh failed", "error", msg.err)
 			return m, nil
 		}
@@ -131,33 +135,42 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case actionResultMsg:
+		m.actionBusy = false
+		label := msg.title
+		if label == "" {
+			label = m.statusLabel
+		}
 		if msg.err != nil {
 			text := msg.err.Error()
 			slog.Error("tui action failed", "error", msg.err)
-			if shouldOpenOutputPanel(text, m.width) {
-				title := msg.title
-				if title == "" {
-					title = "Error"
-				}
-				m = m.openOutput(title, text, true)
+			if label == "" {
+				label = "Error"
+			}
+			if statusResultOpensPanel(text, m.width) {
+				m = m.setStatusResult(false, label, firstStatusLine(text))
+				m = m.openOutput(label, text, true)
 				return m, m.refreshCmd()
 			}
-			m.flash = text
-			m.flashErr = true
+			m = m.setStatusResult(false, label, text)
 		} else if msg.success != "" {
 			slog.Info("tui action ok", "message", msg.success)
-			if shouldOpenOutputPanel(msg.success, m.width) {
-				title := msg.title
-				if title == "" {
-					title = "Output"
-				}
-				m = m.openOutput(title, msg.success, false)
+			if label == "" {
+				label = "Output"
+			}
+			if statusResultOpensPanel(msg.success, m.width) {
+				m = m.setStatusResult(true, label, firstStatusLine(msg.success))
+				m = m.openOutput(label, msg.success, false)
 				return m, m.refreshCmd()
 			}
-			m.flash = msg.success
-			m.flashErr = false
+			m = m.setStatusResult(true, label, msg.success)
 		}
 		return m, m.refreshCmd()
+
+	case statusTickMsg:
+		if m.statusKind != statusRunning {
+			return m, nil
+		}
+		return m, statusTickCmd()
 
 	case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
 		if m.screen == screenConversation {
@@ -207,47 +220,41 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m = m.reloadPaletteItems()
 		return m, nil
 	case "ctrl+r", "f5":
-		m.flash = ""
 		return m, m.refreshCmd()
 	case "1":
 		m.screen = screenStatus
-		m.flash = ""
 		return m, nil
 	case "2":
 		m.screen = screenApprovals
-		m.flash = ""
 		return m, nil
 	case "3":
 		m.screen = screenArtifacts
-		m.flash = ""
 		return m, nil
 	case "4":
 		m.screen = screenCosts
-		m.flash = ""
 		return m, nil
 	case "5":
 		m.screen = screenEvents
-		m.flash = ""
 		return m, nil
 	case "6":
 		return m.enterConversation()
 	case "a":
 		if m.screen == screenApprovals {
-			return m, m.approveCmd()
+			return m.beginAction("/hero-approve", m.approveCmd())
 		}
 	case "r":
 		if m.screen == screenApprovals {
-			return m, m.rejectCmd()
+			return m.beginAction("/hero-reject", m.rejectCmd())
 		}
 	case "d":
-		return m, m.dispatchCmd()
+		return m.beginAction("dispatch", m.dispatchCmd())
 	case "f":
 		if m.screen == screenApprovals {
-			return m, m.finishCmd()
+			return m.beginAction("/hero-finish", m.finishCmd())
 		}
 	case "c":
 		if m.screen == screenApprovals {
-			return m, m.cancelCmd()
+			return m.beginAction("/hero-cancel", m.cancelCmd())
 		}
 	}
 	return m, nil
@@ -256,10 +263,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		m.screen = m.prevScreen
-		m.paletteFilter = ""
-		m.paletteIndex = 0
-		m.paletteOffset = 0
+		m = m.closePalette()
 		return m, nil
 	case "ctrl+c":
 		return m, tea.Quit
@@ -320,58 +324,72 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
+func (m model) beginAction(label string, cmd tea.Cmd) (model, tea.Cmd) {
+	if m.actionBusy {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	m = m.setStatusRunning(label)
+	return m, tea.Batch(cmd, statusTickCmd())
+}
+
 func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	switch item.action {
 	case actionGoScreen:
+		m = m.closePalette()
 		m.screen = item.screen
-		m.paletteFilter = ""
-		m.paletteIndex = 0
-		m.paletteOffset = 0
 		return m, nil
-	case actionApprove:
-		m.screen = screenApprovals
-		return m, m.approveCmd()
-	case actionReject:
-		m.screen = screenApprovals
-		return m, m.rejectCmd()
-	case actionNew:
-		return m, m.newCycleCmd()
-	case actionStart:
-		return m, m.startCmd()
-	case actionSync:
-		return m, m.heroAssetCmd("sync")
-	case actionStatus:
-		m.screen = screenStatus
-		m.paletteFilter = ""
-		m.paletteIndex = 0
-		return m, m.statusCmd()
-	case actionContinue:
-		return m, m.continueCmd()
-	case actionBack:
-		return m, m.heroAssetCmd("back")
-	case actionCancel:
-		return m, m.cancelCmd()
-	case actionFinish:
-		return m, m.finishCmd()
-	case actionArchive:
-		return m, m.archiveCmd()
-	case actionResume:
-		return m, m.resumeCmd()
-	case actionCycles:
-		return m, m.cyclesCmd()
-	case actionTodos:
-		return m, m.todosCmd()
-	case actionHelp:
-		return m, m.helpCmd()
-	case actionImportCommand:
-		m.flash = fmt.Sprintf("→ Running %s via markdown expansion…", item.commandLabel)
-		m.flashErr = false
-		return m, m.importCommandCmd(item)
-	case actionRefresh:
-		m.flash = ""
-		return m, m.refreshCmd()
 	case actionQuit:
 		return m, tea.Quit
+	case actionRefresh:
+		m = m.closePalette()
+		return m, m.refreshCmd()
+	}
+
+	if m.actionBusy {
+		m = m.closePalette()
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+
+	m = m.closePalette()
+
+	switch item.action {
+	case actionApprove:
+		m.screen = screenApprovals
+		return m.beginAction("/hero-approve", m.approveCmd())
+	case actionReject:
+		m.screen = screenApprovals
+		return m.beginAction("/hero-reject", m.rejectCmd())
+	case actionNew:
+		return m.beginAction("/hero-new", m.newCycleCmd())
+	case actionStart:
+		return m.beginAction("/hero-start", m.startCmd())
+	case actionSync:
+		return m.beginAction("/hero-sync", m.heroAssetCmd("sync"))
+	case actionStatus:
+		m.screen = screenStatus
+		return m.beginAction("/hero-status", m.statusCmd())
+	case actionContinue:
+		return m.beginAction("/hero-continue", m.continueCmd())
+	case actionBack:
+		return m.beginAction("/hero-back", m.heroAssetCmd("back"))
+	case actionCancel:
+		return m.beginAction("/hero-cancel", m.cancelCmd())
+	case actionFinish:
+		return m.beginAction("/hero-finish", m.finishCmd())
+	case actionArchive:
+		return m.beginAction("/hero-archive", m.archiveCmd())
+	case actionResume:
+		return m.beginAction("/hero-resume", m.resumeCmd())
+	case actionCycles:
+		return m.beginAction("/hero-cycles", m.cyclesCmd())
+	case actionTodos:
+		return m.beginAction("/hero-todos", m.todosCmd())
+	case actionHelp:
+		return m.beginAction("/hero-help", m.helpCmd())
+	case actionImportCommand:
+		return m.beginAction(item.commandLabel, m.importCommandCmd(item))
 	}
 	return m, nil
 }
@@ -519,7 +537,7 @@ func (m model) heroAssetCmd(name string) tea.Cmd {
 		prompt, err := cursoradapter.ReadCommandPrompt(path)
 		if err != nil {
 			slog.Error("tui hero command read failed", "path", path, "error", err)
-			return actionResultMsg{err: fmt.Errorf("read command %s: %w", label, err)}
+			return actionResultMsg{title: label, err: fmt.Errorf("read command %s: %w", label, err)}
 		}
 		return dispatchPromptMsg(svc, label, prompt)
 	}
@@ -537,7 +555,8 @@ func dispatchPromptMsg(svc *cycle.Service, label, prompt string) tea.Msg {
 	if err != nil {
 		slog.Error("tui command dispatch failed", "command", label, "error", err)
 		return actionResultMsg{
-			err: fmt.Errorf("dispatch failed for %s; run the same command in Cursor chat", label),
+			title: label,
+			err:   fmt.Errorf("dispatch failed for %s; run the same command in Cursor chat", label),
 		}
 	}
 	if !res.Dispatched {
@@ -547,7 +566,8 @@ func dispatchPromptMsg(svc *cycle.Service, label, prompt string) tea.Msg {
 		}
 		slog.Info("tui command dispatch unavailable", "command", label, "message", msg)
 		return actionResultMsg{
-			err: fmt.Errorf("%s; run %s in Cursor chat", msg, label),
+			title: label,
+			err:   fmt.Errorf("%s; run %s in Cursor chat", msg, label),
 		}
 	}
 	slog.Info("tui command dispatched", "command", label)
@@ -555,7 +575,7 @@ func dispatchPromptMsg(svc *cycle.Service, label, prompt string) tea.Msg {
 	if success == "" {
 		success = fmt.Sprintf("%s dispatched.", label)
 	}
-	return actionResultMsg{success: success}
+	return actionResultMsg{title: label, success: success}
 }
 
 func (m model) dispatchCmd() tea.Cmd {

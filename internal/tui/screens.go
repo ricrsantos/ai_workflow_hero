@@ -80,7 +80,7 @@ func (m model) renderApprovals() string {
 func (m model) renderArtifacts() string {
 	var b strings.Builder
 	if len(m.artifacts.Artifacts) == 0 {
-		b.WriteString(mutedStyle.Render(fmt.Sprintf("No artifacts for cycle C%d.", m.artifacts.CycleNumber)))
+		b.WriteString(mutedStyle.Render(emptyCycleScreenMessage("artifacts", m.artifacts.CycleNumber)))
 		return b.String()
 	}
 	b.WriteString(headerStyle.Render("Artifacts"))
@@ -100,7 +100,7 @@ func (m model) renderArtifacts() string {
 func (m model) renderCosts() string {
 	var b strings.Builder
 	if len(m.metrics.Rows) == 0 {
-		b.WriteString(mutedStyle.Render(fmt.Sprintf("No metrics for cycle C%d.", m.metrics.CycleNumber)))
+		b.WriteString(mutedStyle.Render(emptyCycleScreenMessage("metrics", m.metrics.CycleNumber)))
 		return b.String()
 	}
 	b.WriteString(headerStyle.Render(fmt.Sprintf("Costs — C%d %s", m.metrics.CycleNumber, m.metrics.Title)))
@@ -120,7 +120,7 @@ func (m model) renderCosts() string {
 func (m model) renderEvents() string {
 	var b strings.Builder
 	if len(m.events.Events) == 0 {
-		b.WriteString(mutedStyle.Render(fmt.Sprintf("No events for cycle C%d.", m.events.CycleNumber)))
+		b.WriteString(mutedStyle.Render(emptyCycleScreenMessage("events", m.events.CycleNumber)))
 		return b.String()
 	}
 	b.WriteString(headerStyle.Render("Recent events"))
@@ -135,6 +135,15 @@ func (m model) renderEvents() string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// emptyCycleScreenMessage explains an empty Artifacts/Costs/Events view.
+// CycleNumber 0 means there is no active cycle (not a literal "C0").
+func emptyCycleScreenMessage(kind string, cycleNumber int) string {
+	if cycleNumber <= 0 {
+		return "No active cycle. Run /hero-new to start."
+	}
+	return fmt.Sprintf("No %s for cycle C%d.", kind, cycleNumber)
 }
 
 func (m model) renderPalette() string {
@@ -205,12 +214,9 @@ func (m model) renderPalette() string {
 // paletteListHeight is how many command rows fit in the scrollable panel
 // (scroll cues ▲/▼ are reserved via chrome, not counted here).
 func (m model) paletteListHeight() int {
-	// title+tabs, rules, Commands header, hint, prompt, blank, range line,
-	// border (2), optional ▲/▼ (2), footer.
-	chrome := 14
-	if m.flash != "" {
-		chrome++
-	}
+	// title+tabs, rules (3), Commands header, hint, prompt, blank, range line,
+	// border (2), optional ▲/▼ (2), status bar, footer.
+	chrome := 14 + m.statusBarLineCount() + 2 // status content + separators around it
 	h := m.height - chrome
 	if h < 4 {
 		h = 4
@@ -263,14 +269,10 @@ func (m model) renderFrame() string {
 	b.WriteByte('\n')
 	content := m.renderContent()
 	b.WriteString(lipgloss.NewStyle().Width(m.width).Render(content))
-	if m.flash != "" {
-		b.WriteByte('\n')
-		if m.flashErr {
-			b.WriteString(errorStyle.Render("✗ " + m.flash))
-		} else {
-			b.WriteString(successStyle.Render("✓ " + m.flash))
-		}
-	}
+	b.WriteByte('\n')
+	b.WriteString(strings.Repeat("─", max(20, m.width)))
+	b.WriteByte('\n')
+	b.WriteString(m.renderStatusBar())
 	b.WriteByte('\n')
 	b.WriteString(strings.Repeat("─", max(20, m.width)))
 	b.WriteByte('\n')

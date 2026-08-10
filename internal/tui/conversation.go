@@ -93,7 +93,6 @@ func (m model) conversationModelSlug() string {
 
 func (m model) enterConversation() (model, tea.Cmd) {
 	m.screen = screenConversation
-	m.flash = ""
 	m.cursorBlinkOn = true
 	m = m.syncConversationContext()
 	return m, blinkCursorCmd()

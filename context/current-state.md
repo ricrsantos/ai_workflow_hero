@@ -14,36 +14,46 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **1.0.0** + **C2 complete**; **C3 implementation complete** (2026-08-08). OpenSpec `cursor-harness-tui-autonomy` tasks 1–3 all checked; QA fixes for cycles TUI + hyphen slash copy. |
+| **Phase** | Hero **1.0.0** feature-complete; **C3 archived** (2026-08-09). No active cycle. Awaiting `v1.0.0` GitHub Release. |
 
 ## Technology Stack
 
 | Concern | Choice |
 |---|---|
-| Language | Go |
+| Language | Go 1.25+ |
 | Module path | `github.com/ricrsantos/ai_workflow_hero` |
 | CLI framework | [Cobra](https://github.com/spf13/cobra) |
 | Asset embedding | Go `embed.FS` (`assets` package) |
 | Interactive prompts | [charmbracelet/huh](https://github.com/charmbracelet/huh) |
-| TUI | [charmbracelet/bubbletea](https://github.com/charmbracelet/bubbletea) + [lipgloss](https://github.com/charmbracelet/lipgloss) |
+| TUI | [bubbletea](https://github.com/charmbracelet/bubbletea) + [lipgloss](https://github.com/charmbracelet/lipgloss) |
 | Operational store | SQLite (`modernc.org/sqlite`) |
 | YAML | `gopkg.in/yaml.v3` |
-| SDD / planning framework | [OpenSpec](https://github.com/Fission-AI/OpenSpec) |
+| SDD / planning | [OpenSpec](https://github.com/Fission-AI/OpenSpec) |
 | Target IDE/harness (V1) | Cursor only |
 | Target platforms (V1) | Linux and macOS, `amd64` and `arm64` |
-| Versioning | SemVer (`vMAJOR.MINOR.PATCH`), injected via `-ldflags "-X main.version=..."` |
+| Versioning | SemVer via `-ldflags "-X main.version=..."` |
+
+## Scope (implementation routing)
+
+| Field | Value |
+|---|---|
+| `backend` | `true` — Go CLI and `internal/*` packages |
+| `frontend` | `false` — no browser/web UI |
+| `native` | `false` |
+| `script` | `true` — `scripts/release.sh`, `scripts/build_dev.sh` |
+| `infrastructure` | `true` — embed.FS distribution, cross-compile, DEPLOY |
 
 ## Architecture Summary
 
-- **Feature Based + Vertical Slice**: `cmd/hero` + `internal/<feature>/` (`install`, `upgrade`, `uninstall`, `doctor`, `status`, `variables`, `update_models`, `cycle`, `store`, `engine`, `tui`, `harness`) with `command.go` / `service.go` as needed; Cursor adapter in `internal/adapters/cursor/`; shared helpers in `internal/common/` (clierr, output, template).
-- **Strict CLI vs Runtime**: CLI is deterministic only; Runtime orchestration lives in embedded markdown under `assets/cursor/`.
-- **Simple templating**: `internal/common/template` supports `{{path.key}}` only (ADR-006).
-- **Assets**: `assets/` embedded via `assets.FS`; install copies into `.cursor/` and `.workflow-hero/`.
+- **Feature Based + Vertical Slice**: `cmd/hero` + `internal/<feature>/` (`install`, `upgrade`, `uninstall`, `doctor`, `status`, `variables`, `update_models`, `cycle`, `store`, `engine`, `tui`, `harness`, `todos`) + `internal/adapters/cursor/` + `internal/common/`.
+- **Strict CLI vs Runtime**: CLI is deterministic; orchestration lives in embedded `assets/cursor/`.
+- **Simple templating**: `internal/common/template` — `{{path.key}}` only (ADR-006).
+- **Assets**: embedded via `assets.FS`; install copies into `.cursor/` and `.workflow-hero/`.
 
 ## Implemented Features
 
 - CLI commands: `install --tools cursor`, `upgrade`, `uninstall`, `doctor`, `version`, `variables`, `update-models`, `status`, `help`, plus Hero 1.0 operational API (`metrics`, `events`, `approve`, `reject`, `cancel`, `finish`, `continue`, `stage`, `cycle`, `run`, `tui`) (plus global `--verbose`/`--debug`). Cycle API includes `hero cycle openspec-change` / `--clear` and `hero cycle archive --force|--skip-openspec|--openspec-change`.
-- **Bubble Tea TUI** (`hero tui`): Status, Approvals, Artifacts, Costs, Events, **Conversation (Chat)** screens; command palette with `/hero-<name>` action labels + imported non-Hero Cursor commands (markdown expansion → Dispatch); empty-state `/hero-new`; in-process `cycle.Service`; refuses launch when `NO_COLOR` or non-TTY. Conversation streams harness `stream-json` via `Execute` (with `--model` from `hero.json` harnesses); freechat without active etapa (in-memory session); with etapa persists `harness_session_id`; Ctrl+C → `Cancel`.
+- **Bubble Tea TUI** (`hero tui`): Status, Approvals, Artifacts, Costs, Events, **Conversation (Chat)** screens; command palette with `/hero-<name>` action labels (`Go to - *` for screen jumps) + imported non-Hero Cursor commands (markdown expansion → Dispatch); palette closes on select with **busy-guard**; fixed **footer status bar** (running/ok/error, wrapped); empty-state `/hero-new`; in-process `cycle.Service`; refuses launch when `NO_COLOR` or non-TTY. Conversation streams harness `stream-json` via `Execute` (with `--model` from `hero.json` harnesses); freechat without active etapa (in-memory session); with etapa persists `harness_session_id`; Ctrl+C → `Cancel`. Palette Dispatch starts a **fresh** agent session (no leaked `--resume`).
 - **SQLite operational store** (schema v3: `cycles.openspec_change`, `stages.harness_session_id`) + workflow engine + CLI-as-API cycle service with OpenSpec-coupled archive.
 - **HarnessAdapter (full)**: `IsAvailable`, sessions, `Execute`/`Cancel`/`Status`, `Dispatch`→Execute; Cursor adapter runs Agent CLI (`cursor-agent` / `cursor agent`) with json/stream-json parsers and injectable `CommandRunner`.
 - Install: git prerequisite (`--git-init` / huh confirm), name/summary flags or prompts, asset materialization, `hero.json` / `project.json` / `documents.json`, checksum tracking, `metrics-summary.md`, soft secrets hygiene, harness-marker warn-only suggestions; end-user guide at `.workflow-hero/docs/workflow-help.md`.
@@ -56,39 +66,43 @@
 - `scripts/release.sh` + contract test for artifact naming / platforms / checksums.
 - `scripts/build_dev.sh` for local cross-compiles without a release tag (version `<latest-tag>_<short-commit>`).
 - Integration tests for install/upgrade/uninstall/doctor against `t.TempDir()`.
+- Test strategy documented in [docs/testing/TESTING.md](docs/testing/TESTING.md) (`go test ./...`, golden tests, integration layout).
 - Bilingual project README (`README.md`, EN + PT-BR in one file, Screenshot Hero style).
 
 ## Pending Features
 
-- Archive OpenSpec change `cursor-harness-tui-autonomy` after Judge/finish when ready; archive `hero-1-0` when convenient.
-- Tag/publish GitHub Release `v1.0.0` / C3 when ready.
-- Post-1.0 deferred D1–D13 (multi-harness adapters, integrations, daemon/RPC, etc.).
+- Publish GitHub Release **`v1.0.0`** (binaries + `checksums.txt`).
+- `.workflow-hero/config/hero.json` still records `cli.version` / `assets.version` **0.9.0** while CLI default is **1.0.0** — run `hero upgrade` to align.
+- Post-1.0 deferred **D1–D13** (multi-harness adapters, integrations, notification manager, rich TUI, daemon/RPC, event bus, markdown projections, etc. — see PRD-C01 §4).
+- V2 scope per PRD §2.3 / §7: Windows CLI, CI/CD-automated releases, GPG-signed artifacts, non-interactive-only CLI, additional harnesses (OpenCode, Claude Code, Codex, VS Code), advanced sync/drift detection, optional stages (UX, observability, security review), AI hooks, richer project memory (RAG/DB).
 - Note: intermediate tags `v0.6.0`–`v0.7.0` never published on GitHub; `v0.8.0` / `v0.9.0` published.
 
 ## Recent Decisions
 
+- C3 archived 2026-08-09 (Cursor harness autonomy + TUI conversation).
 - ADR-030 (2026-08-08): `hero.json` → `harnesses.<tool>` default model; Cursor `composer-2.5` / `enable_fast_model: false`; TUI freechat without active etapa (in-memory session); Execute passes `--model` kebab slug.
-- TUI UX (2026-08-08): Chat caret; `/` palette scroll panel; multiline command results (`/hero-cycles`, etc.) open scrollable `screenOutput` (esc closes).
-- TUI Chat UX fix (2026-08-08): conversation screen always renders input; 1–6/`q`/`/` navigate when input empty; slog redirected to `.workflow-hero/tui.log` during TUI.
-- Cycle C3 Judge fix (2026-08-08): TUI `/hero-todos` uses `todos.ReadProject`/`Format` (no duplicate parser); `RequiredCommandFiles` includes `hero-cycles.md` + `hero-todos.md` (15 total).
-- Cycle C3 QA fix (2026-08-08): TUI `/hero-cycles` uses `cycle.Service.Cycles()` + `FormatCycles()` (archive-only cycles); user-facing `/hero:start`/`/hero:new` → hyphen in CLI copy; all OpenSpec tasks marked done.
-- Cycle C3 implementation (2026-08-08): harness + Cursor CLI runner; TUI boot/conversation; hyphen slash palette; `/hero-cycles`/`/hero-todos`; sync pending-doc scan; doctor Cursor CLI checks (ADR-024–029).
-- Cycle C2 complete (2026-08-08): slash-first Runtime/TUI; Cursor command import; harness detect warn-only; OpenSpec-coupled archive (ADR-020–023).
-- Cycle C1 complete (2026-08-07): Hero 1.0 — SQLite, AI Loop, CLI-as-API, TUI, Cursor adapter.
-- ADRs 012–030; prior 0.9.x Runtime conventions.
+- ADR-024–029 (C3): hyphen slashes, full harness contract, TUI orchestration, hero-cycles/todos, hero-sync pending-doc scan.
+- ADR-020–023 (C2): slash parity, imported commands, harness warnings, OpenSpec archive coupling.
+- ADR-012–019 (C1): SQLite, AI Loop, CLI-as-API, dual UI, 0.9→1.0 breaking upgrade.
 
 ## Known Technical Debt
 
-- Runtime asset prompts remain concise; fuller narrative prompts from `docs/idea/ai_workflow_hero.md` can be deepened later without changing CLI APIs. Metrics still agent-estimated, not API usage.
-- Cursor may still override Task/`frontmatter` models on some plans (known IDE limits).
+- `.workflow-hero/config/hero.json` still records `cli`/`assets` version **0.9.0** while source default is **1.0.0** — run `hero upgrade` to align.
+- No GitHub Actions / CI/CD release automation in V1 (ADR-010; deferred to V2 GoReleaser or equivalent).
+- GPG-signed release artifacts deferred to V2 (PRD §7; DEPLOY.md).
+- Upstream Cursor CLI gaps accepted as limitations: plugin skills, nested skill dirs (ADR-C02).
+- Runtime asset prompts remain concise; metrics are agent-estimated, not API usage.
+- Global `--verbose`/`--debug` registered but not yet wired into panic/stack-trace printing paths.
 - `update-models` upstream URL assumes `main` branch raw assets on this GitHub repo.
-- Global `--verbose`/`--debug` are registered but not yet wired into panic/stack-trace printing paths.
+- `docs/product/UI.md` cycle index table omits C03 UI spec (`UI-C03-001-tui-harness-autonomy.md`).
+- `.workflow-hero/config/documents.json` omits living PRD/UI index docs (`docs/product/PRD.md`, `docs/product/UI.md`).
+- Cursor may still override Task/frontmatter models on some plans (known IDE limits).
 
 ## Next Steps
 
-1. Judge / finish C3; archive OpenSpec `cursor-harness-tui-autonomy` (and leftover `hero-1-0` if needed).
-2. Tag/publish GitHub Release `v1.0.0` when ready.
-3. Post-1.0: deferred D1–D13.
+1. Tag and publish **`v1.0.0`** release.
+2. Run `hero upgrade` to sync local install metadata to `1.0.0`.
+3. Start next cycle via `/hero-new` or review pending work via `/hero-todos`.
 
 ---
 

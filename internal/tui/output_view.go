@@ -19,8 +19,6 @@ func (m model) openOutput(title, text string, isErr bool) model {
 	m.outputErr = isErr
 	m.outputOffset = 0
 	m.outputRaw = text
-	m.flash = ""
-	m.flashErr = false
 	m.paletteFilter = ""
 	m.paletteIndex = 0
 	m.paletteOffset = 0
@@ -80,10 +78,7 @@ func shouldOpenOutputPanel(text string, width int) bool {
 }
 
 func (m model) outputListHeight() int {
-	chrome := 11
-	if m.flash != "" {
-		chrome++
-	}
+	chrome := 11 + m.statusBarLineCount() + 2
 	h := m.height - chrome
 	if h < 4 {
 		h = 4

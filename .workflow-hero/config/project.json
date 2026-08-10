@@ -1,19 +1,30 @@
 {
   "name": "AI Workflow Hero",
-  "summary": "The Workflow manager for AI code",
+  "version": "1.0.0",
+  "summary": "Open-source framework for AI-augmented software development: deterministic Go CLI bootstraps Cursor Runtime assets; coordinates specialized subagents through reproducible development cycles.",
   "repository": "github.com/ricrsantos/ai_workflow_hero",
+  "license": "BSD-2-Clause",
   "createdAt": "2026-08-04T19:30:24Z",
   "workflow": {
     "name": "Feature Development",
-    "phase": "Implementation",
-    "cycle": 3
+    "phase": "Maintenance / Release",
+    "cycle": 3,
+    "activeCycle": null,
+    "lastSyncAt": "2026-08-10T11:46:00Z"
   },
   "technology": {
-    "stack": "Go CLI (Cobra) + embedded Cursor Runtime assets",
-    "backend": "Go single-binary CLI (hero)",
+    "stack": "Go CLI (Cobra) + SQLite + Bubble Tea TUI + embedded Cursor Runtime assets",
+    "backend": "Go single-binary CLI (hero) with internal vertical-slice packages",
     "languages": [
       "Go"
     ]
+  },
+  "scope": {
+    "backend": true,
+    "frontend": false,
+    "native": false,
+    "script": true,
+    "infrastructure": true
   },
   "platform": {
     "targets": [
@@ -31,14 +42,15 @@
     "defaultLanguage": "EN"
   },
   "ui": {
-    "design": "CLI prompts (charmbracelet/huh) + Bubble Tea TUI; Cursor chat Runtime",
+    "design": "Terminal CLI (huh prompts) + Bubble Tea TUI + Cursor chat Runtime",
     "theme": {
       "default": "terminal",
       "supportsDarkMode": true
     }
   },
   "deployment": {
-    "target": "GitHub Releases (cross-compiled binaries)",
+    "target": "GitHub Releases (manual cross-compiled binaries + checksums.txt)",
     "domain": null
-  }
+  },
+  "testCommand": "go test ./..."
 }

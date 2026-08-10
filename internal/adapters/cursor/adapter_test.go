@@ -434,6 +434,54 @@ func TestDispatchDefaultPusherUsesExecute(t *testing.T) {
 	}
 }
 
+func TestDispatchDoesNotResumePriorSession(t *testing.T) {
+	dir := withCursorAssets(t)
+	fixture1 := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"first","session_id":"sess-prior"}`
+	fixture2 := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"second","session_id":"sess-fresh"}`
+	var secondArgs []string
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.VerifyAgent = func(context.Context, string) error { return nil }
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{
+		{
+			matchArgs: func(args []string) bool { return true },
+			result:    cursoradapter.RunResult{Stdout: []byte(fixture1)},
+		},
+		{
+			matchArgs: func(args []string) bool { return true },
+			result:    cursoradapter.RunResult{Stdout: []byte(fixture2)},
+			capture:   &secondArgs,
+		},
+	}}
+
+	if _, err := adapter.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt:    "chat",
+		SessionID: "sess-prior",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Arm resume via ResumeSession (legacy path) — Dispatch must still stay fresh.
+	if err := adapter.ResumeSession(context.Background(), "sess-prior"); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := adapter.Dispatch(context.Background(), harness.DispatchRequest{
+		ProjectDir: dir,
+		Prompt:     "full hero-sync prompt body",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Dispatched {
+		t.Fatalf("expected dispatch: %+v", res)
+	}
+	for _, a := range secondArgs {
+		if strings.HasPrefix(a, "--resume=") {
+			t.Fatalf("Dispatch must not resume prior session, args=%v", secondArgs)
+		}
+	}
+}
+
 func TestCreateResumeCancelStatus(t *testing.T) {
 	adapter := cursoradapter.NewAdapter(t.TempDir())
 	sess, err := adapter.CreateSession(context.Background(), harness.SessionRequest{StageName: "research"})
