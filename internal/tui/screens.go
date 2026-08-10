@@ -24,6 +24,8 @@ func (m model) renderContent() string {
 		return m.renderConversation()
 	case screenPalette:
 		return m.renderPalette()
+	case screenOutput:
+		return m.renderOutput()
 	default:
 		return ""
 	}
@@ -139,7 +141,7 @@ func (m model) renderPalette() string {
 	var b strings.Builder
 	b.WriteString(headerStyle.Render("Commands"))
 	b.WriteByte('\n')
-	b.WriteString(mutedStyle.Render("Type to filter · ↑↓ navigate · enter run · esc close"))
+	b.WriteString(mutedStyle.Render("Type to filter · ↑↓ navigate · PgUp/PgDn · enter run · esc close"))
 	b.WriteByte('\n')
 	prompt := "/"
 	if m.paletteFilter != "" {
@@ -148,20 +150,107 @@ func (m model) renderPalette() string {
 	b.WriteString(infoStyle.Render(prompt))
 	b.WriteByte('\n')
 	b.WriteByte('\n')
+
 	items := m.filteredPaletteItems()
 	if len(items) == 0 {
 		b.WriteString(mutedStyle.Render("No matching commands."))
 		return b.String()
 	}
-	for i, item := range items {
+
+	m = m.ensurePaletteVisible()
+	listH := m.paletteListHeight()
+	start := m.paletteOffset
+	end := start + listH
+	if end > len(items) {
+		end = len(items)
+	}
+
+	var list strings.Builder
+	if start > 0 {
+		list.WriteString(mutedStyle.Render(fmt.Sprintf("  ▲ %d more above", start)))
+		list.WriteByte('\n')
+	}
+	for i := start; i < end; i++ {
+		item := items[i]
 		line := fmt.Sprintf(" %s — %s", item.label, item.hint)
 		if i == m.paletteIndex {
-			b.WriteString(selectedStyle.Render("▸ "+line) + "\n")
+			list.WriteString(selectedStyle.Render("▸ "+line))
 		} else {
-			b.WriteString("  " + line + "\n")
+			list.WriteString("  " + line)
 		}
+		list.WriteByte('\n')
 	}
+	below := len(items) - end
+	if below > 0 {
+		list.WriteString(mutedStyle.Render(fmt.Sprintf("  ▼ %d more below", below)))
+		list.WriteByte('\n')
+	}
+
+	title := fmt.Sprintf(" %d–%d of %d ", start+1, end, len(items))
+	panelWidth := m.width - 2
+	if panelWidth < 24 {
+		panelWidth = 24
+	}
+	panel := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorMuted).
+		Width(panelWidth).
+		Render(strings.TrimRight(list.String(), "\n"))
+	b.WriteString(mutedStyle.Render(title))
+	b.WriteByte('\n')
+	b.WriteString(panel)
 	return b.String()
+}
+
+// paletteListHeight is how many command rows fit in the scrollable panel
+// (scroll cues ▲/▼ are reserved via chrome, not counted here).
+func (m model) paletteListHeight() int {
+	// title+tabs, rules, Commands header, hint, prompt, blank, range line,
+	// border (2), optional ▲/▼ (2), footer.
+	chrome := 14
+	if m.flash != "" {
+		chrome++
+	}
+	h := m.height - chrome
+	if h < 4 {
+		h = 4
+	}
+	return h
+}
+
+// ensurePaletteVisible keeps paletteIndex inside the scrolled window.
+func (m model) ensurePaletteVisible() model {
+	items := m.filteredPaletteItems()
+	n := len(items)
+	if n == 0 {
+		m.paletteOffset = 0
+		m.paletteIndex = 0
+		return m
+	}
+	if m.paletteIndex < 0 {
+		m.paletteIndex = 0
+	}
+	if m.paletteIndex >= n {
+		m.paletteIndex = n - 1
+	}
+	vh := m.paletteListHeight()
+	if m.paletteIndex < m.paletteOffset {
+		m.paletteOffset = m.paletteIndex
+	}
+	if m.paletteIndex >= m.paletteOffset+vh {
+		m.paletteOffset = m.paletteIndex - vh + 1
+	}
+	maxOff := n - vh
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	if m.paletteOffset < 0 {
+		m.paletteOffset = 0
+	}
+	if m.paletteOffset > maxOff {
+		m.paletteOffset = maxOff
+	}
+	return m
 }
 
 func (m model) renderFrame() string {
@@ -204,7 +293,10 @@ func screenTabBar(active screen) string {
 
 func (m model) footerHints() string {
 	if m.screen == screenPalette {
-		return "esc close · enter select"
+		return "esc close · enter select · ↑↓ scroll"
+	}
+	if m.screen == screenOutput {
+		return "esc close · ↑↓ scroll · PgUp/PgDn"
 	}
 	if m.screen == screenConversation {
 		if m.streaming {

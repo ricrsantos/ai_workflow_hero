@@ -144,6 +144,7 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 	heroJSON.CLI.Version = opts.Version
 	heroJSON.Assets.Version = opts.Version
 	heroJSON.Assets.InstalledAt = now
+	_ = install.EnsureHarnessDefaults(&heroJSON)
 	updatedHero, _ := json.MarshalIndent(heroJSON, "", "  ")
 	if err := os.WriteFile(heroPath, append(updatedHero, '\n'), 0o644); err != nil {
 		return result, fmt.Errorf("write hero.json: %w", err)

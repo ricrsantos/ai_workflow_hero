@@ -72,6 +72,39 @@ func TestUpgrade_UnmodifiedFilesAreUpdated(t *testing.T) {
 	if heroJSON.CLI.Version != "1.1.0" {
 		t.Errorf("hero.json cli.version = %q, want %q", heroJSON.CLI.Version, "1.1.0")
 	}
+	if _, ok := heroJSON.Harnesses["cursor"]; !ok {
+		t.Fatal("upgrade should ensure harnesses.cursor defaults")
+	}
+}
+
+func TestUpgrade_MigratesMissingHarnessDefaults(t *testing.T) {
+	dir := makeInstalledDir(t)
+	heroPath := filepath.Join(dir, cursoradapter.HeroJSONPath)
+	// Strip harnesses to simulate pre-ADR-030 install.
+	legacy := install.HeroJSON{
+		CLI:    install.CLIInfo{Version: "1.0.0", InstalledAt: "2026-01-01T00:00:00Z", Tools: []string{"cursor"}},
+		Assets: install.AssetsInfo{Version: "1.0.0", InstalledAt: "2026-01-01T00:00:00Z"},
+	}
+	data, _ := json.MarshalIndent(legacy, "", "  ")
+	if err := os.WriteFile(heroPath, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	if _, err := upgrade.Run(upgrade.Options{
+		ProjectDir: dir,
+		Version:    "1.1.0",
+		AssetsFS:   assets.FS,
+	}, &out, &out); err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	heroData, _ := os.ReadFile(heroPath)
+	var heroJSON install.HeroJSON
+	_ = json.Unmarshal(heroData, &heroJSON)
+	cfg, ok := heroJSON.Harnesses["cursor"]
+	if !ok || cfg.Model != install.DefaultCursorModel || cfg.EnableFastModel {
+		t.Fatalf("harnesses.cursor=%+v", cfg)
+	}
 }
 
 func TestUpgrade_MigratesLegacyGenericModelInCycleConfig(t *testing.T) {

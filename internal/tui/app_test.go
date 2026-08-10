@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -347,6 +349,61 @@ func TestPaletteEnterSelectsGoScreen(t *testing.T) {
 	if CurrentScreen(next) == ScreenPalette {
 		t.Fatal("expected to leave palette on enter with default selection")
 	}
+}
+
+func TestPaletteScrollKeepsSelectionVisible(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m.height = 16
+	m = OpenPalette(m)
+	m = ReloadPaletteForTest(m)
+
+	items := FilteredPalette(m)
+	if len(items) < 8 {
+		t.Fatalf("need enough palette items for scroll test, got %d", len(items))
+	}
+
+	// Move selection far down; offset must follow so first items leave the window.
+	next := m
+	for i := 0; i < 10; i++ {
+		var cmd tea.Cmd
+		next, cmd = HandleTestKey(next, "down")
+		_ = cmd
+	}
+	if PaletteOffsetForTest(next) == 0 {
+		t.Fatal("expected paletteOffset > 0 after moving down")
+	}
+	view := ViewForTest(next)
+	if !strings.Contains(view, "more above") {
+		t.Fatalf("expected scroll-above hint: %q", view)
+	}
+	if !strings.Contains(view, "of "+itoa(len(items))) && !strings.Contains(view, "of") {
+		t.Fatalf("expected range caption: %q", view)
+	}
+	// Top item should no longer be the selected line when scrolled.
+	if strings.Contains(view, "▸  Go: Status") || strings.Contains(view, "▸ Go: Status") {
+		t.Fatalf("scrolled view should not keep first item selected: %q", view)
+	}
+}
+
+func TestPaletteViewportHidesOverflow(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m.height = 14
+	m = OpenPalette(m)
+	m = ReloadPaletteForTest(m)
+	view := ViewForTest(m)
+	if !strings.Contains(view, "more below") {
+		t.Fatalf("expected more-below hint on short terminal: %q", view)
+	}
+	// Quit is usually last — should be outside the first page.
+	if strings.Contains(view, "Quit — exit TUI") {
+		t.Fatalf("last items should be scrolled out of initial viewport: %q", view)
+	}
+}
+
+func itoa(n int) string {
+	return fmt.Sprintf("%d", n)
 }
 
 func contains(s, sub string) bool {

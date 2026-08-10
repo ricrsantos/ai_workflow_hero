@@ -324,6 +324,30 @@ func TestExecuteJSONFixture(t *testing.T) {
 	}
 }
 
+func TestExecutePassesModelFlag(t *testing.T) {
+	dir := withCursorAssets(t)
+	fixture := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"ok","session_id":"s-model"}`
+	var gotArgs []string
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool { return true },
+		result:    cursoradapter.RunResult{Stdout: []byte(fixture)},
+		capture:   &gotArgs,
+	}}}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt: "hi",
+		Model:  "composer-2.5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsArg(gotArgs, "--model") || !containsArg(gotArgs, "composer-2.5") {
+		t.Fatalf("expected --model composer-2.5, args=%v", gotArgs)
+	}
+}
+
 func TestExecuteResumeFlag(t *testing.T) {
 	dir := withCursorAssets(t)
 	fixture := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"ok","session_id":"sess-1"}`

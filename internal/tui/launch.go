@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
@@ -46,6 +47,10 @@ func Run(svc *cycle.Service) error {
 	if svc == nil {
 		return fmt.Errorf("cycle service is nil")
 	}
+	// slog default writes stderr and corrupts the alt-screen TUI; redirect while running.
+	restoreLog := redirectSlogForTUI(svc.ProjectDir)
+	defer restoreLog()
+
 	slog.Info("starting hero tui")
 	m := newModel(svc)
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -55,6 +60,31 @@ func Run(svc *cycle.Service) error {
 	}
 	slog.Info("hero tui closed")
 	return nil
+}
+
+// redirectSlogForTUI sends slog to .workflow-hero/tui.log (or Discard) so INFO/ERROR
+// lines do not paint over the Bubble Tea frame.
+func redirectSlogForTUI(projectDir string) func() {
+	prev := slog.Default()
+	if projectDir == "" {
+		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+		return func() { slog.SetDefault(prev) }
+	}
+	dir := filepath.Join(projectDir, ".workflow-hero")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+		return func() { slog.SetDefault(prev) }
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "tui.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+		return func() { slog.SetDefault(prev) }
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	return func() {
+		slog.SetDefault(prev)
+		_ = f.Close()
+	}
 }
 
 // RunDefault is the shared entry for `hero` (no args) and `hero tui`.

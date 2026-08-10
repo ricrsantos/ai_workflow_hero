@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 )
 
 type convRole string
@@ -38,6 +40,14 @@ type streamCancelDoneMsg struct {
 	err error
 }
 
+type blinkCursorMsg struct{}
+
+func blinkCursorCmd() tea.Cmd {
+	return tea.Tick(530*time.Millisecond, func(time.Time) tea.Msg {
+		return blinkCursorMsg{}
+	})
+}
+
 func (m model) harnessAdapter() harness.HarnessAdapter {
 	if m.svc != nil && m.svc.Harness != nil {
 		return m.svc.Harness
@@ -55,6 +65,8 @@ func (m model) syncConversationContext() model {
 	stage, sessionID, err := m.svc.ConversationContext()
 	if err != nil {
 		slog.Debug("tui conversation context unavailable", "error", err)
+		m.conversationStage = ""
+		// Keep harnessSessionID for freechat resume within this TUI session.
 		return m
 	}
 	m.conversationStage = stage
@@ -62,43 +74,78 @@ func (m model) syncConversationContext() model {
 	return m
 }
 
-func (m model) enterConversation() model {
+func (m model) conversationHarnessTool() string {
+	if m.svc != nil && m.svc.Harness != nil {
+		if name := strings.TrimSpace(m.svc.Harness.Name()); name != "" {
+			return name
+		}
+	}
+	return "cursor"
+}
+
+func (m model) conversationModelSlug() string {
+	projectDir := ""
+	if m.svc != nil {
+		projectDir = m.svc.ProjectDir
+	}
+	return install.HarnessModelSlugForProject(projectDir, m.conversationHarnessTool())
+}
+
+func (m model) enterConversation() (model, tea.Cmd) {
 	m.screen = screenConversation
 	m.flash = ""
+	m.cursorBlinkOn = true
 	m = m.syncConversationContext()
-	return m
+	return m, blinkCursorCmd()
 }
 
 func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c":
-		if m.streaming {
+	s := msg.String()
+
+	if m.streaming {
+		switch s {
+		case "ctrl+c":
 			return m, m.cancelStreamCmd()
-		}
-		return m, tea.Quit
-	case "esc":
-		if m.streaming {
+		default:
+			// Esc and other keys are ignored while waiting for the agent.
 			return m, nil
 		}
+	}
+
+	// Footer promises 1-6 / q / slash when the input buffer is empty.
+	if m.input == "" {
+		switch s {
+		case "1", "2", "3", "4", "5", "6", "q", "/", "ctrl+r", "f5", "ctrl+c":
+			return m.handleKey(msg)
+		}
+	}
+
+	switch s {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
 		m.input = ""
-		return m, nil
+		m.cursorBlinkOn = true
+		return m, blinkCursorCmd()
 	case "enter":
-		if m.streaming || strings.TrimSpace(m.input) == "" {
+		if strings.TrimSpace(m.input) == "" {
 			return m, nil
 		}
 		return m.submitConversation()
 	case "backspace":
-		if m.streaming || len(m.input) == 0 {
+		if len(m.input) == 0 {
 			return m, nil
 		}
 		m.input = m.input[:len(m.input)-1]
-		return m, nil
+		m.cursorBlinkOn = true
+		return m, blinkCursorCmd()
 	default:
-		if m.streaming || len(msg.Runes) == 0 || msg.Alt {
+		if len(msg.Runes) == 0 || msg.Alt {
 			return m, nil
 		}
 		m.input += string(msg.Runes)
-		return m, nil
+		m.cursorBlinkOn = true
+		return m, blinkCursorCmd()
 	}
 }
 
@@ -107,11 +154,12 @@ func (m model) submitConversation() (model, tea.Cmd) {
 	if text == "" {
 		return m, nil
 	}
+	m = m.syncConversationContext()
 	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: text})
 	m.input = ""
-	m.streaming = true
 	m.streamInterrupted = false
 	m.convError = ""
+	m.streaming = true
 	m.transcript = append(m.transcript, convMessage{role: convRoleAgent, content: ""})
 	m.agentMsgIndex = len(m.transcript) - 1
 
@@ -126,6 +174,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 	adapter := m.harnessAdapter()
 	stageName := m.conversationStage
 	sessionID := m.harnessSessionID
+	modelSlug := m.conversationModelSlug()
 	projectDir := ""
 	if svc != nil {
 		projectDir = svc.ProjectDir
@@ -142,6 +191,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			SessionID:  sessionID,
 			Stream:     true,
 			StageName:  stageName,
+			Model:      modelSlug,
 			OnStreamDelta: func(delta string) {
 				ch <- streamDeltaMsg{delta: delta}
 			},
@@ -188,10 +238,11 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case executeDoneMsg:
 		m.streaming = false
 		m.convStreamCh = nil
+		m.cursorBlinkOn = true
 		if msg.err != nil {
 			m.convError = msg.err.Error()
 			slog.Error("tui conversation execute failed", "error", msg.err)
-			return m, nil
+			return m, blinkCursorCmd()
 		}
 		if msg.result != nil {
 			if msg.result.SessionID != "" {
@@ -209,17 +260,18 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		slog.Info("tui conversation execute complete", "stage", m.conversationStage)
-		return m, nil
+		return m, blinkCursorCmd()
 
 	case streamCancelDoneMsg:
 		m.streaming = false
 		m.streamInterrupted = true
 		m.convStreamCh = nil
+		m.cursorBlinkOn = true
 		if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 			m.transcript[m.agentMsgIndex].interrupted = true
 		}
 		slog.Info("tui conversation interrupted")
-		return m, nil
+		return m, blinkCursorCmd()
 	}
 	return m, nil
 }
@@ -236,26 +288,36 @@ func (m model) appendAgentDelta(delta string) {
 func (m model) renderConversation() string {
 	var b strings.Builder
 	stage := m.conversationStage
+	modelSlug := m.conversationModelSlug()
+	tool := m.conversationHarnessTool()
 	if stage == "" {
-		b.WriteString(mutedStyle.Render("No active etapa for conversation. Start a stage with /hero-start or hero stage start."))
-		return b.String()
-	}
-
-	iter := ""
-	for _, st := range m.status.Stages {
-		if strings.EqualFold(st.Name, stage) {
-			iter = st.Iteration
-			break
+		header := fmt.Sprintf("Free chat · harness %s · model %s", tool, modelSlug)
+		b.WriteString(headerStyle.Render(header))
+		b.WriteByte('\n')
+		if m.harnessSessionID != "" {
+			b.WriteString(mutedStyle.Render("session: " + truncateSessionID(m.harnessSessionID)))
+			b.WriteByte('\n')
 		}
-	}
-	header := fmt.Sprintf("Cycle C%d — %s · iter %s", m.status.CycleNumber, stage, iter)
-	b.WriteString(headerStyle.Render(header))
-	b.WriteByte('\n')
-	if m.harnessSessionID != "" {
-		b.WriteString(mutedStyle.Render("session: " + truncateSessionID(m.harnessSessionID)))
+		b.WriteString(mutedStyle.Render("No active etapa — chatting with harness defaults. /hero-new then /hero-start for a cycle."))
+		b.WriteByte('\n')
+		b.WriteByte('\n')
+	} else {
+		iter := ""
+		for _, st := range m.status.Stages {
+			if strings.EqualFold(st.Name, stage) {
+				iter = st.Iteration
+				break
+			}
+		}
+		header := fmt.Sprintf("Cycle C%d — %s · iter %s · model %s", m.status.CycleNumber, stage, iter, modelSlug)
+		b.WriteString(headerStyle.Render(header))
+		b.WriteByte('\n')
+		if m.harnessSessionID != "" {
+			b.WriteString(mutedStyle.Render("session: " + truncateSessionID(m.harnessSessionID)))
+			b.WriteByte('\n')
+		}
 		b.WriteByte('\n')
 	}
-	b.WriteByte('\n')
 
 	if len(m.transcript) == 0 {
 		b.WriteString(mutedStyle.Render("Submit a message to start an interação."))
@@ -286,20 +348,63 @@ func (m model) renderConversation() string {
 		b.WriteByte('\n')
 		b.WriteString(errorStyle.Render("✗ " + m.convError))
 		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("→ Check harness login: cursor agent login"))
+		if strings.Contains(strings.ToLower(m.convError), "auth") ||
+			strings.Contains(strings.ToLower(m.convError), "login") {
+			b.WriteString(mutedStyle.Render("→ Check harness login: cursor agent login"))
+			b.WriteByte('\n')
+		}
 	}
 
 	b.WriteByte('\n')
-	inputLine := "> " + m.input
+	b.WriteString(m.renderConversationInput())
+	return b.String()
+}
+
+func (m model) renderConversationInput() string {
+	var b strings.Builder
+	sepW := m.width
+	if sepW <= 0 {
+		sepW = 72
+	}
+	if sepW > 72 {
+		sepW = 72
+	}
+	if sepW < 20 {
+		sepW = 20
+	}
+	b.WriteString(mutedStyle.Render(strings.Repeat("─", sepW)))
+	b.WriteByte('\n')
+
 	if m.streaming {
-		b.WriteString(mutedStyle.Render(inputLine + " (waiting…)"))
-	} else {
-		b.WriteString(inputLine)
-		if m.input == "" {
-			b.WriteString(mutedStyle.Render(" type message · enter submit"))
-		}
+		b.WriteString(mutedStyle.Render("Message (waiting for agent…)"))
+		b.WriteByte('\n')
+		b.WriteString(promptStyle.Render("> "))
+		b.WriteString(mutedStyle.Render(m.input))
+		return b.String()
+	}
+
+	b.WriteString(promptStyle.Render("Message"))
+	b.WriteString(mutedStyle.Render("  ·  Enter send · Esc clear · 1-5 leave"))
+	b.WriteByte('\n')
+	b.WriteString(promptStyle.Render("> "))
+	b.WriteString(m.input)
+	b.WriteString(m.renderInputCaret())
+	if m.input == "" {
+		b.WriteString(mutedStyle.Render(" type here"))
 	}
 	return b.String()
+}
+
+func (m model) renderInputCaret() string {
+	if m.streaming {
+		return ""
+	}
+	// Blue block when "on"; thin pipe when "off" so a caret is always visible
+	// even if blink ticks are delayed or the terminal ignores reverse video.
+	if m.cursorBlinkOn {
+		return caretStyle.Render(" ")
+	}
+	return promptStyle.Render("|")
 }
 
 func truncateSessionID(id string) string {

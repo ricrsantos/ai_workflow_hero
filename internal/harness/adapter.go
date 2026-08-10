@@ -43,6 +43,8 @@ type ExecuteRequest struct {
 	Stream     bool   // when true, prefer stream-json and invoke OnStreamDelta
 	StageName  string
 	AgentName  string
+	// Model is the harness CLI model slug (e.g. composer-2.5). Empty leaves harness default.
+	Model string
 	// OnStreamDelta receives assistant text chunks when Stream is true (optional).
 	OnStreamDelta func(delta string)
 }

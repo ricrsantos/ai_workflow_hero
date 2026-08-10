@@ -1,0 +1,77 @@
+package install
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+)
+
+func TestResolveHarnessModelSlug(t *testing.T) {
+	got := ResolveHarnessModelSlug(HarnessConfig{Model: "composer-2.5", EnableFastModel: false})
+	if got != "composer-2.5" {
+		t.Fatalf("slug=%q", got)
+	}
+	got = ResolveHarnessModelSlug(HarnessConfig{Model: "composer-2.5", EnableFastModel: true})
+	if got != "composer-2.5-fast" {
+		t.Fatalf("fast slug=%q", got)
+	}
+	got = ResolveHarnessModelSlug(HarnessConfig{Model: "composer-2.5-fast", EnableFastModel: true})
+	if got != "composer-2.5-fast" {
+		t.Fatalf("already-fast slug=%q", got)
+	}
+	got = ResolveHarnessModelSlug(HarnessConfig{})
+	if got != DefaultCursorModel {
+		t.Fatalf("empty model slug=%q", got)
+	}
+}
+
+func TestEnsureHarnessDefaults(t *testing.T) {
+	var hero HeroJSON
+	if !EnsureHarnessDefaults(&hero) {
+		t.Fatal("expected modified")
+	}
+	cfg, ok := hero.Harnesses["cursor"]
+	if !ok || cfg.Model != DefaultCursorModel || cfg.EnableFastModel {
+		t.Fatalf("cursor defaults=%+v", cfg)
+	}
+	if EnsureHarnessDefaults(&hero) {
+		t.Fatal("expected no change on second call")
+	}
+	hero.Harnesses["cursor"] = HarnessConfig{Model: "", EnableFastModel: true}
+	if !EnsureHarnessDefaults(&hero) {
+		t.Fatal("expected model fill")
+	}
+	if hero.Harnesses["cursor"].Model != DefaultCursorModel {
+		t.Fatalf("filled model=%q", hero.Harnesses["cursor"].Model)
+	}
+	if !hero.Harnesses["cursor"].EnableFastModel {
+		t.Fatal("expected enable_fast_model preserved")
+	}
+}
+
+func TestHarnessModelSlugForProject(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, filepath.Dir(cursoradapter.HeroJSONPath))
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hero := HeroJSON{
+		CLI: CLIInfo{Version: "1.0.0", Tools: []string{"cursor"}},
+		Harnesses: map[string]HarnessConfig{
+			"cursor": {Model: "composer-2.5", EnableFastModel: true},
+		},
+	}
+	data, _ := json.MarshalIndent(hero, "", "  ")
+	if err := os.WriteFile(filepath.Join(dir, cursoradapter.HeroJSONPath), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := HarnessModelSlugForProject(dir, "cursor"); got != "composer-2.5-fast" {
+		t.Fatalf("slug=%q", got)
+	}
+	if got := HarnessModelSlugForProject(t.TempDir(), "cursor"); got != DefaultCursorModel {
+		t.Fatalf("missing file default=%q", got)
+	}
+}

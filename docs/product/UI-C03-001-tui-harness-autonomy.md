@@ -42,10 +42,12 @@ New screen (or primary mode when an etapa requires interações):
 
 | Region | Content |
 |---|---|
-| Header | Cycle C{N}, etapa name, iteration, harness session indicator |
+| Header | With etapa: Cycle C{N}, etapa name, iteration, model slug, harness session. Without etapa (**freechat**): `Free chat · harness <tool> · model <slug>` |
 | Transcript | User and agent messages; agent text **streams** as `stream-json` deltas arrive |
 | Input | Multiline prompt; Enter submits **interação**; Esc cancels input |
-| Footer | Hints: `/hero-help`, etapa controls when applicable |
+| Footer | Hints: `/hero-help`, 1–6 screens, etapa controls when applicable |
+
+Chat **works without an active cycle/etapa** using `hero.json` → `harnesses.<tool>` defaults (Cursor: `composer-2.5`, `enable_fast_model: false`). Freechat session ids stay in TUI memory for the process lifetime.
 
 During harness execution:
 

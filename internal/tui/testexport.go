@@ -16,6 +16,7 @@ const (
 	ScreenEvents       = screenEvents
 	ScreenConversation = screenConversation
 	ScreenPalette      = screenPalette
+	ScreenOutput       = screenOutput
 )
 
 // PaletteItemView is a test-facing palette item.
@@ -51,7 +52,19 @@ func OpenPalette(m model) model {
 	m.screen = screenPalette
 	m.paletteFilter = ""
 	m.paletteIndex = 0
+	m.paletteOffset = 0
 	return m
+}
+
+// PaletteOffsetForTest returns the palette scroll offset.
+func PaletteOffsetForTest(m model) int {
+	return m.paletteOffset
+}
+
+// SetPaletteIndexForTest sets the selected palette index.
+func SetPaletteIndexForTest(m model, index int) model {
+	m.paletteIndex = index
+	return m.ensurePaletteVisible()
 }
 
 // SetPaletteFilter applies a palette filter.
@@ -139,13 +152,25 @@ func PendingApprovalForTest(st cycle.StatusView) string {
 
 // EnterConversationForTest switches to the conversation screen.
 func EnterConversationForTest(m model) model {
-	return m.enterConversation()
+	next, _ := m.enterConversation()
+	next.cursorBlinkOn = true
+	return next
 }
 
 // SetConversationInput sets the conversation input buffer.
 func SetConversationInput(m model, input string) model {
 	m.input = input
 	return m
+}
+
+// ConversationInputForTest returns the conversation input buffer.
+func ConversationInputForTest(m model) string {
+	return m.input
+}
+
+// ConversationErrorForTest returns the conversation error banner text.
+func ConversationErrorForTest(m model) string {
+	return m.convError
 }
 
 // ConversationTranscriptForTest returns agent transcript text for tests.
@@ -172,6 +197,28 @@ func HarnessSessionIDForTest(m model) string {
 // SubmitConversationForTest submits the current input (test helper).
 func SubmitConversationForTest(m model) (model, tea.Cmd) {
 	return m.submitConversation()
+}
+
+// ApplyActionResultForTest applies an action result message.
+func ApplyActionResultForTest(m model, msg actionResultMsg) (model, tea.Cmd) {
+	next, cmd := m.Update(msg)
+	return next.(model), cmd
+}
+
+// OutputOffsetForTest returns the output panel scroll offset.
+func OutputOffsetForTest(m model) int {
+	return m.outputOffset
+}
+
+// PrevScreenForTest returns the screen restored on esc from overlays.
+func PrevScreenForTest(m model) screen {
+	return m.prevScreen
+}
+
+// SetHeight sets terminal height for tests.
+func SetHeight(m model, h int) model {
+	m.height = h
+	return m
 }
 
 // CancelConversationStreamForTest interrupts an active stream.

@@ -10,8 +10,9 @@
 | [ADR-027](#adr-027-tui-harness-selection-at-boot) | TUI harness selection at boot | Accepted |
 | [ADR-028](#adr-028-hero-cycles-and-hero-todos-runtime-commands) | `hero-cycles` and `hero-todos` Runtime commands | Accepted |
 | [ADR-029](#adr-029-hero-sync-scans-product-and-architecture-pending-items) | `hero-sync` scans product and architecture pending items | Accepted |
+| [ADR-030](#adr-030-harness-default-model-in-herojson-tui-freechat-without-cycle) | Harness default model in hero.json; TUI freechat without cycle | Accepted |
 
-**Amends:** [ADR-015](ADR-C01-001-hero-1-0.md#adr-015-dual-entry-ui-chat-and-tui-parity) (TUI gains autonomous harness path), [ADR-016](ADR-C01-001-hero-1-0.md#adr-016-harness-adapter-interface-cursor-only-impl) (full interface + CLI execution), [ADR-020](ADR-C02-001-slash-parity-harness-archive.md#adr-020-user-facing-vocabulary-is-hero-slash-commands) (hyphen vocabulary).
+**Amends:** [ADR-015](ADR-C01-001-hero-1-0.md#adr-015-dual-entry-ui-chat-and-tui-parity) (TUI gains autonomous harness path), [ADR-016](ADR-C01-001-hero-1-0.md#adr-016-harness-adapter-interface-cursor-only-impl) (full interface + CLI execution), [ADR-020](ADR-C02-001-slash-parity-harness-archive.md#adr-020-user-facing-vocabulary-is-hero-slash-commands) (hyphen vocabulary), [ADR-026](#adr-026-tui-orchestrates-via-harness-not-chat) (freechat without active etapa).
 
 ---
 
@@ -98,6 +99,23 @@
 **Consequences**:
 - `hero-sync` prompt asset updated; context_agent or orchestrator sub-step reads doc pointers.
 - Users run `/hero-sync` then `/hero-todos` when docs change.
+
+---
+
+## ADR-030: Harness default model in hero.json; TUI freechat without cycle
+
+**Context**: TUI Chat previously required an active etapa. Users also need ad-hoc harness conversations (and a CLI `--model`) when no cycle is open. Per-agent models in `workflow-config.yml` only exist inside a cycle.
+
+**Decision**:
+1. Persist per-harness defaults under `.workflow-hero/config/hero.json` → `harnesses.<tool>` with `model` and `enable_fast_model` (Cursor V1 default: `composer-2.5`, `enable_fast_model: false`).
+2. Resolve a kebab CLI slug (same rules as ADR-005: fast → `<id>-fast`) and pass it as Cursor Agent CLI `--model` on `Execute`.
+3. TUI Chat MAY submit interações with no active etapa (**freechat**): `StageName` empty, session id kept in TUI memory only (resume within the TUI process; not written to SQLite stages).
+4. With an active etapa, Chat still binds to the etapa session in SQLite; TUI Execute still uses the harness default model (cycle agent models remain Runtime/Task only).
+
+**Consequences**:
+- `hero install` / `hero upgrade` write or merge `harnesses.cursor` defaults.
+- Editing the model is via `hero.json` (no TUI editor in V1).
+- Freechat sessions do not survive TUI restart.
 
 ---
 

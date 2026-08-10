@@ -21,6 +21,20 @@ var (
 	infoStyle = lipgloss.NewStyle().Foreground(colorBlue)
 	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue).Background(lipgloss.Color("236"))
 	mutedStyle = lipgloss.NewStyle().Foreground(colorMuted)
+	// Reverse block caret for the conversation input (UI-C03-001 §3).
+	caretStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("15")).
+			Background(colorBlue).
+			Bold(true)
+	promptStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
+	// Output panel body: soft readable text (not raw default black/white).
+	outputBodyStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "236", Dark: "252"})
+	outputCycleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
+	outputTotalStyle = lipgloss.NewStyle().Foreground(colorGreen)
+	outputPanelStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorBlue).
+			Padding(0, 1)
 )
 
 func stageStatusStyle(status string) lipgloss.Style {

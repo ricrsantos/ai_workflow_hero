@@ -43,7 +43,7 @@
 ## Implemented Features
 
 - CLI commands: `install --tools cursor`, `upgrade`, `uninstall`, `doctor`, `version`, `variables`, `update-models`, `status`, `help`, plus Hero 1.0 operational API (`metrics`, `events`, `approve`, `reject`, `cancel`, `finish`, `continue`, `stage`, `cycle`, `run`, `tui`) (plus global `--verbose`/`--debug`). Cycle API includes `hero cycle openspec-change` / `--clear` and `hero cycle archive --force|--skip-openspec|--openspec-change`.
-- **Bubble Tea TUI** (`hero tui`): Status, Approvals, Artifacts, Costs, Events, **Conversation (Chat)** screens; command palette with `/hero-<name>` action labels + imported non-Hero Cursor commands (markdown expansion → Dispatch); empty-state `/hero-new`; in-process `cycle.Service`; refuses launch when `NO_COLOR` or non-TTY. Conversation screen streams harness `stream-json` via `Execute`, persists `harness_session_id` per etapa, Ctrl+C → `Cancel`.
+- **Bubble Tea TUI** (`hero tui`): Status, Approvals, Artifacts, Costs, Events, **Conversation (Chat)** screens; command palette with `/hero-<name>` action labels + imported non-Hero Cursor commands (markdown expansion → Dispatch); empty-state `/hero-new`; in-process `cycle.Service`; refuses launch when `NO_COLOR` or non-TTY. Conversation streams harness `stream-json` via `Execute` (with `--model` from `hero.json` harnesses); freechat without active etapa (in-memory session); with etapa persists `harness_session_id`; Ctrl+C → `Cancel`.
 - **SQLite operational store** (schema v3: `cycles.openspec_change`, `stages.harness_session_id`) + workflow engine + CLI-as-API cycle service with OpenSpec-coupled archive.
 - **HarnessAdapter (full)**: `IsAvailable`, sessions, `Execute`/`Cancel`/`Status`, `Dispatch`→Execute; Cursor adapter runs Agent CLI (`cursor-agent` / `cursor agent`) with json/stream-json parsers and injectable `CommandRunner`.
 - Install: git prerequisite (`--git-init` / huh confirm), name/summary flags or prompts, asset materialization, `hero.json` / `project.json` / `documents.json`, checksum tracking, `metrics-summary.md`, soft secrets hygiene, harness-marker warn-only suggestions; end-user guide at `.workflow-hero/docs/workflow-help.md`.
@@ -67,12 +67,15 @@
 
 ## Recent Decisions
 
+- ADR-030 (2026-08-08): `hero.json` → `harnesses.<tool>` default model; Cursor `composer-2.5` / `enable_fast_model: false`; TUI freechat without active etapa (in-memory session); Execute passes `--model` kebab slug.
+- TUI UX (2026-08-08): Chat caret; `/` palette scroll panel; multiline command results (`/hero-cycles`, etc.) open scrollable `screenOutput` (esc closes).
+- TUI Chat UX fix (2026-08-08): conversation screen always renders input; 1–6/`q`/`/` navigate when input empty; slog redirected to `.workflow-hero/tui.log` during TUI.
 - Cycle C3 Judge fix (2026-08-08): TUI `/hero-todos` uses `todos.ReadProject`/`Format` (no duplicate parser); `RequiredCommandFiles` includes `hero-cycles.md` + `hero-todos.md` (15 total).
 - Cycle C3 QA fix (2026-08-08): TUI `/hero-cycles` uses `cycle.Service.Cycles()` + `FormatCycles()` (archive-only cycles); user-facing `/hero:start`/`/hero:new` → hyphen in CLI copy; all OpenSpec tasks marked done.
 - Cycle C3 implementation (2026-08-08): harness + Cursor CLI runner; TUI boot/conversation; hyphen slash palette; `/hero-cycles`/`/hero-todos`; sync pending-doc scan; doctor Cursor CLI checks (ADR-024–029).
 - Cycle C2 complete (2026-08-08): slash-first Runtime/TUI; Cursor command import; harness detect warn-only; OpenSpec-coupled archive (ADR-020–023).
 - Cycle C1 complete (2026-08-07): Hero 1.0 — SQLite, AI Loop, CLI-as-API, TUI, Cursor adapter.
-- ADRs 012–029; prior 0.9.x Runtime conventions.
+- ADRs 012–030; prior 0.9.x Runtime conventions.
 
 ## Known Technical Debt
 

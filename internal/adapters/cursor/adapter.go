@@ -183,6 +183,9 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		format = "stream-json"
 	}
 	args := []string{"--print", "--output-format", format}
+	if model := strings.TrimSpace(req.Model); model != "" {
+		args = append(args, "--model", model)
+	}
 	if sessionID != "" {
 		args = append(args, "--resume="+sessionID)
 	}

@@ -91,6 +91,13 @@ func TestRun_BasicInstall(t *testing.T) {
 	if len(heroJSON.CLI.Tools) == 0 || heroJSON.CLI.Tools[0] != "cursor" {
 		t.Errorf("hero.json cli.tools = %v, want [cursor]", heroJSON.CLI.Tools)
 	}
+	cfg, ok := heroJSON.Harnesses["cursor"]
+	if !ok {
+		t.Fatal("hero.json missing harnesses.cursor")
+	}
+	if cfg.Model != install.DefaultCursorModel || cfg.EnableFastModel {
+		t.Errorf("harnesses.cursor = %+v, want model=%s enable_fast_model=false", cfg, install.DefaultCursorModel)
+	}
 
 	// Verify project.json.
 	projectData, err := os.ReadFile(filepath.Join(dir, cursoradapter.ProjectJSONPath))

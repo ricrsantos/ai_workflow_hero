@@ -1,6 +1,6 @@
 # Architecture Decision Records — AI Workflow Hero
 
-> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md). **C3 ADRs (024–029):** [ADR-C03-001-cursor-harness-tui-autonomy.md](ADR-C03-001-cursor-harness-tui-autonomy.md).
+> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md). **C3 ADRs (024–030):** [ADR-C03-001-cursor-harness-tui-autonomy.md](ADR-C03-001-cursor-harness-tui-autonomy.md).
 
 | # | Title | Status |
 |---|---|---|
@@ -33,6 +33,7 @@
 | [ADR-027](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-027-tui-harness-selection-at-boot) | TUI harness selection at boot | Accepted |
 | [ADR-028](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-028-hero-cycles-and-hero-todos-runtime-commands) | `hero-cycles` and `hero-todos` Runtime commands | Accepted |
 | [ADR-029](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-029-hero-sync-scans-product-and-architecture-pending-items) | `hero-sync` scans product and architecture pending items | Accepted |
+| [ADR-030](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-030-harness-default-model-in-herojson-tui-freechat-without-cycle) | Harness default model in hero.json; TUI freechat without cycle | Accepted |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 
@@ -212,11 +213,17 @@ Hero's own installation metadata (never edited by hand).
   "assets": {
     "version": "1.0.0",
     "installedAt": "2026-07-11T12:00:00Z"
+  },
+  "harnesses": {
+    "cursor": {
+      "model": "composer-2.5",
+      "enable_fast_model": false
+    }
   }
 }
 ```
 
-`assets.version` always equals `cli.version` (ADR-001).
+`assets.version` always equals `cli.version` (ADR-001). `harnesses.<tool>` holds TUI/CLI Execute defaults (ADR-030); Cursor V1 default model is `composer-2.5` with fast disabled.
 
 ### `.workflow-hero/config/project.json`
 

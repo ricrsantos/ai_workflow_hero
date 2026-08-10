@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-08-08 — TUI scrollable command output panel
+
+**Problem:** Long `/hero-cycles` / `/hero-todos` (and other multiline action results) dumped into `flash` and overflowed the terminal.
+
+**Decision / Outcome:** Transient `screenOutput` with bordered viewport, wrap + `outputOffset` scroll (↑↓/PgUp/PgDn), esc → `prevScreen`; one-liners stay flash. Rebuild `dist/hero`.
+
+---
+
+## 2026-08-08 — TUI palette scroll viewport
+
+**Problem:** `/` command palette listed all items; on short terminals the top commands scrolled off-screen.
+
+**Decision / Outcome:** Scrollable rounded panel sized to terminal height; `paletteOffset` follows selection; ▲/▼ more hints; PgUp/PgDn. Rebuild `dist/hero`.
+
+---
+
+**Problem:** Conversation input had no caret and weak orientation (`> ` only), so typing felt invisible. User still saw no caret while running stale `dist/hero_0.9.0_e09acd7_*`.
+
+**Decision / Outcome:** Input block with `Message` label/hints; always-visible caret (blue block ↔ `|`); blink restarts on each keystroke; rebuild `dist/hero` from current tree. `go test ./internal/tui` green.
+
+---
+
+## 2026-08-08 — ADR-030: freechat + harness default model
+
+**Problem:** TUI Chat blocked Execute without an active etapa; Cursor Agent CLI had no `--model` from Hero config.
+
+**Decision / Outcome:** `hero.json` → `harnesses.cursor` (`composer-2.5`, `enable_fast_model: false`); install/upgrade merge defaults; `ExecuteRequest.Model` → adapter `--model` kebab slug; TUI freechat allowed with in-memory session. Docs: ADR-030, UI-C03 §3, ADR appendix schema. `go test ./...` green.
+
+---
+
+## 2026-08-08 — TUI Chat: input invisible, nav blocked, slog corruption
+
+**Problem:** On Chat screen with no active etapa, typed text never appeared (early return skipped input). Keys 1–5 were swallowed as input so screens could not switch. Enter still called harness Execute; `slog.Info` (`duration_ms=…`) painted over the alt-screen footer.
+
+**Decision / Outcome:** Always render input/transcript/errors; empty-input delegates 1–6/`q`/`/` to screen nav; `redirectSlogForTUI` writes `.workflow-hero/tui.log` while Bubble Tea runs. Later superseded for submit-without-etapa by ADR-030 freechat. Tests added; `go test ./...` green.
+
+---
+
 ## 2026-08-08 — C3 Judge: todos shared parser + RequiredCommandFiles
 
 **Problem:** Judge gaps — TUI `/hero-todos` duplicated pending-item parsing instead of `internal/todos`; `RequiredCommandFiles()` omitted `hero-cycles.md` / `hero-todos.md` (13 vs 15).

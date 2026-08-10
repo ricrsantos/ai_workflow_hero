@@ -23,6 +23,7 @@ const (
 	screenEvents
 	screenConversation
 	screenPalette
+	screenOutput
 )
 
 type model struct {
@@ -41,8 +42,16 @@ type model struct {
 
 	paletteFilter string
 	paletteIndex  int
+	paletteOffset int // first visible row in the scrollable command list
 	paletteItems  []paletteItem
 	prevScreen    screen
+
+	// Scrollable command result panel (e.g. /hero-cycles).
+	outputTitle  string
+	outputRaw    string
+	outputLines  []string
+	outputOffset int
+	outputErr    bool
 
 	// Conversation screen (design D4 / UI-C03-001 §3).
 	conversationStage string
@@ -54,6 +63,7 @@ type model struct {
 	convError         string
 	agentMsgIndex     int
 	convStreamCh      chan tea.Msg
+	cursorBlinkOn     bool
 }
 
 type refreshDataMsg struct {
@@ -67,6 +77,7 @@ type refreshDataMsg struct {
 type actionResultMsg struct {
 	err     error
 	success string
+	title   string // optional panel title for multiline output
 }
 
 func newModel(svc *cycle.Service) model {
@@ -97,6 +108,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.screen == screenPalette {
+			m = m.ensurePaletteVisible()
+		}
+		if m.screen == screenOutput {
+			m = m.rebuildOutputLines()
+		}
 		return m, nil
 
 	case refreshDataMsg:
@@ -115,13 +132,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case actionResultMsg:
 		if msg.err != nil {
-			m.flash = msg.err.Error()
-			m.flashErr = true
+			text := msg.err.Error()
 			slog.Error("tui action failed", "error", msg.err)
+			if shouldOpenOutputPanel(text, m.width) {
+				title := msg.title
+				if title == "" {
+					title = "Error"
+				}
+				m = m.openOutput(title, text, true)
+				return m, m.refreshCmd()
+			}
+			m.flash = text
+			m.flashErr = true
 		} else if msg.success != "" {
+			slog.Info("tui action ok", "message", msg.success)
+			if shouldOpenOutputPanel(msg.success, m.width) {
+				title := msg.title
+				if title == "" {
+					title = "Output"
+				}
+				m = m.openOutput(title, msg.success, false)
+				return m, m.refreshCmd()
+			}
 			m.flash = msg.success
 			m.flashErr = false
-			slog.Info("tui action ok", "message", msg.success)
 		}
 		return m, m.refreshCmd()
 
@@ -131,7 +165,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case blinkCursorMsg:
+		if m.screen != screenConversation || m.streaming {
+			return m, nil
+		}
+		m.cursorBlinkOn = !m.cursorBlinkOn
+		return m, blinkCursorCmd()
+
 	case tea.KeyMsg:
+		if m.screen == screenOutput {
+			return m.handleOutputKey(msg)
+		}
 		if m.screen == screenPalette {
 			return m.handlePaletteKey(msg)
 		}
@@ -159,6 +203,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = screenPalette
 		m.paletteFilter = ""
 		m.paletteIndex = 0
+		m.paletteOffset = 0
 		m = m.reloadPaletteItems()
 		return m, nil
 	case "ctrl+r", "f5":
@@ -185,8 +230,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.flash = ""
 		return m, nil
 	case "6":
-		m = m.enterConversation()
-		return m, nil
+		return m.enterConversation()
 	case "a":
 		if m.screen == screenApprovals {
 			return m, m.approveCmd()
@@ -215,6 +259,7 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.screen = m.prevScreen
 		m.paletteFilter = ""
 		m.paletteIndex = 0
+		m.paletteOffset = 0
 		return m, nil
 	case "ctrl+c":
 		return m, tea.Quit
@@ -222,12 +267,32 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.paletteIndex > 0 {
 			m.paletteIndex--
 		}
+		m = m.ensurePaletteVisible()
 		return m, nil
 	case "down", "ctrl+n":
 		items := m.filteredPaletteItems()
 		if m.paletteIndex < len(items)-1 {
 			m.paletteIndex++
 		}
+		m = m.ensurePaletteVisible()
+		return m, nil
+	case "pgup":
+		m.paletteIndex -= m.paletteListHeight()
+		if m.paletteIndex < 0 {
+			m.paletteIndex = 0
+		}
+		m = m.ensurePaletteVisible()
+		return m, nil
+	case "pgdown":
+		items := m.filteredPaletteItems()
+		m.paletteIndex += m.paletteListHeight()
+		if m.paletteIndex >= len(items) {
+			m.paletteIndex = len(items) - 1
+		}
+		if m.paletteIndex < 0 {
+			m.paletteIndex = 0
+		}
+		m = m.ensurePaletteVisible()
 		return m, nil
 	case "enter":
 		items := m.filteredPaletteItems()
@@ -242,12 +307,14 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.paletteFilter) > 0 {
 			m.paletteFilter = m.paletteFilter[:len(m.paletteFilter)-1]
 			m.paletteIndex = 0
+			m.paletteOffset = 0
 		}
 		return m, nil
 	default:
 		if len(msg.Runes) > 0 && !msg.Alt {
 			m.paletteFilter += string(msg.Runes)
 			m.paletteIndex = 0
+			m.paletteOffset = 0
 		}
 		return m, nil
 	}
@@ -259,6 +326,7 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		m.screen = item.screen
 		m.paletteFilter = ""
 		m.paletteIndex = 0
+		m.paletteOffset = 0
 		return m, nil
 	case actionApprove:
 		m.screen = screenApprovals
@@ -426,9 +494,9 @@ func (m model) cyclesCmd() tea.Cmd {
 	return func() tea.Msg {
 		text, err := formatCyclesList(svc)
 		if err != nil {
-			return actionResultMsg{err: err}
+			return actionResultMsg{err: err, title: "/hero-cycles"}
 		}
-		return actionResultMsg{success: text}
+		return actionResultMsg{success: text, title: "/hero-cycles"}
 	}
 }
 
@@ -437,9 +505,9 @@ func (m model) todosCmd() tea.Cmd {
 	return func() tea.Msg {
 		text, err := formatTodosList(svc.ProjectDir)
 		if err != nil {
-			return actionResultMsg{err: err}
+			return actionResultMsg{err: err, title: "/hero-todos"}
 		}
-		return actionResultMsg{success: text}
+		return actionResultMsg{success: text, title: "/hero-todos"}
 	}
 }
 
@@ -564,6 +632,10 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEscape}
 	case "enter":
 		return tea.KeyMsg{Type: tea.KeyEnter}
+	case "pgup":
+		return tea.KeyMsg{Type: tea.KeyPgUp}
+	case "pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown}
 	case "up":
 		return tea.KeyMsg{Type: tea.KeyUp}
 	case "down":

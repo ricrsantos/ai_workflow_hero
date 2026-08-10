@@ -41,8 +41,9 @@ type Options struct {
 
 // HeroJSON is the hero.json schema.
 type HeroJSON struct {
-	CLI    CLIInfo    `json:"cli"`
-	Assets AssetsInfo `json:"assets"`
+	CLI       CLIInfo                   `json:"cli"`
+	Assets    AssetsInfo                `json:"assets"`
+	Harnesses map[string]HarnessConfig  `json:"harnesses,omitempty"`
 }
 
 // CLIInfo holds CLI installation metadata.
@@ -177,6 +178,7 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 			Version:     opts.Version,
 			InstalledAt: now,
 		},
+		Harnesses: DefaultHarnesses(),
 	}
 	if err := writeJSON(filepath.Join(opts.ProjectDir, cursoradapter.HeroJSONPath), heroData); err != nil {
 		return fmt.Errorf("write hero.json: %w", err)
