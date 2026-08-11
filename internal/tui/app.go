@@ -73,6 +73,12 @@ type model struct {
 	convStreamCh      chan tea.Msg
 	chatInputFocused  bool
 
+	// OpenCode-style chat panes: scroll offsets + wait animation.
+	inputScrollOffset int
+	respScrollOffset  int
+	respFollowBottom  bool // auto-stick response to latest lines while streaming
+	waitAnimFrame     int
+
 	// Chat OpenCode-style controls.
 	chatMode        string // harness.ModeBuild | harness.ModePlan
 	chatModelSlug   string
@@ -102,6 +108,7 @@ func newModel(svc *cycle.Service) model {
 		chatMode:         harness.ModeBuild,
 		agentMsgIndex:    -1,
 		thinkingMsgIndex: -1,
+		respFollowBottom: true,
 	}
 	if svc != nil {
 		m.chatModelSlug = install.HarnessModelSlugForProject(svc.ProjectDir, "cursor")
@@ -148,6 +155,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.screen == screenOutput {
 			m = m.rebuildOutputLines()
+		}
+		if m.screen == screenConversation {
+			m = m.scrollResponse(0) // clamp to new response viewport
+			m = m.ensureInputCaretVisible()
 		}
 		return m, nil
 
@@ -201,6 +212,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, statusTickCmd()
+
+	case convWaitTickMsg:
+		if !m.streaming {
+			return m, nil
+		}
+		m.waitAnimFrame++
+		return m, convWaitTickCmd()
 
 	case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
 		if m.screen == screenConversation {

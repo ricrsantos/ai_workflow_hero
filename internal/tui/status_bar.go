@@ -19,7 +19,7 @@ const (
 )
 
 // Fixed chrome for the footer status area.
-const statusBarMaxLines = 3
+const statusBarMaxLines = 2
 
 type statusTickMsg struct{}
 
@@ -120,8 +120,23 @@ func (m model) statusBarDisplayLines(width int) []string {
 	case statusErr:
 		return wrapStatusMessage("✗", m.statusLabel, m.statusText, errorStyle, width)
 	default:
-		return []string{mutedStyle.Render("ready")}
+		lines := []string{mutedStyle.Render("ready")}
+		if hint := m.conversationStatusHint(); hint != "" {
+			lines = append(lines, mutedStyle.Render(hint))
+		}
+		return lines
 	}
+}
+
+// conversationStatusHint is the second ready-line on the Chat screen (frees header space).
+func (m model) conversationStatusHint() string {
+	if m.screen != screenConversation {
+		return ""
+	}
+	if m.conversationStage == "" {
+		return "No active etapa — chatting with harness defaults. /hero-new then /hero-start for a cycle."
+	}
+	return fmt.Sprintf("Etapa: %s", m.conversationStage)
 }
 
 func wrapStatusMessage(icon, label, text string, style lipgloss.Style, width int) []string {

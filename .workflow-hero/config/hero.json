@@ -12,7 +12,7 @@
   },
   "harnesses": {
     "cursor": {
-      "model": "cursor-grok-4.6-high",
+      "model": "composer-2.5",
       "enable_fast_model": false
     }
   }

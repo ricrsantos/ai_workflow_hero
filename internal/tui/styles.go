@@ -34,21 +34,25 @@ var (
 				Background(chatBg).
 				Bold(true)
 	promptStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
-	// OpenCode-style chat input: no left padding so accent bar sits on the edge.
+	// OpenCode-style chat panes: solid fill comes from the box Background + Width.
+	// In-box text must NOT set Background (nested bg causes black gutter artifacts).
 	chatBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("240")).
-			Background(chatBg).
-			Padding(0, 1, 0, 0) // top, right, bottom, left — flush left for accent
-	chatLineStyle = lipgloss.NewStyle().Background(chatBg)
-	chatModeBuildStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue).Background(chatBg)
-	chatModePlanStyle  = lipgloss.NewStyle().Bold(true).Foreground(colorYellow).Background(chatBg)
-	// Solid 1-cell accent bar (full-height when painted on every row).
-	chatAccentBuild = lipgloss.NewStyle().Background(colorBlue).Foreground(colorBlue)
-	chatAccentPlan  = lipgloss.NewStyle().Background(colorYellow).Foreground(colorYellow)
-	chatTextStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(chatBg)
-	chatMutedInBox = lipgloss.NewStyle().Foreground(colorMuted).Background(chatBg)
-	chatModelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(chatBg)
+			Background(chatBg)
+	chatInText  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	chatInMuted = lipgloss.NewStyle().Foreground(colorMuted)
+	chatInModel = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
+	chatInBuild = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
+	chatInPlan  = lipgloss.NewStyle().Bold(true).Foreground(colorYellow)
+	chatInAgent = lipgloss.NewStyle().Bold(true).Foreground(colorGreen)
+	chatInThink = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
+	chatInOK    = lipgloss.NewStyle().Foreground(colorGreen)
+	chatInWarn  = lipgloss.NewStyle().Foreground(colorYellow)
+	// Solid 1-cell accent bar.
+	chatAccentBuild    = lipgloss.NewStyle().Background(colorBlue).Foreground(colorBlue)
+	chatAccentPlan     = lipgloss.NewStyle().Background(colorYellow).Foreground(colorYellow)
+	chatAccentResponse = lipgloss.NewStyle().Background(colorGreen).Foreground(colorGreen)
 	// Output panel body: soft readable text (not raw default black/white).
 	outputBodyStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "236", Dark: "252"})
 	outputCycleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)

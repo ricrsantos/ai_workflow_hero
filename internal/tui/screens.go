@@ -21,7 +21,11 @@ func (m model) renderContent() string {
 	case screenEvents:
 		return m.renderEvents()
 	case screenConversation:
-		return m.renderConversation()
+		h := m.height - (5 + statusBarMaxLines)
+		if h < 3 {
+			h = 3
+		}
+		return m.renderConversation(h)
 	case screenPalette:
 		return m.renderPalette()
 	case screenOutput:
@@ -270,24 +274,41 @@ func (m model) ensurePaletteVisible() model {
 }
 
 func (m model) renderFrame() string {
-	var b strings.Builder
-	b.WriteString(titleStyle.Render("AI Hero"))
-	b.WriteString(mutedStyle.Render("  ·  "))
-	b.WriteString(screenTabBar(m.screen))
-	b.WriteByte('\n')
-	b.WriteString(strings.Repeat("─", max(20, m.width)))
-	b.WriteByte('\n')
-	content := m.renderContent()
-	b.WriteString(lipgloss.NewStyle().Width(m.width).Render(content))
-	b.WriteByte('\n')
-	b.WriteString(strings.Repeat("─", max(20, m.width)))
-	b.WriteByte('\n')
-	b.WriteString(m.renderStatusBar())
-	b.WriteByte('\n')
-	b.WriteString(strings.Repeat("─", max(20, m.width)))
-	b.WriteByte('\n')
-	b.WriteString(footerStyle.Render(m.footerHints()))
-	return b.String()
+	var top strings.Builder
+	top.WriteString(titleStyle.Render("AI Hero"))
+	top.WriteString(mutedStyle.Render("  ·  "))
+	top.WriteString(screenTabBar(m.screen))
+	top.WriteByte('\n')
+	top.WriteString(strings.Repeat("─", max(20, m.width)))
+	top.WriteByte('\n')
+
+	var bottom strings.Builder
+	bottom.WriteString(strings.Repeat("─", max(20, m.width)))
+	bottom.WriteByte('\n')
+	bottom.WriteString(m.renderStatusBar())
+	bottom.WriteByte('\n')
+	bottom.WriteString(strings.Repeat("─", max(20, m.width)))
+	bottom.WriteByte('\n')
+	bottom.WriteString(footerStyle.Render(m.footerHints()))
+
+	topStr := top.String()
+	bottomStr := bottom.String()
+	chrome := countContentLines(topStr) + countContentLines(bottomStr)
+	contentH := m.height - chrome
+	if contentH < 3 {
+		contentH = 3
+	}
+
+	var content string
+	if m.screen == screenConversation {
+		content = m.renderConversation(contentH)
+	} else {
+		// Leave other screens as-is (no Height/Width wrap — breaks bordered panes).
+		content = m.renderContent()
+	}
+	content = strings.TrimRight(content, "\n") + "\n"
+
+	return topStr + content + bottomStr
 }
 
 func screenTabBar(active screen) string {
@@ -312,9 +333,9 @@ func (m model) footerHints() string {
 	}
 	if m.screen == screenConversation {
 		if m.streaming {
-			return "ctrl+c interrupt · esc wait"
+			return "↑↓ scroll · ctrl+c interrupt"
 		}
-		return "tab mode · enter send · /hero-model · alt+1-6 screens · ctrl+q quit"
+		return "tab mode · enter send · ↑↓ scroll · /hero-model · alt+1-6 screens · ctrl+q quit"
 	}
 	return "alt+1-6 screens · / commands · ctrl+r refresh · d dispatch · ctrl+q quit"
 }

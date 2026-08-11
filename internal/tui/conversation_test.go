@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
@@ -127,6 +128,57 @@ func TestConversationScreenNavigation(t *testing.T) {
 	}
 }
 
+func drainConversationStream(t *testing.T, m model, cmd tea.Cmd) model {
+	t.Helper()
+	next := m
+	for IsConversationStreaming(next) {
+		msg := runConversationCmd(cmd)
+		if msg == nil {
+			t.Fatal("streaming stalled without message")
+		}
+		next2, nextCmd := next.Update(msg)
+		next = next2.(model)
+		cmd = nextCmd
+		if cmd == nil && IsConversationStreaming(next) {
+			t.Fatal("streaming stalled without follow-up cmd")
+		}
+	}
+	return next
+}
+
+// runConversationCmd executes a tea.Cmd, expanding BatchMsg and skipping wait ticks.
+func runConversationCmd(cmd tea.Cmd) tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	switch m := msg.(type) {
+	case tea.BatchMsg:
+		var found tea.Msg
+		for _, nested := range m {
+			if nested == nil {
+				continue
+			}
+			inner := nested()
+			switch inner.(type) {
+			case convWaitTickMsg, statusTickMsg:
+				continue
+			case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
+				return inner
+			default:
+				if found == nil {
+					found = inner
+				}
+			}
+		}
+		return found
+	case convWaitTickMsg, statusTickMsg:
+		return nil
+	default:
+		return msg
+	}
+}
+
 func TestConversationStreamingSubmit(t *testing.T) {
 	svc, h := newConversationTestService(t)
 	m := NewTestModel(svc)
@@ -141,16 +193,7 @@ func TestConversationStreamingSubmit(t *testing.T) {
 		t.Fatal("expected wait cmd")
 	}
 
-	// Drain stream messages until execute completes.
-	for IsConversationStreaming(next) {
-		msg := cmd()
-		next2, nextCmd := next.Update(msg)
-		next = next2.(model)
-		cmd = nextCmd
-		if cmd == nil && IsConversationStreaming(next) {
-			t.Fatal("streaming stalled without follow-up cmd")
-		}
-	}
+	next = drainConversationStream(t, next, cmd)
 
 	if h.lastPrompt != "What is Hero?" {
 		t.Fatalf("prompt = %q", h.lastPrompt)
@@ -189,15 +232,7 @@ func TestConversationResumeSession(t *testing.T) {
 	}
 	m = SetConversationInput(m, "continue")
 	next, cmd := SubmitConversationForTest(m)
-	for IsConversationStreaming(next) {
-		msg := cmd()
-		next2, nextCmd := next.Update(msg)
-		next = next2.(model)
-		cmd = nextCmd
-		if cmd == nil && IsConversationStreaming(next) {
-			t.Fatal("streaming stalled")
-		}
-	}
+	next = drainConversationStream(t, next, cmd)
 	if h.lastSessionID != "existing-session" {
 		t.Fatalf("resume session = %q", h.lastSessionID)
 	}
@@ -215,7 +250,7 @@ func TestConversationCancelDuringStream(t *testing.T) {
 		t.Fatal("expected streaming")
 	}
 	// Apply first delta.
-	msg := cmd()
+	msg := runConversationCmd(cmd)
 	next2, nextCmd := next.Update(msg)
 	next = next2.(model)
 	next.harnessSessionID = "sess-cancel"
@@ -240,6 +275,48 @@ func TestConversationCancelDuringStream(t *testing.T) {
 	}
 }
 
+func TestConversationResponsePaneLayout(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	view := ViewForTest(m)
+	if !strings.Contains(view, "Agent response will appear here") {
+		t.Fatalf("expected empty response pane: %q", view)
+	}
+	if !strings.Contains(view, "Agent") {
+		t.Fatalf("expected Agent status label: %q", view)
+	}
+	if !strings.Contains(view, "↑↓ scroll") {
+		t.Fatalf("expected scroll hint: %q", view)
+	}
+	if !strings.Contains(view, "ctrl+q quit") && !strings.Contains(view, "alt+1-6") {
+		t.Fatalf("expected footer menu visible: %q", view)
+	}
+	// Etapa hint moved to status bar under ready (not in the chat header).
+	if !strings.Contains(view, "ready") || !strings.Contains(view, "No active etapa") {
+		t.Fatalf("expected ready + etapa hint in status: %q", view)
+	}
+	headerEnd := strings.Index(view, "Submit a message")
+	if headerEnd < 0 {
+		headerEnd = strings.Index(view, "Agent response")
+	}
+	if headerEnd > 0 && strings.Contains(view[:headerEnd], "No active etapa") {
+		t.Fatalf("etapa hint must not sit in chat header: %q", view[:headerEnd])
+	}
+}
+
+func TestConversationSessionInlineWithHeader(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m.harnessSessionID = "37e8feb2abcdcc44"
+	view := ViewForTest(m)
+	if !strings.Contains(view, "Free chat · harness") {
+		t.Fatalf("missing freechat header: %q", view)
+	}
+	if !strings.Contains(view, "│") || !strings.Contains(view, "session:") {
+		t.Fatalf("expected session inline with pipe: %q", view)
+	}
+}
+
 func TestConversationViewWhileStreaming(t *testing.T) {
 	svc, _ := newConversationTestService(t)
 	m := NewTestModel(svc)
@@ -247,8 +324,78 @@ func TestConversationViewWhileStreaming(t *testing.T) {
 	m = SetConversationInput(m, "hi")
 	next, _ := SubmitConversationForTest(m)
 	view := ViewForTest(next)
-	if !strings.Contains(view, "Agent responding") {
-		t.Fatalf("view: %q", view)
+	if !strings.Contains(view, "Waiting for harness") {
+		t.Fatalf("view missing wait animation: %q", view)
+	}
+	if !strings.Contains(view, "Agent") {
+		t.Fatalf("view missing response pane: %q", view)
+	}
+	// Spinner must not prefix the Agent status label — only content area animates.
+	if strings.Contains(view, " Agent ·") || strings.Contains(view, "Agent ·") {
+		// "Agent ·" is expected; braille+Agent is not.
+	}
+	for _, frame := range waitAnimFrames {
+		if strings.Contains(view, frame+" Agent") {
+			t.Fatalf("wait spinner must not sit beside Agent label: %q", view)
+		}
+	}
+}
+
+func TestChatAccentRowIsSingleLine(t *testing.T) {
+	long := strings.Repeat("abcdefghij", 20)
+	styled := chatInOK.Render(long)
+	row := chatAccentRow(chatAccentResponse, styled, 42)
+	if strings.Count(row, "\n") != 0 {
+		t.Fatalf("accent row must be a single visual line, got newlines: %q", row)
+	}
+	if lipgloss.Width(row) != 42 {
+		t.Fatalf("row width=%d want 42", lipgloss.Width(row))
+	}
+	row2 := chatAccentRow(chatAccentResponse, "short", 42)
+	if strings.Count(row2, "\n") != 0 {
+		t.Fatalf("short accent row wrapped: %q", row2)
+	}
+	empty := chatAccentRow(chatAccentResponse, "", 42)
+	if lipgloss.Width(empty) != 42 {
+		t.Fatalf("empty row width=%d want 42", lipgloss.Width(empty))
+	}
+}
+
+func TestResponseVisibleLinesScalesWithHeight(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetHeight(m, 20)
+	m = SetWidth(m, 80)
+	contentH := m.contentAreaHeight()
+	if got := m.responseVisibleLines(contentH); got < chatResponseMinLines {
+		t.Fatalf("short terminal: got %d", got)
+	}
+	m = SetHeight(m, 50)
+	tall := m.responseVisibleLines(m.contentAreaHeight())
+	m = SetHeight(m, 30)
+	short := m.responseVisibleLines(m.contentAreaHeight())
+	if tall <= short {
+		t.Fatalf("taller terminal should grow response pane: tall=%d short=%d", tall, short)
+	}
+}
+
+func TestConversationFrameFillsHeight(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 40)
+	m = EnterConversationForTest(m)
+	view := ViewForTest(m)
+	got := countContentLines(view)
+	if got != 40 {
+		t.Fatalf("frame lines=%d want 40\n%s", got, view)
+	}
+}
+
+func TestStatusBarUsesTwoLines(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	if m.statusBarLineCount() != 2 {
+		t.Fatalf("status lines = %d", m.statusBarLineCount())
 	}
 }
 
@@ -266,15 +413,7 @@ func TestConversationThinkingAndToolActivity(t *testing.T) {
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "check stream")
 	next, cmd := SubmitConversationForTest(m)
-	for IsConversationStreaming(next) {
-		msg := cmd()
-		next2, nextCmd := next.Update(msg)
-		next = next2.(model)
-		cmd = nextCmd
-		if cmd == nil && IsConversationStreaming(next) {
-			t.Fatal("streaming stalled")
-		}
-	}
+	next = drainConversationStream(t, next, cmd)
 	if got := ConversationTranscriptForTest(next); got != "Looks good." {
 		t.Fatalf("agent transcript = %q", got)
 	}
@@ -340,15 +479,7 @@ func TestConversationSubmitPassesModePlan(t *testing.T) {
 	m = SetChatModelSlugForTest(m, "composer-2.5")
 	m = SetConversationInput(m, "plan please")
 	next, cmd := SubmitConversationForTest(m)
-	for IsConversationStreaming(next) {
-		msg := cmd()
-		next2, nextCmd := next.Update(msg)
-		next = next2.(model)
-		cmd = nextCmd
-		if cmd == nil && IsConversationStreaming(next) {
-			t.Fatal("streaming stalled")
-		}
-	}
+	next = drainConversationStream(t, next, cmd)
 	if h.lastMode != harness.ModePlan {
 		t.Fatalf("mode=%q", h.lastMode)
 	}
@@ -512,15 +643,7 @@ func TestConversationSubmitWithoutStage(t *testing.T) {
 	if !IsConversationStreaming(next) {
 		t.Fatal("expected streaming for freechat")
 	}
-	for IsConversationStreaming(next) {
-		msg := cmd()
-		next2, nextCmd := next.Update(msg)
-		next = next2.(model)
-		cmd = nextCmd
-		if cmd == nil && IsConversationStreaming(next) {
-			t.Fatal("streaming stalled")
-		}
-	}
+	next = drainConversationStream(t, next, cmd)
 	if h.lastPrompt != "ping" {
 		t.Fatalf("prompt=%q", h.lastPrompt)
 	}

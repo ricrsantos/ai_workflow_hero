@@ -32,6 +32,7 @@ type ActionResultForTest = actionResultMsg
 func NewTestModel(svc *cycle.Service) model {
 	m := newModel(svc)
 	m.width = 100
+	m.height = 40
 	return m
 }
 
@@ -224,7 +225,7 @@ func RunCmdForTest(cmd tea.Cmd) tea.Msg {
 			for _, nested := range m {
 				walk(nested)
 			}
-		case statusTickMsg:
+		case statusTickMsg, convWaitTickMsg:
 			// ignore ticker
 		default:
 			if found == nil {
