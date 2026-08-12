@@ -48,6 +48,20 @@ func tuiHeroStartPreamble() string {
 		"---\n\n"
 }
 
+func tuiHeroApprovePreamble() string {
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running /hero-approve inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
+		"- Run `hero status` (or `hero status --json`) to confirm the current stage is pending approval.\n" +
+		"- Run `hero metrics` or `hero metrics --json` to gather existing stage context when estimating metrics.\n" +
+		"- Apply the Metrics Procedure; never leave token/cost/duration unset for the approved stage.\n" +
+		"- Persist approval via `hero approve --metrics-json '<JSON>'` (optional `--summary`). Do NOT write metrics.md or workflow.md.\n" +
+		"- Show the metrics summary block from the command Output Format and point to `hero metrics` for full details.\n" +
+		"- Tell the user to continue control commands in the Hero TUI (/hero-reject, /hero-finish, etc.) — not Cursor chat handoff.\n\n" +
+		"---\n\n"
+}
+
 func tuiRuntimeCommandPrompt(cmdName, commandBody string) string {
 	preamble := tuiRuntimePreamble
 	switch cmdName {
@@ -55,6 +69,8 @@ func tuiRuntimeCommandPrompt(cmdName, commandBody string) string {
 		preamble = tuiHeroNewPreamble()
 	case "start":
 		preamble = tuiHeroStartPreamble()
+	case "approve":
+		preamble = tuiHeroApprovePreamble()
 	}
 	return preamble + strings.TrimSpace(commandBody) + "\n"
 }

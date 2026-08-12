@@ -87,6 +87,25 @@ func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
 	}
 }
 
+func TestTUIRuntimeCommandPrompt_HeroApproveOverrides(t *testing.T) {
+	got := tuiRuntimeCommandPrompt("approve", "# /hero-approve\n\nbody")
+	if !strings.Contains(got, "/hero-approve") {
+		t.Fatalf("missing approve context: %q", got)
+	}
+	if !strings.Contains(got, "hero approve --metrics-json") {
+		t.Fatalf("missing metrics-json requirement: %q", got)
+	}
+	if !strings.Contains(got, "hero status") {
+		t.Fatalf("missing hero status guard: %q", got)
+	}
+	if strings.Contains(got, "hero cycle sync-config") {
+		t.Fatalf("start override leaked into approve: %q", got)
+	}
+	if !strings.Contains(got, "body") {
+		t.Fatalf("missing command body: %q", got)
+	}
+}
+
 func TestTUIRuntimeCommandPrompt_GenericPreamble(t *testing.T) {
 	got := tuiRuntimeCommandPrompt("sync", "# /hero-sync\n\nbody")
 	if !strings.Contains(got, "Hero TUI") {

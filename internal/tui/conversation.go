@@ -155,20 +155,12 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string) (model, t
 	m.runtimeAgentName = ""
 
 	var executePrompt string
-	if cmdName == "start" {
-		agentPath := filepath.Join(m.svc.ProjectDir, cursoradapter.AgentsDir, "orchestration_agent.md")
-		agentBody, err := cursoradapter.ReadAgentPrompt(agentPath)
+	if cmdName == "start" || cmdName == "approve" {
+		composite, err := orchestratorRuntimePrompt(m.svc.ProjectDir, cmdBody)
 		if err != nil {
-			slog.Error("tui orchestration agent read failed", "path", agentPath, "error", err)
-			m.convError = fmt.Errorf("read orchestration_agent: %w", err).Error()
+			slog.Error("tui orchestration runtime prompt failed", "cmd", cmdName, "error", err)
+			m.convError = err.Error()
 			return m, nil
-		}
-		composite := strings.TrimSpace(agentBody)
-		if body := strings.TrimSpace(cmdBody); body != "" {
-			if composite != "" {
-				composite += "\n\n---\n\n"
-			}
-			composite += body
 		}
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite)
 		m.runtimeAgentName = "orchestration_agent"
@@ -178,6 +170,22 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string) (model, t
 
 	m = m.beginConversationExecute(label, executePrompt)
 	return m, tea.Batch(waitConvMsg(m.convStreamCh), convWaitTickCmd())
+}
+
+func orchestratorRuntimePrompt(projectDir, cmdBody string) (string, error) {
+	agentPath := filepath.Join(projectDir, cursoradapter.AgentsDir, "orchestration_agent.md")
+	agentBody, err := cursoradapter.ReadAgentPrompt(agentPath)
+	if err != nil {
+		return "", fmt.Errorf("read orchestration_agent: %w", err)
+	}
+	composite := strings.TrimSpace(agentBody)
+	if body := strings.TrimSpace(cmdBody); body != "" {
+		if composite != "" {
+			composite += "\n\n---\n\n"
+		}
+		composite += body
+	}
+	return composite, nil
 }
 
 func (m model) beginConversationExecute(userLabel, executePrompt string) model {

@@ -317,31 +317,35 @@ func TestPendingApprovalDetection(t *testing.T) {
 }
 
 func TestApproveActionWithService(t *testing.T) {
-	svc := newTestService(t)
-	if err := svc.StartStage("qa"); err != nil {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-approve.md"), []byte("# /hero-approve\n\napprove body"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.CloseStage("qa", "ready", "", false); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nagent body"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	svc := newTestServiceWithPendingApprovalInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"Stage approved."}, sessionID: "approve-key-sess"}
+	svc.Harness = h
 	m := NewTestModel(svc)
 	m = SetScreen(m, ScreenApprovals)
 	next, cmd := HandleTestKey(m, "a")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming after approve key")
+	}
 	if cmd == nil {
-		t.Fatal("expected approve cmd")
+		t.Fatal("expected wait cmd")
 	}
-	msg := RunCmdForTest(cmd)
-	result, ok := msg.(actionResultMsg)
-	if !ok {
-		t.Fatalf("msg type %T", msg)
+	next = drainConversationStream(t, next, cmd)
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
 	}
-	if result.err != nil {
-		t.Fatal(result.err)
-	}
-	next2, _ := next.Update(result)
-	view := next2.(model).View()
-	if !contains(view, "Stage approved") && !contains(view, "approved") {
-		t.Fatalf("expected status result: %q", view)
+	if !strings.Contains(h.lastPrompt, "approve body") {
+		t.Fatalf("prompt missing command body: %q", h.lastPrompt)
 	}
 }
 

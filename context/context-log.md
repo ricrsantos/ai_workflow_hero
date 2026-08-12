@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-12 — TUI `/hero-approve` parity
+
+**Problem**: TUI `/hero-approve` called `svc.Approve("", "")` directly — no metrics, no summary, no orchestrator markdown.
+
+**Decision / Outcome**: Runtime Execute on Chat screen with `orchestration_agent.md` + `hero-approve.md` + TUI preamble; model from `agents.orchestration_agent`; gates for active cycle + `PendingApproval`; agent runs Metrics Procedure and `hero approve --metrics-json`. Tests + `comparation.md` + alignment plan updated.
+
+---
+
 ## 2026-08-12 — Cycle prepare/sync lifecycle (`/hero-new` → `/hero-start`)
 
 **Problem**: Users had to run `hero cycle new` manually after `/hero-new`; title/objective were read at cycle creation instead of at start.

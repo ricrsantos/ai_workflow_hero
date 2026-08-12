@@ -289,7 +289,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.enterConversation()
 	case "a":
 		if m.screen == screenApprovals {
-			return m.beginAction("/hero-approve", m.approveCmd())
+			return m.beginHeroApprove()
 		}
 	case "r":
 		if m.screen == screenApprovals {
@@ -421,8 +421,7 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 
 	switch item.action {
 	case actionApprove:
-		m.screen = screenApprovals
-		return m.beginAction("/hero-approve", m.approveCmd())
+		return m.beginHeroApprove()
 	case actionReject:
 		m.screen = screenApprovals
 		return m.beginAction("/hero-reject", m.rejectCmd())
@@ -533,16 +532,6 @@ func (m model) refreshCmd() tea.Cmd {
 	}
 }
 
-func (m model) approveCmd() tea.Cmd {
-	svc := m.svc
-	return func() tea.Msg {
-		if err := svc.Approve("", ""); err != nil {
-			return actionResultMsg{err: err}
-		}
-		return actionResultMsg{success: "Stage approved."}
-	}
-}
-
 func (m model) rejectCmd() tea.Cmd {
 	svc := m.svc
 	return func() tea.Msg {
@@ -591,6 +580,36 @@ func (m model) statusCmd() tea.Cmd {
 
 func noActiveCycleForStartMessage() string {
 	return "No active cycle. Run /hero-new to start."
+}
+
+func noPendingApprovalMessage() string {
+	return "No stage pending approval."
+}
+
+func (m model) beginHeroApprove() (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	if m.svc == nil {
+		m = m.setStatusResult(false, "/hero-approve", "cycle service unavailable")
+		return m, nil
+	}
+	st, err := m.svc.Status()
+	if err != nil || st.CycleNumber == 0 {
+		m = m.setStatusResult(false, "/hero-approve", noActiveCycleForStartMessage())
+		return m, nil
+	}
+	if pendingApprovalStage(st) == "" {
+		m = m.setStatusResult(false, "/hero-approve", noPendingApprovalMessage())
+		return m, nil
+	}
+	orchestratorSlug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
+	if err != nil {
+		m = m.setStatusResult(false, "/hero-approve", err.Error())
+		return m, nil
+	}
+	return m.beginHeroRuntimeConversation("approve", orchestratorSlug)
 }
 
 func (m model) continueCmd() tea.Cmd {
