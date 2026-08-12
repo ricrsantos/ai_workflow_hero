@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-08-12 — Release v1.0.1
+
+**Outcome**: Patch release — TUI `/hero-new` parity, required `/hero-model`, Chat formatting, `hero uninstall` interactive confirm. Tagged `v1.0.1`.
+
+---
+
 ## 2026-08-12 — hero uninstall interactive confirm
 
 **Decision / Outcome**: `hero uninstall` prompts with huh confirm (`.workflow-hero/` removal warning) instead of exiting with `--yes` only; `--yes` skips prompt; non-interactive still requires `--yes`.

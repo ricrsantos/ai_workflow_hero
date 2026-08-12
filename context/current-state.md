@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **1.0.0** feature-complete; **C3 archived** (2026-08-09). No active cycle. Awaiting `v1.0.0` GitHub Release. |
+| **Phase** | Hero **1.0.1** patch release; **C3 archived** (2026-08-09). No active cycle. |
 
 ## Technology Stack
 
@@ -71,8 +71,8 @@
 
 ## Pending Features
 
-- Publish GitHub Release **`v1.0.0`** (binaries + `checksums.txt`).
-- `.workflow-hero/config/hero.json` still records `cli.version` / `assets.version` **0.9.0** while CLI default is **1.0.0** — run `hero upgrade` to align.
+- Publish GitHub Release **`v1.0.1`** (binaries + `checksums.txt`).
+- `.workflow-hero/config/hero.json` still records `cli.version` / `assets.version` **0.9.0** while CLI default is **1.0.1** — run `hero upgrade` to align.
 - Post-1.0 deferred **D1–D13** (multi-harness adapters, integrations, notification manager, rich TUI, daemon/RPC, event bus, markdown projections, etc. — see PRD-C01 §4).
 - V2 scope per PRD §2.3 / §7: Windows CLI, CI/CD-automated releases, GPG-signed artifacts, non-interactive-only CLI, additional harnesses (OpenCode, Claude Code, Codex, VS Code), advanced sync/drift detection, optional stages (UX, observability, security review), AI hooks, richer project memory (RAG/DB).
 - Note: intermediate tags `v0.6.0`–`v0.7.0` never published on GitHub; `v0.8.0` / `v0.9.0` published.
@@ -87,7 +87,7 @@
 
 ## Known Technical Debt
 
-- `.workflow-hero/config/hero.json` still records `cli`/`assets` version **0.9.0** while source default is **1.0.0** — run `hero upgrade` to align.
+- `.workflow-hero/config/hero.json` still records `cli`/`assets` version **0.9.0** while source default is **1.0.1** — run `hero upgrade` to align.
 - No GitHub Actions / CI/CD release automation in V1 (ADR-010; deferred to V2 GoReleaser or equivalent).
 - GPG-signed release artifacts deferred to V2 (PRD §7; DEPLOY.md).
 - Upstream Cursor CLI gaps accepted as limitations: plugin skills, nested skill dirs (ADR-C02).
@@ -100,8 +100,8 @@
 
 ## Next Steps
 
-1. Tag and publish **`v1.0.0`** release.
-2. Run `hero upgrade` to sync local install metadata to `1.0.0`.
+1. Tag and publish **`v1.0.1`** release.
+2. Run `hero upgrade` to sync local install metadata to `1.0.1`.
 3. Start next cycle via `/hero-new` or review pending work via `/hero-todos`.
 
 ---
