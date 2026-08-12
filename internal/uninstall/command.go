@@ -1,6 +1,7 @@
 package uninstall
 
 import (
+	"io"
 	"os"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
@@ -39,14 +40,14 @@ The following are preserved:
 				return e
 			}
 
-			if !yes {
-				// Require --yes to proceed (non-interactive safety guard).
-				e := clierr.NewWithSuggestion(
-					"uninstall requires confirmation",
-					"pass --yes to confirm removal of Hero-owned files.",
-				)
-				clierr.Format(stderr, e)
-				return e
+			proceed, herr := resolveUninstallProceed(yes, stdout, stderr)
+			if herr != nil {
+				clierr.Format(stderr, herr)
+				return herr
+			}
+			if !proceed {
+				output.Progress(stdout, "Uninstall cancelled.")
+				return nil
 			}
 
 			output.Progressf(stdout, "Uninstalling Hero from %s...", projectDir)
@@ -62,6 +63,36 @@ The following are preserved:
 		},
 	}
 
-	cmd.Flags().BoolVar(&yes, "yes", false, "Confirm removal of Hero-owned files")
+	cmd.Flags().BoolVar(&yes, "yes", false, "Skip the uninstall confirmation prompt")
 	return cmd
+}
+
+func resolveUninstallProceed(skipPrompt bool, stdout, stderr interface {
+	io.Writer
+}) (bool, *clierr.HeroError) {
+	if skipPrompt {
+		return true, nil
+	}
+	if !clierr.IsTerminal(stdout) && !clierr.IsTerminal(stderr) {
+		return false, clierr.NewWithSuggestion(
+			"uninstall requires confirmation",
+			"pass --yes to confirm removal of Hero-owned files.",
+		)
+	}
+	confirmed, err := promptUninstallConfirm()
+	if err != nil {
+		return false, clierr.New("prompt error: " + err.Error())
+	}
+	return confirmed, nil
+}
+
+// ConfirmTitleForTest exposes the uninstall confirmation title for tests.
+func ConfirmTitleForTest() string { return uninstallConfirmTitle }
+
+// ConfirmBodyForTest exposes the uninstall confirmation body for tests.
+func ConfirmBodyForTest() string { return uninstallConfirmBody }
+
+// ResolveUninstallProceedForTest mirrors resolveUninstallProceed for unit tests.
+func ResolveUninstallProceedForTest(skipPrompt bool, stdout, stderr io.Writer) (bool, *clierr.HeroError) {
+	return resolveUninstallProceed(skipPrompt, stdout, stderr)
 }

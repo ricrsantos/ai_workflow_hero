@@ -10,7 +10,8 @@ import (
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 )
 
-// DefaultCursorModel is the V1 default Agent CLI model for the Cursor harness.
+// DefaultCursorModel is a documented example slug for tests and docs only.
+// Runtime TUI/harness defaults are not pre-filled; users choose via /hero-model.
 const DefaultCursorModel = "composer-2.5"
 
 // HarnessConfig holds per-harness defaults in hero.json (ADR-030).
@@ -19,11 +20,12 @@ type HarnessConfig struct {
 	EnableFastModel bool   `json:"enable_fast_model"`
 }
 
-// DefaultHarnesses returns the install-time harness defaults (Cursor V1 only).
+// DefaultHarnesses returns the install-time harness block shape (Cursor V1 only).
+// Model is intentionally empty until the user selects /hero-model in the TUI.
 func DefaultHarnesses() map[string]HarnessConfig {
 	return map[string]HarnessConfig{
 		"cursor": {
-			Model:           DefaultCursorModel,
+			Model:           "",
 			EnableFastModel: false,
 		},
 	}
@@ -34,7 +36,7 @@ func DefaultHarnesses() map[string]HarnessConfig {
 func ResolveHarnessModelSlug(cfg HarnessConfig) string {
 	id := strings.TrimSpace(cfg.Model)
 	if id == "" {
-		id = DefaultCursorModel
+		return ""
 	}
 	if !cfg.EnableFastModel {
 		return id
@@ -56,15 +58,8 @@ func EnsureHarnessDefaults(hero *HeroJSON) bool {
 		modified = true
 	}
 	for tool, def := range DefaultHarnesses() {
-		cur, ok := hero.Harnesses[tool]
-		if !ok {
+		if _, ok := hero.Harnesses[tool]; !ok {
 			hero.Harnesses[tool] = def
-			modified = true
-			continue
-		}
-		if strings.TrimSpace(cur.Model) == "" {
-			cur.Model = def.Model
-			hero.Harnesses[tool] = cur
 			modified = true
 		}
 	}
@@ -93,24 +88,30 @@ func HarnessConfigForTool(hero HeroJSON, toolID string) HarnessConfig {
 	}
 	if hero.Harnesses != nil {
 		if cfg, ok := hero.Harnesses[toolID]; ok {
-			if strings.TrimSpace(cfg.Model) == "" {
-				cfg.Model = DefaultCursorModel
-			}
 			return cfg
 		}
 	}
 	if def, ok := DefaultHarnesses()[toolID]; ok {
 		return def
 	}
-	return HarnessConfig{Model: DefaultCursorModel, EnableFastModel: false}
+	return HarnessConfig{EnableFastModel: false}
+}
+
+// HasDefaultHarnessModel reports whether the user selected a default model for toolID.
+func HasDefaultHarnessModel(projectDir, toolID string) bool {
+	hero, err := LoadHeroJSON(projectDir)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(HarnessConfigForTool(hero, toolID).Model) != ""
 }
 
 // HarnessModelSlugForProject loads hero.json and resolves the CLI model slug for toolID.
-// On read errors, returns the Cursor default slug.
+// Returns empty when the user has not chosen a default model yet.
 func HarnessModelSlugForProject(projectDir, toolID string) string {
 	hero, err := LoadHeroJSON(projectDir)
 	if err != nil {
-		return ResolveHarnessModelSlug(DefaultHarnesses()["cursor"])
+		return ""
 	}
 	return ResolveHarnessModelSlug(HarnessConfigForTool(hero, toolID))
 }

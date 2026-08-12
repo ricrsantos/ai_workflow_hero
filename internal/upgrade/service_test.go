@@ -102,7 +102,7 @@ func TestUpgrade_MigratesMissingHarnessDefaults(t *testing.T) {
 	var heroJSON install.HeroJSON
 	_ = json.Unmarshal(heroData, &heroJSON)
 	cfg, ok := heroJSON.Harnesses["cursor"]
-	if !ok || cfg.Model != install.DefaultCursorModel || cfg.EnableFastModel {
+	if !ok || cfg.Model != "" || cfg.EnableFastModel {
 		t.Fatalf("harnesses.cursor=%+v", cfg)
 	}
 }

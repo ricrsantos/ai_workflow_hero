@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -106,12 +107,63 @@ func (m model) conversationModelSlug() string {
 	return install.HarnessModelSlugForProject(projectDir, m.conversationHarnessTool())
 }
 
+func (m model) conversationModelLabel() string {
+	if slug := m.conversationModelSlug(); slug != "" {
+		return slug
+	}
+	return "not set"
+}
+
 func (m model) enterConversation() (model, tea.Cmd) {
 	m.screen = screenConversation
 	m.chatInputFocused = true
 	m = m.syncConversationContext()
 	m = m.clampInputCursor()
 	return m, nil
+}
+
+// beginHeroRuntimeConversation opens Chat and executes a Hero runtime command markdown
+// (same body as Cursor slash expansion) with the default harness model.
+func (m model) beginHeroRuntimeConversation(cmdName string) (model, tea.Cmd) {
+	if m.svc == nil {
+		m, _ = m.enterConversation()
+		m.convError = "cycle service unavailable"
+		return m, nil
+	}
+	label := "/hero-" + cmdName
+	path := filepath.Join(m.svc.ProjectDir, cursoradapter.CommandsDir, "hero-"+cmdName+".md")
+	prompt, err := cursoradapter.ReadCommandPrompt(path)
+	if err != nil {
+		slog.Error("tui hero runtime command read failed", "path", path, "error", err)
+		m, _ = m.enterConversation()
+		m.convError = fmt.Errorf("read command %s: %w", label, err).Error()
+		return m, nil
+	}
+	m, _ = m.enterConversation()
+	m.conversationStage = ""
+	m.harnessSessionID = ""
+	m.runtimeCommandName = cmdName
+	m = m.beginConversationExecute(label, tuiRuntimeCommandPrompt(cmdName, prompt))
+	return m, tea.Batch(waitConvMsg(m.convStreamCh), convWaitTickCmd())
+}
+
+func (m model) beginConversationExecute(userLabel, executePrompt string) model {
+	m.streamInterrupted = false
+	m.convError = ""
+	m.streaming = true
+	m.waitAnimFrame = 0
+	m.respFollowBottom = true
+	m.respScrollOffset = 0
+	m.chatInputFocused = false
+	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: userLabel})
+	m.transcript = append(m.transcript, convMessage{role: convRoleAgent, content: ""})
+	m.agentMsgIndex = len(m.transcript) - 1
+	m.thinkingMsgIndex = -1
+
+	ch := make(chan tea.Msg, 32)
+	m.convStreamCh = ch
+	m.startConversationExecute(executePrompt, ch)
+	return m
 }
 
 func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -284,26 +336,18 @@ func (m model) submitConversation() (model, tea.Cmd) {
 	if text == "" {
 		return m, nil
 	}
+	var cmd tea.Cmd
+	m, cmd, ok := m.ensureDefaultModel("chat")
+	if !ok {
+		return m, cmd
+	}
+	m.runtimeCommandName = ""
 	m = m.syncConversationContext()
-	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: text})
 	m.input = ""
 	m.inputCursor = 0
 	m.inputScrollOffset = 0
-	m.streamInterrupted = false
-	m.convError = ""
-	m.streaming = true
-	m.waitAnimFrame = 0
-	m.respFollowBottom = true
-	m.respScrollOffset = 0
-	m.chatInputFocused = false
-	m.transcript = append(m.transcript, convMessage{role: convRoleAgent, content: ""})
-	m.agentMsgIndex = len(m.transcript) - 1
-	m.thinkingMsgIndex = -1
-
-	ch := make(chan tea.Msg, 32)
-	m.convStreamCh = ch
-	m.startConversationExecute(text, ch)
-	return m, tea.Batch(waitConvMsg(ch), convWaitTickCmd())
+	m = m.beginConversationExecute(text, text)
+	return m, tea.Batch(waitConvMsg(m.convStreamCh), convWaitTickCmd())
 }
 
 func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
@@ -403,7 +447,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m = m.maybeFollowResponseBottom()
 		slog.Info("tui conversation execute complete", "stage", m.conversationStage)
-		return m, nil
+		return m, m.refreshCmd()
 
 	case streamCancelDoneMsg:
 		m.streaming = false
@@ -490,7 +534,7 @@ func (m model) buildConversation(responseLines int) string {
 	stage := m.conversationStage
 	tool := m.conversationHarnessTool()
 	if stage == "" {
-		b.WriteString(headerStyle.Render(fmt.Sprintf("Free chat · harness %s", tool)))
+		b.WriteString(headerStyle.Render(fmt.Sprintf("Chat · harness %s", tool)))
 		if m.harnessSessionID != "" {
 			b.WriteString(mutedStyle.Render(" │ "))
 			b.WriteString(mutedStyle.Render("session: " + truncateSessionID(m.harnessSessionID)))
@@ -523,6 +567,11 @@ func (m model) buildConversation(responseLines int) string {
 		if strings.Contains(strings.ToLower(m.convError), "auth") ||
 			strings.Contains(strings.ToLower(m.convError), "login") {
 			b.WriteString(mutedStyle.Render("→ Check harness login: cursor agent login"))
+			b.WriteByte('\n')
+		}
+		if strings.Contains(strings.ToLower(m.convError), "workspace trust") ||
+			strings.Contains(strings.ToLower(m.convError), "trust required") {
+			b.WriteString(mutedStyle.Render("→ Trust this folder in Cursor, or run: cursor agent --trust"))
 			b.WriteByte('\n')
 		}
 	}
@@ -659,7 +708,7 @@ func (m model) renderConversationResponse(responseLines int) string {
 
 	statusContent := chatInAgent.Render("Agent") +
 		chatInMuted.Render(" · ") +
-		chatInModel.Render(m.conversationModelSlug()) +
+		chatInModel.Render(m.conversationModelLabel()) +
 		chatInMuted.Render(" · ") +
 		chatInMuted.Render(m.conversationHarnessTool())
 	if visible > 0 && len(lines) > visible {
@@ -693,11 +742,13 @@ func (m model) responseContentLines(contentW int) []string {
 	for _, msg := range turn {
 		switch msg.role {
 		case convRoleThinking:
-			for _, line := range wrapOutputLine("Thinking: "+msg.content, contentW) {
+			text := formatChatAgentText(m.runtimeCommandName, "Thinking: "+msg.content)
+			for _, line := range splitOutputLines(text, contentW) {
 				out = append(out, chatInThink.Render(line))
 			}
 		case convRoleTool:
-			for _, line := range wrapOutputLine("→ "+msg.content, contentW) {
+			text := formatChatAgentText(m.runtimeCommandName, "→ "+msg.content)
+			for _, line := range splitOutputLines(text, contentW) {
 				out = append(out, chatInMuted.Render(line))
 			}
 		case convRoleAgent:
@@ -707,6 +758,7 @@ func (m model) responseContentLines(contentW int) []string {
 			} else if msg.interrupted && text != "" {
 				text += "\n[Interrupted]"
 			}
+			text = formatChatAgentText(m.runtimeCommandName, text)
 			style := chatInOK
 			if msg.interrupted {
 				style = chatInWarn
@@ -716,7 +768,7 @@ func (m model) responseContentLines(contentW int) []string {
 				out = append(out, chatInText.Render(frame+" Waiting for harness…"))
 				continue
 			}
-			for _, line := range wrapOutputLine(text, contentW) {
+			for _, line := range splitOutputLines(text, contentW) {
 				out = append(out, style.Render(line))
 			}
 		}
@@ -798,7 +850,7 @@ func (m model) renderConversationInput() string {
 
 	statusContent := modeStyle.Render(modeLabel) +
 		chatInMuted.Render(" · ") +
-		chatInModel.Render(m.conversationModelSlug()) +
+		chatInModel.Render(m.conversationModelLabel()) +
 		chatInMuted.Render(" · ") +
 		chatInMuted.Render(m.conversationHarnessTool())
 	if len(lines) > visible {

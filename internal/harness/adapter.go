@@ -11,6 +11,10 @@ type DispatchRequest struct {
 	CycleID    int64
 	StageName  string
 	Prompt     string
+	// Model is the harness CLI model slug (e.g. composer-2.5). Empty leaves harness default.
+	Model string
+	// Mode is the agent mode: "build" (default/agent) or "plan". Empty means build.
+	Mode string
 }
 
 // DispatchResult is returned by HarnessAdapter.Dispatch.

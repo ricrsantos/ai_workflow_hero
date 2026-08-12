@@ -342,6 +342,9 @@ func TestExecuteJSONFixture(t *testing.T) {
 	if !containsArg(gotArgs, "--print") || !containsArg(gotArgs, "--output-format") {
 		t.Fatalf("args=%v", gotArgs)
 	}
+	if !containsArg(gotArgs, "--trust") {
+		t.Fatalf("expected --trust in args=%v", gotArgs)
+	}
 	if !containsArg(gotArgs, "plan this") {
 		t.Fatalf("prompt missing in args=%v", gotArgs)
 	}
@@ -579,6 +582,37 @@ func TestDispatchDefaultPusherUsesExecute(t *testing.T) {
 	}
 	if !strings.Contains(res.Message, "stage output") {
 		t.Fatalf("message=%q", res.Message)
+	}
+}
+
+func TestDispatchDefaultPusherPassesModelAndMode(t *testing.T) {
+	dir := withCursorAssets(t)
+	fixture := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"ok","session_id":"s9"}`
+	var captured []string
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.VerifyAgent = func(context.Context, string) error { return nil }
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool { return containsArg(args, "--print") },
+		result:    cursoradapter.RunResult{Stdout: []byte(fixture)},
+		capture:   &captured,
+	}}}
+
+	_, err := adapter.Dispatch(context.Background(), harness.DispatchRequest{
+		ProjectDir: dir,
+		StageName:  "research",
+		Prompt:     "do research",
+		Model:      "composer-2.5",
+		Mode:       harness.ModePlan,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsArg(captured, "--model") || !containsArg(captured, "composer-2.5") {
+		t.Fatalf("expected --model composer-2.5 in args: %v", captured)
+	}
+	if !containsArg(captured, "--mode") || !containsArg(captured, "plan") {
+		t.Fatalf("expected --mode plan in args: %v", captured)
 	}
 }
 

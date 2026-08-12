@@ -157,6 +157,11 @@ func EnterConversationForTest(m model) model {
 	return next
 }
 
+// BeginHeroRuntimeConversationForTest runs a Hero runtime slash via Chat streaming.
+func BeginHeroRuntimeConversationForTest(m model, cmdName string) (model, tea.Cmd) {
+	return m.beginHeroRuntimeConversation(cmdName)
+}
+
 // SetConversationInput sets the conversation input buffer.
 func SetConversationInput(m model, input string) model {
 	m.input = input

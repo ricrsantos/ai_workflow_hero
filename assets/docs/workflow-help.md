@@ -270,7 +270,7 @@ hero update-models
 | `/hero-status` | Show cycle status in chat |
 | `/hero-cycles` | List all cycles with per-etapa metrics (SQLite + archive folders) |
 | `/hero-todos` | Show pending items from `context/current-state.md` (run `/hero-sync` first when docs changed) |
-| `/hero-model` | Select TUI chat model (persists to `hero.json`; TUI Chat screen) |
+| `/hero-model` | Select TUI default model (persists to `hero.json`; Chat screen + non-agent dispatches) |
 | `/hero-help` | List Runtime commands |
 
 ---

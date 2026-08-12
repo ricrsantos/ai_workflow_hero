@@ -56,16 +56,29 @@ func splitOutputLines(text string, width int) []string {
 }
 
 func wrapOutputLine(s string, width int) []string {
-	runes := []rune(s)
+	if width < 1 {
+		width = 1
+	}
+	runes := []rune(strings.TrimRight(s, "\r"))
 	if len(runes) == 0 {
 		return []string{""}
 	}
 	var lines []string
-	for len(runes) > width {
-		lines = append(lines, string(runes[:width]))
-		runes = runes[width:]
+	for len(runes) > 0 {
+		if len(runes) <= width {
+			lines = append(lines, string(runes))
+			break
+		}
+		cut := width
+		chunk := string(runes[:cut])
+		if sp := strings.LastIndex(chunk, " "); sp > width/4 {
+			lines = append(lines, strings.TrimSpace(chunk[:sp]))
+			runes = []rune(strings.TrimLeft(string(runes[sp:]), " "))
+			continue
+		}
+		lines = append(lines, chunk)
+		runes = runes[cut:]
 	}
-	lines = append(lines, string(runes))
 	return lines
 }
 

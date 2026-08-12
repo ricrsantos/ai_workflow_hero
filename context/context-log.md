@@ -6,6 +6,36 @@
 
 ---
 
+## 2026-08-12 — hero uninstall interactive confirm
+
+**Decision / Outcome**: `hero uninstall` prompts with huh confirm (`.workflow-hero/` removal warning) instead of exiting with `--yes` only; `--yes` skips prompt; non-interactive still requires `--yes`.
+
+---
+
+## 2026-08-12 — TUI Chat output formatting
+
+**Problem**: Chat agent pane showed broken markdown tables, raw link syntax, and Cursor-only `/hero-start` handoff text from `/hero-new`.
+
+**Decision / Outcome**: `formatChatAgentText` flattens markdown for terminal; TUI `/hero-new` skips `hero cycle new`/confirmation prompts and ends with `/hero-start` closing line; header `Free chat` → `Chat`. Tests green.
+
+---
+
+## 2026-08-12 — Required TUI default model selection
+
+**Problem**: Fresh installs pre-filled `harnesses.cursor.model` with `composer-2.5`; users never explicitly chose a default.
+
+**Decision / Outcome**: Install/upgrade seed empty `model`; `HarnessModelSlugForProject` returns `""` until `/hero-model`. TUI gates Chat submit, `/hero-new`, `/hero-start`, `/hero-sync`, `/hero-back`, dispatch (`d`), and imported harness commands — opens model picker with status hint when unset. Chat UI shows `not set` until configured. Tests + README/`hero-model.md` updated.
+
+---
+
+## 2026-08-12 — TUI `/hero-new` parity + default model
+
+**Problem**: TUI `/hero-new` called `hero cycle new` directly (no `hero-new.md` orchestration); `/hero-model` labeled “chat model” only; Dispatch/`hero run` ignored the user-selected default model.
+
+**Decision / Outcome**: `/hero-new` → Chat screen + stream `hero-new.md` with default model (fresh session, multi-turn resume). `DispatchRequest` gains `Model`/`Mode`; TUI passes default model to sync/back/start/imported dispatches. Palette hint `/hero-model` → “select default model”. README + `hero-model.md` updated. Cursor adapter `Execute` passes `--trust` for non-interactive workspace trust. Tests green.
+
+---
+
 ## 2026-08-10 — Chat panes: response box + scroll + wait animation
 
 **Problem**: Conversation response area was plain text; user wanted OpenCode-style response pane matching the send box (green accent), scroll, wait animation; later black gutters and dead vertical gaps.

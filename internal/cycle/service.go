@@ -466,13 +466,25 @@ type RunResult struct {
 	Message    string
 }
 
+// RunOptions configures harness dispatch for hero run.
+type RunOptions struct {
+	Stage string
+	Model string
+	Mode  string
+}
+
 // Run dispatches stage execution via the harness adapter and records harness_invoked.
 func (s *Service) Run(stage string) (RunResult, error) {
+	return s.RunWith(RunOptions{Stage: stage})
+}
+
+// RunWith dispatches stage execution with optional harness model/mode.
+func (s *Service) RunWith(opts RunOptions) (RunResult, error) {
 	c, err := s.Store.GetActiveCycle()
 	if err != nil {
 		return RunResult{}, err
 	}
-	stageName, err := s.resolveRunStage(c.ID, stage)
+	stageName, err := s.resolveRunStage(c.ID, opts.Stage)
 	if err != nil {
 		return RunResult{}, err
 	}
@@ -487,6 +499,8 @@ func (s *Service) Run(stage string) (RunResult, error) {
 		CycleID:    c.ID,
 		StageName:  stageName,
 		Prompt:     runPrompt(c.Number, stageName),
+		Model:      opts.Model,
+		Mode:       opts.Mode,
 	}
 	result, err := adapter.Dispatch(context.Background(), req)
 	if err != nil {

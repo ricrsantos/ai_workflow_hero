@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -83,6 +84,14 @@ func newConversationTestService(t *testing.T) (*cycle.Service, *streamingHarness
 	h := &streamingHarness{deltas: []string{"Hello", " world"}, sessionID: "sess-abc123"}
 	svc.Harness = h
 	return svc, h
+}
+
+func newConversationTestModel(t *testing.T) (model, *streamingHarness, *cycle.Service) {
+	t.Helper()
+	svc, h := newConversationTestService(t)
+	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	return m, h, svc
 }
 
 func newTestServiceWithRunningResearch(t *testing.T) *cycle.Service {
@@ -180,8 +189,7 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 }
 
 func TestConversationStreamingSubmit(t *testing.T) {
-	svc, h := newConversationTestService(t)
-	m := NewTestModel(svc)
+	m, h, svc := newConversationTestModel(t)
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "What is Hero?")
 
@@ -218,14 +226,13 @@ func TestConversationStreamingSubmit(t *testing.T) {
 }
 
 func TestConversationResumeSession(t *testing.T) {
-	svc, h := newConversationTestService(t)
+	m, h, svc := newConversationTestModel(t)
 	if err := svc.SetStageHarnessSessionID("research", "existing-session"); err != nil {
 		t.Fatal(err)
 	}
 	h.deltas = []string{"resume"}
 	h.sessionID = "existing-session"
 
-	m := NewTestModel(svc)
 	m = EnterConversationForTest(m)
 	if HarnessSessionIDForTest(m) != "existing-session" {
 		t.Fatalf("loaded session = %q", HarnessSessionIDForTest(m))
@@ -239,10 +246,9 @@ func TestConversationResumeSession(t *testing.T) {
 }
 
 func TestConversationCancelDuringStream(t *testing.T) {
-	svc, h := newConversationTestService(t)
+	m, h, _ := newConversationTestModel(t)
 	h.deltas = []string{"partial"}
 
-	m := NewTestModel(svc)
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "wait")
 	next, cmd := SubmitConversationForTest(m)
@@ -309,7 +315,7 @@ func TestConversationSessionInlineWithHeader(t *testing.T) {
 	m = EnterConversationForTest(m)
 	m.harnessSessionID = "37e8feb2abcdcc44"
 	view := ViewForTest(m)
-	if !strings.Contains(view, "Free chat · harness") {
+	if !strings.Contains(view, "Chat · harness") {
 		t.Fatalf("missing freechat header: %q", view)
 	}
 	if !strings.Contains(view, "│") || !strings.Contains(view, "session:") {
@@ -318,8 +324,7 @@ func TestConversationSessionInlineWithHeader(t *testing.T) {
 }
 
 func TestConversationViewWhileStreaming(t *testing.T) {
-	svc, _ := newConversationTestService(t)
-	m := NewTestModel(svc)
+	m, _, _ := newConversationTestModel(t)
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "hi")
 	next, _ := SubmitConversationForTest(m)
@@ -400,7 +405,7 @@ func TestStatusBarUsesTwoLines(t *testing.T) {
 }
 
 func TestConversationThinkingAndToolActivity(t *testing.T) {
-	svc, h := newConversationTestService(t)
+	m, h, _ := newConversationTestModel(t)
 	h.deltas = nil
 	h.events = []harness.StreamDelta{
 		{Kind: harness.StreamKindThinking, Text: "Let me inspect the parser."},
@@ -409,7 +414,6 @@ func TestConversationThinkingAndToolActivity(t *testing.T) {
 	}
 	h.sessionID = "sess-think"
 
-	m := NewTestModel(svc)
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "check stream")
 	next, cmd := SubmitConversationForTest(m)
@@ -434,14 +438,14 @@ func TestConversationEmptyStageShowsInput(t *testing.T) {
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "hello")
 	view := ViewForTest(m)
-	if !strings.Contains(view, "Free chat") {
-		t.Fatalf("expected freechat header: %q", view)
+	if !strings.Contains(view, "Chat") {
+		t.Fatalf("expected chat header: %q", view)
 	}
 	if !strings.Contains(view, "hello") {
 		t.Fatalf("expected visible input: %q", view)
 	}
-	if !strings.Contains(view, "composer-2.5") {
-		t.Fatalf("expected default model in input status: %q", view)
+	if !strings.Contains(view, "not set") {
+		t.Fatalf("expected unset model in input status: %q", view)
 	}
 	if !strings.Contains(view, "Build") {
 		t.Fatalf("expected Build mode label: %q", view)
@@ -657,8 +661,97 @@ func TestConversationSubmitWithoutStage(t *testing.T) {
 		t.Fatalf("session=%q", HarnessSessionIDForTest(next))
 	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "Free chat") || !strings.Contains(view, "pong") {
+	if !strings.Contains(view, "Chat") || !strings.Contains(view, "pong") {
 		t.Fatalf("view=%q", view)
+	}
+}
+
+func TestHeroNewRequiresDefaultModel(t *testing.T) {
+	dir := t.TempDir()
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	m := NewTestModel(svc)
+	m = SetAvailableModelsForTest(m, []string{"composer-2.5", "cursor-grok-4.5-high"})
+	m = OpenPalette(m)
+	next, cmd := RunPaletteItemForTest(m, "/hero-new")
+	if cmd != nil {
+		t.Fatal("expected no async cmd when default model is missing")
+	}
+	if PickingModelForTest(next) {
+		t.Fatal("model picker should not open; show status error instead")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("expected error status, got %s", StatusKindForTest(next))
+	}
+	view := ViewForTest(next)
+	if !strings.Contains(view, "/hero-model") || !strings.Contains(view, "/hero-new again") {
+		t.Fatalf("missing default-model hint: %q", view)
+	}
+}
+
+func TestConversationSubmitRequiresDefaultModel(t *testing.T) {
+	svc := newTestServiceInstalledNoCycle(t, t.TempDir())
+	h := &streamingHarness{deltas: []string{"hi"}}
+	svc.Harness = h
+	m := NewTestModel(svc)
+	m = SetAvailableModelsForTest(m, []string{"composer-2.5"})
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "hello")
+	next, cmd := SubmitConversationForTest(m)
+	if cmd != nil {
+		t.Fatal("expected no stream cmd before model selection")
+	}
+	if PickingModelForTest(next) {
+		t.Fatal("model picker should not open; show status error instead")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("expected error status, got %s", StatusKindForTest(next))
+	}
+	if h.lastPrompt != "" {
+		t.Fatalf("execute should not run without model, prompt=%q", h.lastPrompt)
+	}
+}
+
+func TestHeroNewRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	cmdDir := filepath.Join(dir, ".cursor", "commands")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := "HERO_NEW_RUNTIME_MARKER"
+	body := "# /hero-new — Start a New Development Cycle\n\n" + marker
+	if err := os.WriteFile(filepath.Join(cmdDir, "hero-new.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	h := &streamingHarness{deltas: []string{"preparing cycle"}, sessionID: "new-cycle-sess"}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	next, cmd := BeginHeroRuntimeConversationForTest(m, "new")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming after /hero-new")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, marker) {
+		t.Fatalf("prompt missing hero-new body: %q", h.lastPrompt)
+	}
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("model=%q want composer-2.5", h.lastModel)
+	}
+	if h.lastSessionID != "" {
+		t.Fatalf("expected fresh session, got resume %q", h.lastSessionID)
+	}
+	if HarnessSessionIDForTest(next) != "new-cycle-sess" {
+		t.Fatalf("session=%q", HarnessSessionIDForTest(next))
+	}
+	view := ViewForTest(next)
+	if !strings.Contains(view, "/hero-new") {
+		t.Fatalf("missing user label in view: %q", view)
 	}
 }
 

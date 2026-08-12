@@ -95,8 +95,8 @@ func TestRun_BasicInstall(t *testing.T) {
 	if !ok {
 		t.Fatal("hero.json missing harnesses.cursor")
 	}
-	if cfg.Model != install.DefaultCursorModel || cfg.EnableFastModel {
-		t.Errorf("harnesses.cursor = %+v, want model=%s enable_fast_model=false", cfg, install.DefaultCursorModel)
+	if cfg.Model != "" || cfg.EnableFastModel {
+		t.Errorf("harnesses.cursor = %+v, want empty model and enable_fast_model=false", cfg)
 	}
 
 	// Verify project.json.

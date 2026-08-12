@@ -179,7 +179,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	if req.Stream {
 		format = "stream-json"
 	}
-	args := []string{"--print", "--output-format", format}
+	args := []string{"--print", "--output-format", format, "--trust"}
 	if req.Stream {
 		// Character-level assistant deltas while the process runs.
 		args = append(args, "--stream-partial-output")
@@ -227,6 +227,11 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	if IsAuthFailure(stdout, stderr) {
 		a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: LoginHint})
 		return nil, &AuthError{Detail: firstLine(stderr, stdout)}
+	}
+	if IsTrustFailure(stdout, stderr) {
+		msg := firstLine(stderr, stdout)
+		a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: TrustHint})
+		return nil, fmt.Errorf("cursor agent workspace trust required (%s); %s", msg, TrustHint)
 	}
 	if err != nil {
 		if runCtx.Err() != nil {
@@ -391,6 +396,8 @@ func (a *Adapter) defaultPush(ctx context.Context, req harness.DispatchRequest) 
 		ProjectDir: dir,
 		Prompt:     prompt,
 		StageName:  req.StageName,
+		Model:      req.Model,
+		Mode:       req.Mode,
 		Stream:     false,
 	})
 	if err != nil {

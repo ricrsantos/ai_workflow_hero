@@ -18,6 +18,9 @@ const CursorCLI = "cursor"
 // LoginHint is the remediation text for authentication failures.
 const LoginHint = "cursor agent login"
 
+// TrustHint explains workspace trust for non-interactive Hero harness runs.
+const TrustHint = "trust this project in Cursor, or run: cursor agent --trust"
+
 // CommandSpec describes a resolved Cursor Agent CLI invocation.
 type CommandSpec struct {
 	Path string   // absolute or PATH-resolved binary
@@ -165,4 +168,10 @@ func IsAuthFailure(stdout, stderr string) bool {
 		}
 	}
 	return false
+}
+
+// IsTrustFailure reports whether stderr/stdout indicates workspace trust is required.
+func IsTrustFailure(stdout, stderr string) bool {
+	combined := strings.ToLower(stdout + "\n" + stderr)
+	return strings.Contains(combined, "workspace trust")
 }

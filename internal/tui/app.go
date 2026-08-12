@@ -84,6 +84,7 @@ type model struct {
 	chatModelSlug   string
 	availableModels []string
 	pickingModel    bool
+	runtimeCommandName string // hero runtime slash body name (e.g. "new") for Chat output normalization
 }
 
 type refreshDataMsg struct {
@@ -112,9 +113,6 @@ func newModel(svc *cycle.Service) model {
 	}
 	if svc != nil {
 		m.chatModelSlug = install.HarnessModelSlugForProject(svc.ProjectDir, "cursor")
-	}
-	if m.chatModelSlug == "" {
-		m.chatModelSlug = install.DefaultCursorModel
 	}
 	return m.reloadPaletteItems()
 }
@@ -295,6 +293,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.beginAction("/hero-reject", m.rejectCmd())
 		}
 	case "d":
+		var cmd tea.Cmd
+		m, cmd, ok := m.ensureDefaultModel("dispatch")
+		if !ok {
+			return m, cmd
+		}
 		return m.beginAction("dispatch", m.dispatchCmd())
 	case "f":
 		if m.screen == screenApprovals {
@@ -421,10 +424,27 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		m.screen = screenApprovals
 		return m.beginAction("/hero-reject", m.rejectCmd())
 	case actionNew:
-		return m.beginAction("/hero-new", m.newCycleCmd())
+		if m.streaming {
+			m = m.setStatusBusyBlocked()
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m, cmd, ok := m.ensureDefaultModel("/hero-new")
+		if !ok {
+			return m, cmd
+		}
+		return m.beginHeroRuntimeConversation("new")
 	case actionStart:
+		m, cmd, ok := m.ensureDefaultModel("/hero-start")
+		if !ok {
+			return m, cmd
+		}
 		return m.beginAction("/hero-start", m.startCmd())
 	case actionSync:
+		m, cmd, ok := m.ensureDefaultModel("/hero-sync")
+		if !ok {
+			return m, cmd
+		}
 		return m.beginAction("/hero-sync", m.heroAssetCmd("sync"))
 	case actionStatus:
 		m.screen = screenStatus
@@ -432,6 +452,10 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	case actionContinue:
 		return m.beginAction("/hero-continue", m.continueCmd())
 	case actionBack:
+		m, cmd, ok := m.ensureDefaultModel("/hero-back")
+		if !ok {
+			return m, cmd
+		}
 		return m.beginAction("/hero-back", m.heroAssetCmd("back"))
 	case actionCancel:
 		return m.beginAction("/hero-cancel", m.cancelCmd())
@@ -450,6 +474,10 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	case actionHelp:
 		return m.beginAction("/hero-help", m.helpCmd())
 	case actionImportCommand:
+		m, cmd, ok := m.ensureDefaultModel(item.commandLabel)
+		if !ok {
+			return m, cmd
+		}
 		return m.beginAction(item.commandLabel, m.importCommandCmd(item))
 	}
 	return m, nil
@@ -524,20 +552,6 @@ func (m model) finishCmd() tea.Cmd {
 	}
 }
 
-func (m model) newCycleCmd() tea.Cmd {
-	svc := m.svc
-	return func() tea.Msg {
-		res, err := svc.NewCycle("", "")
-		if err != nil {
-			return actionResultMsg{err: err}
-		}
-		return actionResultMsg{
-			success: fmt.Sprintf("Created cycle C%d — %s (%d stages).",
-				res.Cycle.Number, res.Cycle.Title, len(res.Stages)),
-		}
-	}
-}
-
 func (m model) startCmd() tea.Cmd {
 	return m.dispatchCmd()
 }
@@ -593,6 +607,11 @@ func (m model) todosCmd() tea.Cmd {
 func (m model) heroAssetCmd(name string) tea.Cmd {
 	svc := m.svc
 	label := "/hero-" + name
+	modelSlug := m.conversationModelSlug()
+	mode := m.chatMode
+	if mode == "" {
+		mode = harness.ModeBuild
+	}
 	return func() tea.Msg {
 		path := filepath.Join(svc.ProjectDir, cursoradapter.CommandsDir, "hero-"+name+".md")
 		prompt, err := cursoradapter.ReadCommandPrompt(path)
@@ -600,11 +619,11 @@ func (m model) heroAssetCmd(name string) tea.Cmd {
 			slog.Error("tui hero command read failed", "path", path, "error", err)
 			return actionResultMsg{title: label, err: fmt.Errorf("read command %s: %w", label, err)}
 		}
-		return dispatchPromptMsg(svc, label, prompt)
+		return dispatchPromptMsg(svc, label, prompt, modelSlug, mode)
 	}
 }
 
-func dispatchPromptMsg(svc *cycle.Service, label, prompt string) tea.Msg {
+func dispatchPromptMsg(svc *cycle.Service, label, prompt, modelSlug, mode string) tea.Msg {
 	adapter := svc.Harness
 	if adapter == nil {
 		adapter = cursoradapter.NewAdapter(svc.ProjectDir)
@@ -612,6 +631,8 @@ func dispatchPromptMsg(svc *cycle.Service, label, prompt string) tea.Msg {
 	res, err := adapter.Dispatch(context.Background(), harness.DispatchRequest{
 		ProjectDir: svc.ProjectDir,
 		Prompt:     prompt,
+		Model:      modelSlug,
+		Mode:       mode,
 	})
 	if err != nil {
 		slog.Error("tui command dispatch failed", "command", label, "error", err)
@@ -641,8 +662,13 @@ func dispatchPromptMsg(svc *cycle.Service, label, prompt string) tea.Msg {
 
 func (m model) dispatchCmd() tea.Cmd {
 	svc := m.svc
+	modelSlug := m.conversationModelSlug()
+	mode := m.chatMode
+	if mode == "" {
+		mode = harness.ModeBuild
+	}
 	return func() tea.Msg {
-		res, err := svc.Run("")
+		res, err := svc.RunWith(cycle.RunOptions{Model: modelSlug, Mode: mode})
 		if err != nil {
 			return actionResultMsg{err: err}
 		}
@@ -692,13 +718,18 @@ func (m model) importCommandCmd(item paletteItem) tea.Cmd {
 	svc := m.svc
 	label := item.commandLabel
 	path := item.commandPath
+	modelSlug := m.conversationModelSlug()
+	mode := m.chatMode
+	if mode == "" {
+		mode = harness.ModeBuild
+	}
 	return func() tea.Msg {
 		prompt, err := cursoradapter.ReadCommandPrompt(path)
 		if err != nil {
 			slog.Error("tui import command read failed", "path", path, "error", err)
 			return actionResultMsg{err: fmt.Errorf("read command %s: %w", label, err)}
 		}
-		return dispatchPromptMsg(svc, label, prompt)
+		return dispatchPromptMsg(svc, label, prompt, modelSlug, mode)
 	}
 }
 

@@ -53,6 +53,7 @@ func TestPaletteSyncClosesAndSetsRunning(t *testing.T) {
 	svc.Harness = &recordingHarness{}
 
 	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
 	m = OpenPalette(m)
 	m = SetPaletteFilter(m, "hero-sync")
 	// Select /hero-sync if filtered list has it.

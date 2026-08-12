@@ -175,13 +175,13 @@ hero events
 
 ### No active cycle
 
-The TUI **does not** create a development cycle. If Status shows *No active cycle*, start one in **Cursor chat** first:
+If Status shows *No active cycle*, start one from the TUI or Cursor chat:
 
-1. `/hero-new` — prepare `workflow-config.yml` and create the cycle in SQLite
-2. Edit `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`)
-3. Prefer a **new empty chat**, pick the orchestrator / grill-me agent, then `/hero-start`
+1. `/hero-new` — in the TUI (Commands menu or Chat), expands `hero-new.md` with your default harness model and walks through `workflow-config.yml` preparation (same flow as Cursor chat)
+2. Edit `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`) when the agent asks you to review
+3. Run `/hero-start` (TUI or chat) to execute configured stages; in chat, prefer a **new empty chat** with your orchestrator / grill-me agent
 
-After that, reopen or refresh the TUI (`Ctrl+R`) to see the active cycle. You can keep the TUI open while chat agents run stages.
+Refresh the TUI (`Ctrl+R`) after the cycle is created to see it on the Status screen.
 
 ### Screens and shortcuts
 
@@ -199,10 +199,41 @@ After that, reopen or refresh the TUI (`Ctrl+R`) to see the active cycle. You ca
 | `f` | Finish cycle (on Approvals screen) |
 | `c` | Cancel cycle (on Approvals screen) |
 | `d` | Dispatch harness (`hero run` / Cursor adapter, best-effort) |
+| `6` / `Ctrl+6` / `Alt+6` | **Chat** — harness conversation (free chat or active stage) |
 | `q` / `Ctrl+C` | Quit |
 | `Esc` | Close the Commands menu |
 
-The Commands menu lists Hero actions with **`/hero-<name>` labels** (for example `/hero-approve`, `/hero-finish`, `/hero-archive`) plus screen navigation (`Go: Status`, …). It can also list **imported** Cursor custom commands from the project’s `.cursor/commands/` and your user `~/.cursor/commands/` (excluding Hero’s own `hero-*.md`). Selecting an imported command expands that markdown file and dispatches it to the Cursor agent (best-effort) — the same idea as typing the slash in chat, without injecting into an already-open IDE panel.
+### Commands menu (`/`)
+
+Press `/` to open the palette (filter with typing, Enter to run). Default items:
+
+| Command | Function |
+|---|---|
+| `Go to - Status` | Open the Status screen |
+| `Go to - Approvals` | Open the Approvals screen |
+| `Go to - Artifacts` | Open the Artifacts screen |
+| `Go to - Costs` | Open the Costs screen |
+| `Go to - Events` | Open the Events screen |
+| `/hero-new` | Start a new cycle via `hero-new.md` on the Chat screen (streaming; default harness model) |
+| `/hero-start` | Dispatch the active stage to the harness (`hero run`, best-effort) |
+| `/hero-sync` | Expand `hero-sync.md` and dispatch to the harness (best-effort) |
+| `/hero-status` | Show a cycle status summary |
+| `/hero-approve` | Approve the pending stage |
+| `/hero-reject` | Reject the pending stage (returns it to Waiting) |
+| `/hero-continue` | Grant +1 extra iteration on the active stage |
+| `/hero-back` | Expand `hero-back.md` and dispatch to the harness (best-effort) |
+| `/hero-cancel` | Cancel the active cycle |
+| `/hero-finish` | Finish the active cycle |
+| `/hero-archive` | Archive the cycle (OpenSpec when linked, then move the cycle folder) |
+| `/hero-resume` | Reactivate an archived cycle |
+| `/hero-cycles` | List all cycles with per-stage metrics |
+| `/hero-todos` | List pending items from `context/current-state.md` |
+| `/hero-model` | Pick the default harness model (Chat + non-agent dispatches; persisted to `hero.json` → `harnesses.<tool>.model`) |
+| `/hero-help` | Point to `.workflow-hero/docs/workflow-help.md` |
+| `Refresh` | Reload Status, Costs, Events, and Artifacts from SQLite |
+| `Quit` | Exit the TUI |
+
+The palette can also list **imported** Cursor custom commands from the project’s `.cursor/commands/` and your user `~/.cursor/commands/` (excluding Hero’s own `hero-*.md`). Selecting an imported command expands that markdown file and dispatches it to the Cursor agent (best-effort) — the same idea as typing the slash in chat, without injecting into an already-open IDE panel.
 
 Project skills under `.cursor/skills/` are **not** listed in the TUI; the Cursor agent loads them automatically when a dispatch runs with the project as cwd.
 
@@ -242,6 +273,7 @@ Pick one entry UI per session for control actions; both read and write `.workflo
 | `/hero-status` | Show cycle status in chat |
 | `/hero-cycles` | List all cycles with per-etapa metrics |
 | `/hero-todos` | Show pending items from `context/current-state.md` |
+| `/hero-model` | Select the TUI default harness model (required once per project before Chat or harness dispatches; terminal palette; persisted in `hero.json`) |
 | `/hero-help` | List Runtime commands |
 
 ---
@@ -510,13 +542,13 @@ hero events
 
 ### Sem ciclo ativo
 
-A TUI **não cria** um ciclo de desenvolvimento. Se o Status mostrar *No active cycle*, inicie um ciclo no **chat do Cursor** primeiro:
+Se o Status mostrar *No active cycle*, inicie um ciclo pela TUI ou pelo chat do Cursor:
 
-1. `/hero-new` — prepara o `workflow-config.yml` e cria o ciclo no SQLite
-2. Edite `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`)
-3. Prefira um **chat novo e vazio**, escolha o agente orchestrator / grill-me, e então `/hero-start`
+1. `/hero-new` — na TUI (menu Commands ou Chat), expande `hero-new.md` com o modelo default do harness e conduz a preparação do `workflow-config.yml` (mesmo fluxo do chat do Cursor)
+2. Edite `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`) quando o agente pedir revisão
+3. Execute `/hero-start` (TUI ou chat) para rodar as etapas; no chat, prefira um **chat novo e vazio** com o orchestrator / grill-me
 
-Depois disso, reabra ou atualize a TUI (`Ctrl+R`) para ver o ciclo ativo. Você pode manter a TUI aberta enquanto os agentes rodam stages no chat.
+Atualize a TUI (`Ctrl+R`) depois que o ciclo for criado para vê-lo na tela Status.
 
 ### Telas e atalhos
 
@@ -534,10 +566,41 @@ Depois disso, reabra ou atualize a TUI (`Ctrl+R`) para ver o ciclo ativo. Você 
 | `f` | Finish do ciclo (na tela Approvals) |
 | `c` | Cancel do ciclo (na tela Approvals) |
 | `d` | Dispatch do harness (`hero run` / adapter Cursor, best-effort) |
+| `6` / `Ctrl+6` / `Alt+6` | **Chat** — conversa com o harness (free chat ou etapa ativa) |
 | `q` / `Ctrl+C` | Sair |
 | `Esc` | Fechar o menu de Commands |
 
-O menu Commands lista ações do Hero com labels **`/hero-<name>`** (por exemplo `/hero-approve`, `/hero-finish`, `/hero-archive`) e navegação de telas (`Go: Status`, …). Também pode listar **commands importados** de `.cursor/commands/` do projeto e de `~/.cursor/commands/` do usuário (exceto os `hero-*.md` do próprio Hero). Ao selecionar um command importado, a TUI expande o markdown e despacha para o agente Cursor (best-effort) — o mesmo efeito prático de digitar o slash no chat, sem injetar no painel já aberto da IDE.
+### Menu de Commands (`/`)
+
+Pressione `/` para abrir a palette (digite para filtrar, Enter para executar). Itens padrão:
+
+| Comando | Função |
+|---|---|
+| `Go to - Status` | Abre a tela Status |
+| `Go to - Approvals` | Abre a tela Approvals |
+| `Go to - Artifacts` | Abre a tela Artifacts |
+| `Go to - Costs` | Abre a tela Costs |
+| `Go to - Events` | Abre a tela Events |
+| `/hero-new` | Inicia um novo ciclo via `hero-new.md` na tela Chat (streaming; modelo default do harness) |
+| `/hero-start` | Despacha a etapa ativa para o harness (`hero run`, best-effort) |
+| `/hero-sync` | Expande `hero-sync.md` e despacha para o harness (best-effort) |
+| `/hero-status` | Mostra um resumo do status do ciclo |
+| `/hero-approve` | Aprova a etapa pendente |
+| `/hero-reject` | Rejeita a etapa pendente (volta para Waiting) |
+| `/hero-continue` | Concede +1 iteração extra na etapa ativa |
+| `/hero-back` | Expande `hero-back.md` e despacha para o harness (best-effort) |
+| `/hero-cancel` | Cancela o ciclo ativo |
+| `/hero-finish` | Encerra o ciclo ativo |
+| `/hero-archive` | Arquiva o ciclo (OpenSpec quando ligado, depois move a pasta do ciclo) |
+| `/hero-resume` | Reativa um ciclo arquivado |
+| `/hero-cycles` | Lista todos os ciclos com métricas por etapa |
+| `/hero-todos` | Lista pendências de `context/current-state.md` |
+| `/hero-model` | Escolhe o modelo default do harness (Chat + dispatches sem agente; persistido em `hero.json` → `harnesses.<tool>.model`) |
+| `/hero-help` | Aponta para `.workflow-hero/docs/workflow-help.md` |
+| `Refresh` | Recarrega Status, Costs, Events e Artifacts a partir do SQLite |
+| `Quit` | Sai da TUI |
+
+A palette também pode listar **commands importados** de `.cursor/commands/` do projeto e de `~/.cursor/commands/` do usuário (exceto os `hero-*.md` do próprio Hero). Ao selecionar um command importado, a TUI expande o markdown e despacha para o agente Cursor (best-effort) — o mesmo efeito prático de digitar o slash no chat, sem injetar no painel já aberto da IDE.
 
 Skills em `.cursor/skills/` **não** aparecem na TUI; o agente Cursor as carrega sozinho quando o dispatch roda com o cwd do projeto.
 
@@ -577,6 +640,7 @@ Escolha uma UI por sessão para ações de controle; ambas leem e escrevem `.wor
 | `/hero-status` | Mostra o status do ciclo no chat |
 | `/hero-cycles` | Lista todos os ciclos com métricas por etapa |
 | `/hero-todos` | Mostra pendências de `context/current-state.md` |
+| `/hero-model` | Seleciona o modelo default do harness na TUI (obrigatório uma vez por projeto antes do Chat ou dispatches; palette no terminal; persistido em `hero.json`) |
 | `/hero-help` | Lista os comandos de Runtime |
 
 ---

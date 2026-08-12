@@ -93,3 +93,12 @@ func TestIsAuthFailure(t *testing.T) {
 		t.Fatal("unexpected auth failure")
 	}
 }
+
+func TestIsTrustFailure(t *testing.T) {
+	if !cursoradapter.IsTrustFailure("", "⚠ Workspace Trust Required") {
+		t.Fatal("expected trust failure")
+	}
+	if cursoradapter.IsTrustFailure("ok", "") {
+		t.Fatal("unexpected trust failure")
+	}
+}

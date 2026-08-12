@@ -103,6 +103,19 @@ func TestEmptyCycleHintMentionsHeroNew(t *testing.T) {
 	}
 }
 
+func TestHeroModelPaletteHint(t *testing.T) {
+	m := NewTestModel(nil)
+	for _, item := range PaletteItemsForTest(m) {
+		if item.Label == "/hero-model" {
+			if item.Hint != "select default model" {
+				t.Fatalf("hint=%q want select default model", item.Hint)
+			}
+			return
+		}
+	}
+	t.Fatal("missing /hero-model in palette")
+}
+
 func TestImportedCommandsInPalette(t *testing.T) {
 	dir := t.TempDir()
 	home := t.TempDir()
@@ -189,6 +202,7 @@ func TestImportCommandDispatch(t *testing.T) {
 	svc.Harness = rec
 
 	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
 	m = ReloadPaletteForTest(m)
 	next, cmd := RunPaletteItemForTest(m, "/opsx-archive")
 	if cmd == nil {
@@ -235,6 +249,7 @@ func TestImportCommandDispatchUnavailable(t *testing.T) {
 	svc.Harness = unavailableHarness{}
 
 	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
 	m = ReloadPaletteForTest(m)
 	_, cmd := RunPaletteItemForTest(m, "/fail-cmd")
 	if cmd == nil {
@@ -331,8 +346,8 @@ func TestApproveActionWithService(t *testing.T) {
 }
 
 func TestDispatchActionWithService(t *testing.T) {
-	svc := newTestService(t)
-	m := NewTestModel(svc)
+	m := NewTestModel(newTestService(t))
+	m = SetChatModelSlugForTest(m, "composer-2.5")
 	_, cmd := HandleTestKey(m, "d")
 	if cmd == nil {
 		t.Fatal("expected dispatch cmd")
