@@ -56,7 +56,7 @@ Reply to confirm when ready, and the cycle will be created via hero cycle new.`
 }
 
 func TestTUIRuntimeCommandPrompt_HeroNewOverrides(t *testing.T) {
-	got := tuiRuntimeCommandPrompt("new", "# /hero-new\n\nbody")
+	got := tuiRuntimeCommandPrompt("new", "# /hero-new\n\nbody", "")
 	if !strings.Contains(got, "TUI will call hero cycle new automatically") {
 		t.Fatalf("missing hero-new override: %q", got)
 	}
@@ -69,7 +69,7 @@ func TestTUIRuntimeCommandPrompt_HeroNewOverrides(t *testing.T) {
 }
 
 func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
-	got := tuiRuntimeCommandPrompt("start", "# /hero-start\n\nbody")
+	got := tuiRuntimeCommandPrompt("start", "# /hero-start\n\nbody", "")
 	if !strings.Contains(got, "orchestration agent") {
 		t.Fatalf("missing start orchestrator context: %q", got)
 	}
@@ -88,7 +88,7 @@ func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
 }
 
 func TestTUIRuntimeCommandPrompt_HeroApproveOverrides(t *testing.T) {
-	got := tuiRuntimeCommandPrompt("approve", "# /hero-approve\n\nbody")
+	got := tuiRuntimeCommandPrompt("approve", "# /hero-approve\n\nbody", "")
 	if !strings.Contains(got, "/hero-approve") {
 		t.Fatalf("missing approve context: %q", got)
 	}
@@ -106,8 +106,25 @@ func TestTUIRuntimeCommandPrompt_HeroApproveOverrides(t *testing.T) {
 	}
 }
 
+func TestTUIRuntimeCommandPrompt_HeroRejectOverrides(t *testing.T) {
+	reason := "fix the failing tests"
+	got := tuiRuntimeCommandPrompt("reject", "# /hero-reject\n\nbody", reason)
+	if !strings.Contains(got, "/hero-reject") {
+		t.Fatalf("missing reject context: %q", got)
+	}
+	if !strings.Contains(got, "hero reject --reason") {
+		t.Fatalf("missing reject CLI requirement: %q", got)
+	}
+	if !strings.Contains(got, reason) {
+		t.Fatalf("missing user rejection feedback: %q", got)
+	}
+	if !strings.Contains(got, "body") {
+		t.Fatalf("missing command body: %q", got)
+	}
+}
+
 func TestTUIRuntimeCommandPrompt_GenericPreamble(t *testing.T) {
-	got := tuiRuntimeCommandPrompt("sync", "# /hero-sync\n\nbody")
+	got := tuiRuntimeCommandPrompt("sync", "# /hero-sync\n\nbody", "")
 	if !strings.Contains(got, "Hero TUI") {
 		t.Fatalf("missing TUI preamble: %q", got)
 	}

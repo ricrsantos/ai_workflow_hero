@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-12 — TUI `/hero-reject` parity
+
+**Problem**: TUI `/hero-reject` called `svc.Reject("")` directly — empty reason, no stage re-run, no orchestrator markdown.
+
+**Decision / Outcome**: Two-step Chat flow collects rejection feedback; then Runtime Execute with `orchestration_agent.md` + `hero-reject.md` + TUI preamble embedding user reason; model from `agents.orchestration_agent`; gates for active cycle + `PendingApproval`; inline `/hero-reject <reason>` supported in Chat. Tests + `comparation.md` + alignment plan updated.
+
+---
+
 ## 2026-08-12 — TUI `/hero-approve` parity
 
 **Problem**: TUI `/hero-approve` called `svc.Approve("", "")` directly — no metrics, no summary, no orchestrator markdown.

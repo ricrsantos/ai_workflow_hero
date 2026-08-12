@@ -62,7 +62,25 @@ func tuiHeroApprovePreamble() string {
 		"---\n\n"
 }
 
-func tuiRuntimeCommandPrompt(cmdName, commandBody string) string {
+func tuiHeroRejectPreamble(reason string) string {
+	preamble := "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running /hero-reject inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ⚠).\n" +
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
+		"- The user already provided rejection feedback in the TUI (see below). Do NOT ask for feedback again.\n" +
+		"- Run `hero status` (or `hero status --json`) to confirm the current stage is pending approval.\n" +
+		"- Persist rejection via `hero reject --reason '<feedback>'` using the user feedback below. Do NOT write workflow.md.\n" +
+		"- Re-run the current stage via Task, passing the rejection reason to the responsible agent.\n" +
+		"- Respect max_iterations; if exhausted, escalate and tell the user to run /hero-continue in the Hero TUI.\n" +
+		"- Use the command Output Format (⚠ <Stage> rejected. Re-running with feedback...).\n" +
+		"- Tell the user to continue control commands in the Hero TUI (/hero-approve, /hero-finish, etc.) — not Cursor chat handoff.\n\n" +
+		"## User rejection feedback\n\n" +
+		strings.TrimSpace(reason) + "\n\n" +
+		"---\n\n"
+	return preamble
+}
+
+func tuiRuntimeCommandPrompt(cmdName, commandBody, rejectReason string) string {
 	preamble := tuiRuntimePreamble
 	switch cmdName {
 	case "new":
@@ -71,6 +89,8 @@ func tuiRuntimeCommandPrompt(cmdName, commandBody string) string {
 		preamble = tuiHeroStartPreamble()
 	case "approve":
 		preamble = tuiHeroApprovePreamble()
+	case "reject":
+		preamble = tuiHeroRejectPreamble(rejectReason)
 	}
 	return preamble + strings.TrimSpace(commandBody) + "\n"
 }

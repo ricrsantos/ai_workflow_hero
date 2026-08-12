@@ -349,6 +349,51 @@ func TestApproveActionWithService(t *testing.T) {
 	}
 }
 
+func TestRejectActionWithService(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-reject.md"), []byte("# /hero-reject\n\nreject body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nagent body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithPendingApprovalInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"Stage rejected."}, sessionID: "reject-key-sess"}
+	svc.Harness = h
+	m := NewTestModel(svc)
+	m = SetScreen(m, ScreenApprovals)
+	next, cmd := HandleTestKey(m, "r")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
+	}
+	if !AwaitingRejectReasonForTest(next) {
+		t.Fatal("expected awaiting reject reason after r key")
+	}
+	if IsConversationStreaming(next) {
+		t.Fatal("should not stream before reason is submitted")
+	}
+	reason := "needs more test coverage"
+	next = SetConversationInput(next, reason)
+	next, cmd = SubmitConversationForTest(next)
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming after reject reason submit")
+	}
+	if cmd == nil {
+		t.Fatal("expected wait cmd")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
+	}
+	if !strings.Contains(h.lastPrompt, "reject body") {
+		t.Fatalf("prompt missing command body: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, reason) {
+		t.Fatalf("prompt missing rejection reason: %q", h.lastPrompt)
+	}
+}
+
 func TestDispatchActionWithService(t *testing.T) {
 	m := NewTestModel(newTestService(t))
 	m = SetChatModelSlugForTest(m, "composer-2.5")

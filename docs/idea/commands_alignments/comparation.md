@@ -1,7 +1,7 @@
 # TUI × Cursor Chat — Command Execution Comparison
 
 > **Source:** code analysis (`internal/tui/app.go`, `assets/cursor/commands/hero-*.md`, `internal/cycle/service.go`) from the Hero 1.0 alignment discussion (Aug 2026).  
-> **Last updated:** 2026-08-12 — `/hero-approve` marked **aligned** (paridade parcial); `/hero-start` aligned (paridade parcial); `/hero-new` aligned in **v1.0.1**.
+> **Last updated:** 2026-08-12 — `/hero-reject` marked **aligned** (paridade parcial); `/hero-approve` aligned (paridade parcial); `/hero-start` aligned (paridade parcial); `/hero-new` aligned in **v1.0.1**.
 
 Non-normative idea note. For product truth, see PRD/UI/ADR cycles (C2 slash parity, C3 harness autonomy).
 
@@ -26,7 +26,7 @@ Non-normative idea note. For product truth, see PRD/UI/ADR cycles (C2 slash pari
 | `/hero-new` | ✅ **Runtime Execute:** Chat screen + stream `hero-new.md`; after stream, TUI calls `PrepareCycle()` (`hero cycle new` semantics: active cycle, empty title/objective); default model from `/hero-model`; ends with “run `/hero-start`” | **Orquestrador:** prepara/importa `workflow-config.yml`, roda `hero cycle new` (ciclo ativo, title/objective vazios no SQLite), sync `project.json`; handoff para chat limpo + `/hero-start` | **Paridade:** ambos criam ciclo SQLite ao concluir preparação do config (sem title/objective); TUI sem handoff “novo chat”; execução via Agent CLI na TUI | ✅ **Alinhado** (v1.0.1) |
 | `/hero-start` | ✅ **Runtime Execute:** exige ciclo ativo; `SyncCycleConfig()` antes do stream (title/objective do YAML → SQLite); Chat + stream `orchestration_agent.md` + `hero-start.md`; modelo `agents.orchestration_agent`; `AgentName=orchestration_agent` | **Orquestrador:** `hero cycle sync-config`, bootstrap do disco, valida config, Task subagents, `hero approve/finish` + métricas; modelo = sessão IDE | **Paridade parcial:** sync-config no TUI em Go; chat orquestrador roda CLI; modelo orquestrador via YAML (não `/hero-model`) | ✅ **Alinhado** (paridade parcial) |
 | `/hero-approve` | ✅ **Runtime Execute:** exige ciclo ativo + etapa `PendingApproval`; Chat + stream `orchestration_agent.md` + `hero-approve.md`; modelo `agents.orchestration_agent`; `AgentName=orchestration_agent`; agente confirma status, aplica Metrics Procedure, `hero approve --metrics-json` (+ summary opcional) | **Orquestrador:** confirma status, calcula métricas, `hero approve --metrics-json` (+ summary opcional) | **Paridade parcial:** sessão fresh (sem histórico `/hero-start`); contexto via CLI; modelo orquestrador via YAML (não `/hero-model`) | ✅ **Alinhado** (paridade parcial) |
-| `/hero-reject` | **CLI direto:** `svc.Reject("")` — motivo vazio | **Orquestrador:** `hero reject --reason`, reexecuta o agente da etapa com feedback | TUI só muda estado no SQLite; chat **re-dispara** o trabalho da etapa | ⏳ Pendente |
+| `/hero-reject` | ✅ **Runtime Execute:** exige ciclo ativo + etapa `PendingApproval`; coleta motivo no Chat; depois stream `orchestration_agent.md` + `hero-reject.md`; modelo `agents.orchestration_agent`; agente chama `hero reject --reason` e re-dispara etapa | **Orquestrador:** `hero reject --reason`, reexecuta o agente da etapa com feedback | **Paridade:** motivo obrigatório no Chat; reexecução via orquestrador; modelo orquestrador via YAML (não `/hero-model`) | ✅ **Alinhado** (paridade parcial) |
 | `/hero-cancel` | **CLI direto:** `svc.Cancel("")` | **Orquestrador:** `hero cancel` + **git checkout/restore** para rollback | TUI **não** faz rollback git (só marca ciclo cancelado no store) | ⏳ Pendente |
 | `/hero-finish` | **CLI direto:** `svc.Finish("")` — sem métricas | **Orquestrador:** valida etapas, `hero finish --metrics-json`, atualiza `context-log.md` / `current-state.md`, `metrics-summary.md` | TUI só fecha no SQLite; chat faz fechamento “completo” com artefatos de contexto | ⏳ Pendente |
 | `/hero-continue` | **CLI direto:** `svc.Continue(1)` — sempre **+1** fixo | **Orquestrador:** `hero continue --extra N` (N opcional) e **retoma execução** da etapa | TUI não aceita N customizado nem reexecuta a etapa | ⏳ Pendente |
@@ -81,6 +81,7 @@ Status  Approvals  Artifacts   Costs    Events    Conversation (Chat)
 - `/hero-new` usa **Runtime Execute** na tela Chat (não mais `svc.NewCycle` direto).
 - `/hero-start` usa **Runtime Execute** com `orchestration_agent.md` + `hero-start.md`; exige ciclo SQLite ativo; modelo de `agents.orchestration_agent` (TUI-only).
 - `/hero-approve` usa **Runtime Execute** com `orchestration_agent.md` + `hero-approve.md`; exige ciclo ativo e etapa `PendingApproval`; mesmo modelo orquestrador.
+- `/hero-reject` usa **Runtime Execute** com `orchestration_agent.md` + `hero-reject.md`; coleta motivo no Chat antes do stream; exige ciclo ativo e etapa `PendingApproval`; mesmo modelo orquestrador.
 - Comandos importados e `/hero-sync`, `/hero-back` ainda usam **Dispatch**.
 - Free chat na tela Chat = `conversationStage == ""`; sessão do harness fica só em memória da TUI.
 
@@ -96,7 +97,7 @@ Status  Approvals  Artifacts   Costs    Events    Conversation (Chat)
     CLI direto   Go local    Dispatch   Runtime     Orquestrador
     (reject,     (cycles,    (sync,     Execute    (lê hero-*.md,
      cancel,      todos)      back)     (new,start, chama hero CLI,
-     finish,                           approve)    Task, git, files)
+     finish,                           approve, reject)    Task, git, files)
      archive,
      etc.)
          │           │           │          │        │
@@ -108,7 +109,7 @@ Status  Approvals  Artifacts   Costs    Events    Conversation (Chat)
                     (mesmo store quando o CLI é chamado)
 ```
 
-\* `/hero-start` e `/hero-approve` na TUI leem `orchestration_agent.md` + comando via Runtime Execute.
+\* `/hero-start`, `/hero-approve` e `/hero-reject` na TUI leem `orchestration_agent.md` + comando via Runtime Execute.
 
 ---
 
@@ -153,9 +154,9 @@ Status  Approvals  Artifacts   Costs    Events    Conversation (Chat)
 
 ## Conclusão
 
-- Comandos de **controle de estado** (`reject`, `cancel`, `finish`, `archive`, `resume`, `continue`) na TUI ainda são atalhos CLI **sem LLM**; **`/hero-approve`** alinhado via Runtime Execute (métricas + summary via orquestrador).
-- Comandos de **trabalho** (`sync`, `back`) no chat são orquestração completa; na TUI ainda são dispatch best-effort — **`/hero-new`**, **`/hero-start`** e **`/hero-approve`** alinhados via Runtime Execute.
+- Comandos de **controle de estado** (`cancel`, `finish`, `archive`, `resume`, `continue`) na TUI ainda são atalhos CLI **sem LLM**; **`/hero-approve`** e **`/hero-reject`** alinhados via Runtime Execute (orquestrador + CLI).
+- Comandos de **trabalho** (`sync`, `back`) no chat são orquestração completa; na TUI ainda são dispatch best-effort — **`/hero-new`**, **`/hero-start`**, **`/hero-approve`** e **`/hero-reject`** alinhados via Runtime Execute.
 - Comandos de **consulta** (`status`, `cycles`, `todos`) na TUI são determinísticos; no chat passam pelo orquestrador com saída mais rica.
 - `/hero-model` e `/hero-help` têm comportamentos **assimétricos** por design.
 
-**Próximo alvo de alinhamento sugerido:** `/hero-reject` (motivo + reexecução da etapa na TUI).
+**Próximo alvo de alinhamento sugerido:** `/hero-cancel` (rollback git na TUI).

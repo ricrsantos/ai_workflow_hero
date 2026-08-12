@@ -1152,3 +1152,211 @@ stages:
 		t.Fatalf("execute should not run, prompt=%q", h.lastPrompt)
 	}
 }
+
+func TestHeroRejectRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	cmdMarker := "HERO_REJECT_RUNTIME_MARKER"
+	agentMarker := "ORCHESTRATION_AGENT_REJECT_MARKER"
+	reason := "tests are failing"
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-reject.md"), []byte("# /hero-reject\n\n"+cmdMarker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\n"+agentMarker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newTestServiceWithPendingApprovalInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"rejecting stage"}, sessionID: "reject-cycle-sess"}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	next, cmd := BeginHeroRejectExecuteForTest(m, reason)
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming after /hero-reject execute")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, cmdMarker) {
+		t.Fatalf("prompt missing hero-reject body: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, agentMarker) {
+		t.Fatalf("prompt missing orchestration_agent body: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, reason) {
+		t.Fatalf("prompt missing rejection reason: %q", h.lastPrompt)
+	}
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q want gpt-5.3-codex-medium", h.lastModel)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
+	}
+	if h.lastSessionID != "" {
+		t.Fatalf("expected fresh session, got resume %q", h.lastSessionID)
+	}
+}
+
+func TestHeroRejectRequiresActiveCycle(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	m := NewTestModel(svc)
+	m = OpenPalette(m)
+	next, cmd := RunPaletteItemForTest(m, "/hero-reject")
+	if cmd != nil {
+		t.Fatal("expected no async cmd when no active cycle")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("expected error status, got %s", StatusKindForTest(next))
+	}
+	if !strings.Contains(StatusTextForTest(next), "/hero-new") {
+		t.Fatalf("missing /hero-new hint: %q", StatusTextForTest(next))
+	}
+}
+
+func TestHeroRejectRequiresPendingApproval(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	h := &streamingHarness{}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = OpenPalette(m)
+	next, cmd := RunPaletteItemForTest(m, "/hero-reject")
+	if cmd != nil {
+		t.Fatal("expected no execute when no pending approval")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("expected error status, got %s", StatusKindForTest(next))
+	}
+	if !strings.Contains(StatusTextForTest(next), "pending approval") {
+		t.Fatalf("missing pending approval hint: %q", StatusTextForTest(next))
+	}
+	if h.lastPrompt != "" {
+		t.Fatalf("execute should not run, prompt=%q", h.lastPrompt)
+	}
+}
+
+func TestHeroRejectRequiresOrchestratorModel(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	heroDir := dir + "/.workflow-hero/cycles/current"
+	if err := os.MkdirAll(heroDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := []byte(`title: Empty models
+objective: test
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+  qa:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: true
+`)
+	if err := os.WriteFile(heroDir+"/workflow-config.yml", cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir+"/.workflow-hero/config", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("research"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CloseStage("research", "done", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("qa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CloseStage("qa", "ready", "", false); err != nil {
+		t.Fatal(err)
+	}
+	h := &streamingHarness{}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = OpenPalette(m)
+	next, cmd := RunPaletteItemForTest(m, "/hero-reject")
+	if cmd != nil {
+		t.Fatal("expected no execute when orchestrator model missing")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("expected error status, got %s", StatusKindForTest(next))
+	}
+	if h.lastPrompt != "" {
+		t.Fatalf("execute should not run, prompt=%q", h.lastPrompt)
+	}
+}
+
+func TestHeroRejectRequiresReason(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	svc := newTestServiceWithPendingApprovalInDir(t, dir)
+	h := &streamingHarness{}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	next, _ := RunPaletteItemForTest(m, "/hero-reject")
+	if !AwaitingRejectReasonForTest(next) {
+		t.Fatal("expected awaiting reject reason after palette reject")
+	}
+	next = SetConversationInput(next, "")
+	next, cmd := SubmitConversationForTest(next)
+	if cmd != nil {
+		t.Fatal("expected no execute without reason")
+	}
+	if !AwaitingRejectReasonForTest(next) {
+		t.Fatal("expected still awaiting reject reason")
+	}
+	if ConversationErrorForTest(next) == "" {
+		t.Fatal("expected rejection reason required error")
+	}
+	if h.lastPrompt != "" {
+		t.Fatalf("execute should not run, prompt=%q", h.lastPrompt)
+	}
+}
+
+func TestHeroRejectInlineReason(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	reason := "fix tests"
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-reject.md"), []byte("# /hero-reject\n\nREJECT_INLINE"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nAGENT_INLINE"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithPendingApprovalInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"ok"}, sessionID: "inline-reject"}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "/hero-reject "+reason)
+	next, cmd := SubmitConversationForTest(m)
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming for inline /hero-reject")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, reason) {
+		t.Fatalf("prompt missing inline reason: %q", h.lastPrompt)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
+	}
+}

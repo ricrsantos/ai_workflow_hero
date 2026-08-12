@@ -131,14 +131,17 @@ func (m model) enterConversation() (model, tea.Cmd) {
 
 // beginHeroRuntimeConversation opens Chat and executes a Hero runtime command markdown
 // (same body as Cursor slash expansion). modelSlug is optional; when empty, uses the
-// default harness model from hero.json (/hero-model).
-func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string) (model, tea.Cmd) {
+// default harness model from hero.json (/hero-model). rejectReason is used only for reject.
+func (m model) beginHeroRuntimeConversation(cmdName, modelSlug, rejectReason string) (model, tea.Cmd) {
 	if m.svc == nil {
 		m, _ = m.enterConversation()
 		m.convError = "cycle service unavailable"
 		return m, nil
 	}
 	label := "/hero-" + cmdName
+	if cmdName == "reject" && strings.TrimSpace(rejectReason) != "" {
+		label = "/hero-reject: " + strings.TrimSpace(rejectReason)
+	}
 	cmdPath := filepath.Join(m.svc.ProjectDir, cursoradapter.CommandsDir, "hero-"+cmdName+".md")
 	cmdBody, err := cursoradapter.ReadCommandPrompt(cmdPath)
 	if err != nil {
@@ -155,17 +158,17 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string) (model, t
 	m.runtimeAgentName = ""
 
 	var executePrompt string
-	if cmdName == "start" || cmdName == "approve" {
+	if cmdName == "start" || cmdName == "approve" || cmdName == "reject" {
 		composite, err := orchestratorRuntimePrompt(m.svc.ProjectDir, cmdBody)
 		if err != nil {
 			slog.Error("tui orchestration runtime prompt failed", "cmd", cmdName, "error", err)
 			m.convError = err.Error()
 			return m, nil
 		}
-		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite)
+		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite, rejectReason)
 		m.runtimeAgentName = "orchestration_agent"
 	} else {
-		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody)
+		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody, "")
 	}
 
 	m = m.beginConversationExecute(label, executePrompt)
@@ -375,8 +378,32 @@ func (m model) deleteRuneAtCursor() model {
 func (m model) submitConversation() (model, tea.Cmd) {
 	text := strings.TrimSpace(m.input)
 	if text == "" {
+		if m.awaitingRejectReason {
+			m.convError = "Rejection reason is required."
+		}
 		return m, nil
 	}
+
+	if m.awaitingRejectReason {
+		m.input = ""
+		m.inputCursor = 0
+		m.inputScrollOffset = 0
+		m.awaitingRejectReason = false
+		m.convError = ""
+		return m.beginHeroRejectExecute(text)
+	}
+
+	if reason, ok := parseHeroRejectInline(text); ok {
+		m.input = ""
+		m.inputCursor = 0
+		m.inputScrollOffset = 0
+		m.convError = ""
+		if reason == "" {
+			return m.beginHeroRejectPrompt()
+		}
+		return m.beginHeroRejectExecute(reason)
+	}
+
 	var cmd tea.Cmd
 	m, cmd, ok := m.ensureDefaultModel("chat")
 	if !ok {
@@ -389,6 +416,19 @@ func (m model) submitConversation() (model, tea.Cmd) {
 	m.inputScrollOffset = 0
 	m = m.beginConversationExecute(text, text)
 	return m, tea.Batch(waitConvMsg(m.convStreamCh), convWaitTickCmd())
+}
+
+// parseHeroRejectInline returns (reason, true) when text is /hero-reject with optional reason.
+func parseHeroRejectInline(text string) (string, bool) {
+	lower := strings.ToLower(text)
+	if lower == "/hero-reject" {
+		return "", true
+	}
+	const prefix = "/hero-reject "
+	if strings.HasPrefix(lower, prefix) {
+		return strings.TrimSpace(text[len(prefix):]), true
+	}
+	return "", false
 }
 
 func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {

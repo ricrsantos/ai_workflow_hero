@@ -159,7 +159,17 @@ func EnterConversationForTest(m model) model {
 
 // BeginHeroRuntimeConversationForTest runs a Hero runtime slash via Chat streaming.
 func BeginHeroRuntimeConversationForTest(m model, cmdName string) (model, tea.Cmd) {
-	return m.beginHeroRuntimeConversation(cmdName, "")
+	return m.beginHeroRuntimeConversation(cmdName, "", "")
+}
+
+// AwaitingRejectReasonForTest reports whether Chat is collecting rejection feedback.
+func AwaitingRejectReasonForTest(m model) bool {
+	return m.awaitingRejectReason
+}
+
+// BeginHeroRejectExecuteForTest runs reject Runtime Execute with the given reason.
+func BeginHeroRejectExecuteForTest(m model, reason string) (model, tea.Cmd) {
+	return m.beginHeroRejectExecute(reason)
 }
 
 // SetConversationInput sets the conversation input buffer.

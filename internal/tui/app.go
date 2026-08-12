@@ -88,6 +88,7 @@ type model struct {
 	runtimeCommandName string // hero runtime slash body name (e.g. "new") for Chat output normalization
 	runtimeModelSlug   string // explicit harness model for active runtime slash (e.g. /hero-start orchestrator)
 	runtimeAgentName   string // harness agent name for active runtime slash (e.g. orchestration_agent)
+	awaitingRejectReason bool   // Chat is collecting rejection feedback before Runtime Execute
 }
 
 type refreshDataMsg struct {
@@ -293,7 +294,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		if m.screen == screenApprovals {
-			return m.beginAction("/hero-reject", m.rejectCmd())
+			return m.beginHeroReject()
 		}
 	case "d":
 		var cmd tea.Cmd
@@ -423,8 +424,7 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	case actionApprove:
 		return m.beginHeroApprove()
 	case actionReject:
-		m.screen = screenApprovals
-		return m.beginAction("/hero-reject", m.rejectCmd())
+		return m.beginHeroReject()
 	case actionNew:
 		if m.streaming {
 			m = m.setStatusBusyBlocked()
@@ -435,7 +435,7 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		if !ok {
 			return m, cmd
 		}
-		return m.beginHeroRuntimeConversation("new", "")
+		return m.beginHeroRuntimeConversation("new", "", "")
 	case actionStart:
 		if m.streaming {
 			m = m.setStatusBusyBlocked()
@@ -459,7 +459,7 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 			m = m.setStatusResult(false, "/hero-start", err.Error())
 			return m, nil
 		}
-		return m.beginHeroRuntimeConversation("start", orchestratorSlug)
+		return m.beginHeroRuntimeConversation("start", orchestratorSlug, "")
 	case actionSync:
 		m, cmd, ok := m.ensureDefaultModel("/hero-sync")
 		if !ok {
@@ -532,14 +532,68 @@ func (m model) refreshCmd() tea.Cmd {
 	}
 }
 
-func (m model) rejectCmd() tea.Cmd {
-	svc := m.svc
-	return func() tea.Msg {
-		if err := svc.Reject(""); err != nil {
-			return actionResultMsg{err: err}
-		}
-		return actionResultMsg{success: "Stage rejected."}
+func (m model) validateHeroRejectPreconditions() (orchestratorSlug string, errMsg string) {
+	if m.svc == nil {
+		return "", "cycle service unavailable"
 	}
+	st, err := m.svc.Status()
+	if err != nil || st.CycleNumber == 0 {
+		return "", noActiveCycleForStartMessage()
+	}
+	if pendingApprovalStage(st) == "" {
+		return "", noPendingApprovalMessage()
+	}
+	slug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
+	if err != nil {
+		return "", err.Error()
+	}
+	return slug, ""
+}
+
+func (m model) beginHeroReject() (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	if _, errMsg := m.validateHeroRejectPreconditions(); errMsg != "" {
+		m = m.setStatusResult(false, "/hero-reject", errMsg)
+		return m, nil
+	}
+	return m.beginHeroRejectPrompt()
+}
+
+func (m model) beginHeroRejectPrompt() (model, tea.Cmd) {
+	m, _ = m.enterConversation()
+	m.awaitingRejectReason = true
+	m.convError = ""
+	m.chatInputFocused = true
+	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: "/hero-reject"})
+	m.transcript = append(m.transcript, convMessage{
+		role:    convRoleAgent,
+		content: "Enter rejection feedback below, then press Enter.",
+	})
+	return m, nil
+}
+
+func (m model) beginHeroRejectExecute(reason string) (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		m, _ = m.enterConversation()
+		m.awaitingRejectReason = true
+		m.convError = "Rejection reason is required."
+		return m, nil
+	}
+	orchestratorSlug, errMsg := m.validateHeroRejectPreconditions()
+	if errMsg != "" {
+		m, _ = m.enterConversation()
+		m.convError = errMsg
+		return m, nil
+	}
+	return m.beginHeroRuntimeConversation("reject", orchestratorSlug, reason)
 }
 
 func (m model) cancelCmd() tea.Cmd {
@@ -609,7 +663,7 @@ func (m model) beginHeroApprove() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-approve", err.Error())
 		return m, nil
 	}
-	return m.beginHeroRuntimeConversation("approve", orchestratorSlug)
+	return m.beginHeroRuntimeConversation("approve", orchestratorSlug, "")
 }
 
 func (m model) continueCmd() tea.Cmd {
