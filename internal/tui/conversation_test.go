@@ -23,6 +23,7 @@ type streamingHarness struct {
 	lastModel     string
 	lastMode      string
 	lastStageName string
+	lastAgentName string
 }
 
 func (h *streamingHarness) Name() string { return "streaming" }
@@ -37,6 +38,7 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 	h.lastModel = req.Model
 	h.lastMode = req.Mode
 	h.lastStageName = req.StageName
+	h.lastAgentName = req.AgentName
 	out := ""
 	if len(h.events) > 0 {
 		for _, ev := range h.events {
@@ -103,6 +105,12 @@ func newTestServiceWithRunningResearch(t *testing.T) *cycle.Service {
 	}
 	cfg := []byte(`title: TUI Test
 objective: test
+agents:
+  orchestration_agent:
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
 stages:
   research:
     enabled: true
@@ -777,4 +785,152 @@ stages:
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 	return svc
+}
+
+func TestHeroStartRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	cmdDir := filepath.Join(dir, ".cursor", "commands")
+	agentDir := filepath.Join(dir, ".cursor", "agents")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmdMarker := "HERO_START_RUNTIME_MARKER"
+	agentMarker := "ORCHESTRATION_AGENT_MARKER"
+	if err := os.WriteFile(filepath.Join(cmdDir, "hero-start.md"), []byte("# /hero-start\n\n"+cmdMarker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\n"+agentMarker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"starting cycle"}, sessionID: "start-cycle-sess"}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming after /hero-start")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, cmdMarker) {
+		t.Fatalf("prompt missing hero-start body: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, agentMarker) {
+		t.Fatalf("prompt missing orchestration_agent body: %q", h.lastPrompt)
+	}
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q want gpt-5.3-codex-medium", h.lastModel)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
+	}
+	if h.lastSessionID != "" {
+		t.Fatalf("expected fresh session, got resume %q", h.lastSessionID)
+	}
+}
+
+func newTestServiceWithRunningResearchInDir(t *testing.T, dir string) *cycle.Service {
+	t.Helper()
+	heroDir := dir + "/.workflow-hero/cycles/current"
+	if err := os.MkdirAll(heroDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := []byte(`title: TUI Test
+objective: test
+agents:
+  orchestration_agent:
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+`)
+	if err := os.WriteFile(heroDir+"/workflow-config.yml", cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir+"/.workflow-hero/config", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("research"); err != nil {
+		t.Fatal(err)
+	}
+	return svc
+}
+
+func TestHeroStartRequiresActiveCycle(t *testing.T) {
+	dir := t.TempDir()
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	m := NewTestModel(svc)
+	m = OpenPalette(m)
+	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	if cmd != nil {
+		t.Fatal("expected no async cmd when no active cycle")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("expected error status, got %s", StatusKindForTest(next))
+	}
+	if !strings.Contains(StatusTextForTest(next), "/hero-new") {
+		t.Fatalf("missing /hero-new hint: %q", StatusTextForTest(next))
+	}
+}
+
+func TestHeroStartRequiresOrchestratorModel(t *testing.T) {
+	dir := t.TempDir()
+	heroDir := dir + "/.workflow-hero/cycles/current"
+	if err := os.MkdirAll(heroDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := []byte(`title: Empty models
+objective: test
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+`)
+	if err := os.WriteFile(heroDir+"/workflow-config.yml", cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	h := &streamingHarness{}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = OpenPalette(m)
+	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	if cmd != nil {
+		t.Fatal("expected no execute when orchestrator model missing")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("expected error status, got %s", StatusKindForTest(next))
+	}
+	if h.lastPrompt != "" {
+		t.Fatalf("execute should not run, prompt=%q", h.lastPrompt)
+	}
 }

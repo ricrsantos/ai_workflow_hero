@@ -107,6 +107,12 @@ func ReadCommandPrompt(path string) (string, error) {
 	return StripFrontmatter(string(b)), nil
 }
 
+// ReadAgentPrompt reads an agent markdown file and returns the body with
+// YAML frontmatter stripped (same rules as ReadCommandPrompt).
+func ReadAgentPrompt(path string) (string, error) {
+	return ReadCommandPrompt(path)
+}
+
 func listNonHeroCommands(dir string, source CommandSource) ([]DiscoveredCommand, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

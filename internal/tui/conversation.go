@@ -97,6 +97,9 @@ func (m model) conversationHarnessTool() string {
 }
 
 func (m model) conversationModelSlug() string {
+	if slug := strings.TrimSpace(m.runtimeModelSlug); slug != "" {
+		return slug
+	}
 	if strings.TrimSpace(m.chatModelSlug) != "" {
 		return m.chatModelSlug
 	}
@@ -105,6 +108,10 @@ func (m model) conversationModelSlug() string {
 		projectDir = m.svc.ProjectDir
 	}
 	return install.HarnessModelSlugForProject(projectDir, m.conversationHarnessTool())
+}
+
+func (m model) runtimeExecuteModelSlug() string {
+	return m.conversationModelSlug()
 }
 
 func (m model) conversationModelLabel() string {
@@ -123,18 +130,19 @@ func (m model) enterConversation() (model, tea.Cmd) {
 }
 
 // beginHeroRuntimeConversation opens Chat and executes a Hero runtime command markdown
-// (same body as Cursor slash expansion) with the default harness model.
-func (m model) beginHeroRuntimeConversation(cmdName string) (model, tea.Cmd) {
+// (same body as Cursor slash expansion). modelSlug is optional; when empty, uses the
+// default harness model from hero.json (/hero-model).
+func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string) (model, tea.Cmd) {
 	if m.svc == nil {
 		m, _ = m.enterConversation()
 		m.convError = "cycle service unavailable"
 		return m, nil
 	}
 	label := "/hero-" + cmdName
-	path := filepath.Join(m.svc.ProjectDir, cursoradapter.CommandsDir, "hero-"+cmdName+".md")
-	prompt, err := cursoradapter.ReadCommandPrompt(path)
+	cmdPath := filepath.Join(m.svc.ProjectDir, cursoradapter.CommandsDir, "hero-"+cmdName+".md")
+	cmdBody, err := cursoradapter.ReadCommandPrompt(cmdPath)
 	if err != nil {
-		slog.Error("tui hero runtime command read failed", "path", path, "error", err)
+		slog.Error("tui hero runtime command read failed", "path", cmdPath, "error", err)
 		m, _ = m.enterConversation()
 		m.convError = fmt.Errorf("read command %s: %w", label, err).Error()
 		return m, nil
@@ -143,7 +151,32 @@ func (m model) beginHeroRuntimeConversation(cmdName string) (model, tea.Cmd) {
 	m.conversationStage = ""
 	m.harnessSessionID = ""
 	m.runtimeCommandName = cmdName
-	m = m.beginConversationExecute(label, tuiRuntimeCommandPrompt(cmdName, prompt))
+	m.runtimeModelSlug = strings.TrimSpace(modelSlug)
+	m.runtimeAgentName = ""
+
+	var executePrompt string
+	if cmdName == "start" {
+		agentPath := filepath.Join(m.svc.ProjectDir, cursoradapter.AgentsDir, "orchestration_agent.md")
+		agentBody, err := cursoradapter.ReadAgentPrompt(agentPath)
+		if err != nil {
+			slog.Error("tui orchestration agent read failed", "path", agentPath, "error", err)
+			m.convError = fmt.Errorf("read orchestration_agent: %w", err).Error()
+			return m, nil
+		}
+		composite := strings.TrimSpace(agentBody)
+		if body := strings.TrimSpace(cmdBody); body != "" {
+			if composite != "" {
+				composite += "\n\n---\n\n"
+			}
+			composite += body
+		}
+		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite)
+		m.runtimeAgentName = "orchestration_agent"
+	} else {
+		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody)
+	}
+
+	m = m.beginConversationExecute(label, executePrompt)
 	return m, tea.Batch(waitConvMsg(m.convStreamCh), convWaitTickCmd())
 }
 
@@ -355,7 +388,8 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 	adapter := m.harnessAdapter()
 	stageName := m.conversationStage
 	sessionID := m.harnessSessionID
-	modelSlug := m.conversationModelSlug()
+	modelSlug := m.runtimeExecuteModelSlug()
+	agentName := m.runtimeAgentName
 	projectDir := ""
 	if svc != nil {
 		projectDir = svc.ProjectDir
@@ -376,6 +410,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			SessionID:  sessionID,
 			Stream:     true,
 			StageName:  stageName,
+			AgentName:  agentName,
 			Model:      modelSlug,
 			Mode:       mode,
 			OnStreamDelta: func(delta harness.StreamDelta) {
@@ -426,6 +461,8 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.convStreamCh = nil
 		m.chatInputFocused = true
+		m.runtimeModelSlug = ""
+		m.runtimeAgentName = ""
 		if msg.err != nil {
 			m.convError = msg.err.Error()
 			slog.Error("tui conversation execute failed", "error", msg.err)

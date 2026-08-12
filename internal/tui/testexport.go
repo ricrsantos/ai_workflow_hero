@@ -159,7 +159,7 @@ func EnterConversationForTest(m model) model {
 
 // BeginHeroRuntimeConversationForTest runs a Hero runtime slash via Chat streaming.
 func BeginHeroRuntimeConversationForTest(m model, cmdName string) (model, tea.Cmd) {
-	return m.beginHeroRuntimeConversation(cmdName)
+	return m.beginHeroRuntimeConversation(cmdName, "")
 }
 
 // SetConversationInput sets the conversation input buffer.
@@ -317,6 +317,11 @@ func SetChatModelSlugForTest(m model, slug string) model {
 func SetAvailableModelsForTest(m model, models []string) model {
 	m.availableModels = append([]string(nil), models...)
 	return m
+}
+
+// StatusTextForTest returns the footer status text.
+func StatusTextForTest(m model) string {
+	return m.statusText
 }
 
 // PickingModelForTest reports whether the model picker is open.

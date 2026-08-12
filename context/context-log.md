@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-12 — TUI `/hero-start` parity
+
+**Problem**: TUI `/hero-start` used `RunWith` + generic Dispatch prompt; did not read `hero-start.md` or `orchestration_agent.md`; required `/hero-model` instead of workflow-config orchestrator model.
+
+**Decision / Outcome**: Runtime Execute on Chat screen with `orchestration_agent.md` + `hero-start.md` + TUI preamble; model from `agents.orchestration_agent` in workflow-config (TUI-only block added to template); requires active SQLite cycle (error + `/hero-new` if missing, no auto `NewCycle`); `internal/workflowconfig` resolves kebab slugs. `/hero-start` no longer gated by `/hero-model`. Tests + `comparation.md` updated.
+
+---
+
 ## 2026-08-12 — Release v1.0.1
 
 **Outcome**: Patch release — TUI `/hero-new` parity, required `/hero-model`, Chat formatting, `hero uninstall` interactive confirm. Tagged `v1.0.1`.
@@ -30,7 +38,7 @@
 
 **Problem**: Fresh installs pre-filled `harnesses.cursor.model` with `composer-2.5`; users never explicitly chose a default.
 
-**Decision / Outcome**: Install/upgrade seed empty `model`; `HarnessModelSlugForProject` returns `""` until `/hero-model`. TUI gates Chat submit, `/hero-new`, `/hero-start`, `/hero-sync`, `/hero-back`, dispatch (`d`), and imported harness commands — opens model picker with status hint when unset. Chat UI shows `not set` until configured. Tests + README/`hero-model.md` updated.
+**Decision / Outcome**: Install/upgrade seed empty `model`; `HarnessModelSlugForProject` returns `""` until `/hero-model`. TUI gates Chat submit, `/hero-new`, `/hero-sync`, `/hero-back`, dispatch (`d`), and imported harness commands — opens model picker with status hint when unset. `/hero-start` uses workflow-config orchestrator model (not `/hero-model`). Chat UI shows `not set` until configured. Tests + README/`hero-model.md` updated.
 
 ---
 

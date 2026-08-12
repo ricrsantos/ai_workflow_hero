@@ -279,7 +279,7 @@ hero update-models
 
 | Agent | Role |
 |-------|------|
-| `orchestration_agent` | Orchestrates the loop (IDE session model) |
+| `orchestration_agent` | Orchestrates the loop (IDE session model in chat; TUI `/hero-start` uses `agents.orchestration_agent` in workflow-config) |
 | `discover_agent` | Research / grilling → specs (PRD, ADR, UI, …) |
 | `planning_agent` | OpenSpec SDD |
 | `context_agent` | On-demand project context (read-only) |

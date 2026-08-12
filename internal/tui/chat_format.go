@@ -35,10 +35,25 @@ var (
 )
 
 // tuiRuntimeCommandPrompt prepends TUI-specific instructions to a Hero runtime command body.
+func tuiHeroStartPreamble() string {
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running /hero-start inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
+		"- Do NOT depend on prior chat history from /hero-new — bootstrap from disk and CLI state.\n" +
+		"- Do NOT run `hero cycle new` — the cycle already exists in SQLite.\n" +
+		"- Run full orchestration: validate workflow-config, dispatch Task subagents, persist via hero CLI with metrics.\n" +
+		"- Tell the user to use /hero-approve, /hero-reject, /hero-cancel, or /hero-finish in the Hero TUI (not Cursor chat handoff).\n\n" +
+		"---\n\n"
+}
+
 func tuiRuntimeCommandPrompt(cmdName, commandBody string) string {
 	preamble := tuiRuntimePreamble
-	if cmdName == "new" {
+	switch cmdName {
+	case "new":
 		preamble = tuiHeroNewPreamble()
+	case "start":
+		preamble = tuiHeroStartPreamble()
 	}
 	return preamble + strings.TrimSpace(commandBody) + "\n"
 }

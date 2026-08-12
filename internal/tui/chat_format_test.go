@@ -68,6 +68,25 @@ func TestTUIRuntimeCommandPrompt_HeroNewOverrides(t *testing.T) {
 	}
 }
 
+func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
+	got := tuiRuntimeCommandPrompt("start", "# /hero-start\n\nbody")
+	if !strings.Contains(got, "orchestration agent") {
+		t.Fatalf("missing start orchestrator context: %q", got)
+	}
+	if !strings.Contains(got, "Do NOT run `hero cycle new`") {
+		t.Fatalf("missing cycle-new guard: %q", got)
+	}
+	if strings.Contains(got, "Clean Session Handoff") {
+		t.Fatalf("start preamble should not mention handoff: %q", got)
+	}
+	if strings.Contains(got, "Do NOT run `hero cycle new` or any shell") {
+		t.Fatalf("hero-new override leaked into start: %q", got)
+	}
+	if !strings.Contains(got, "body") {
+		t.Fatalf("missing command body: %q", got)
+	}
+}
+
 func TestTUIRuntimeCommandPrompt_GenericPreamble(t *testing.T) {
 	got := tuiRuntimeCommandPrompt("sync", "# /hero-sync\n\nbody")
 	if !strings.Contains(got, "Hero TUI") {

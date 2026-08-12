@@ -13,6 +13,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
 type screen int
@@ -85,6 +86,8 @@ type model struct {
 	availableModels []string
 	pickingModel    bool
 	runtimeCommandName string // hero runtime slash body name (e.g. "new") for Chat output normalization
+	runtimeModelSlug   string // explicit harness model for active runtime slash (e.g. /hero-start orchestrator)
+	runtimeAgentName   string // harness agent name for active runtime slash (e.g. orchestration_agent)
 }
 
 type refreshDataMsg struct {
@@ -433,13 +436,27 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		if !ok {
 			return m, cmd
 		}
-		return m.beginHeroRuntimeConversation("new")
+		return m.beginHeroRuntimeConversation("new", "")
 	case actionStart:
-		m, cmd, ok := m.ensureDefaultModel("/hero-start")
-		if !ok {
-			return m, cmd
+		if m.streaming {
+			m = m.setStatusBusyBlocked()
+			return m, nil
 		}
-		return m.beginAction("/hero-start", m.startCmd())
+		if m.svc == nil {
+			m = m.setStatusResult(false, "/hero-start", "cycle service unavailable")
+			return m, nil
+		}
+		st, err := m.svc.Status()
+		if err != nil || st.CycleNumber == 0 {
+			m = m.setStatusResult(false, "/hero-start", noActiveCycleForStartMessage())
+			return m, nil
+		}
+		orchestratorSlug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
+		if err != nil {
+			m = m.setStatusResult(false, "/hero-start", err.Error())
+			return m, nil
+		}
+		return m.beginHeroRuntimeConversation("start", orchestratorSlug)
 	case actionSync:
 		m, cmd, ok := m.ensureDefaultModel("/hero-sync")
 		if !ok {
@@ -552,10 +569,6 @@ func (m model) finishCmd() tea.Cmd {
 	}
 }
 
-func (m model) startCmd() tea.Cmd {
-	return m.dispatchCmd()
-}
-
 func (m model) statusCmd() tea.Cmd {
 	svc := m.svc
 	return func() tea.Msg {
@@ -570,6 +583,10 @@ func (m model) statusCmd() tea.Cmd {
 			success: fmt.Sprintf("Cycle C%d — %s (%s)", st.CycleNumber, st.Title, st.Status),
 		}
 	}
+}
+
+func noActiveCycleForStartMessage() string {
+	return "No active cycle. Run /hero-new to start."
 }
 
 func (m model) continueCmd() tea.Cmd {
