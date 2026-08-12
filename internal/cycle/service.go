@@ -264,13 +264,35 @@ func (s *Service) Continue(extra int) error {
 	return mapBusy(s.Engine.Continue(lockHolder(), extra))
 }
 
-// NewCycle creates a cycle from workflow-config.yml.
+// NewCycle creates a cycle from workflow-config.yml with title/objective from the file (or overrides).
 func (s *Service) NewCycle(title, objective string) (engine.NewCycleResult, error) {
 	return s.Engine.CreateCycleFromConfig(engine.NewCycleOptions{
 		ProjectDir: s.ProjectDir,
 		Title:      title,
 		Objective:  objective,
 	})
+}
+
+// PrepareCycle creates an active cycle with empty title/objective; stages come from workflow-config.yml.
+// Called when /hero-new finishes preparing the config file.
+func (s *Service) PrepareCycle() (engine.NewCycleResult, error) {
+	res, err := s.Engine.CreateCycleFromConfig(engine.NewCycleOptions{
+		ProjectDir: s.ProjectDir,
+		DeferMeta:  true,
+	})
+	if err != nil {
+		return res, err
+	}
+	if err := syncProjectWorkflowCycle(s.ProjectDir, res.Cycle.Number); err != nil {
+		return res, err
+	}
+	return res, nil
+}
+
+// SyncCycleConfig updates the active cycle title/objective from workflow-config.yml.
+// Called by /hero-start before stage orchestration.
+func (s *Service) SyncCycleConfig() error {
+	return s.Engine.SyncCycleConfigFromWorkflow(s.ProjectDir)
 }
 
 // SetOpenspecChange persists the OpenSpec change directory name on the active cycle.

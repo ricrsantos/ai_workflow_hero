@@ -57,7 +57,7 @@ Reply to confirm when ready, and the cycle will be created via hero cycle new.`
 
 func TestTUIRuntimeCommandPrompt_HeroNewOverrides(t *testing.T) {
 	got := tuiRuntimeCommandPrompt("new", "# /hero-new\n\nbody")
-	if !strings.Contains(got, "Do NOT run `hero cycle new`") {
+	if !strings.Contains(got, "TUI will call hero cycle new automatically") {
 		t.Fatalf("missing hero-new override: %q", got)
 	}
 	if !strings.Contains(got, tuiHeroNewClosingLine) {
@@ -73,8 +73,8 @@ func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
 	if !strings.Contains(got, "orchestration agent") {
 		t.Fatalf("missing start orchestrator context: %q", got)
 	}
-	if !strings.Contains(got, "Do NOT run `hero cycle new`") {
-		t.Fatalf("missing cycle-new guard: %q", got)
+	if !strings.Contains(got, "hero cycle sync-config") {
+		t.Fatalf("missing sync-config guard: %q", got)
 	}
 	if strings.Contains(got, "Clean Session Handoff") {
 		t.Fatalf("start preamble should not mention handoff: %q", got)

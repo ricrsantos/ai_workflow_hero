@@ -14,7 +14,15 @@ Each stage can be enabled/disabled in workflow-config.yml. Skip any stage that i
 
 ## Session Bootstrap (disk + CLI)
 
-Do **not** rely on prior chat history from `/hero-new`. Rebuild working context from:
+Do **not** rely on prior chat history from `/hero-new`. Before validation or stage work, sync cycle metadata from disk:
+
+```bash
+hero cycle sync-config
+```
+
+This copies `title` and `objective` from `.workflow-hero/cycles/current/workflow-config.yml` into the active SQLite cycle (the user should have filled them after `/hero-new`).
+
+Then rebuild working context from:
 
 1. `.workflow-hero/cycles/current/workflow-config.yml`
 2. `hero status` (and `hero metrics` / `hero events` when needed)
@@ -28,17 +36,18 @@ Do **not** treat `workflow.md` or `metrics.md` as operational sources of truth.
 
 ## Responsibilities
 
-1. Complete **Session Bootstrap** above.
-2. Read and validate `.workflow-hero/cycles/current/workflow-config.yml`.
-3. Validate: at least one scope field is true when implementation is enabled.
-4. Validate: if `stages.browser_ui_validation.enabled` is true, `scope.frontend` must also be true; otherwise block and ask for correction.
-5. Validate: if `stages.qa_end_to_end.use_playwright` is true, `scope.frontend` must also be true; otherwise block and ask for correction.
-6. Complete the Configuration stage (persist via `hero` CLI with `--metrics-json` per **Metrics Procedure** when Configuration closes), then advance.
-7. Do not start implementation until PRD has been approved if research is enabled.
-8. If research is disabled, require objective field to be well-described and ask for explicit scope confirmation before starting implementation.
-9. For each enabled stage, invoke the appropriate agent via the Task tool in a fresh isolated session. Apply **Model Resolution** (see below and `orchestration_agent`) on every Task call — never omit the `model` parameter. For Browser UI Validation, enforce Health-before-Visual and Playwright gates (see `orchestration_agent`). For QA End-to-End, pass Playwright vs HTTP selection per `use_playwright` (see `orchestration_agent`).
-10. After each stage close, persist transitions and metrics via `hero` CLI (`hero approve`, `hero finish`, etc. with `--metrics-json` as applicable) — see **Stage Close Sequence** in `orchestration_agent`.
-11. Before finishing the cycle, ensure `current-state.md` is up to date.
+1. Run `hero cycle sync-config` (see Session Bootstrap).
+2. Complete **Session Bootstrap** above.
+3. Read and validate `.workflow-hero/cycles/current/workflow-config.yml`.
+4. Validate: at least one scope field is true when implementation is enabled.
+5. Validate: if `stages.browser_ui_validation.enabled` is true, `scope.frontend` must also be true; otherwise block and ask for correction.
+6. Validate: if `stages.qa_end_to_end.use_playwright` is true, `scope.frontend` must also be true; otherwise block and ask for correction.
+7. Complete the Configuration stage (persist via `hero` CLI with `--metrics-json` per **Metrics Procedure** when Configuration closes), then advance.
+8. Do not start implementation until PRD has been approved if research is enabled.
+9. If research is disabled, require objective field to be well-described and ask for explicit scope confirmation before starting implementation.
+10. For each enabled stage, invoke the appropriate agent via the Task tool in a fresh isolated session. Apply **Model Resolution** (see below and `orchestration_agent`) on every Task call — never omit the `model` parameter. For Browser UI Validation, enforce Health-before-Visual and Playwright gates (see `orchestration_agent`). For QA End-to-End, pass Playwright vs HTTP selection per `use_playwright` (see `orchestration_agent`).
+11. After each stage close, persist transitions and metrics via `hero` CLI (`hero approve`, `hero finish`, etc. with `--metrics-json` as applicable) — see **Stage Close Sequence** in `orchestration_agent`.
+12. Before finishing the cycle, ensure `current-state.md` is up to date.
 
 ## Approval and Control Loop
 

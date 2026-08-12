@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -265,6 +266,90 @@ stages:
 	}
 	if res.Cycle.ConfigSnapshotJSON == "" || res.Cycle.ConfigSnapshotJSON == "{}" {
 		t.Fatal("expected config snapshot from yaml")
+	}
+}
+
+func TestCreateCycleFromConfigDeferMeta(t *testing.T) {
+	dir := t.TempDir()
+	cycleDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")
+	if err := os.MkdirAll(cycleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `title: Feature X
+objective: Build X
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+`
+	if err := os.WriteFile(filepath.Join(cycleDir, "workflow-config.yml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	e, _ := openTestEngine(t)
+	res, err := e.CreateCycleFromConfig(NewCycleOptions{ProjectDir: dir, DeferMeta: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Cycle.Title != "" || res.Cycle.Objective != "" {
+		t.Fatalf("expected empty meta, got title=%q objective=%q", res.Cycle.Title, res.Cycle.Objective)
+	}
+	if res.Cycle.Status != store.CycleStatusActive {
+		t.Fatalf("status=%q", res.Cycle.Status)
+	}
+}
+
+func TestSyncCycleConfigFromWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	cycleDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")
+	if err := os.MkdirAll(cycleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `title: Placeholder
+objective: Pending
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+`
+	if err := os.WriteFile(filepath.Join(cycleDir, "workflow-config.yml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	e, _ := openTestEngine(t)
+	res, err := e.CreateCycleFromConfig(NewCycleOptions{ProjectDir: dir, DeferMeta: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Cycle.Title != "" {
+		t.Fatal("expected empty title before sync")
+	}
+
+	updated := `title: Synced Title
+objective: Synced Objective
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+`
+	if err := os.WriteFile(filepath.Join(cycleDir, "workflow-config.yml"), []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SyncCycleConfigFromWorkflow(dir); err != nil {
+		t.Fatal(err)
+	}
+	c, err := e.Store.GetCycle(res.Cycle.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Title != "Synced Title" || c.Objective != "Synced Objective" {
+		t.Fatalf("cycle=%+v", c)
+	}
+	if !strings.Contains(c.ConfigSnapshotJSON, "Synced Title") {
+		t.Fatalf("snapshot not updated: %q", c.ConfigSnapshotJSON)
 	}
 }
 

@@ -482,6 +482,12 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.transcript[m.agentMsgIndex].content = msg.result.Output
 			}
 		}
+		if m.runtimeCommandName == "new" && msg.err == nil && m.svc != nil {
+			if _, err := m.svc.PrepareCycle(); err != nil {
+				m.convError = err.Error()
+				slog.Error("tui prepare cycle after hero-new failed", "error", err)
+			}
+		}
 		m = m.maybeFollowResponseBottom()
 		slog.Info("tui conversation execute complete", "stage", m.conversationStage)
 		return m, m.refreshCmd()

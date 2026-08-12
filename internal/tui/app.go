@@ -456,6 +456,10 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 			m = m.setStatusResult(false, "/hero-start", err.Error())
 			return m, nil
 		}
+		if err := m.svc.SyncCycleConfig(); err != nil {
+			m = m.setStatusResult(false, "/hero-start", err.Error())
+			return m, nil
+		}
 		return m.beginHeroRuntimeConversation("start", orchestratorSlug)
 	case actionSync:
 		m, cmd, ok := m.ensureDefaultModel("/hero-sync")

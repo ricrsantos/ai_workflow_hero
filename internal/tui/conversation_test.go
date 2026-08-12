@@ -757,6 +757,13 @@ func TestHeroNewRuntimeConversation(t *testing.T) {
 	if HarnessSessionIDForTest(next) != "new-cycle-sess" {
 		t.Fatalf("session=%q", HarnessSessionIDForTest(next))
 	}
+	st, err := svc.Status()
+	if err != nil || st.CycleNumber == 0 {
+		t.Fatalf("expected active cycle after hero-new, status=%+v err=%v", st, err)
+	}
+	if st.Title != "" {
+		t.Fatalf("title should be empty until hero-start, got %q", st.Title)
+	}
 	view := ViewForTest(next)
 	if !strings.Contains(view, "/hero-new") {
 		t.Fatalf("missing user label in view: %q", view)

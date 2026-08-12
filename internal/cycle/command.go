@@ -279,7 +279,7 @@ func newCycleCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmd.AddCommand(newCycleNewCommand(), newCycleArchiveCommand(), newCycleResumeCommand(), newCycleOpenspecChangeCommand())
+	cmd.AddCommand(newCycleNewCommand(), newCycleSyncConfigCommand(), newCycleArchiveCommand(), newCycleResumeCommand(), newCycleOpenspecChangeCommand())
 	return cmd
 }
 
@@ -330,23 +330,46 @@ Examples:
 }
 
 func newCycleNewCommand() *cobra.Command {
-	var title, objective string
 	cmd := &cobra.Command{
 		Use:   "new",
-		Short: "Create a new cycle from workflow-config.yml",
+		Short: "Prepare a new active cycle from workflow-config.yml (empty title/objective until sync-config)",
+		Long: `Create an active cycle in SQLite after /hero-new prepares workflow-config.yml.
+
+Title and objective stay empty until hero cycle sync-config (normally run by /hero-start).
+Stages are imported from the current workflow-config.yml.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
-			res, err := svc.NewCycle(title, objective)
+			res, err := svc.PrepareCycle()
 			if err != nil {
 				return err
 			}
-			output.Successf(cmd.OutOrStdout(), "Created cycle C%d — %s (%d stages).", res.Cycle.Number, res.Cycle.Title, len(res.Stages))
+			output.Successf(cmd.OutOrStdout(), "Prepared cycle C%d (%d stages). Edit workflow-config.yml title/objective, then run /hero-start.", res.Cycle.Number, len(res.Stages))
 			return nil
 		}),
 	}
-	cmd.Flags().StringVar(&title, "title", "", "Override cycle title")
-	cmd.Flags().StringVar(&objective, "objective", "", "Override cycle objective")
+	return cmd
+}
+
+func newCycleSyncConfigCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "sync-config",
+		Short: "Sync active cycle title/objective from workflow-config.yml",
+		Long:  `Updates the active cycle's title, objective, and config snapshot from .workflow-hero/cycles/current/workflow-config.yml. /hero-start runs this before orchestration.`,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
+			if err := svc.SyncCycleConfig(); err != nil {
+				return err
+			}
+			st, err := svc.Status()
+			if err != nil {
+				return err
+			}
+			output.Successf(cmd.OutOrStdout(), "Synced cycle C%d — %s.", st.CycleNumber, st.Title)
+			return nil
+		}),
+	}
 	return cmd
 }
 

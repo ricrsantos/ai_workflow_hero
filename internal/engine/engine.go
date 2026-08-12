@@ -491,9 +491,11 @@ func LoadWorkflowConfig(path string) (WorkflowConfig, []byte, error) {
 type NewCycleOptions struct {
 	ProjectDir   string
 	ConfigPath   string // optional; default current/workflow-config.yml
-	Title        string // override
-	Objective    string // override
+	Title        string // override when DeferMeta is false
+	Objective    string // override when DeferMeta is false
 	CycleNumber  int    // 0 = auto
+	// DeferMeta leaves title and objective empty in SQLite (filled later via SyncCycleConfigFromWorkflow).
+	DeferMeta bool
 }
 
 // NewCycleResult is returned by CreateCycleFromConfig.
@@ -506,26 +508,25 @@ type NewCycleResult struct {
 func (e *Engine) CreateCycleFromConfig(opts NewCycleOptions) (NewCycleResult, error) {
 	configPath := opts.ConfigPath
 	if configPath == "" {
-		configPath = filepath.Join(opts.ProjectDir, ".workflow-hero", "cycles", "current", "workflow-config.yml")
-		if _, err := os.Stat(configPath); err != nil {
-			// Fall back to installed template (e.g. after archive emptied current/).
-			alt := filepath.Join(opts.ProjectDir, ".workflow-hero", "templates", "workflow-config.yml")
-			if _, err2 := os.Stat(alt); err2 == nil {
-				configPath = alt
-			}
-		}
+		configPath = resolveWorkflowConfigPath(opts.ProjectDir)
 	}
 	cfg, raw, err := LoadWorkflowConfig(configPath)
 	if err != nil {
 		return NewCycleResult{}, fmt.Errorf("workflow-config.yml: %w", err)
 	}
-	title := opts.Title
-	if title == "" {
-		title = cfg.Title
-	}
-	objective := opts.Objective
-	if objective == "" {
-		objective = cfg.Objective
+	var title, objective string
+	if opts.DeferMeta {
+		title = ""
+		objective = ""
+	} else {
+		title = opts.Title
+		if title == "" {
+			title = cfg.Title
+		}
+		objective = opts.Objective
+		if objective == "" {
+			objective = cfg.Objective
+		}
 	}
 	num := opts.CycleNumber
 	if num <= 0 {
@@ -573,6 +574,36 @@ func (e *Engine) CreateCycleFromConfig(opts NewCycleOptions) (NewCycleResult, er
 	}
 	e.Logger.Info("cycle created", "cycle_id", id, "number", num, "stages", len(listed))
 	return NewCycleResult{Cycle: c, Stages: listed}, nil
+}
+
+// SyncCycleConfigFromWorkflow reads workflow-config.yml and updates the active cycle's
+// title, objective, and config snapshot (used by /hero-start before stage orchestration).
+func (e *Engine) SyncCycleConfigFromWorkflow(projectDir string) error {
+	configPath := resolveWorkflowConfigPath(projectDir)
+	cfg, raw, err := LoadWorkflowConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("workflow-config.yml: %w", err)
+	}
+	c, err := e.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	if err := e.Store.UpdateCycleMeta(c.ID, cfg.Title, cfg.Objective, string(raw)); err != nil {
+		return err
+	}
+	e.Logger.Info("cycle config synced", "cycle", c.Number, "title", cfg.Title)
+	return nil
+}
+
+func resolveWorkflowConfigPath(projectDir string) string {
+	configPath := filepath.Join(projectDir, ".workflow-hero", "cycles", "current", "workflow-config.yml")
+	if _, err := os.Stat(configPath); err != nil {
+		alt := filepath.Join(projectDir, ".workflow-hero", "templates", "workflow-config.yml")
+		if _, err2 := os.Stat(alt); err2 == nil {
+			return alt
+		}
+	}
+	return configPath
 }
 
 func buildStagesFromConfig(cycleID int64, cfg WorkflowConfig) []store.Stage {

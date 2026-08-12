@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-12 — Cycle prepare/sync lifecycle (`/hero-new` → `/hero-start`)
+
+**Problem**: Users had to run `hero cycle new` manually after `/hero-new`; title/objective were read at cycle creation instead of at start.
+
+**Decision / Outcome**: `hero cycle new` prepares active cycle with **empty** title/objective (`DeferMeta`); TUI calls `PrepareCycle()` after `/hero-new` stream; `/hero-start` runs `SyncCycleConfig()` (CLI `hero cycle sync-config` in chat) before orchestration. Tests + command markdown + `comparation.md` updated.
+
+---
+
 ## 2026-08-12 — TUI `/hero-start` parity
 
 **Problem**: TUI `/hero-start` used `RunWith` + generic Dispatch prompt; did not read `hero-start.md` or `orchestration_agent.md`; required `/hero-model` instead of workflow-config orchestrator model.

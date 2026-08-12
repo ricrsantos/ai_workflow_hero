@@ -15,21 +15,21 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 2. If this is the first cycle, populate `project.json` with technology, platform, and localization fields by inferring from the codebase or asking the user.
 3. **In-progress current cycle**: run `hero status`. If an active cycle exists and is not completed/cancelled, warn the user, show the current stage, and ask whether to archive anyway (losing unfinished progress) via `/hero-archive`, or cancel `/hero-new` and continue with `/hero-start`. Do not proceed until the user chooses.
 4. Create `.workflow-hero/cycles/current/` directory if it does not exist.
-5. **Build `workflow-config.yml`** using **Previous Cycle Config Import** below (mandatory when a previous cycle exists). Never leave a stale previous-cycle file in place as the new cycle config. Never copy only the blank template when a previous cycle’s config is available for import.
-6. Ask the user to review and edit the cycle config **using a clickable markdown link** to the file (Cursor opens it on click):
-   `[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)`
-   Remind them that `title`, `objective`, and `scope` are cycle-specific (reset to template defaults) and must be filled for this cycle. Remind them to check `workflow_config.user_preferred_language` (chat language), stages (including `browser_ui_validation` / `qa_end_to_end.use_playwright` when frontend is in scope), and that imported `workflow_config` / `agents` / `fallback_model` / stage budgets came from the previous cycle when applicable. Also remind that `.env.example` is the committed template; real secrets stay in local `.env`.
-   Never mention the path only as plain text without the markdown link when asking for review.
-7. After the user confirms the config, create the cycle in SQLite via the CLI (do **not** initialize `workflow.md` or `metrics.md` as operational artifacts):
+5. **Build and write `workflow-config.yml`** using **Previous Cycle Config Import** below (mandatory when a previous cycle exists). Never leave a stale previous-cycle file in place as the new cycle config. Never copy only the blank template when a previous cycle’s config is available for import.
+6. Immediately after writing `.workflow-hero/cycles/current/workflow-config.yml`, prepare the active cycle in SQLite via the CLI (do **not** wait for the user to edit `title` / `objective`; do **not** initialize `workflow.md` or `metrics.md`):
 
    ```bash
    hero cycle new
    ```
 
-   Optional overrides: `--title '<title>'`, `--objective '<objective>'`.
+   This creates cycle **C<N>** with `status=active`, imports stages from the config file, and leaves **title** and **objective** empty in SQLite until `/hero-start`.
 
-8. Sync `project.json → workflow.cycle` from `hero status --json` (`cycleNumber`) for document numbering and archive prefixes.
-9. When the cycle is ready, give the **Clean Session Handoff** below. Do **not** start Research or later stages in this chat.
+7. Sync `project.json → workflow.cycle` from `hero status --json` (`cycleNumber`) for document numbering and archive prefixes.
+8. Ask the user to review and edit the cycle config **using a clickable markdown link** to the file (Cursor opens it on click):
+   `[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)`
+   Remind them that `title`, `objective`, and `scope` are cycle-specific (reset to template defaults) and must be filled before `/hero-start`. Remind them to check `workflow_config.user_preferred_language` (chat language), stages (including `browser_ui_validation` / `qa_end_to_end.use_playwright` when frontend is in scope), and that imported `workflow_config` / `agents` / `fallback_model` / stage budgets came from the previous cycle when applicable. Also remind that `.env.example` is the committed template; real secrets stay in local `.env`.
+   Never mention the path only as plain text without the markdown link when asking for review.
+9. Give the **Clean Session Handoff** below. Do **not** start Research or later stages in this chat.
 
 ## Previous Cycle Config Import
 
@@ -68,7 +68,7 @@ After configuration is ready, tell the user to continue in a **new empty chat** 
 
 Required message content (adapt wording; keep all points):
 
-1. Cycle is initialized; config is ready — include the clickable link `[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)`.
+1. Cycle is prepared in SQLite (active, empty title/objective until `/hero-start`); config file is ready — include the clickable link `[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)`.
 2. Open a **new empty chat** (do not continue `/hero-start` in this configuration session).
 3. In that new chat, **select the agent (model) they want to use as the Hero orchestrator / grill-me** — that IDE session model drives orchestration and Research grilling.
 4. Then run `/hero-start`.
@@ -88,9 +88,9 @@ When later stages invoke subagents (after `/hero-start`), follow **Model Resolut
 ```
 → Preparing workflow-config.yml...
 → Previous cycle config: imported workflow_config + fallback_model + stages + agents from C<M> (title/objective/scope reset to template)
-→ Creating cycle via hero cycle new...
-✓ Cycle C<N> initialized.
-→ Review and edit: [.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)
+→ Preparing cycle in SQLite via hero cycle new...
+✓ Cycle C<N> prepared (active; title/objective pending until /hero-start).
+→ Review and edit title, objective, and scope: [.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)
 
 → Next (clean session handoff):
   1. Open a new empty chat (do not continue here).

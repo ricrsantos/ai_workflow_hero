@@ -18,10 +18,10 @@ func tuiHeroNewPreamble() string {
 	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
 		"You are running /hero-new inside the Hero TUI. Follow the command instructions below with these overrides:\n\n" +
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
-		"- Prepare and write workflow-config.yml only. Do NOT run `hero cycle new` or any shell/CLI command to create or start the cycle.\n" +
-		"- Do NOT ask the user to reply or confirm to create the cycle. Do NOT claim the cycle is initialized or created.\n" +
+		"- Prepare and write workflow-config.yml, then the TUI will call hero cycle new automatically (active cycle, empty title/objective in SQLite).\n" +
+		"- Do NOT ask the user to reply or confirm before the cycle is prepared. Do NOT run shell/CLI commands yourself.\n" +
 		"- Do not include \"Clean Session Handoff\" or Cursor-chat instructions (new empty chat, select orchestrator model).\n" +
-		"- In the TUI, cycles start only via /hero-start after the user edits the config file.\n" +
+		"- Tell the user to edit title/objective/scope in the config file, then run /hero-start from the Hero TUI.\n" +
 		"- End your response with exactly this line (copy verbatim):\n" +
 		tuiHeroNewClosingLine + "\n\n" +
 		"---\n\n"
@@ -41,7 +41,8 @@ func tuiHeroStartPreamble() string {
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
 		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
 		"- Do NOT depend on prior chat history from /hero-new — bootstrap from disk and CLI state.\n" +
-		"- Do NOT run `hero cycle new` — the cycle already exists in SQLite.\n" +
+		"- Do NOT run `hero cycle new` — the cycle was prepared during /hero-new.\n" +
+		"- The TUI runs hero cycle sync-config before this session; do not ask the user to run it manually.\n" +
 		"- Run full orchestration: validate workflow-config, dispatch Task subagents, persist via hero CLI with metrics.\n" +
 		"- Tell the user to use /hero-approve, /hero-reject, /hero-cancel, or /hero-finish in the Hero TUI (not Cursor chat handoff).\n\n" +
 		"---\n\n"
