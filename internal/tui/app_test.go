@@ -454,20 +454,36 @@ func TestFinishActionWithService(t *testing.T) {
 	}
 }
 
-func TestDispatchActionWithService(t *testing.T) {
+func TestDispatchKeyRemoved(t *testing.T) {
 	m := NewTestModel(newTestService(t))
 	m = SetChatModelSlugForTest(m, "composer-2.5")
-	_, cmd := HandleTestKey(m, "d")
-	if cmd == nil {
-		t.Fatal("expected dispatch cmd")
+	next, cmd := HandleTestKey(m, "d")
+	if cmd != nil {
+		t.Fatal("d must not start harness dispatch")
 	}
-	msg := RunCmdForTest(cmd)
-	result, ok := msg.(actionResultMsg)
-	if !ok {
-		t.Fatalf("msg type %T", msg)
+	if CurrentScreen(next) != ScreenStatus {
+		t.Fatalf("screen=%v want status", CurrentScreen(next))
 	}
-	if result.err != nil {
-		t.Fatal(result.err)
+}
+
+func TestPaletteHasGoToChat(t *testing.T) {
+	m := NewTestModel(nil)
+	found := false
+	for _, item := range PaletteItemsForTest(m) {
+		if item.Label == "Go to - Chat" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("missing Go to - Chat in palette")
+	}
+	next, cmd := RunPaletteItemForTest(m, "Go to - Chat")
+	if cmd != nil {
+		t.Fatalf("unexpected cmd: %v", cmd)
+	}
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
 	}
 }
 

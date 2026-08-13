@@ -43,8 +43,21 @@ Agents still invoke `hero …` CLI commands for deterministic persistence; when 
 
 ## Approval and Control Loop
 
-- `require_human_approval: false` → auto-complete, post summary, advance.
-- `require_human_approval: true` → summarize, wait for /hero-approve, /hero-reject, /hero-cancel, or /hero-finish.
+The orchestrator owns every stage transition. Specialized agents must not ask the user to start the next stage.
+
+Read `require_human_approval` for the stage that **just finished** — never for the next stage.
+
+- `require_human_approval: false` → auto-complete via CLI (`hero stage close`), post summary + metrics, and **immediately** dispatch the next enabled stage in the **same turn**. Do **not** ask the user whether to proceed (no yes/no, no "should I start…?").
+- `require_human_approval: true` → `hero stage close` (PendingApproval), post summary + metrics, then list exactly these commands and **STOP**: `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`. Do not start the next stage. Informal "sim"/"yes" is not approval — tell the user to run `/hero-approve`.
+
+## Subagent dispatch and return
+
+1. Call `hero stage start --name <stage>` before dispatching that stage's agent.
+2. Implementation, QA, Judge, Browser UI Validation, and QA End-to-End **always** run via the Task tool in a fresh session.
+3. Research grilling runs in **this** orchestrator session (follow `discover_agent.md`). When research deliverables are done, stop acting as discover: close Research as orchestrator. Then dispatch `planning_agent` via Task unless planning still needs in-session user iteration.
+4. After every Task call: set `run_in_background` to **false**. **Wait until the Task returns** before any other action. Do not end your turn after launching Task. Do not use AwaitShell to wait for Task.
+5. Nested Task work often does **not** stream to the user. After the Task returns, post the agent's structured Output Format + a short summary in chat yourself, then apply Stage Close Sequence.
+6. Never dispatch the next stage's agent until the current Task has returned and the current stage has been closed (or is waiting on `/hero-approve`).
 
 ## Iteration and Timeout Handling
 
@@ -134,14 +147,14 @@ Cursor's Task tool accepts **kebab model slugs only** (e.g. `cursor-grok-4.5-hig
 
 Replace markdown ops with CLI persistence (PRD-C01-001 §5.4):
 
-1. Summary + approval request (respect `require_human_approval`).
+1. Summary + approval request (only when **this** stage's `require_human_approval` is true; otherwise auto-advance — do not ask yes/no).
 2. Persist stage transition + metrics to SQLite via `hero` CLI:
    - `hero stage start --name <stage>` when beginning work
    - `hero stage close --name <stage> --summary '…' --metrics-json '…'` when work finishes
    - `hero approve --metrics-json '…'` when human approval is required
    - `hero reject|cancel|finish|continue` as applicable
 3. Show metrics summary in chat (tokens, duration, cost) and point the user to `hero metrics`.
-4. Advance to the next configured stage (engine advances on approve/auto-complete).
+4. Advance to the next configured stage only after the current Task has returned (engine advances on approve/auto-complete).
 
 ## Rules
 

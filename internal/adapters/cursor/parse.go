@@ -144,10 +144,18 @@ func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.E
 			}
 			emit(harness.StreamKindThinking, text)
 		case "tool_call":
-			if ev.Subtype != "" && ev.Subtype != "started" {
+			label := formatToolCall(ev.ToolCall)
+			if label == "" {
 				continue
 			}
-			emit(harness.StreamKindTool, formatToolCall(ev.ToolCall))
+			switch ev.Subtype {
+			case "", "started":
+				emit(harness.StreamKindTool, label)
+			case "completed":
+				if isTaskToolLabel(label) {
+					emit(harness.StreamKindTool, label+" (completed)")
+				}
+			}
 		case "assistant":
 			if ev.TimestampMS != nil {
 				sawPartial = true
@@ -245,7 +253,7 @@ func formatToolCall(raw json.RawMessage) string {
 		}
 	}
 	preferred := []string{
-		"readToolCall", "writeToolCall", "editToolCall", "grepToolCall",
+		"taskToolCall", "readToolCall", "writeToolCall", "editToolCall", "grepToolCall",
 		"globToolCall", "shellToolCall", "deleteToolCall", "searchToolCall",
 	}
 	for _, key := range preferred {
@@ -283,8 +291,12 @@ func humanizeToolName(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
+func isTaskToolLabel(label string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(label)), "task")
+}
+
 func toolArgSummary(args map[string]any) string {
-	for _, k := range []string{"path", "file_path", "query", "pattern", "glob", "command", "url", "name"} {
+	for _, k := range []string{"path", "file_path", "query", "pattern", "glob", "command", "url", "name", "description"} {
 		v, ok := args[k]
 		if !ok {
 			continue

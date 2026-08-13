@@ -88,6 +88,16 @@ func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
 	if !strings.Contains(got, "body") {
 		t.Fatalf("missing command body: %q", got)
 	}
+	for _, kw := range []string{
+		"run_in_background",
+		"hero stage start",
+		"require_human_approval",
+		"/hero-approve",
+	} {
+		if !strings.Contains(got, kw) {
+			t.Fatalf("start preamble missing %q: %q", kw, got)
+		}
+	}
 }
 
 func TestTUIRuntimeCommandPrompt_HeroApproveOverrides(t *testing.T) {

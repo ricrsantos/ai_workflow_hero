@@ -48,6 +48,7 @@ When implementing or changing backend code, add structured application logs. Do 
 ## Rules
 
 - When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
+- Do not start, close, or ask the user about other workflow stages. Emit the Output Format and stop so the orchestrator can close this stage.
 - NEVER change architecture without an approved ADR.
 - NEVER skip running tests after implementation.
 - NEVER skip the Logging standard on new or changed code paths.

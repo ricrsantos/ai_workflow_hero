@@ -284,6 +284,11 @@ func TestRuntimeAssets_CLIAPIStageClose(t *testing.T) {
 	if strings.Contains(skillStr, "Update `workflow.md`") {
 		t.Error("SKILL.md must not mandate updating workflow.md")
 	}
+	for _, kw := range []string{"run_in_background", "just finished", "Subagent dispatch and return"} {
+		if !strings.Contains(orchStr, kw) {
+			t.Errorf("orchestration_agent.md missing subagent-return keyword %q", kw)
+		}
+	}
 
 	cmds := []string{
 		"hero-status.md", "hero-approve.md", "hero-reject.md", "hero-cancel.md",

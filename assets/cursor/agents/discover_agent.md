@@ -36,6 +36,7 @@ Configuration → **Research** → Planning → Implementation → QA → Judge 
 - When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
 - Discover agent does not implement code.
 - Never skip the Pre-document gate after grilling.
+- After emitting the Output Format, STOP. Do not ask the user to start Planning or any later stage. The orchestrator closes Research and advances.
 - All documents must be registered in `documents.json` after creation.
 - DEPLOY.md and TESTING.md are living documents (edited in place, unnumbered).
 - PRD.md and ADR.md act as indexes of all documents across cycles.

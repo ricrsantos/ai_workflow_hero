@@ -39,6 +39,7 @@ The orchestrator applies **Model Resolution** (see `orchestration_agent`): the T
 
 - When chatting with the user, use `workflow_config.user_preferred_language` (default `EN`) unless they explicitly ask otherwise; cycle artifacts stay English.
 - Planning agent does not implement code.
+- After emitting the Output Format, STOP. Do not ask the user to start Implementation or offer informal yes/no. The orchestrator handles `/hero-approve` and the next stage.
 - All task items in the SDD must be independently testable.
 - SDD must reference approved PRD sections for traceability.
 - Always mark parallel vs series in `tasks.md`; use subagents whenever possible.

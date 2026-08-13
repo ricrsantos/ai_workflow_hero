@@ -6,6 +6,32 @@
 
 ---
 
+## 2026-08-13 — Release v1.0.5
+
+**Problem**: TUI stage flow broke multi-stage cycles (session id lost, Tasks not returning, approval gates skipped); legacy `d` dispatch and spinner placement were confusing.
+
+**Decision / Outcome**: Persist harness session across stages; orchestrator waits for Task completion; parser emits Task events; palette Go to Chat; Agent-line spinner. Tagged `v1.0.5`.
+
+---
+
+## 2026-08-13 — TUI: drop `d` dispatch, Go to Chat, Agent wait spinner
+
+**Problem**: `d` still ran legacy harness Dispatch from Status/Approvals; palette had no Go to Chat; wait spinner sat beside “Waiting for harness” in the response body.
+
+**Decision / Outcome**: Removed the `d` dispatch shortcut and footer hints. Palette includes `Go to - Chat`. Braille spinner lives on the Agent status line until Execute completes.
+
+---
+
+## 2026-08-13 — TUI stage flow: Task return + session id + approvals
+
+**Problem**: In `task_manager` TUI, Research asked to start Planning instead of auto-advancing (`require_human_approval: false`). Planning (`true`) skipped `/hero-approve` and asked a yes/no about Implementation. Implementation/QA ran via Task but did not appear in Chat or return to the orchestrator. Header showed `Cycle C1 — qa · iter 0/2` with no session id.
+
+**Cause**: (1) `syncConversationContext` replaced the live orchestrator session with the next stage's empty `harness_session_id`; `/hero-start` cleared `conversationStage` so Execute never persisted the id. (2) Prompts asked permission to start the *next* stage and allowed `run_in_background: true`, so Tasks did not return and nested work never streamed. (3) Stream parser skipped Task completed events.
+
+**Decision / Outcome**: Keep the live TUI session across stages and persist it on `/hero-start` follow-ups. Orchestrator/stage assets: wait for Task (`run_in_background: false`), close the finished stage, slash CTAs only when approval is required. Parser emits Task start/complete.
+
+---
+
 ## 2026-08-13 — TUI `/hero-start` Shell rejection + workspace leak
 
 **Problem**: In `task_manager`, TUI `/hero-start` froze. Cursor Agent CLI `--print` without `--force` auto-rejected Shell (no TTY for Auto-review). The orchestrator then grepped parent/sibling paths and read Hero framework source. Ctrl+C did not abort because TUI skipped `Cancel` when `harnessSessionID` was still empty.

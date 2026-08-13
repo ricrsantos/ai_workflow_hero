@@ -79,11 +79,50 @@ func (m model) syncConversationContext() model {
 	if err != nil {
 		slog.Debug("tui conversation context unavailable", "error", err)
 		m.conversationStage = ""
-		// Keep harnessSessionID for freechat resume within this TUI session.
+		// Keep harnessSessionID for freechat / orchestrator resume within this TUI session.
 		return m
 	}
 	m.conversationStage = stage
+	live := strings.TrimSpace(m.harnessSessionID)
+	stored := strings.TrimSpace(sessionID)
+	if live != "" {
+		// The TUI orchestrator session spans stages. Never replace a live id with
+		// an empty (or different) per-stage SQLite value — that dropped session:
+		// from the Chat header and forced follow-ups into a fresh agent with no context.
+		if stage != "" && live != stored {
+			if err := m.svc.SetStageHarnessSessionID(stage, live); err != nil {
+				slog.Debug("tui copy harness session to stage failed", "error", err)
+			}
+		}
+		return m
+	}
+	m.harnessSessionID = stored
+	return m
+}
+
+// persistHarnessSession stores the Cursor session on the in-memory model and on
+// the active SQLite stage (even when /hero-start cleared conversationStage).
+func (m model) persistHarnessSession(sessionID string) model {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return m
+	}
 	m.harnessSessionID = sessionID
+	if m.svc == nil {
+		return m
+	}
+	stage := strings.TrimSpace(m.conversationStage)
+	if stage == "" && m.orchestrationLive {
+		if s, err := m.svc.ActiveRunStage(); err == nil {
+			stage = s
+			m.conversationStage = s
+		}
+	}
+	if stage != "" {
+		if err := m.svc.SetStageHarnessSessionID(stage, sessionID); err != nil {
+			slog.Error("tui persist harness session failed", "error", err)
+		}
+	}
 	return m
 }
 
@@ -189,6 +228,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	m.runtimeCommandName = cmdName
 	m.runtimeModelSlug = strings.TrimSpace(modelSlug)
 	m.runtimeAgentName = ""
+	m.orchestrationLive = cmdName == "start"
 
 	var executePrompt string
 	if usesOrchestratorRuntime(cmdName) {
@@ -461,10 +501,29 @@ func (m model) submitConversation() (model, tea.Cmd) {
 		return m.beginHeroResumeExecute(cycleN)
 	}
 
-	var cmd tea.Cmd
-	m, cmd, ok := m.ensureDefaultModel("chat")
-	if !ok {
-		return m, cmd
+	if m.orchestrationLive {
+		if strings.TrimSpace(m.runtimeModelSlug) == "" {
+			if slug, errMsg := m.resolveOrchestratorOrDefaultModel("chat"); errMsg == "" {
+				m.runtimeModelSlug = slug
+				m.runtimeAgentName = "orchestration_agent"
+			} else {
+				var cmd tea.Cmd
+				var ok bool
+				m, cmd, ok = m.ensureDefaultModel("chat")
+				if !ok {
+					return m, cmd
+				}
+			}
+		} else {
+			m.runtimeAgentName = "orchestration_agent"
+		}
+	} else {
+		var cmd tea.Cmd
+		var ok bool
+		m, cmd, ok = m.ensureDefaultModel("chat")
+		if !ok {
+			return m, cmd
+		}
 	}
 	m.runtimeCommandName = ""
 	m = m.syncConversationContext()
@@ -624,8 +683,10 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.convStreamCh = nil
 		m.chatInputFocused = true
-		m.runtimeModelSlug = ""
-		m.runtimeAgentName = ""
+		if !m.orchestrationLive {
+			m.runtimeModelSlug = ""
+			m.runtimeAgentName = ""
+		}
 		if msg.err != nil {
 			m.convError = msg.err.Error()
 			slog.Error("tui conversation execute failed", "error", msg.err)
@@ -633,12 +694,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.result != nil {
 			if msg.result.SessionID != "" {
-				m.harnessSessionID = msg.result.SessionID
-				if m.svc != nil && m.conversationStage != "" {
-					if err := m.svc.SetStageHarnessSessionID(m.conversationStage, msg.result.SessionID); err != nil {
-						slog.Error("tui persist harness session failed", "error", err)
-					}
-				}
+				m = m.persistHarnessSession(msg.result.SessionID)
 			}
 			// Prefer canonical result text over accumulated deltas (partial vs final).
 			if msg.result.Output != "" && m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
@@ -912,7 +968,12 @@ func (m model) renderConversationResponse(responseLines int) string {
 		rows = append(rows, chatAccentRow(accent, cell, innerW))
 	}
 
-	statusContent := chatInAgent.Render("Agent") +
+	statusContent := ""
+	if m.streaming {
+		frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
+		statusContent = chatInText.Render(frame) + chatInMuted.Render(" ")
+	}
+	statusContent += chatInAgent.Render("Agent") +
 		chatInMuted.Render(" · ") +
 		chatInModel.Render(m.conversationModelLabel()) +
 		chatInMuted.Render(" · ") +
@@ -938,8 +999,7 @@ func (m model) responseContentLines(contentW int) []string {
 	turn := m.latestAgentTurn()
 	if len(turn) == 0 {
 		if m.streaming {
-			frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
-			return []string{chatInText.Render(frame + " Waiting for harness…")}
+			return []string{chatInMuted.Render("Waiting for harness…")}
 		}
 		return []string{chatInMuted.Render("Agent response will appear here.")}
 	}
@@ -970,8 +1030,6 @@ func (m model) responseContentLines(contentW int) []string {
 				style = chatInWarn
 			}
 			if text == "" && m.streaming {
-				frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
-				out = append(out, chatInText.Render(frame+" Waiting for harness…"))
 				continue
 			}
 			for _, line := range splitOutputLines(text, contentW) {
@@ -980,8 +1038,7 @@ func (m model) responseContentLines(contentW int) []string {
 		}
 	}
 	if len(out) == 0 && m.streaming {
-		frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
-		return []string{chatInText.Render(frame + " Waiting for harness…")}
+		return []string{chatInMuted.Render("Waiting for harness…")}
 	}
 	return out
 }

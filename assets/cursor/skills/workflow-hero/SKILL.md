@@ -28,12 +28,12 @@ After `/hero-new` (configuration ready): ask the user to open a **new empty chat
 
 ## Stage Close Sequence
 
-Every stage closes with the same sequence (PRD-C01-001 §5.4):
+Every stage closes with the same sequence (PRD-C01-001 §5.4). The **orchestrator** does this after the stage agent returns — stage agents must not ask to start the next stage.
 
-1. Summary + approval request (respect `require_human_approval`)
-2. Persist stage transition + metrics to SQLite via the `hero` CLI (`hero approve|reject|finish|continue` with `--metrics-json` as needed) — do **not** write `workflow.md` / `metrics.md`
+1. Summary + approval request **only when** this stage's `require_human_approval` is true (list `/hero-approve` `/hero-reject` `/hero-cancel` `/hero-finish` and stop). If false, do not ask yes/no — auto-advance in the same turn.
+2. Persist stage transition + metrics to SQLite via the `hero` CLI (`hero stage start` before work; `hero approve|reject|finish|continue` with `--metrics-json` as needed) — do **not** write `workflow.md` / `metrics.md`
 3. Show the stage metrics summary in chat (tokens input/output/total, duration, cost) — required every stage — and point the user to `hero metrics` for full details
-4. Advance to the next configured stage (engine advances on approve / auto-complete)
+4. Advance to the next configured stage only after the current Task has returned and the engine advances on approve / auto-complete. Wait for each Task (`run_in_background: false`); post the agent's Output Format in chat because nested Task work does not stream.
 
 ## Key References
 

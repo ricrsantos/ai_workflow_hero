@@ -45,17 +45,17 @@ Do **not** treat `workflow.md` or `metrics.md` as operational sources of truth.
 5. Validate: if `stages.browser_ui_validation.enabled` is true, `scope.frontend` must also be true; otherwise block and ask for correction.
 6. Validate: if `stages.qa_end_to_end.use_playwright` is true, `scope.frontend` must also be true; otherwise block and ask for correction.
 7. Complete the Configuration stage (persist via `hero` CLI with `--metrics-json` per **Metrics Procedure** when Configuration closes), then advance.
-8. Do not start implementation until PRD has been approved if research is enabled.
+8. Do not start implementation until Research has been closed. If research `require_human_approval` is false, auto-complete counts as acceptance — do not wait for a separate yes/no. If true, wait for `/hero-approve`.
 9. If research is disabled, require objective field to be well-described and ask for explicit scope confirmation before starting implementation.
-10. For each enabled stage, invoke the appropriate agent via the Task tool in a fresh isolated session. Apply **Model Resolution** (see below and `orchestration_agent`) on every Task call — never omit the `model` parameter. For Browser UI Validation, enforce Health-before-Visual and Playwright gates (see `orchestration_agent`). For QA End-to-End, pass Playwright vs HTTP selection per `use_playwright` (see `orchestration_agent`).
+10. Call `hero stage start --name <stage>` before work. For Implementation / QA / Judge / Browser UI Validation / QA End-to-End, invoke the agent via the Task tool in a fresh isolated session. Research grilling stays in this orchestrator session. Apply **Model Resolution** (see below and `orchestration_agent`) on every Task call — never omit the `model` parameter. Set `run_in_background: false` and **wait until each Task returns** before closing the stage or dispatching the next agent. Nested Task output may not stream; after return, post the Output Format summary in chat. For Browser UI Validation, enforce Health-before-Visual and Playwright gates (see `orchestration_agent`). For QA End-to-End, pass Playwright vs HTTP selection per `use_playwright` (see `orchestration_agent`).
 11. After each stage close, persist transitions and metrics via `hero` CLI (`hero approve`, `hero finish`, etc. with `--metrics-json` as applicable) — see **Stage Close Sequence** in `orchestration_agent`.
 12. Before finishing the cycle, ensure `current-state.md` is up to date.
 
 ## Approval and Control Loop
 
-- When `require_human_approval: false`: stage auto-completes, posts short summary, advances automatically (persist via CLI).
-- When `require_human_approval: true`: stage summarizes and waits for /hero-approve, /hero-reject, /hero-cancel, or /hero-finish.
-- Every stage closes with: (a) summary + approval request, (b) persist via `hero` CLI with `--metrics-json` when metrics are ready, (c) show metrics summary in chat (tokens + duration + cost), (d) advance to next configured stage.
+- When `require_human_approval: false` on the stage that **just finished**: auto-complete, post short summary + metrics, and dispatch the next stage in the same turn (persist via CLI). Never ask the user whether to proceed.
+- When `require_human_approval: true` on the stage that **just finished**: summarize, list `/hero-approve` `/hero-reject` `/hero-cancel` `/hero-finish`, and wait. Do not start the next stage. Informal "sim"/"yes" is not approval.
+- Every stage closes with: (a) summary + approval request **only if required**, (b) persist via `hero` CLI with `--metrics-json` when metrics are ready, (c) show metrics summary in chat (tokens + duration + cost), (d) advance to next configured stage only after close/approve.
 
 ## Model Resolution
 

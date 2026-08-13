@@ -88,6 +88,7 @@ type model struct {
 	runtimeCommandName string // hero runtime slash body name (e.g. "new") for Chat output normalization
 	runtimeModelSlug   string // explicit harness model for active runtime slash (e.g. /hero-start orchestrator)
 	runtimeAgentName   string // harness agent name for active runtime slash (e.g. orchestration_agent)
+	orchestrationLive  bool   // /hero-start session: follow-ups resume orchestrator model + session
 	awaitingRejectReason bool   // Chat is collecting rejection feedback before Runtime Execute
 }
 
@@ -296,13 +297,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.screen == screenApprovals {
 			return m.beginHeroReject()
 		}
-	case "d":
-		var cmd tea.Cmd
-		m, cmd, ok := m.ensureDefaultModel("dispatch")
-		if !ok {
-			return m, cmd
-		}
-		return m.beginAction("dispatch", m.dispatchCmd())
 	case "f":
 		if m.screen == screenApprovals {
 			return m.beginHeroFinish()
@@ -401,6 +395,10 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	switch item.action {
 	case actionGoScreen:
 		m = m.closePalette()
+		if item.screen == screenConversation {
+			return m.enterConversation()
+		}
+		m.chatInputFocused = false
 		m.screen = item.screen
 		return m, nil
 	case actionSelectModel:
@@ -889,29 +887,6 @@ func dispatchPromptMsg(svc *cycle.Service, label, prompt, modelSlug, mode string
 		success = fmt.Sprintf("%s dispatched.", label)
 	}
 	return actionResultMsg{title: label, success: success}
-}
-
-func (m model) dispatchCmd() tea.Cmd {
-	svc := m.svc
-	modelSlug := m.conversationModelSlug()
-	mode := m.chatMode
-	if mode == "" {
-		mode = harness.ModeBuild
-	}
-	return func() tea.Msg {
-		res, err := svc.RunWith(cycle.RunOptions{Model: modelSlug, Mode: mode})
-		if err != nil {
-			return actionResultMsg{err: err}
-		}
-		msg := res.Message
-		if msg == "" {
-			msg = fmt.Sprintf("Dispatch for stage %q.", res.Stage)
-		}
-		if !res.Dispatched {
-			return actionResultMsg{success: "Dispatch: " + msg}
-		}
-		return actionResultMsg{success: msg}
-	}
 }
 
 func (m model) helpCmd() tea.Cmd {

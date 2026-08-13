@@ -368,19 +368,22 @@ func TestConversationViewWhileStreaming(t *testing.T) {
 	next, _ := SubmitConversationForTest(m)
 	view := ViewForTest(next)
 	if !strings.Contains(view, "Waiting for harness") {
-		t.Fatalf("view missing wait animation: %q", view)
+		t.Fatalf("view missing wait placeholder: %q", view)
 	}
 	if !strings.Contains(view, "Agent") {
 		t.Fatalf("view missing response pane: %q", view)
 	}
-	// Spinner must not prefix the Agent status label — only content area animates.
-	if strings.Contains(view, " Agent ·") || strings.Contains(view, "Agent ·") {
-		// "Agent ·" is expected; braille+Agent is not.
-	}
+	foundSpinner := false
 	for _, frame := range waitAnimFrames {
-		if strings.Contains(view, frame+" Agent") {
-			t.Fatalf("wait spinner must not sit beside Agent label: %q", view)
+		if strings.Contains(view, frame+" Waiting") {
+			t.Fatalf("wait spinner must not sit beside Waiting for harness: %q", view)
 		}
+		if strings.Contains(view, frame) {
+			foundSpinner = true
+		}
+	}
+	if !foundSpinner {
+		t.Fatalf("wait spinner must sit on the Agent status line: %q", view)
 	}
 }
 
@@ -870,6 +873,49 @@ func TestHeroStartRuntimeConversation(t *testing.T) {
 	}
 	if h.lastSessionID != "" {
 		t.Fatalf("expected fresh session, got resume %q", h.lastSessionID)
+	}
+	if HarnessSessionIDForTest(next) != "start-cycle-sess" {
+		t.Fatalf("session=%q", HarnessSessionIDForTest(next))
+	}
+	stored, err := svc.StageHarnessSessionID("research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != "start-cycle-sess" {
+		t.Fatalf("stored session=%q", stored)
+	}
+	view := ViewForTest(next)
+	if !strings.Contains(view, "session:") {
+		t.Fatalf("header missing session id: %q", view)
+	}
+
+	h.deltas = []string{"continuing"}
+	next = SetConversationInput(next, "continue grilling")
+	next, cmd = SubmitConversationForTest(next)
+	next = drainConversationStream(t, next, cmd)
+	if h.lastSessionID != "start-cycle-sess" {
+		t.Fatalf("follow-up resume session=%q", h.lastSessionID)
+	}
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("follow-up model=%q want orchestrator slug", h.lastModel)
+	}
+}
+
+func TestConversationSyncPreservesLiveSession(t *testing.T) {
+	m, _, svc := newConversationTestModel(t)
+	m = EnterConversationForTest(m)
+	m.harnessSessionID = "live-orch-sess"
+
+	m = EnterConversationForTest(m)
+	if HarnessSessionIDForTest(m) != "live-orch-sess" {
+		t.Fatalf("sync wiped live session: %q", HarnessSessionIDForTest(m))
+	}
+	stored, err := svc.StageHarnessSessionID("research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != "live-orch-sess" {
+		t.Fatalf("live session not copied to stage: %q", stored)
 	}
 }
 

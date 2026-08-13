@@ -69,7 +69,7 @@ func (m model) renderApprovals() string {
 	if pending == "" {
 		b.WriteString(mutedStyle.Render("No stage pending approval."))
 		b.WriteString("\n\n")
-		b.WriteString(footerStyle.Render("Keys: a approve · r reject · c cancel · f finish · d dispatch"))
+		b.WriteString(footerStyle.Render("Keys: a approve · r reject · c cancel · f finish"))
 		return b.String()
 	}
 	b.WriteString(headerStyle.Render("Pending approval"))
@@ -77,7 +77,7 @@ func (m model) renderApprovals() string {
 	b.WriteString(warnStyle.Render(fmt.Sprintf("⚠ Stage %q awaits your decision.", pending)))
 	b.WriteByte('\n')
 	b.WriteString("\n")
-	b.WriteString(footerStyle.Render("Keys: a approve · r reject · c cancel cycle · f finish · d dispatch"))
+	b.WriteString(footerStyle.Render("Keys: a approve · r reject · c cancel cycle · f finish"))
 	return b.String()
 }
 
@@ -337,7 +337,7 @@ func (m model) footerHints() string {
 		}
 		return "tab mode · enter send · ↑↓ scroll · /hero-model · alt+1-6 screens · ctrl+q quit"
 	}
-	return "alt+1-6 screens · / commands · ctrl+r refresh · d dispatch · ctrl+q quit"
+	return "alt+1-6 screens · / commands · ctrl+r refresh · ctrl+q quit"
 }
 
 func pendingApprovalStage(st cycle.StatusView) string {

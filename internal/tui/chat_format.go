@@ -47,6 +47,9 @@ func tuiHeroStartPreamble() string {
 		"- Run full orchestration: validate workflow-config, dispatch Task subagents, persist via hero CLI with metrics.\n" +
 		"- Stay inside this project root (the directory that contains .workflow-hero/). Do not read, grep, glob, or search parent directories, sibling folders, or any Hero framework/source tree.\n" +
 		"- Invoke `hero` from PATH via the Shell tool (e.g. `hero status`). Do not hunt the filesystem for the binary. If Shell fails, stop and tell the user — do not reverse-engineer Hero internals.\n" +
+		"- Call `hero stage start --name <stage>` before dispatching that stage's agent.\n" +
+		"- After every Task dispatch: set run_in_background to false, wait until the Task returns, then post that agent's Output Format summary in chat. Nested Task work does not stream here. Do not end your turn after launching Task. Do not start the next stage until the current Task has returned.\n" +
+		"- Read require_human_approval for the stage that just finished (not the next one). If false: auto-close via CLI and dispatch the next stage in the same turn — never ask yes/no to proceed. If true: close as PendingApproval, list /hero-approve /hero-reject /hero-cancel /hero-finish, and STOP.\n" +
 		"- Tell the user to use /hero-approve, /hero-reject, /hero-cancel, or /hero-finish in the Hero TUI (not Cursor chat handoff).\n\n" +
 		"---\n\n"
 }

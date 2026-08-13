@@ -85,6 +85,33 @@ func TestParseStreamJSONThinkingAndToolCalls(t *testing.T) {
 	}
 }
 
+func TestParseStreamJSONTaskToolCall(t *testing.T) {
+	ndjson := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"s"}`,
+		`{"type":"tool_call","subtype":"started","call_id":"t1","tool_call":{"taskToolCall":{"args":{"description":"frontend_agent"}}},"session_id":"s"}`,
+		`{"type":"tool_call","subtype":"completed","call_id":"t1","tool_call":{"taskToolCall":{"args":{"description":"frontend_agent"},"result":{"success":{"content":"{\"stage\":\"implementation\"}"}}}},"session_id":"s"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Implementation complete."}]},"session_id":"s","timestamp_ms":1}`,
+		`{"type":"result","subtype":"success","is_error":false,"duration_ms":5,"result":"Implementation complete.","session_id":"s"}`,
+	}, "\n") + "\n"
+
+	var texts []string
+	_, err := cursoradapter.ParseStreamJSON(strings.NewReader(ndjson), func(d harness.StreamDelta) {
+		if d.Kind == harness.StreamKindTool || d.Kind == harness.StreamKindText {
+			texts = append(texts, d.Text)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(texts, "|")
+	if !strings.Contains(joined, "Task frontend_agent") {
+		t.Fatalf("missing Task start: %q", joined)
+	}
+	if !strings.Contains(joined, "Task frontend_agent (completed)") {
+		t.Fatalf("missing Task completed: %q", joined)
+	}
+}
+
 func TestIsAuthFailure(t *testing.T) {
 	if !cursoradapter.IsAuthFailure("", "Please log in with cursor agent login") {
 		t.Fatal("expected auth failure")
