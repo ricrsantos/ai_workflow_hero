@@ -45,6 +45,8 @@ func tuiHeroStartPreamble() string {
 		"- Do NOT run `hero cycle new` — the cycle was prepared during /hero-new.\n" +
 		"- The TUI runs hero cycle sync-config before this session; do not ask the user to run it manually.\n" +
 		"- Run full orchestration: validate workflow-config, dispatch Task subagents, persist via hero CLI with metrics.\n" +
+		"- Stay inside this project root (the directory that contains .workflow-hero/). Do not read, grep, glob, or search parent directories, sibling folders, or any Hero framework/source tree.\n" +
+		"- Invoke `hero` from PATH via the Shell tool (e.g. `hero status`). Do not hunt the filesystem for the binary. If Shell fails, stop and tell the user — do not reverse-engineer Hero internals.\n" +
 		"- Tell the user to use /hero-approve, /hero-reject, /hero-cancel, or /hero-finish in the Hero TUI (not Cursor chat handoff).\n\n" +
 		"---\n\n"
 }

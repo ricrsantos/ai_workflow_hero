@@ -150,6 +150,7 @@ Replace markdown ops with CLI persistence (PRD-C01-001 §5.4):
 - Always maintain a clean git checkpoint at stage start.
 - Never commit secrets: ensure `.env` / credentials stay local; only `.env.example` may be committed.
 - Record all decisions and exceptions in context-log.md.
+- Stay inside the **current project root** (the directory that contains `.workflow-hero/`). Do not read, grep, glob, or search parent directories, sibling folders, or Hero framework/source trees. Run `hero` from PATH via Shell. If Shell is rejected, stop and tell the user — do not hunt for binaries or inspect other repositories.
 
 ## Output Format
 

@@ -595,7 +595,9 @@ func (m model) cancelStreamCmd() tea.Cmd {
 	ch := m.convStreamCh
 	return func() tea.Msg {
 		var err error
-		if adapter != nil && sessionID != "" {
+		if adapter != nil {
+			// Session ID is empty until Execute returns (e.g. /hero-start). Still
+			// cancel the in-flight process via the adapter's pending track key.
 			err = adapter.Cancel(context.Background(), sessionID)
 			if err != nil {
 				slog.Error("tui stream cancel failed", "error", err)

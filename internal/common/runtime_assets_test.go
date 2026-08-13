@@ -278,6 +278,9 @@ func TestRuntimeAssets_CLIAPIStageClose(t *testing.T) {
 	if !strings.Contains(skillStr, "hero") || !strings.Contains(skillStr, "SQLite") {
 		t.Error("workflow-hero SKILL.md must reference hero CLI / SQLite ops")
 	}
+	if !strings.Contains(skillStr, "Project workspace") {
+		t.Error("workflow-hero SKILL.md must constrain work to the consumer project root")
+	}
 	if strings.Contains(skillStr, "Update `workflow.md`") {
 		t.Error("SKILL.md must not mandate updating workflow.md")
 	}
@@ -373,7 +376,7 @@ func TestRuntimeAssets_ImplementationParallelism(t *testing.T) {
 		t.Fatalf("read orchestration_agent: %v", err)
 	}
 	orchStr := string(orch)
-	for _, kw := range []string{"Implementation Parallelism", "Task tool", "parallel"} {
+	for _, kw := range []string{"Implementation Parallelism", "Task tool", "parallel", "current project root"} {
 		if !strings.Contains(orchStr, kw) {
 			t.Errorf("orchestration_agent.md missing keyword %q", kw)
 		}
@@ -499,6 +502,7 @@ func TestRuntimeAssets_CleanSessionHandoff(t *testing.T) {
 		"workflow-config.yml",
 		"orchestrator / grill-me",
 		"new empty chat",
+		"this project root",
 	} {
 		if !strings.Contains(startStr, kw) {
 			t.Errorf("hero-start.md missing Session Bootstrap keyword %q", kw)

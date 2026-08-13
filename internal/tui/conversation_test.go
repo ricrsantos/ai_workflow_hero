@@ -253,6 +253,36 @@ func TestConversationResumeSession(t *testing.T) {
 	}
 }
 
+func TestConversationCancelDuringStreamWithoutSessionID(t *testing.T) {
+	m, h, _ := newConversationTestModel(t)
+	h.deltas = []string{"partial"}
+
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "wait")
+	next, cmd := SubmitConversationForTest(m)
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming")
+	}
+	msg := runConversationCmd(cmd)
+	next2, _ := next.Update(msg)
+	next = next2.(model)
+	if HarnessSessionIDForTest(next) != "" {
+		t.Fatalf("session should still be empty, got %q", HarnessSessionIDForTest(next))
+	}
+	next, cancelCmd := CancelConversationStreamForTest(next)
+	if cancelCmd != nil {
+		cancelMsg := cancelCmd()
+		next3, _ := next.Update(cancelMsg)
+		next = next3.(model)
+	}
+	if IsConversationStreaming(next) {
+		t.Fatal("expected streaming stopped")
+	}
+	if !h.cancelCalled {
+		t.Fatal("expected harness Cancel even without session id")
+	}
+}
+
 func TestConversationCancelDuringStream(t *testing.T) {
 	m, h, _ := newConversationTestModel(t)
 	h.deltas = []string{"partial"}

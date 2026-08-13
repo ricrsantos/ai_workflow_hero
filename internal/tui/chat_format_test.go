@@ -76,6 +76,9 @@ func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
 	if !strings.Contains(got, "hero cycle sync-config") {
 		t.Fatalf("missing sync-config guard: %q", got)
 	}
+	if !strings.Contains(got, "Stay inside this project root") {
+		t.Fatalf("missing workspace isolation: %q", got)
+	}
 	if strings.Contains(got, "Clean Session Handoff") {
 		t.Fatalf("start preamble should not mention handoff: %q", got)
 	}

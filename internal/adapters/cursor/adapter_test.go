@@ -345,6 +345,12 @@ func TestExecuteJSONFixture(t *testing.T) {
 	if !containsArg(gotArgs, "--trust") {
 		t.Fatalf("expected --trust in args=%v", gotArgs)
 	}
+	if !containsArg(gotArgs, "--force") {
+		t.Fatalf("expected --force in args=%v", gotArgs)
+	}
+	if !containsArg(gotArgs, "--workspace") || !containsArg(gotArgs, dir) {
+		t.Fatalf("expected --workspace %s in args=%v", dir, gotArgs)
+	}
 	if !containsArg(gotArgs, "plan this") {
 		t.Fatalf("prompt missing in args=%v", gotArgs)
 	}
@@ -662,6 +668,57 @@ func TestDispatchDoesNotResumePriorSession(t *testing.T) {
 			t.Fatalf("Dispatch must not resume prior session, args=%v", secondArgs)
 		}
 	}
+}
+
+func TestCancelEmptySessionIDCancelsInFlight(t *testing.T) {
+	dir := withCursorAssets(t)
+	started := make(chan struct{})
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.Runner = blockingStreamRunner{started: started}
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{
+			ProjectDir: dir,
+			Prompt:     "start",
+			Stream:     true,
+		})
+		errCh <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("execute did not start")
+	}
+	if err := adapter.Cancel(context.Background(), ""); err != nil {
+		t.Fatalf("Cancel empty id: %v", err)
+	}
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected execute cancelled")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("execute did not return after cancel")
+	}
+}
+
+type blockingStreamRunner struct {
+	started chan struct{}
+}
+
+func (b blockingStreamRunner) Run(ctx context.Context, dir, path string, args []string) (cursoradapter.RunResult, error) {
+	return b.RunStreaming(ctx, dir, path, args, nil)
+}
+
+func (b blockingStreamRunner) RunStreaming(ctx context.Context, _, _ string, _ []string, _ io.Writer) (cursoradapter.RunResult, error) {
+	if b.started != nil {
+		close(b.started)
+	}
+	<-ctx.Done()
+	return cursoradapter.RunResult{ExitCode: -1}, ctx.Err()
 }
 
 func TestCreateResumeCancelStatus(t *testing.T) {

@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-08-13 — TUI `/hero-start` Shell rejection + workspace leak
+
+**Problem**: In `task_manager`, TUI `/hero-start` froze. Cursor Agent CLI `--print` without `--force` auto-rejected Shell (no TTY for Auto-review). The orchestrator then grepped parent/sibling paths and read Hero framework source. Ctrl+C did not abort because TUI skipped `Cancel` when `harnessSessionID` was still empty.
+
+**Decision / Outcome**: Adapter Execute now passes `--force` and `--workspace <projectDir>`. `Cancel("")` kills the pending in-flight process; TUI Ctrl+C always calls it. Runtime prompts (orchestration_agent, hero-start, workflow-hero skill, TUI start preamble) constrain work to the consumer project root.
+
+---
+
+## 2026-08-13 — Release v1.0.4
+
+**Problem**: TUI `/hero-start` froze when Cursor Agent CLI rejected Shell without `--force`; orchestrator leaked into parent Hero source tree; Ctrl+C could not abort before session id.
+
+**Decision / Outcome**: Harness passes `--force --workspace`; cancel pending execute; runtime workspace guards. Tagged `v1.0.4`.
+
+---
+
 ## 2026-08-12 — TUI control commands parity (`/hero-cancel`, `/hero-finish`, `/hero-continue`, `/hero-back`)
 
 **Problem**: TUI used CLI direct (`Cancel`/`Finish`/`Continue`) or Dispatch (`/hero-back`) — no orchestrator markdown, no git rollback, no metrics/context updates, fixed +1 continue, no stage resume.

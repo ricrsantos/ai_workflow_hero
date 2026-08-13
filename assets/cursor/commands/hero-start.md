@@ -32,6 +32,8 @@ Then rebuild working context from:
 
 Summarize from those sources what will run, then continue.
 
+Stay inside **this project root** (the directory that contains `.workflow-hero/`). Do not read, grep, glob, or search parent directories, sibling folders, or any Hero framework/source tree. Run `hero` from PATH via Shell. If Shell is rejected, stop and tell the user — do not hunt for binaries or inspect other repositories.
+
 Do **not** treat `workflow.md` or `metrics.md` as operational sources of truth.
 
 ## Responsibilities

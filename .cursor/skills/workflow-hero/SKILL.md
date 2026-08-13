@@ -6,6 +6,10 @@ This skill provides the AI Workflow Hero runtime workflow context for the orches
 
 This skill is automatically active when working within a Hero-managed project.
 
+## Project workspace
+
+Work only inside the **current project root** (the directory that contains `.workflow-hero/`). Do not read, grep, glob, or search parent directories, sibling folders, or Hero framework/source trees. Run `hero` from PATH via Shell. If Shell is rejected, stop and tell the user — do not hunt for binaries or inspect other repositories.
+
 ## Slash-first user vocabulary (ADR-024)
 
 Tell users to run **`/hero-<name>` slash commands** as the primary CTA (`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-continue`, `/hero-back`, `/hero-cycles`, `/hero-todos`, `/hero-help`). Use `hero …` CLI verbs only as implementation detail for agents. After `/hero-new`, the primary handoff is **`/hero-start`** in a new empty chat.

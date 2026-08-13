@@ -179,7 +179,14 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	if req.Stream {
 		format = "stream-json"
 	}
-	args := []string{"--print", "--output-format", format, "--trust"}
+	// --print is non-interactive: without --force, Auto-review rejects Shell (no TTY
+	// to prompt), so the agent cannot run `hero` and starts searching parent dirs.
+	// --workspace pins the agent to the consumer project (cmd.Dir alone is not enough
+	// when Cursor walks up for a git/workspace root).
+	args := []string{"--print", "--output-format", format, "--trust", "--force"}
+	if dir != "" {
+		args = append(args, "--workspace", dir)
+	}
 	if req.Stream {
 		// Character-level assistant deltas while the process runs.
 		args = append(args, "--stream-partial-output")
@@ -200,7 +207,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	runCtx, cancel := context.WithCancel(ctx)
 	trackID := sessionID
 	if trackID == "" {
-		trackID = "pending:" + req.StageName
+		trackID = pendingExecKey(req.StageName)
 	}
 	a.setRunning(trackID, cancel)
 	defer a.clearRunning(trackID, cancel)
@@ -303,19 +310,12 @@ func (a *Adapter) executeStreamLive(
 }
 
 // Cancel implements harness.HarnessAdapter.
+// An empty sessionID cancels the in-flight Execute (TUI /hero-start clears the
+// session until the CLI returns a Cursor chat id).
 func (a *Adapter) Cancel(_ context.Context, sessionID string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	cancel := a.activeCancels[sessionID]
-	if cancel == nil && sessionID != "" {
-		// Also try pending key variants.
-		for k, c := range a.activeCancels {
-			if strings.HasSuffix(k, sessionID) || strings.Contains(k, sessionID) {
-				cancel = c
-				break
-			}
-		}
-	}
+	cancel := a.lookupCancelLocked(sessionID)
 	if cancel == nil {
 		return fmt.Errorf("no in-flight execution for session %q", sessionID)
 	}
@@ -325,6 +325,37 @@ func (a *Adapter) Cancel(_ context.Context, sessionID string) error {
 		st.updatedAt = time.Now().UTC()
 	}
 	a.log().Info("cursor harness execution cancelled", "session_id", sessionID)
+	return nil
+}
+
+func pendingExecKey(stageName string) string {
+	return "pending:" + stageName
+}
+
+func (a *Adapter) lookupCancelLocked(sessionID string) context.CancelFunc {
+	if c := a.activeCancels[sessionID]; c != nil {
+		return c
+	}
+	if sessionID != "" {
+		for k, c := range a.activeCancels {
+			if strings.HasSuffix(k, sessionID) || strings.Contains(k, sessionID) {
+				return c
+			}
+		}
+		return nil
+	}
+	// No Cursor session id yet: cancel the pending Execute (usually one).
+	if c := a.activeCancels[pendingExecKey("")]; c != nil {
+		return c
+	}
+	for k, c := range a.activeCancels {
+		if strings.HasPrefix(k, "pending:") {
+			return c
+		}
+	}
+	for _, c := range a.activeCancels {
+		return c
+	}
 	return nil
 }
 
