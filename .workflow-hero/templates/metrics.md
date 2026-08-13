@@ -1,5 +1,9 @@
 # Metrics — Cycle {{project.cycle}}
 
+> **Legacy / optional template (Hero 1.0):** per-cycle metrics live in `.workflow-hero/hero.db`.
+> Query with `hero metrics` (or `hero metrics --json`). Persist via `hero … --metrics-json`.
+> Kept for upgrade import fixtures and Metrics Procedure formula reference only.
+
 **Title**: {{workflow.title}}
 
 ## Stage Metrics
@@ -27,4 +31,4 @@ Token estimation (orchestrator Metrics Procedure):
 2. Look up `input` / `output` rates in `.workflow-hero/models/<provider>.yml` (`unit: per_1m_tokens`)
 3. `cost_usd = (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000`
 
-Never leave Input/Output/Cost as `—` for a stage that ran.
+Never leave Input/Output/Cost unset for a stage that ran — persist via the `hero` CLI.

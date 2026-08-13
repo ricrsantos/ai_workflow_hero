@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **1.0.2** patch release; **C3 archived** (2026-08-09). No active cycle. |
+| **Phase** | Hero **1.0.3** patch release; **C3 archived** (2026-08-09). No active cycle. |
 
 ## Technology Stack
 
@@ -57,7 +57,7 @@
 - **SQLite operational store** (schema v3: `cycles.openspec_change`, `stages.harness_session_id`) + workflow engine + CLI-as-API cycle service (`hero cycle new` = prepare active cycle with deferred title/objective; `hero cycle sync-config` syncs meta from YAML before `/hero-start`) with OpenSpec-coupled archive.
 - **HarnessAdapter (full)**: `IsAvailable`, sessions, `Execute`/`Cancel`/`Status`, `Dispatch`→Execute; Cursor adapter runs Agent CLI (`cursor-agent` / `cursor agent`) with json/stream-json parsers; stream mode uses `--stream-partial-output` + `StreamingCommandRunner` (live stdout pipe → `ParseStreamJSON`); `OnStreamDelta` emits text, thinking, and tool activity; injectable `CommandRunner`.
 - Install: git prerequisite (`--git-init` / huh confirm), name/summary flags or prompts, asset materialization, `hero.json` / `project.json` / `documents.json`, checksum tracking, `metrics-summary.md`, soft secrets hygiene, harness-marker warn-only suggestions; end-user guide at `.workflow-hero/docs/workflow-help.md`.
-- Upgrade: checksum-based non-overwrite of customized files with warnings; also ensures env hygiene files/patterns; refreshes `docs/workflow-help.md` when not customized.
+- Upgrade: checksum-based non-overwrite of customized files with warnings; reconciles stale `checksums.json` when disk already matches embedded assets (no false-positive skip); also ensures env hygiene files/patterns; refreshes `docs/workflow-help.md` when not customized.
 - Uninstall: removes only Hero-owned paths; preserves `AGENTS.md`, `context/`, `docs/`, `openspec/`, `.env.example`, `.gitignore`.
 - Doctor / status / variables: table default + `--json` (`openspec_change` in status); doctor warn-only checks for secrets hygiene, unsupported harness markers (`.claude/` / `.windsurf/` / `.codex/`), and **Cursor Agent CLI on PATH + login hint** (complementary to TUI boot; PRD-C03-001 §4.10).
 - `update-models`: fetches structured upstream model YAML (HTTP client injectable for tests).
@@ -71,8 +71,6 @@
 
 ## Pending Features
 
-- Publish GitHub Release **`v1.0.2`** (binaries + `checksums.txt`).
-- `.workflow-hero/config/hero.json` still records `cli.version` / `assets.version` **0.9.0** while CLI default is **1.0.2** — run `hero upgrade` to align.
 - Post-1.0 deferred **D1–D13** (multi-harness adapters, integrations, notification manager, rich TUI, daemon/RPC, event bus, markdown projections, etc. — see PRD-C01 §4).
 - V2 scope per PRD §2.3 / §7: Windows CLI, CI/CD-automated releases, GPG-signed artifacts, non-interactive-only CLI, additional harnesses (OpenCode, Claude Code, Codex, VS Code), advanced sync/drift detection, optional stages (UX, observability, security review), AI hooks, richer project memory (RAG/DB).
 - Note: intermediate tags `v0.6.0`–`v0.7.0` never published on GitHub; `v0.8.0` / `v0.9.0` published.
@@ -87,7 +85,6 @@
 
 ## Known Technical Debt
 
-- `.workflow-hero/config/hero.json` still records `cli`/`assets` version **0.9.0** while source default is **1.0.2** — run `hero upgrade` to align.
 - No GitHub Actions / CI/CD release automation in V1 (ADR-010; deferred to V2 GoReleaser or equivalent).
 - GPG-signed release artifacts deferred to V2 (PRD §7; DEPLOY.md).
 - Upstream Cursor CLI gaps accepted as limitations: plugin skills, nested skill dirs (ADR-C02).
@@ -100,9 +97,7 @@
 
 ## Next Steps
 
-1. Tag and publish **`v1.0.2`** release.
-2. Run `hero upgrade` to sync local install metadata to `1.0.2`.
-3. Start next cycle via `/hero-new` or review pending work via `/hero-todos`.
+1. Start next cycle via `/hero-new` or review pending work via `/hero-todos`.
 
 ---
 

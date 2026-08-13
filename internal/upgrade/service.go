@@ -91,6 +91,11 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 
 				// File is customized if its current hash differs from the originally installed hash.
 				if originalHash != "" && existingHash != originalHash {
+					if existingHash == newHash {
+						// Disk already matches the embedded asset; checksums were stale (e.g. git-updated files).
+						newChecksums[relKey] = newHash
+						return nil
+					}
 					output.Warningf(stderr, "%s was customized locally and was not overwritten.", relKey)
 					result.Skipped = append(result.Skipped, relKey)
 					// Keep the new hash for when it is eventually merged.

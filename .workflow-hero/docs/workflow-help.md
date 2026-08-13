@@ -22,11 +22,11 @@ Core ideas:
 
 | Idea | Meaning |
 |------|---------|
-| **CLI vs Runtime** | The `hero` CLI is deterministic (install, upgrade, doctor…). All reasoning runs in Cursor chat via `/hero:*` commands. |
+| **CLI vs Runtime** | The `hero` CLI is deterministic (install, upgrade, doctor…). All reasoning runs in Cursor chat via `/hero-<name>` commands. |
 | **Development Cycle** | One unit of work (feature, bugfix, greenfield). Stages can be enabled or disabled per cycle. |
 | **Project vs Hero artifacts** | Permanent knowledge lives in `AGENTS.md`, `docs/`, `context/`, `openspec/`. Hero-only state lives under `.workflow-hero/`. |
 | **Context compression** | Agents keep `current-state.md` and `context-log.md` up to date so later sessions stay cheap and consistent. |
-| **Human in the loop** | Stages can require approval; escalation waits for `/hero:continue`; Judge SDD ambiguity uses `/hero:back` or `/hero:approve`. |
+| **Human in the loop** | Stages can require approval; escalation waits for `/hero-continue`; Judge SDD ambiguity uses `/hero-back` or `/hero-approve`. |
 | **Determinism where it matters** | Specs, ADRs, tests, logging standards, and scope routing reduce “prompt lottery” outcomes. |
 
 Stage flow:
@@ -59,7 +59,7 @@ Architecture rule: do **not** change architecture without an approved ADR.
 
 - Linux or macOS (`amd64` or `arm64`)
 - [Cursor](https://cursor.com) IDE (V1)
-- Git (required for `/hero:cancel` checkpoints; `hero install` can run `git init` with consent)
+- Git (required for `/hero-cancel` checkpoints; `hero install` can run `git init` with consent)
 - [OpenSpec](https://github.com/Fission-AI/OpenSpec) for Planning (installed with consent when needed)
 
 ---
@@ -161,18 +161,18 @@ Re-copies Hero assets from the binary. Files you customized are **not** silently
 
 Typical first Runtime steps:
 
-1. `/hero:sync` — activate Hero on an existing codebase (recommended)
-2. `/hero:new` — start a new cycle (writes `.workflow-hero/cycles/current/`)
+1. `/hero-sync` — activate Hero on an existing codebase (recommended)
+2. `/hero-new` — start a new cycle (writes `.workflow-hero/cycles/current/`)
 3. Edit `.workflow-hero/cycles/current/workflow-config.yml` (fill `title` / `objective` / `scope`; optionally set `workflow_config.user_preferred_language`)
-4. Open a **new empty chat**, select the agent (model) you want as the Hero **orchestrator / grill-me**, then run `/hero:start`
+4. Open a **new empty chat**, select the agent (model) you want as the Hero **orchestrator / grill-me**, then run `/hero-start`
 
-When prior cycles exist, `/hero:new` **always imports** `workflow_config`, `fallback_model`, `stages`, and `agents` from the previous cycle’s `workflow-config.yml` into the new file. `title`, `objective`, and `scope` are always reset to template defaults (cycle-specific). The first cycle uses the blank template only.
+When prior cycles exist, `/hero-new` **always imports** `workflow_config`, `fallback_model`, `stages`, and `agents` from the previous cycle’s `workflow-config.yml` into the new file. `title`, `objective`, and `scope` are always reset to template defaults (cycle-specific). The first cycle uses the blank template only.
 
 ### 8.0 Clean session after configuration
 
-After `/hero:new`, prefer a **new empty chat** for `/hero:start` so the orchestrator session does not carry grilling/Q&A from configuration (saves context window for later stages). Soft guidance — Hero still works if you continue in the same chat, but a clean session is recommended.
+After `/hero-new`, prefer a **new empty chat** for `/hero-start` so the orchestrator session does not carry grilling/Q&A from configuration (saves context window for later stages). Soft guidance — Hero still works if you continue in the same chat, but a clean session is recommended.
 
-In the new chat, **select the IDE agent/model you want as the Hero orchestrator / grill-me** before `/hero:start`. That session model drives orchestration; specialized agents still use models from `workflow-config.yml` via the Task tool.
+In the new chat, **select the IDE agent/model you want as the Hero orchestrator / grill-me** before `/hero-start`. That session model drives orchestration; specialized agents still use models from `workflow-config.yml` via the Task tool.
 
 ### 8.1 Key fields in `workflow-config.yml`
 
@@ -211,16 +211,16 @@ QA End-to-End Playwright journeys (`use_playwright`) remain separate business fl
 
 ### 8.4 Approval and control
 
-- `require_human_approval: true` → stage waits for `/hero:approve`, `/hero:reject`, `/hero:cancel`, or `/hero:finish`.
+- `require_human_approval: true` → stage waits for `/hero-approve`, `/hero-reject`, `/hero-cancel`, or `/hero-finish`.
 - `require_human_approval: false` → stage auto-advances after summary (you can still interrupt before the next stage starts).
-- Iteration/timeout exhaustion → escalates; grant more work with `/hero:continue`.
-- Judge finds SDD ambiguity → `/hero:back` (reopen Planning) or `/hero:approve` (accept as-is).
+- Iteration/timeout exhaustion → escalates; grant more work with `/hero-continue`.
+- Judge finds SDD ambiguity → `/hero-back` (reopen Planning) or `/hero-approve` (accept as-is).
 
 ### 8.5 Model fallback
 
 1. Agent’s configured model  
 2. Top-level `fallback_model` (user is always warned)  
-3. Still unavailable → wait for `/hero:continue` after you fix config  
+3. Still unavailable → wait for `/hero-continue` after you fix config  
 
 Use **Cursor/Task model ids** in `agents.*.model` (e.g. `cursor-grok-4.5`, not the bare xAI id `grok-4.5`). The orchestrator passes Task a **kebab slug** built from `enable_fast_model` / `reasoning_effort` / `thinking` (e.g. `cursor-grok-4.5-high`, `composer-2.5-fast`). Bracket forms like `id[fast=false,effort=high]` are not accepted by Cursor Task. When an orchestrator-dispatched agent launches a **nested generic Task**, resolve `agents.*.subagent` (`same_of_agent: true` or missing → parent model; `false` → `subagent.model`). Named Hero agents (e.g. `context_agent`) always use their own top-level block.
 
@@ -256,19 +256,22 @@ hero update-models
 
 | Command | Purpose |
 |---------|---------|
-| `/hero:new` | Start a new development cycle |
-| `/hero:start` | Execute configured stages |
-| `/hero:approve` | Approve current stage and advance |
-| `/hero:reject` | Reject and re-run current stage |
-| `/hero:cancel` | Cancel stage and restore git checkpoint |
-| `/hero:continue` | Grant extra iterations after escalation |
-| `/hero:back` | Reopen Planning after SDD ambiguity |
-| `/hero:finish` | Finish the cycle; writes **Completed** date (`date +%Y-%m-%d`) into `workflow.md` |
-| `/hero:archive` | Archive current cycle; folder date = **Completed** from `workflow.md` (completion date) |
-| `/hero:resume` | Restore an archived cycle |
-| `/hero:sync` | Activate / re-sync Hero on an existing project |
-| `/hero:status` | Show cycle status in chat |
-| `/hero:help` | List Runtime commands |
+| `/hero-new` | Start a new development cycle |
+| `/hero-start` | Execute configured stages |
+| `/hero-approve` | Approve current stage and advance |
+| `/hero-reject` | Reject and re-run current stage |
+| `/hero-cancel` | Cancel stage and restore git checkpoint |
+| `/hero-continue` | Grant extra iterations after escalation |
+| `/hero-back` | Reopen Planning after SDD ambiguity |
+| `/hero-finish` | Finish the cycle via `hero finish` (records `completed_at` in SQLite) |
+| `/hero-archive` | Archive current cycle via `hero cycle archive` (folder date from store `completed_at`) |
+| `/hero-resume` | Restore an archived cycle |
+| `/hero-sync` | Activate / re-sync Hero on an existing project (also merges pending items from `docs/product/` and `docs/architecture/` into `current-state.md`) |
+| `/hero-status` | Show cycle status in chat |
+| `/hero-cycles` | List all cycles with per-etapa metrics (SQLite + archive folders) |
+| `/hero-todos` | Show pending items from `context/current-state.md` (run `/hero-sync` first when docs changed) |
+| `/hero-model` | Select TUI default model (persists to `hero.json`; Chat screen + non-agent dispatches) |
+| `/hero-help` | List Runtime commands |
 
 ---
 
@@ -276,7 +279,7 @@ hero update-models
 
 | Agent | Role |
 |-------|------|
-| `orchestration_agent` | Orchestrates the loop (IDE session model) |
+| `orchestration_agent` | Orchestrates the loop (IDE session model in chat; TUI `/hero-start` uses `agents.orchestration_agent` in workflow-config) |
 | `discover_agent` | Research / grilling → specs (PRD, ADR, UI, …) |
 | `planning_agent` | OpenSpec SDD |
 | `context_agent` | On-demand project context (read-only) |
@@ -322,15 +325,16 @@ Never log secrets, tokens, or PII. Prefer the project’s existing logger; other
 
 ## 13. Metrics and context files
 
-| File | Purpose |
+| File / command | Purpose |
 |------|---------|
-| `.workflow-hero/cycles/current/metrics.md` | Per-cycle stage metrics |
-| `.workflow-hero/metrics-summary.md` | Aggregated across cycles |
+| `.workflow-hero/hero.db` | SQLite operational store (cycle/stage status, events, metrics) |
+| `hero status` / `hero metrics` / `hero events` | Query operational state (table or `--json`) |
+| `.workflow-hero/metrics-summary.md` | Aggregated across cycles (optional project summary) |
 | `context/current-state.md` | Long-lived project truth |
 | `context/context-log.md` | Short/medium decision log |
 | `AGENTS.md` | Stable agent instructions for the project |
 
-Token/cost estimates use character count ÷ ~4 × prices from `.workflow-hero/models/*.yml`.
+Token/cost estimates use character count ÷ ~4 × prices from `.workflow-hero/models/*.yml`, then persist via `hero … --metrics-json` (not cycle `metrics.md`).
 
 ---
 
@@ -341,15 +345,15 @@ hero install --tools cursor
 # → read .workflow-hero/docs/workflow-help.md
 
 # In Cursor:
-/hero:sync
-/hero:new
+/hero-sync
+/hero-new
 # edit workflow-config.yml (scope, stages, models)
 
 # New empty chat → select orchestrator / grill-me agent → then:
-/hero:start
+/hero-start
 ```
 
-Use `/hero:status` or `hero status` anytime. When done: `/hero:finish` or `/hero:archive`.
+Use `/hero-status` or `hero status` anytime. When done: `/hero-finish` or `/hero-archive`.
 
 ---
 
@@ -376,11 +380,11 @@ Ideias centrais:
 
 | Ideia | Significado |
 |-------|-------------|
-| **CLI vs Runtime** | A CLI `hero` é determinística. Todo raciocínio ocorre no chat do Cursor via `/hero:*`. |
+| **CLI vs Runtime** | A CLI `hero` é determinística. Todo raciocínio ocorre no chat do Cursor via `/hero-<name>`. |
 | **Ciclo de desenvolvimento** | Unidade de trabalho (feature, bug, projeto novo). Stages ligáveis/desligáveis por ciclo. |
 | **Artefatos de projeto vs Hero** | Conhecimento permanente: `AGENTS.md`, `docs/`, `context/`, `openspec/`. Estado do Hero: `.workflow-hero/`. |
 | **Compressão de contexto** | `current-state.md` e `context-log.md` mantidos atualizados. |
-| **Humano no loop** | Aprovação por stage, escalonamento com `/hero:continue`, ambiguidade de SDD com `/hero:back` ou `/hero:approve`. |
+| **Humano no loop** | Aprovação por stage, escalonamento com `/hero-continue`, ambiguidade de SDD com `/hero-back` ou `/hero-approve`. |
 | **Determinismo onde importa** | Specs, ADRs, testes, padrão de logs e roteamento por scope. |
 
 Fluxo de stages:
@@ -482,14 +486,14 @@ Atualiza assets com proteção por checksum (customizações locais não são so
 
 ## 8. Configurar um ciclo
 
-1. `/hero:sync` (recomendado em codebases existentes)
-2. `/hero:new`
+1. `/hero-sync` (recomendado em codebases existentes)
+2. `/hero-new`
 3. Editar `.workflow-hero/cycles/current/workflow-config.yml` (preencher `title` / `objective` / `scope`; opcionalmente `workflow_config.user_preferred_language`)
-4. Abrir um **chat novo e vazio**, selecionar o agente (modelo) que deseja como **orchestrator / grill-me** do Hero, e então rodar `/hero:start`
+4. Abrir um **chat novo e vazio**, selecionar o agente (modelo) que deseja como **orchestrator / grill-me** do Hero, e então rodar `/hero-start`
 
-Quando já existem ciclos anteriores, o `/hero:new` **sempre importa** `workflow_config`, `fallback_model`, `stages` e `agents` do ciclo anterior; `title`, `objective` e `scope` voltam ao padrão do template.
+Quando já existem ciclos anteriores, o `/hero-new` **sempre importa** `workflow_config`, `fallback_model`, `stages` e `agents` do ciclo anterior; `title`, `objective` e `scope` voltam ao padrão do template.
 
-Após o `/hero:new`, prefira um chat limpo para o `/hero:start` (orientação soft) — evita carregar grilling/Q&A da configuração na janela de contexto. No chat novo, escolha o agente/modelo da sessão IDE que fará o papel de orchestrator / grill-me antes de iniciar.
+Após o `/hero-new`, prefira um chat limpo para o `/hero-start` (orientação soft) — evita carregar grilling/Q&A da configuração na janela de contexto. No chat novo, escolha o agente/modelo da sessão IDE que fará o papel de orchestrator / grill-me antes de iniciar.
 
 Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`, `fallback_model`, `stages.browser_ui_validation` e `stages.qa_end_to_end.use_playwright` conforme a seção em inglês (§8) — os campos são os mesmos. Browser UI Validation exige Playwright no projeto consumidor; artefatos em `.workflow-hero/cycles/current/browser-ui/`.
 
@@ -503,7 +507,7 @@ Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`
 
 ## 10. Comandos Runtime (chat do Cursor)
 
-`/hero:new`, `/hero:start`, `/hero:approve`, `/hero:reject`, `/hero:cancel`, `/hero:continue`, `/hero:back`, `/hero:finish`, `/hero:archive`, `/hero:resume`, `/hero:sync`, `/hero:status`, `/hero:help` — ver tabela da §10 (inglês).
+`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-continue`, `/hero-back`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-cycles`, `/hero-todos`, `/hero-model`, `/hero-help` — ver tabela da §10 (inglês).
 
 ---
 
@@ -522,12 +526,12 @@ Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`
 hero install --tools cursor
 # leia .workflow-hero/docs/workflow-help.md
 
-/hero:sync
-/hero:new
+/hero-sync
+/hero-new
 # edite workflow-config.yml
 
 # Chat novo e vazio → selecione orchestrator / grill-me → depois:
-/hero:start
+/hero-start
 ```
 
 ---

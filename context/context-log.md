@@ -74,6 +74,14 @@
 
 ---
 
+## 2026-08-12 — Release v1.0.3
+
+**Problem**: `hero upgrade` falsely reported "customized locally" when `checksums.json` was stale but disk already matched embedded assets (common in dogfooding repos where `.cursor/` is updated via git).
+
+**Decision / Outcome**: Upgrade reconciles checksums silently when `existingHash == newHash` (embedded asset) even if `originalHash` differs. Synced lagging installed copies (`hero-help.md`, `hero-model.md`, `workflow-config.yml`) and refreshed `checksums.json`. Tagged `v1.0.3`.
+
+---
+
 ## 2026-08-12 — Release v1.0.2
 
 **Outcome**: Patch release — TUI slash parity with Cursor chat for `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`, `/hero-continue`, `/hero-back`, `/hero-sync`, `/hero-status`, `/hero-archive`, `/hero-resume` (Runtime Execute + orchestration agent). Includes `/hero-new`/`/hero-start` cycle-state fix and Grok 4.6 model asset. Tagged `v1.0.2`.

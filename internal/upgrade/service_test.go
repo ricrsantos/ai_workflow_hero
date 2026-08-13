@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -147,6 +148,45 @@ scope:
 	}
 	if !strings.Contains(content, "fallback_model:") {
 		t.Errorf("fallback_model block missing:\n%s", content)
+	}
+}
+
+func TestUpgrade_StaleChecksumButDiskMatchesNewAssetIsNotSkipped(t *testing.T) {
+	dir := makeInstalledDir(t)
+
+	targetRel := filepath.Join(cursoradapter.AgentsDir, "backend_agent.md")
+	targetAbs := filepath.Join(dir, targetRel)
+
+	newData, err := assets.FS.Open("cursor/agents/backend_agent.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newContent, err := io.ReadAll(newData)
+	_ = newData.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetAbs, newContent, 0o644); err != nil {
+		t.Fatalf("write updated asset content: %v", err)
+	}
+
+	var out strings.Builder
+	result, err := upgrade.Run(upgrade.Options{
+		ProjectDir: dir,
+		Version:    "1.1.0",
+		AssetsFS:   assets.FS,
+	}, &out, &out)
+	if err != nil {
+		t.Fatalf("upgrade failed: %v", err)
+	}
+
+	for _, s := range result.Skipped {
+		if s == targetRel {
+			t.Errorf("expected %q not to be skipped when disk matches embedded asset", targetRel)
+		}
+	}
+	if strings.Contains(out.String(), "customized locally") {
+		t.Errorf("unexpected customization warning: %s", out.String())
 	}
 }
 
