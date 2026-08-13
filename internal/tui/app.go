@@ -13,7 +13,6 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
-	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
 type screen int
@@ -448,16 +447,18 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 			m = m.setStatusResult(false, "/hero-start", noActiveCycleForStartMessage())
 			return m, nil
 		}
-		orchestratorSlug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
-		if err != nil {
-			m = m.setStatusResult(false, "/hero-start", err.Error())
-			return m, nil
+		var cmd tea.Cmd
+		var slug string
+		var ok bool
+		m, cmd, slug, ok = m.defaultExecuteModel("/hero-start")
+		if !ok {
+			return m, cmd
 		}
 		if err := m.svc.SyncCycleConfig(); err != nil {
 			m = m.setStatusResult(false, "/hero-start", err.Error())
 			return m, nil
 		}
-		return m.beginHeroRuntimeConversation("start", orchestratorSlug, heroRuntimeOpts{})
+		return m.beginHeroRuntimeConversation("start", slug, heroRuntimeOpts{})
 	case actionSync:
 		return m.beginHeroSync()
 	case actionStatus:
@@ -521,33 +522,15 @@ func (m model) refreshCmd() tea.Cmd {
 	}
 }
 
-func (m model) validateOrchestratorPreconditions() (orchestratorSlug string, errMsg string) {
+func (m model) validateOrchestratorPreconditions() (errMsg string) {
 	if m.svc == nil {
-		return "", "cycle service unavailable"
+		return "cycle service unavailable"
 	}
 	st, err := m.svc.Status()
 	if err != nil || st.CycleNumber == 0 {
-		return "", noActiveCycleForStartMessage()
+		return noActiveCycleForStartMessage()
 	}
-	slug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
-	if err != nil {
-		return "", err.Error()
-	}
-	return slug, ""
-}
-
-func (m model) resolveOrchestratorOrDefaultModel(actionLabel string) (slug string, errMsg string) {
-	if m.svc == nil {
-		return "", "cycle service unavailable"
-	}
-	slug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
-	if err == nil && strings.TrimSpace(slug) != "" {
-		return slug, ""
-	}
-	if m.hasDefaultModel() {
-		return m.conversationModelSlug(), ""
-	}
-	return "", defaultModelRequiredMessage(actionLabel)
+	return ""
 }
 
 func (m model) beginHeroSync() (model, tea.Cmd) {
@@ -555,12 +538,11 @@ func (m model) beginHeroSync() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	modelSlug, errMsg := m.resolveOrchestratorOrDefaultModel("/hero-sync")
-	if errMsg != "" {
-		m = m.setStatusResult(false, "/hero-sync", errMsg)
-		return m, nil
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-sync")
+	if !ok {
+		return m, cmd
 	}
-	return m.beginHeroRuntimeConversation("sync", modelSlug, heroRuntimeOpts{})
+	return m.beginHeroRuntimeConversation("sync", slug, heroRuntimeOpts{})
 }
 
 func (m model) beginHeroStatus() (model, tea.Cmd) {
@@ -568,12 +550,11 @@ func (m model) beginHeroStatus() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	modelSlug, errMsg := m.resolveOrchestratorOrDefaultModel("/hero-status")
-	if errMsg != "" {
-		m = m.setStatusResult(false, "/hero-status", errMsg)
-		return m, nil
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-status")
+	if !ok {
+		return m, cmd
 	}
-	return m.beginHeroRuntimeConversation("status", modelSlug, heroRuntimeOpts{})
+	return m.beginHeroRuntimeConversation("status", slug, heroRuntimeOpts{})
 }
 
 func (m model) beginHeroArchive() (model, tea.Cmd) {
@@ -581,12 +562,15 @@ func (m model) beginHeroArchive() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	orchestratorSlug, errMsg := m.validateOrchestratorPreconditions()
-	if errMsg != "" {
+	if errMsg := m.validateOrchestratorPreconditions(); errMsg != "" {
 		m = m.setStatusResult(false, "/hero-archive", errMsg)
 		return m, nil
 	}
-	return m.beginHeroRuntimeConversation("archive", orchestratorSlug, heroRuntimeOpts{})
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-archive")
+	if !ok {
+		return m, cmd
+	}
+	return m.beginHeroRuntimeConversation("archive", slug, heroRuntimeOpts{})
 }
 
 func (m model) beginHeroResume(cycleN int) (model, tea.Cmd) {
@@ -607,35 +591,30 @@ func (m model) beginHeroResumeExecute(cycleN int) (model, tea.Cmd) {
 		m.convError = "Cycle number must be a positive integer (e.g. /hero-resume 4)."
 		return m, nil
 	}
-	modelSlug, errMsg := m.resolveOrchestratorOrDefaultModel("/hero-resume")
-	if errMsg != "" {
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-resume")
+	if !ok {
 		if cycleN > 0 {
 			m, _ = m.enterConversation()
-			m.convError = errMsg
+			m.convError = defaultModelRequiredMessage("/hero-resume")
 			return m, nil
 		}
-		m = m.setStatusResult(false, "/hero-resume", errMsg)
-		return m, nil
+		return m, cmd
 	}
-	return m.beginHeroRuntimeConversation("resume", modelSlug, heroRuntimeOpts{ResumeCycleNumber: cycleN})
+	return m.beginHeroRuntimeConversation("resume", slug, heroRuntimeOpts{ResumeCycleNumber: cycleN})
 }
 
-func (m model) validateHeroRejectPreconditions() (orchestratorSlug string, errMsg string) {
+func (m model) validateHeroRejectPreconditions() (errMsg string) {
 	if m.svc == nil {
-		return "", "cycle service unavailable"
+		return "cycle service unavailable"
 	}
 	st, err := m.svc.Status()
 	if err != nil || st.CycleNumber == 0 {
-		return "", noActiveCycleForStartMessage()
+		return noActiveCycleForStartMessage()
 	}
 	if pendingApprovalStage(st) == "" {
-		return "", noPendingApprovalMessage()
+		return noPendingApprovalMessage()
 	}
-	slug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
-	if err != nil {
-		return "", err.Error()
-	}
-	return slug, ""
+	return ""
 }
 
 func (m model) beginHeroReject() (model, tea.Cmd) {
@@ -643,9 +622,13 @@ func (m model) beginHeroReject() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	if _, errMsg := m.validateHeroRejectPreconditions(); errMsg != "" {
+	if errMsg := m.validateHeroRejectPreconditions(); errMsg != "" {
 		m = m.setStatusResult(false, "/hero-reject", errMsg)
 		return m, nil
+	}
+	m, cmd, _, ok := m.defaultExecuteModel("/hero-reject")
+	if !ok {
+		return m, cmd
 	}
 	return m.beginHeroRejectPrompt()
 }
@@ -675,13 +658,18 @@ func (m model) beginHeroRejectExecute(reason string) (model, tea.Cmd) {
 		m.convError = "Rejection reason is required."
 		return m, nil
 	}
-	orchestratorSlug, errMsg := m.validateHeroRejectPreconditions()
-	if errMsg != "" {
+	if errMsg := m.validateHeroRejectPreconditions(); errMsg != "" {
 		m, _ = m.enterConversation()
 		m.convError = errMsg
 		return m, nil
 	}
-	return m.beginHeroRuntimeConversation("reject", orchestratorSlug, heroRuntimeOpts{RejectReason: reason})
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-reject")
+	if !ok {
+		m, _ = m.enterConversation()
+		m.convError = defaultModelRequiredMessage("/hero-reject")
+		return m, cmd
+	}
+	return m.beginHeroRuntimeConversation("reject", slug, heroRuntimeOpts{RejectReason: reason})
 }
 
 func (m model) beginHeroCancel() (model, tea.Cmd) {
@@ -689,7 +677,7 @@ func (m model) beginHeroCancel() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	if _, errMsg := m.validateOrchestratorPreconditions(); errMsg != "" {
+	if errMsg := m.validateOrchestratorPreconditions(); errMsg != "" {
 		m = m.setStatusResult(false, "/hero-cancel", errMsg)
 		return m, nil
 	}
@@ -701,13 +689,18 @@ func (m model) beginHeroCancelExecute(reason string) (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	orchestratorSlug, errMsg := m.validateOrchestratorPreconditions()
-	if errMsg != "" {
+	if errMsg := m.validateOrchestratorPreconditions(); errMsg != "" {
 		m, _ = m.enterConversation()
 		m.convError = errMsg
 		return m, nil
 	}
-	return m.beginHeroRuntimeConversation("cancel", orchestratorSlug, heroRuntimeOpts{CancelReason: strings.TrimSpace(reason)})
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-cancel")
+	if !ok {
+		m, _ = m.enterConversation()
+		m.convError = defaultModelRequiredMessage("/hero-cancel")
+		return m, cmd
+	}
+	return m.beginHeroRuntimeConversation("cancel", slug, heroRuntimeOpts{CancelReason: strings.TrimSpace(reason)})
 }
 
 func (m model) beginHeroFinish() (model, tea.Cmd) {
@@ -715,12 +708,15 @@ func (m model) beginHeroFinish() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	orchestratorSlug, errMsg := m.validateOrchestratorPreconditions()
-	if errMsg != "" {
+	if errMsg := m.validateOrchestratorPreconditions(); errMsg != "" {
 		m = m.setStatusResult(false, "/hero-finish", errMsg)
 		return m, nil
 	}
-	return m.beginHeroRuntimeConversation("finish", orchestratorSlug, heroRuntimeOpts{})
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-finish")
+	if !ok {
+		return m, cmd
+	}
+	return m.beginHeroRuntimeConversation("finish", slug, heroRuntimeOpts{})
 }
 
 func (m model) beginHeroContinue(extra int) (model, tea.Cmd) {
@@ -754,12 +750,11 @@ func (m model) beginHeroContinueExecute(extra int) (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-continue", noEscalatedStageMessage())
 		return m, nil
 	}
-	orchestratorSlug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
-	if err != nil {
-		m = m.setStatusResult(false, "/hero-continue", err.Error())
-		return m, nil
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-continue")
+	if !ok {
+		return m, cmd
 	}
-	return m.beginHeroRuntimeConversation("continue", orchestratorSlug, heroRuntimeOpts{ContinueExtra: extra})
+	return m.beginHeroRuntimeConversation("continue", slug, heroRuntimeOpts{ContinueExtra: extra})
 }
 
 func (m model) beginHeroBack() (model, tea.Cmd) {
@@ -780,12 +775,11 @@ func (m model) beginHeroBack() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-back", noJudgePendingApprovalMessage())
 		return m, nil
 	}
-	orchestratorSlug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
-	if err != nil {
-		m = m.setStatusResult(false, "/hero-back", err.Error())
-		return m, nil
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-back")
+	if !ok {
+		return m, cmd
 	}
-	return m.beginHeroRuntimeConversation("back", orchestratorSlug, heroRuntimeOpts{})
+	return m.beginHeroRuntimeConversation("back", slug, heroRuntimeOpts{})
 }
 
 func noActiveCycleForStartMessage() string {
@@ -822,12 +816,11 @@ func (m model) beginHeroApprove() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-approve", noPendingApprovalMessage())
 		return m, nil
 	}
-	orchestratorSlug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
-	if err != nil {
-		m = m.setStatusResult(false, "/hero-approve", err.Error())
-		return m, nil
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-approve")
+	if !ok {
+		return m, cmd
 	}
-	return m.beginHeroRuntimeConversation("approve", orchestratorSlug, heroRuntimeOpts{})
+	return m.beginHeroRuntimeConversation("approve", slug, heroRuntimeOpts{})
 }
 
 func (m model) cyclesCmd() tea.Cmd {

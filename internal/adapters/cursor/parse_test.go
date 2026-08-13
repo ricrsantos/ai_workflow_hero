@@ -1,6 +1,7 @@
 package cursor_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -127,5 +128,17 @@ func TestIsTrustFailure(t *testing.T) {
 	}
 	if cursoradapter.IsTrustFailure("ok", "") {
 		t.Fatal("unexpected trust failure")
+	}
+}
+
+func TestIsRetriableFailure(t *testing.T) {
+	if !cursoradapter.IsRetriableFailure("", "RetriableError: [resource_exhausted] Error", nil) {
+		t.Fatal("expected retriable resource_exhausted")
+	}
+	if !cursoradapter.IsRetriableFailure("", "", errors.New("RetriableError: boom")) {
+		t.Fatal("expected retriable from error text")
+	}
+	if cursoradapter.IsRetriableFailure("ok", "", nil) {
+		t.Fatal("unexpected retriable")
 	}
 }

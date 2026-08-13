@@ -49,6 +49,7 @@ var (
 	chatInThink = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
 	chatInOK    = lipgloss.NewStyle().Foreground(colorGreen)
 	chatInWarn  = lipgloss.NewStyle().Foreground(colorYellow)
+	chatInErr   = lipgloss.NewStyle().Foreground(colorRed)
 	// Solid 1-cell accent bar.
 	chatAccentBuild    = lipgloss.NewStyle().Background(colorBlue).Foreground(colorBlue)
 	chatAccentPlan     = lipgloss.NewStyle().Background(colorYellow).Foreground(colorYellow)

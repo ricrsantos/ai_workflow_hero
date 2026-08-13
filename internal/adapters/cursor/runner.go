@@ -175,3 +175,18 @@ func IsTrustFailure(stdout, stderr string) bool {
 	combined := strings.ToLower(stdout + "\n" + stderr)
 	return strings.Contains(combined, "workspace trust")
 }
+
+// IsRetriableFailure reports transient Cursor Agent CLI failures that callers should retry
+// (e.g. RetriableError: [resource_exhausted]).
+func IsRetriableFailure(stdout, stderr string, err error) bool {
+	var b strings.Builder
+	b.WriteString(stdout)
+	b.WriteByte('\n')
+	b.WriteString(stderr)
+	if err != nil {
+		b.WriteByte('\n')
+		b.WriteString(err.Error())
+	}
+	s := strings.ToLower(b.String())
+	return strings.Contains(s, "resource_exhausted") || strings.Contains(s, "retriableerror")
+}

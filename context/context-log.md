@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-08-13 — Release v1.0.6
+
+**Problem**: TUI Execute used YAML orchestrator model slugs rejected by Cursor Agent CLI; long errors clipped; `resource_exhausted` failed follow-ups after `/hero-start`.
+
+**Decision / Outcome**: TUI Execute uses `/hero-model` default only; wrapped errors in response pane; Cursor adapter retries `resource_exhausted`. Tagged `v1.0.6`.
+
+---
+
+## 2026-08-13 — TUI default model, error wrap, resource_exhausted retry
+
+**Problem**: `/hero-sync` and `/hero-status` passed YAML `agents.orchestration_agent` as CLI `--model` (`gpt-5.3-codex-medium`), which Cursor Agent CLI rejected. Long execute errors were a single unwrapped line (clipped). Follow-ups after `/hero-start` failed with `RetriableError: [resource_exhausted]` while the same prompt worked in Cursor chat.
+
+**Decision / Outcome**: TUI Execute always uses `/hero-model` (`hero.json`); errors if unset. YAML agent models stay Runtime/Task-only. Execute errors wrap inside the scrollable response pane. Cursor adapter retries `resource_exhausted` / `RetriableError` (auth/trust still fail fast).
+
+---
+
 ## 2026-08-13 — Release v1.0.5
 
 **Problem**: TUI stage flow broke multi-stage cycles (session id lost, Tasks not returning, approval gates skipped); legacy `d` dispatch and spinner placement were confusing.

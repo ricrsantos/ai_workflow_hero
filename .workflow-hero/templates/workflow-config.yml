@@ -74,8 +74,10 @@ stages:
     use_playwright: false
 
 agents:
-  # TUI-only: model for /hero-start when run in the Hero TUI (HarnessAdapter.Execute).
-  # In Cursor IDE chat, /hero-start uses the session model you pick in the chat — this block is not applied.
+  # Cursor IDE chat uses the session model you pick in the IDE. TUI Execute
+  # (/hero-start, /hero-sync, Chat, …) uses the default model from /hero-model
+  # (hero.json → harnesses.<tool>.model). This block is for Runtime Task
+  # model resolution only — not passed as Cursor Agent CLI --model.
   orchestration_agent:
     model: gpt-5.3-codex
     reasoning_effort: medium

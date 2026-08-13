@@ -37,6 +37,7 @@ type convMessage struct {
 	role        convRole
 	content     string
 	interrupted bool
+	failed      bool
 }
 
 type streamDeltaMsg struct {
@@ -135,18 +136,22 @@ func (m model) conversationHarnessTool() string {
 	return "cursor"
 }
 
-func (m model) conversationModelSlug() string {
-	if slug := strings.TrimSpace(m.runtimeModelSlug); slug != "" {
+func (m model) defaultHarnessModelSlug() string {
+	if slug := strings.TrimSpace(m.chatModelSlug); slug != "" {
 		return slug
-	}
-	if strings.TrimSpace(m.chatModelSlug) != "" {
-		return m.chatModelSlug
 	}
 	projectDir := ""
 	if m.svc != nil {
 		projectDir = m.svc.ProjectDir
 	}
 	return install.HarnessModelSlugForProject(projectDir, m.conversationHarnessTool())
+}
+
+func (m model) conversationModelSlug() string {
+	if slug := strings.TrimSpace(m.runtimeModelSlug); slug != "" {
+		return slug
+	}
+	return m.defaultHarnessModelSlug()
 }
 
 func (m model) runtimeExecuteModelSlug() string {
@@ -503,20 +508,16 @@ func (m model) submitConversation() (model, tea.Cmd) {
 
 	if m.orchestrationLive {
 		if strings.TrimSpace(m.runtimeModelSlug) == "" {
-			if slug, errMsg := m.resolveOrchestratorOrDefaultModel("chat"); errMsg == "" {
-				m.runtimeModelSlug = slug
-				m.runtimeAgentName = "orchestration_agent"
-			} else {
-				var cmd tea.Cmd
-				var ok bool
-				m, cmd, ok = m.ensureDefaultModel("chat")
-				if !ok {
-					return m, cmd
-				}
+			var cmd tea.Cmd
+			var slug string
+			var ok bool
+			m, cmd, slug, ok = m.defaultExecuteModel("chat")
+			if !ok {
+				return m, cmd
 			}
-		} else {
-			m.runtimeAgentName = "orchestration_agent"
+			m.runtimeModelSlug = slug
 		}
+		m.runtimeAgentName = "orchestration_agent"
 	} else {
 		var cmd tea.Cmd
 		var ok bool
@@ -688,7 +689,18 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.runtimeAgentName = ""
 		}
 		if msg.err != nil {
-			m.convError = msg.err.Error()
+			errText := msg.err.Error()
+			m.convError = errText
+			m = m.setStatusResult(false, "execute", firstStatusLine(errText))
+			if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
+				existing := strings.TrimSpace(m.transcript[m.agentMsgIndex].content)
+				if existing == "" {
+					m.transcript[m.agentMsgIndex].content = "✗ " + errText
+				} else {
+					m.transcript[m.agentMsgIndex].content = existing + "\n✗ " + errText
+				}
+				m.transcript[m.agentMsgIndex].failed = true
+			}
 			slog.Error("tui conversation execute failed", "error", msg.err)
 			return m, nil
 		}
@@ -822,24 +834,41 @@ func (m model) buildConversation(responseLines int) string {
 	b.WriteByte('\n')
 	b.WriteString(m.renderConversationResponse(responseLines))
 
-	if m.convError != "" {
+	if m.convError != "" && !m.latestAgentFailed() {
 		b.WriteByte('\n')
-		b.WriteString(errorStyle.Render("✗ " + m.convError))
-		b.WriteByte('\n')
-		if strings.Contains(strings.ToLower(m.convError), "auth") ||
-			strings.Contains(strings.ToLower(m.convError), "login") {
-			b.WriteString(mutedStyle.Render("→ Check harness login: cursor agent login"))
-			b.WriteByte('\n')
-		}
-		if strings.Contains(strings.ToLower(m.convError), "workspace trust") ||
-			strings.Contains(strings.ToLower(m.convError), "trust required") {
-			b.WriteString(mutedStyle.Render("→ Trust this folder in Cursor, or run: cursor agent --trust"))
-			b.WriteByte('\n')
-		}
+		b.WriteString(m.renderWrappedConvError())
 	}
 
 	b.WriteString(m.renderConversationInput())
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m model) latestAgentFailed() bool {
+	for _, msg := range m.latestAgentTurn() {
+		if msg.failed {
+			return true
+		}
+	}
+	return false
+}
+
+func (m model) renderWrappedConvError() string {
+	var b strings.Builder
+	width := m.chatBoxWidth()
+	for _, line := range splitOutputLines("✗ "+m.convError, width) {
+		b.WriteString(errorStyle.Render(line))
+		b.WriteByte('\n')
+	}
+	lower := strings.ToLower(m.convError)
+	if strings.Contains(lower, "auth") || strings.Contains(lower, "login") {
+		b.WriteString(mutedStyle.Render("→ Check harness login: cursor agent login"))
+		b.WriteByte('\n')
+	}
+	if strings.Contains(lower, "workspace trust") || strings.Contains(lower, "trust required") {
+		b.WriteString(mutedStyle.Render("→ Trust this folder in Cursor, or run: cursor agent --trust"))
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // renderConversationHistory shows prior user turns (compact) above the response pane.
@@ -1026,7 +1055,9 @@ func (m model) responseContentLines(contentW int) []string {
 			}
 			text = formatChatAgentText(m.runtimeCommandName, text)
 			style := chatInOK
-			if msg.interrupted {
+			if msg.failed {
+				style = chatInErr
+			} else if msg.interrupted {
 				style = chatInWarn
 			}
 			if text == "" && m.streaming {

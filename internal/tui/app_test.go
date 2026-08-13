@@ -328,7 +328,7 @@ func TestApproveActionWithService(t *testing.T) {
 	svc := newTestServiceWithPendingApprovalInDir(t, dir)
 	h := &streamingHarness{deltas: []string{"Stage approved."}, sessionID: "approve-key-sess"}
 	svc.Harness = h
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	m = SetScreen(m, ScreenApprovals)
 	next, cmd := HandleTestKey(m, "a")
 	if CurrentScreen(next) != ScreenConversation {
@@ -361,7 +361,7 @@ func TestRejectActionWithService(t *testing.T) {
 	svc := newTestServiceWithPendingApprovalInDir(t, dir)
 	h := &streamingHarness{deltas: []string{"Stage rejected."}, sessionID: "reject-key-sess"}
 	svc.Harness = h
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	m = SetScreen(m, ScreenApprovals)
 	next, cmd := HandleTestKey(m, "r")
 	if CurrentScreen(next) != ScreenConversation {
@@ -406,7 +406,7 @@ func TestCancelActionWithService(t *testing.T) {
 	svc := newTestServiceWithRunningResearchInDir(t, dir)
 	h := &streamingHarness{deltas: []string{"Cycle cancelled."}, sessionID: "cancel-key-sess"}
 	svc.Harness = h
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	m = SetScreen(m, ScreenApprovals)
 	next, cmd := HandleTestKey(m, "c")
 	if CurrentScreen(next) != ScreenConversation {
@@ -436,7 +436,7 @@ func TestFinishActionWithService(t *testing.T) {
 	svc := newTestServiceWithRunningResearchInDir(t, dir)
 	h := &streamingHarness{deltas: []string{"Cycle finished."}, sessionID: "finish-key-sess"}
 	svc.Harness = h
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	m = SetScreen(m, ScreenApprovals)
 	next, cmd := HandleTestKey(m, "f")
 	if CurrentScreen(next) != ScreenConversation {

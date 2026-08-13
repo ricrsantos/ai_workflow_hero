@@ -456,6 +456,64 @@ func TestExecuteResumeFlag(t *testing.T) {
 	}
 }
 
+func TestExecuteRetriesResourceExhausted(t *testing.T) {
+	dir := withCursorAssets(t)
+	fixture := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"ok","session_id":"s-retry"}`
+	var calls int
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.RetrySleep = func(time.Duration) {}
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{
+		{
+			matchArgs: func(args []string) bool { return true },
+			err:       errors.New("exit status 1"),
+			result:    cursoradapter.RunResult{Stderr: []byte("RetriableError: [resource_exhausted] Error")},
+		},
+		{
+			matchArgs: func(args []string) bool {
+				calls++
+				return true
+			},
+			result: cursoradapter.RunResult{Stdout: []byte(fixture)},
+		},
+	}}
+
+	res, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SessionID != "s-retry" {
+		t.Fatalf("session=%q", res.SessionID)
+	}
+	if calls != 1 {
+		t.Fatalf("expected second attempt to succeed, calls=%d", calls)
+	}
+}
+
+func TestExecuteDoesNotRetryAuthFailure(t *testing.T) {
+	dir := withCursorAssets(t)
+	var calls int
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.RetrySleep = func(time.Duration) {}
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool {
+			calls++
+			return true
+		},
+		err:    errors.New("exit status 1"),
+		result: cursoradapter.RunResult{Stderr: []byte("Please log in with cursor agent login")},
+	}}}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "hi"})
+	if err == nil {
+		t.Fatal("expected auth error")
+	}
+	if calls != 1 {
+		t.Fatalf("auth must not retry, calls=%d", calls)
+	}
+}
+
 func TestExecuteStreamJSONFixture(t *testing.T) {
 	dir := withCursorAssets(t)
 	var stream bytes.Buffer

@@ -7,7 +7,7 @@ import (
 )
 
 func (m model) hasDefaultModel() bool {
-	return m.conversationModelSlug() != ""
+	return m.defaultHarnessModelSlug() != ""
 }
 
 // ensureDefaultModel blocks harness commands until the user picks /hero-model once.
@@ -17,6 +17,15 @@ func (m model) ensureDefaultModel(actionLabel string) (model, tea.Cmd, bool) {
 	}
 	m = m.setStatusResult(false, actionLabel, defaultModelRequiredMessage(actionLabel))
 	return m, nil, false
+}
+
+// defaultExecuteModel requires /hero-model and returns that slug for TUI Execute.
+func (m model) defaultExecuteModel(actionLabel string) (model, tea.Cmd, string, bool) {
+	m, cmd, ok := m.ensureDefaultModel(actionLabel)
+	if !ok {
+		return m, cmd, "", false
+	}
+	return m, nil, m.defaultHarnessModelSlug(), true
 }
 
 func defaultModelRequiredMessage(actionLabel string) string {

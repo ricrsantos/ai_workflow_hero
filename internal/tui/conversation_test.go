@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,7 @@ type streamingHarness struct {
 	lastMode      string
 	lastStageName string
 	lastAgentName string
+	err           error
 }
 
 func (h *streamingHarness) Name() string { return "streaming" }
@@ -39,6 +41,9 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 	h.lastMode = req.Mode
 	h.lastStageName = req.StageName
 	h.lastAgentName = req.AgentName
+	if h.err != nil {
+		return nil, h.err
+	}
 	out := ""
 	if len(h.events) > 0 {
 		for _, ev := range h.events {
@@ -94,6 +99,10 @@ func newConversationTestModel(t *testing.T) (model, *streamingHarness, *cycle.Se
 	m := NewTestModel(svc)
 	m = SetChatModelSlugForTest(m, "composer-2.5")
 	return m, h, svc
+}
+
+func withDefaultChatModel(m model) model {
+	return SetChatModelSlugForTest(m, "composer-2.5")
 }
 
 func newTestServiceWithRunningResearch(t *testing.T) *cycle.Service {
@@ -850,7 +859,7 @@ func TestHeroStartRuntimeConversation(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"starting cycle"}, sessionID: "start-cycle-sess"}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	next, cmd := RunPaletteItemForTest(m, "/hero-start")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
@@ -865,8 +874,8 @@ func TestHeroStartRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, agentMarker) {
 		t.Fatalf("prompt missing orchestration_agent body: %q", h.lastPrompt)
 	}
-	if h.lastModel != "gpt-5.3-codex-medium" {
-		t.Fatalf("model=%q want gpt-5.3-codex-medium", h.lastModel)
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("model=%q want composer-2.5", h.lastModel)
 	}
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
@@ -896,8 +905,8 @@ func TestHeroStartRuntimeConversation(t *testing.T) {
 	if h.lastSessionID != "start-cycle-sess" {
 		t.Fatalf("follow-up resume session=%q", h.lastSessionID)
 	}
-	if h.lastModel != "gpt-5.3-codex-medium" {
-		t.Fatalf("follow-up model=%q want orchestrator slug", h.lastModel)
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("follow-up model=%q want default /hero-model slug", h.lastModel)
 	}
 }
 
@@ -1099,7 +1108,7 @@ func TestHeroApproveRuntimeConversation(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"approving stage"}, sessionID: "approve-cycle-sess"}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	next, cmd := RunPaletteItemForTest(m, "/hero-approve")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
@@ -1114,8 +1123,8 @@ func TestHeroApproveRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, agentMarker) {
 		t.Fatalf("prompt missing orchestration_agent body: %q", h.lastPrompt)
 	}
-	if h.lastModel != "gpt-5.3-codex-medium" {
-		t.Fatalf("model=%q want gpt-5.3-codex-medium", h.lastModel)
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("model=%q want composer-2.5", h.lastModel)
 	}
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
@@ -1246,7 +1255,7 @@ func TestHeroRejectRuntimeConversation(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"rejecting stage"}, sessionID: "reject-cycle-sess"}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	next, cmd := BeginHeroRejectExecuteForTest(m, reason)
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
@@ -1264,8 +1273,8 @@ func TestHeroRejectRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, reason) {
 		t.Fatalf("prompt missing rejection reason: %q", h.lastPrompt)
 	}
-	if h.lastModel != "gpt-5.3-codex-medium" {
-		t.Fatalf("model=%q want gpt-5.3-codex-medium", h.lastModel)
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("model=%q want composer-2.5", h.lastModel)
 	}
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
@@ -1386,7 +1395,7 @@ func TestHeroRejectRequiresReason(t *testing.T) {
 	h := &streamingHarness{}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	next, _ := RunPaletteItemForTest(m, "/hero-reject")
 	if !AwaitingRejectReasonForTest(next) {
 		t.Fatal("expected awaiting reject reason after palette reject")
@@ -1421,7 +1430,7 @@ func TestHeroRejectInlineReason(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"ok"}, sessionID: "inline-reject"}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "/hero-reject "+reason)
 	next, cmd := SubmitConversationForTest(m)
@@ -1577,7 +1586,7 @@ func TestHeroCancelRuntimeConversation(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"cancelled"}, sessionID: "cancel-sess"}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	next, cmd := BeginHeroCancelExecuteForTest(m, reason)
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
@@ -1627,7 +1636,7 @@ func TestHeroFinishRuntimeConversation(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"finished"}, sessionID: "finish-sess"}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	next, cmd := RunPaletteItemForTest(m, "/hero-finish")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v", CurrentScreen(next))
@@ -1654,7 +1663,7 @@ func TestHeroContinueRuntimeConversation(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"continued"}, sessionID: "continue-sess"}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	next, cmd := BeginHeroContinueExecuteForTest(m, 2)
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v", CurrentScreen(next))
@@ -1701,7 +1710,7 @@ func TestHeroContinueInlineExtra(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"ok"}, sessionID: "inline-continue"}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "/hero-continue 3")
 	next, cmd := SubmitConversationForTest(m)
@@ -1727,7 +1736,7 @@ func TestHeroBackRuntimeConversation(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"reopening planning"}, sessionID: "back-sess"}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	next, cmd := RunPaletteItemForTest(m, "/hero-back")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v", CurrentScreen(next))
@@ -1785,6 +1794,9 @@ func TestHeroSyncRuntimeConversation(t *testing.T) {
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q", h.lastAgentName)
 	}
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("model=%q want composer-2.5 (not YAML orchestrator)", h.lastModel)
+	}
 	if h.lastSessionID != "" {
 		t.Fatalf("expected fresh session, got %q", h.lastSessionID)
 	}
@@ -1834,6 +1846,9 @@ func TestHeroStatusRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, "hero status") {
 		t.Fatalf("missing status preamble: %q", h.lastPrompt)
 	}
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("model=%q want composer-2.5", h.lastModel)
+	}
 }
 
 func TestHeroArchiveRuntimeConversation(t *testing.T) {
@@ -1850,7 +1865,7 @@ func TestHeroArchiveRuntimeConversation(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"archiving"}}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-archive")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v", CurrentScreen(next))
@@ -1862,7 +1877,7 @@ func TestHeroArchiveRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, "hero cycle archive") {
 		t.Fatalf("missing archive preamble: %q", h.lastPrompt)
 	}
-	if h.lastModel != "gpt-5.3-codex-medium" {
+	if h.lastModel != "composer-2.5" {
 		t.Fatalf("model=%q", h.lastModel)
 	}
 }
@@ -1941,5 +1956,67 @@ func TestHeroResumeInlineCycleNumber(t *testing.T) {
 	}
 	if !strings.Contains(h.lastPrompt, "Resume cycle C4") {
 		t.Fatalf("missing cycle N in preamble: %q", h.lastPrompt)
+	}
+}
+
+func TestHeroStartRequiresDefaultModel(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	m := NewTestModel(svc)
+	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	if cmd != nil {
+		t.Fatal("expected no async cmd without default model")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("status=%s", StatusKindForTest(next))
+	}
+	if !strings.Contains(StatusTextForTest(next), "/hero-model") {
+		t.Fatalf("missing model hint: %q", StatusTextForTest(next))
+	}
+}
+
+func TestHeroSyncPrefersDefaultOverYamlOrchestrator(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-sync.md"), []byte("# /hero-sync\n\nSYNC_YAML"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"sync"}}
+	svc.Harness = h
+
+	m := withDefaultChatModel(NewTestModel(svc))
+	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-sync")
+	next = drainConversationStream(t, next, cmd)
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("model=%q want composer-2.5, YAML orchestrator must not override /hero-model", h.lastModel)
+	}
+}
+
+func TestConversationExecuteErrorWrapsInView(t *testing.T) {
+	m, h, _ := newConversationTestModel(t)
+	h.err = errors.New("cursor agent execute failed: exit status 1 (Cannot use this model: gpt-5.3-codex-medium. Available models: auto, gpt-5.3-codex-low, gpt-5.3-codex-high)")
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 40)
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "hello")
+	next, cmd := SubmitConversationForTest(m)
+	next = drainConversationStream(t, next, cmd)
+	view := ViewForTest(next)
+	if !strings.Contains(view, "gpt-5.3-codex-high") {
+		t.Fatalf("full error must be visible after wrap: %q", view)
+	}
+	errorLines := 0
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "Cannot use this model") || strings.Contains(line, "gpt-5.3-codex") {
+			errorLines++
+		}
+	}
+	if errorLines < 2 {
+		t.Fatalf("expected wrapped error across multiple lines, got %d in %q", errorLines, view)
 	}
 }

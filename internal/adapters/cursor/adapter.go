@@ -29,6 +29,11 @@ type Adapter struct {
 	// Deprecated: prefer Runner; kept for existing tests that inject verification.
 	VerifyAgent func(ctx context.Context, agentPath string) error
 
+	// RetryMax is the number of Execute attempts (0 = default 3). Tests may set 1 to disable.
+	RetryMax int
+	// RetrySleep replaces time.Sleep between retriable Execute failures (tests inject a no-op).
+	RetrySleep func(time.Duration)
+
 	mu            sync.Mutex
 	resumeID      string
 	sessions      map[string]*sessionState
@@ -220,35 +225,45 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		parsed *harness.ExecutionResult
 		res    RunResult
 	)
-	if req.Stream {
-		parsed, res, err = a.executeStreamLive(runCtx, runner, dir, spec.Path, fullArgs, req.OnStreamDelta)
-	} else {
-		res, err = runner.Run(runCtx, dir, spec.Path, fullArgs)
-		if err == nil {
-			parsed, err = ParseJSONResult(res.Stdout)
+	attempts := a.executeRetryMax()
+	for attempt := 1; attempt <= attempts; attempt++ {
+		parsed = nil
+		res = RunResult{}
+		if req.Stream {
+			parsed, res, err = a.executeStreamLive(runCtx, runner, dir, spec.Path, fullArgs, req.OnStreamDelta)
+		} else {
+			res, err = runner.Run(runCtx, dir, spec.Path, fullArgs)
+			if err == nil {
+				parsed, err = ParseJSONResult(res.Stdout)
+			}
 		}
+		stdout, stderr := string(res.Stdout), string(res.Stderr)
+		if IsAuthFailure(stdout, stderr) {
+			a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: LoginHint})
+			return nil, &AuthError{Detail: firstLine(stderr, stdout)}
+		}
+		if IsTrustFailure(stdout, stderr) {
+			msg := firstLine(stderr, stdout)
+			a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: TrustHint})
+			return nil, fmt.Errorf("cursor agent workspace trust required (%s); %s", msg, TrustHint)
+		}
+		if err != nil {
+			if runCtx.Err() != nil {
+				a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusCancelled, Message: "cancelled"})
+				return nil, fmt.Errorf("cursor agent execute cancelled: %w", runCtx.Err())
+			}
+			if attempt < attempts && IsRetriableFailure(stdout, stderr, err) {
+				a.log().Warn("cursor agent execute retriable failure", "attempt", attempt, "error", err, "stderr", firstLine(stderr, stdout))
+				a.sleep(executeRetryBackoff(attempt))
+				continue
+			}
+			a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: firstLine(stderr, err.Error())})
+			a.log().Error("cursor agent execute failed", "error", err, "stderr", firstLine(stderr, ""))
+			return nil, fmt.Errorf("cursor agent execute failed: %w (%s)", err, firstLine(stderr, stdout))
+		}
+		break
 	}
 	elapsed := time.Since(start)
-
-	stdout, stderr := string(res.Stdout), string(res.Stderr)
-	if IsAuthFailure(stdout, stderr) {
-		a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: LoginHint})
-		return nil, &AuthError{Detail: firstLine(stderr, stdout)}
-	}
-	if IsTrustFailure(stdout, stderr) {
-		msg := firstLine(stderr, stdout)
-		a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: TrustHint})
-		return nil, fmt.Errorf("cursor agent workspace trust required (%s); %s", msg, TrustHint)
-	}
-	if err != nil {
-		if runCtx.Err() != nil {
-			a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusCancelled, Message: "cancelled"})
-			return nil, fmt.Errorf("cursor agent execute cancelled: %w", runCtx.Err())
-		}
-		a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: firstLine(stderr, err.Error())})
-		a.log().Error("cursor agent execute failed", "error", err, "stderr", firstLine(stderr, ""))
-		return nil, fmt.Errorf("cursor agent execute failed: %w (%s)", err, firstLine(stderr, stdout))
-	}
 	if parsed == nil {
 		a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: "empty parse result"})
 		return nil, fmt.Errorf("cursor agent execute failed: empty parse result")
@@ -544,6 +559,31 @@ func firstLine(primary, fallback string) string {
 		return strings.TrimSpace(s[:i])
 	}
 	return s
+}
+
+const defaultExecuteRetries = 3
+
+func (a *Adapter) executeRetryMax() int {
+	if a != nil && a.RetryMax > 0 {
+		return a.RetryMax
+	}
+	return defaultExecuteRetries
+}
+
+func (a *Adapter) sleep(d time.Duration) {
+	if a != nil && a.RetrySleep != nil {
+		a.RetrySleep(d)
+		return
+	}
+	time.Sleep(d)
+}
+
+func executeRetryBackoff(attempt int) time.Duration {
+	d := time.Duration(attempt) * time.Second
+	if d > 4*time.Second {
+		return 4 * time.Second
+	}
+	return d
 }
 
 // dispatchFallbackMessage returns an actionable unavailable message for stage dispatch
