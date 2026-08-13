@@ -74,6 +74,12 @@
 
 ---
 
+## 2026-08-12 — Release v1.0.2
+
+**Outcome**: Patch release — TUI slash parity with Cursor chat for `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`, `/hero-continue`, `/hero-back`, `/hero-sync`, `/hero-status`, `/hero-archive`, `/hero-resume` (Runtime Execute + orchestration agent). Includes `/hero-new`/`/hero-start` cycle-state fix and Grok 4.6 model asset. Tagged `v1.0.2`.
+
+---
+
 ## 2026-08-12 — TUI `/hero-sync`, `/hero-status`, `/hero-archive`, `/hero-resume` parity
 
 **Problem**: TUI used Dispatch (`/hero-sync`) or direct CLI (`statusCmd`, `archiveCmd`, `resumeCmd`) — one-line status, no cycle number on resume, no Chat stream parity with Cursor chat orchestrator.
