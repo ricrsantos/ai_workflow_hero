@@ -74,6 +74,14 @@
 
 ---
 
+## 2026-08-12 — TUI `/hero-sync`, `/hero-status`, `/hero-archive`, `/hero-resume` parity
+
+**Problem**: TUI used Dispatch (`/hero-sync`) or direct CLI (`statusCmd`, `archiveCmd`, `resumeCmd`) — one-line status, no cycle number on resume, no Chat stream parity with Cursor chat orchestrator.
+
+**Decision / Outcome**: All four commands → Runtime Execute with `orchestration_agent.md` + command markdown + TUI preambles. Sync/status/resume resolve model from `agents.orchestration_agent` or fallback `/hero-model`; archive requires active cycle + orchestrator model. Resume supports `/hero-resume [N]` in Chat input. Removed `heroAssetCmd`, `statusCmd`, `archiveCmd`, `resumeCmd`. Plan: `docs/idea/commands_alignments/hero-sync-status-archive-resume-alignment-plan.md`. Tests green.
+
+---
+
 ## 2026-08-12 — TUI `/hero-new` parity + default model
 
 **Problem**: TUI `/hero-new` called `hero cycle new` directly (no `hero-new.md` orchestration); `/hero-model` labeled “chat model” only; Dispatch/`hero run` ignored the user-selected default model.

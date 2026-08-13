@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -47,16 +49,24 @@ func TestStatusBarWrapsLongError(t *testing.T) {
 	}
 }
 
-func TestPaletteSyncClosesAndSetsRunning(t *testing.T) {
+func TestPaletteSyncOpensConversation(t *testing.T) {
 	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-sync.md"), []byte("# /hero-sync\n\nSYNC_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH_SYNC"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	svc := newTestServiceInDir(t, dir)
-	svc.Harness = &recordingHarness{}
+	h := &streamingHarness{deltas: []string{"syncing"}}
+	svc.Harness = h
 
 	m := NewTestModel(svc)
 	m = SetChatModelSlugForTest(m, "composer-2.5")
 	m = OpenPalette(m)
 	m = SetPaletteFilter(m, "hero-sync")
-	// Select /hero-sync if filtered list has it.
 	items := FilteredPalette(m)
 	found := false
 	for _, it := range items {
@@ -75,8 +85,21 @@ func TestPaletteSyncClosesAndSetsRunning(t *testing.T) {
 	if CurrentScreen(next) == ScreenPalette {
 		t.Fatal("palette should close")
 	}
-	if StatusKindForTest(next) != "running" {
-		t.Fatalf("expected running, got %s", StatusKindForTest(next))
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming after /hero-sync")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "SYNC_MARKER") {
+		t.Fatalf("missing sync command: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, "ORCH_SYNC") {
+		t.Fatalf("missing orchestration agent: %q", h.lastPrompt)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q", h.lastAgentName)
 	}
 }
 

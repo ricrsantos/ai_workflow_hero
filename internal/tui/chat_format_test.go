@@ -123,13 +123,52 @@ func TestTUIRuntimeCommandPrompt_HeroRejectOverrides(t *testing.T) {
 	}
 }
 
-func TestTUIRuntimeCommandPrompt_GenericPreamble(t *testing.T) {
+func TestTUIRuntimeCommandPrompt_HeroSyncOverrides(t *testing.T) {
 	got := tuiRuntimeCommandPrompt("sync", "# /hero-sync\n\nbody", heroRuntimeOpts{})
-	if !strings.Contains(got, "Hero TUI") {
-		t.Fatalf("missing TUI preamble: %q", got)
+	if !strings.Contains(got, "/hero-sync") {
+		t.Fatalf("missing sync context: %q", got)
+	}
+	if !strings.Contains(got, "context_agent") {
+		t.Fatalf("missing context_agent: %q", got)
+	}
+	if !strings.Contains(got, "hero doctor") {
+		t.Fatalf("missing hero doctor: %q", got)
 	}
 	if strings.Contains(got, "Do NOT run `hero cycle new`") {
 		t.Fatalf("hero-new override should not apply to sync: %q", got)
+	}
+	if !strings.Contains(got, "body") {
+		t.Fatalf("missing command body: %q", got)
+	}
+}
+
+func TestTUIRuntimeCommandPrompt_HeroStatusOverrides(t *testing.T) {
+	got := tuiRuntimeCommandPrompt("status", "# /hero-status\n\nbody", heroRuntimeOpts{})
+	if !strings.Contains(got, "hero status") {
+		t.Fatalf("missing hero status: %q", got)
+	}
+	if !strings.Contains(got, "Human Approval") {
+		t.Fatalf("missing table columns: %q", got)
+	}
+}
+
+func TestTUIRuntimeCommandPrompt_HeroArchiveOverrides(t *testing.T) {
+	got := tuiRuntimeCommandPrompt("archive", "# /hero-archive\n\nbody", heroRuntimeOpts{})
+	if !strings.Contains(got, "hero cycle archive") {
+		t.Fatalf("missing archive CLI: %q", got)
+	}
+	if !strings.Contains(got, "--force") {
+		t.Fatalf("missing force path: %q", got)
+	}
+}
+
+func TestTUIRuntimeCommandPrompt_HeroResumeOverrides(t *testing.T) {
+	got := tuiRuntimeCommandPrompt("resume", "# /hero-resume\n\nbody", heroRuntimeOpts{ResumeCycleNumber: 4})
+	if !strings.Contains(got, "hero cycle resume") {
+		t.Fatalf("missing resume CLI: %q", got)
+	}
+	if !strings.Contains(got, "Resume cycle C4") {
+		t.Fatalf("missing target cycle: %q", got)
 	}
 }
 

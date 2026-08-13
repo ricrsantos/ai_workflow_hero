@@ -1,7 +1,7 @@
 # TUI × Cursor Chat — Command Execution Comparison
 
 > **Source:** code analysis (`internal/tui/app.go`, `assets/cursor/commands/hero-*.md`, `internal/cycle/service.go`) from the Hero 1.0 alignment discussion (Aug 2026).  
-> **Last updated:** 2026-08-12 — `/hero-cancel`, `/hero-finish`, `/hero-continue`, `/hero-back` aligned (paridade parcial); `/hero-reject` aligned; `/hero-approve` aligned; `/hero-start` aligned; `/hero-new` aligned in **v1.0.1**.
+> **Last updated:** 2026-08-12 — `/hero-sync`, `/hero-status`, `/hero-archive`, `/hero-resume` aligned (paridade parcial); `/hero-cancel`, `/hero-finish`, `/hero-continue`, `/hero-back` aligned; `/hero-reject`, `/hero-approve`, `/hero-start`, `/hero-new` aligned in **v1.0.1**.
 
 Non-normative idea note. For product truth, see PRD/UI/ADR cycles (C2 slash parity, C3 harness autonomy).
 
@@ -31,10 +31,10 @@ Non-normative idea note. For product truth, see PRD/UI/ADR cycles (C2 slash pari
 | `/hero-finish` | ✅ **Runtime Execute:** exige ciclo ativo; Chat + stream orquestrador + `hero-finish.md`; agente valida etapas, `hero finish --metrics-json`, atualiza `context/*` | **Orquestrador:** valida etapas, `hero finish --metrics-json`, `context-log.md` / `current-state.md` | **Paridade parcial:** fechamento completo via agente | ✅ **Alinhado** (paridade parcial) |
 | `/hero-continue` | ✅ **Runtime Execute:** exige etapa Escalated; `/hero-continue [N]` (default 1); Chat + stream orquestrador + `hero-continue.md`; agente `hero continue --extra N` e retoma etapa | **Orquestrador:** `hero continue --extra N` e retoma execução | **Paridade parcial:** N customizável; retomada via Task | ✅ **Alinhado** (paridade parcial) |
 | `/hero-back` | ✅ **Runtime Execute:** exige Judge em `PendingApproval`; Chat + stream orquestrador + `hero-back.md`; Task `planning_agent`, re-run Impl→QA→Judge | **Orquestrador:** reabre Planning via `planning_agent` (Task) | **Paridade parcial:** sem verbo CLI `hero back`; orquestração real | ✅ **Alinhado** (paridade parcial) |
-| `/hero-sync` | **Dispatch:** lê `hero-sync.md` → `HarnessAdapter.Dispatch` (best-effort) | **Orquestrador:** Task `context_agent`, gera `AGENTS.md` / `context/*`, scan de docs pendentes, `hero doctor` | TUI depende do Agent CLI aceitar o prompt; chat executa o sync completo com raciocínio e escrita de arquivos | ⏳ Pendente |
-| `/hero-status` | **CLI direto:** `svc.Status()` → **uma linha** (`Cycle Cn — title (status)`) | **Orquestrador:** `hero status` (tabela completa de etapas) | TUI mostra resumo mínimo; chat mostra visão detalhada | ⏳ Pendente |
-| `/hero-archive` | **CLI direto:** `svc.Archive()` → `hero cycle archive` (OpenSpec acoplado no Go) | **Orquestrador:** confirma via `hero status`, chama `hero cycle archive`, pode atualizar `metrics-summary.md` | **Mesmo CLI** no núcleo; chat adiciona validação narrativa e artefatos opcionais | ⏳ Parcial |
-| `/hero-resume` | **CLI direto:** `svc.Resume(0)` — **sempre o último** ciclo | **Orquestrador:** `hero cycle resume [--number N]` (N opcional) | TUI não permite escolher número do ciclo | ⏳ Pendente |
+| `/hero-sync` | ✅ **Runtime Execute:** Chat + stream `orchestration_agent.md` + `hero-sync.md`; modelo YAML ou fallback `/hero-model`; Task `context_agent`, artefatos, `hero doctor` | **Orquestrador:** Task `context_agent`, gera `AGENTS.md` / `context/*`, scan de docs pendentes, `hero doctor` | **Paridade parcial:** sync completo via agente; modelo YAML ou `/hero-model` na TUI (bootstrap) | ✅ **Alinhado** (paridade parcial) |
+| `/hero-status` | ✅ **Runtime Execute:** Chat + stream orquestrador + `hero-status.md`; agente roda `hero status` e relay da tabela completa | **Orquestrador:** `hero status` (tabela completa de etapas) | **Paridade parcial:** tabela via agente CLI; modelo YAML ou `/hero-model` | ✅ **Alinhado** (paridade parcial) |
+| `/hero-archive` | ✅ **Runtime Execute:** exige ciclo ativo; Chat + stream orquestrador + `hero-archive.md`; agente confirma `hero status`, `hero cycle archive`, opcional `metrics-summary.md` | **Orquestrador:** confirma via `hero status`, chama `hero cycle archive`, pode atualizar `metrics-summary.md` | **Paridade parcial:** OpenSpec via CLI; narrativa e artefatos opcionais via agente | ✅ **Alinhado** (paridade parcial) |
+| `/hero-resume` | ✅ **Runtime Execute:** Chat + stream orquestrador + `hero-resume.md`; `/hero-resume [N]` no Chat; agente `hero cycle resume [--number N]` + `hero status` | **Orquestrador:** `hero cycle resume [--number N]` (N opcional) | **Paridade parcial:** N customizável; modelo YAML ou `/hero-model` | ✅ **Alinhado** (paridade parcial) |
 | `/hero-cycles` | **Go local:** `svc.Cycles()` + `cycle.FormatCycles` | **Orquestrador:** `hero status/metrics --json` + scan de `.workflow-hero/cycles/archive/` legado | Mesma intenção; chat pode incluir parsing de `metrics.md` legado com raciocínio; TUI usa só o formatter Go | ⏳ Parcial |
 | `/hero-todos` | **Go local:** `todos.ReadProject` + `todos.Format` (parse determinístico) | **Orquestrador:** lê `current-state.md` e formata no chat | Saída similar; TUI é 100% determinístico, chat passa pelo LLM (mas só leitura) | ⏳ Parcial |
 | `/hero-model` | **UI nativa:** abre picker de modelos → persiste em `hero.json` (`harnesses.<tool>.model`); obrigatório antes de Chat/dispatches | **Orquestrador:** instrui o usuário a usar a **TUI** (`/hero-model` no palette) — **não altera modelo no chat** | Comando **efetivo só na TUI**; no chat é redirecionamento | ✅ Por design |
@@ -83,7 +83,8 @@ Status  Approvals  Artifacts   Costs    Events    Conversation (Chat)
 - `/hero-approve` usa **Runtime Execute** com `orchestration_agent.md` + `hero-approve.md`; exige ciclo ativo e etapa `PendingApproval`; mesmo modelo orquestrador.
 - `/hero-reject` usa **Runtime Execute** com `orchestration_agent.md` + `hero-reject.md`; coleta motivo no Chat antes do stream; exige ciclo ativo e etapa `PendingApproval`; mesmo modelo orquestrador.
 - `/hero-cancel`, `/hero-finish`, `/hero-continue`, `/hero-back` usam **Runtime Execute** com `orchestration_agent.md` + comando; gates em Go (ciclo ativo; Escalated para continue; Judge PendingApproval para back); modelo orquestrador via YAML.
-- Comandos importados e `/hero-sync` ainda usam **Dispatch**.
+- `/hero-sync`, `/hero-status`, `/hero-archive`, `/hero-resume` usam **Runtime Execute** com `orchestration_agent.md` + comando; sync/status/resume usam modelo YAML ou fallback `/hero-model`; archive exige ciclo ativo + modelo orquestrador; resume suporta `/hero-resume [N]` no Chat.
+- Comandos importados (não-Hero) ainda usam **Dispatch**.
 - Free chat na tela Chat = `conversationStage == ""`; sessão do harness fica só em memória da TUI.
 
 ---
@@ -96,14 +97,18 @@ Status  Approvals  Artifacts   Costs    Events    Conversation (Chat)
          ┌───────────┼───────────┬──────────┐        │
          │           │           │          │        │
     CLI direto   Go local    Dispatch   Runtime     Orquestrador
-    (archive,    (cycles,    (sync)     Execute    (lê hero-*.md,
-     resume,      todos,                (new,start, chama hero CLI,
-     status,      help)                 approve,    Task, git, files)
-     etc.)                               reject,
+    (cycles,     (todos,     (imported  Execute    (lê hero-*.md,
+     help)        help)       cmds)     (new,start, chama hero CLI,
+                                         approve,    Task, git, files)
+                                         reject,
                                          cancel,
                                          finish,
                                          continue,
-                                         back)
+                                         back,
+                                         sync,
+                                         status,
+                                         archive,
+                                         resume)
          │           │           │          │        │
          └───────────┴───────────┴──────────┘        │
                      │                                │
@@ -113,7 +118,7 @@ Status  Approvals  Artifacts   Costs    Events    Conversation (Chat)
                     (mesmo store quando o CLI é chamado)
 ```
 
-\* `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`, `/hero-continue`, `/hero-back` na TUI leem `orchestration_agent.md` + comando via Runtime Execute.
+\* `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`, `/hero-continue`, `/hero-back`, `/hero-sync`, `/hero-status`, `/hero-archive`, `/hero-resume` na TUI leem `orchestration_agent.md` + comando via Runtime Execute.
 
 ---
 
@@ -158,9 +163,8 @@ Status  Approvals  Artifacts   Costs    Events    Conversation (Chat)
 
 ## Conclusão
 
-- Comandos de **controle de estado** (`archive`, `resume`) na TUI ainda são atalhos CLI **sem LLM**; **`/hero-cancel`**, **`/hero-finish`**, **`/hero-continue`**, **`/hero-back`**, **`/hero-approve`** e **`/hero-reject`** alinhados via Runtime Execute (orquestrador + CLI).
-- Comandos de **trabalho** (`sync`) no chat são orquestração completa; na TUI ainda é dispatch best-effort — **`/hero-new`**, **`/hero-start`**, **`/hero-approve`**, **`/hero-reject`**, **`/hero-cancel`**, **`/hero-finish`**, **`/hero-continue`**, **`/hero-back`** alinhados via Runtime Execute.
-- Comandos de **consulta** (`status`, `cycles`, `todos`) na TUI são determinísticos; no chat passam pelo orquestrador com saída mais rica.
+- Comandos de **controle de estado** (`archive`, `resume`, `cancel`, `finish`, `continue`, `back`, `approve`, `reject`) na TUI usam **Runtime Execute** (orquestrador + CLI).
+- Comandos de **trabalho** (`sync`, `start`, `new`) e **consulta** (`status`) na TUI usam **Runtime Execute** com orquestrador quando alinhados; `cycles`, `todos`, `help` permanecem determinísticos em Go.
 - `/hero-model` e `/hero-help` têm comportamentos **assimétricos** por design.
 
-**Próximo alvo de alinhamento sugerido:** `/hero-sync` (context sync completo na TUI).
+**Próximo alvo de alinhamento sugerido:** `/hero-cycles`, `/hero-todos`, `/hero-help` (saída mais rica ou help inline).

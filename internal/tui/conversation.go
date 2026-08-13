@@ -131,14 +131,16 @@ func (m model) enterConversation() (model, tea.Cmd) {
 
 // heroRuntimeOpts carries command-specific context for Runtime Execute preambles.
 type heroRuntimeOpts struct {
-	RejectReason  string
-	ContinueExtra int // 0 = default 1
-	CancelReason  string
+	RejectReason       string
+	ContinueExtra      int // 0 = default 1
+	CancelReason       string
+	ResumeCycleNumber  int // 0 = latest non-archived
 }
 
 func usesOrchestratorRuntime(cmdName string) bool {
 	switch cmdName {
-	case "start", "approve", "reject", "cancel", "finish", "continue", "back":
+	case "start", "approve", "reject", "cancel", "finish", "continue", "back",
+		"sync", "status", "archive", "resume":
 		return true
 	default:
 		return false
@@ -170,6 +172,9 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	if cmdName == "cancel" && strings.TrimSpace(opts.CancelReason) != "" {
 		label = "/hero-cancel: " + strings.TrimSpace(opts.CancelReason)
 	}
+	if cmdName == "resume" && opts.ResumeCycleNumber > 0 {
+		label = fmt.Sprintf("/hero-resume %d", opts.ResumeCycleNumber)
+	}
 	cmdPath := filepath.Join(m.svc.ProjectDir, cursoradapter.CommandsDir, "hero-"+cmdName+".md")
 	cmdBody, err := cursoradapter.ReadCommandPrompt(cmdPath)
 	if err != nil {
@@ -196,7 +201,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite, opts)
 		m.runtimeAgentName = "orchestration_agent"
 	} else {
-		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody, heroRuntimeOpts{})
+		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody, opts)
 	}
 
 	m = m.beginConversationExecute(label, executePrompt)
@@ -448,6 +453,14 @@ func (m model) submitConversation() (model, tea.Cmd) {
 		return m.beginHeroContinueExecute(extra)
 	}
 
+	if cycleN, ok := parseHeroResumeInline(text); ok {
+		m.input = ""
+		m.inputCursor = 0
+		m.inputScrollOffset = 0
+		m.convError = ""
+		return m.beginHeroResumeExecute(cycleN)
+	}
+
 	var cmd tea.Cmd
 	m, cmd, ok := m.ensureDefaultModel("chat")
 	if !ok {
@@ -507,6 +520,28 @@ func parseHeroContinueInline(text string) (int, bool) {
 		return 0, true // matched command but invalid N — caller shows error
 	}
 	return extra, true
+}
+
+// parseHeroResumeInline returns (cycleNumber, true) when text is /hero-resume with optional N.
+// cycleNumber 0 means resume the latest non-archived cycle.
+func parseHeroResumeInline(text string) (int, bool) {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "/hero-resume" {
+		return 0, true
+	}
+	const prefix = "/hero-resume "
+	if !strings.HasPrefix(lower, prefix) {
+		return 0, false
+	}
+	arg := strings.TrimSpace(text[len(prefix):])
+	if arg == "" {
+		return 0, true
+	}
+	var n int
+	if _, err := fmt.Sscanf(arg, "%d", &n); err != nil || n <= 0 {
+		return -1, true // matched command but invalid N — caller shows error
+	}
+	return n, true
 }
 
 func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {

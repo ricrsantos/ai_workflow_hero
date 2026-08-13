@@ -177,6 +177,11 @@ func BeginHeroContinueExecuteForTest(m model, extra int) (model, tea.Cmd) {
 	return m.beginHeroContinueExecute(extra)
 }
 
+// BeginHeroResumeExecuteForTest runs resume Runtime Execute with optional cycle number.
+func BeginHeroResumeExecuteForTest(m model, cycleN int) (model, tea.Cmd) {
+	return m.beginHeroResumeExecute(cycleN)
+}
+
 // AwaitingRejectReasonForTest reports whether Chat is collecting rejection feedback.
 func AwaitingRejectReasonForTest(m model) bool {
 	return m.awaitingRejectReason

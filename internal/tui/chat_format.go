@@ -118,6 +118,56 @@ func tuiHeroBackPreamble() string {
 		"---\n\n"
 }
 
+func tuiHeroSyncPreamble() string {
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running /hero-sync inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
+		"- Invoke Task `context_agent` (read-only) with Model Resolution from workflow-config.yml when available.\n" +
+		"- Generate AGENTS.md, context/current-state.md, context/context-log.md; scan docs/product and docs/architecture for pending items (ADR-029).\n" +
+		"- Update .workflow-hero/config/project.json; run `hero doctor` for harness warnings.\n" +
+		"- Tell the user to run /hero-todos and /hero-new in the Hero TUI — not Cursor chat handoff.\n\n" +
+		"---\n\n"
+}
+
+func tuiHeroStatusPreamble() string {
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running /hero-status inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
+		"- Run `hero status` (or `hero status --json`) and relay the full CLI table: Stage, Status, Iteration, Human Approval.\n" +
+		"- If no active cycle, tell the user to run /hero-new in the Hero TUI.\n" +
+		"- Do NOT read workflow.md for operational status — SQLite via hero status is the source of truth.\n\n" +
+		"---\n\n"
+}
+
+func tuiHeroArchivePreamble() string {
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running /hero-archive inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ✗).\n" +
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
+		"- Run `hero status` (or `--json`) before archive; persist via `hero cycle archive` — do not hand-roll folder moves.\n" +
+		"- On OpenSpec failure, offer retry /hero-archive or `hero cycle archive --force` only after explicit user consent.\n" +
+		"- Optionally update metrics-summary.md from `hero metrics` for the archived cycle.\n" +
+		"- Tell the user to run /hero-resume in the Hero TUI when ready — not Cursor chat handoff.\n\n" +
+		"---\n\n"
+}
+
+func tuiHeroResumePreamble(cycleN int) string {
+	preamble := "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running /hero-resume inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
+		"- If another cycle is active, warn and suggest archive or finish first when appropriate.\n" +
+		"- Resume via `hero cycle resume` or `hero cycle resume --number N`. Do NOT edit workflow.md.\n" +
+		"- Run `hero status` after resume to show paused/current stage.\n" +
+		"- Tell the user to run /hero-start or /hero-approve / /hero-reject in the Hero TUI — not Cursor chat handoff.\n\n"
+	if cycleN > 0 {
+		preamble += fmt.Sprintf("## Target cycle\n\nResume cycle C%d (`hero cycle resume --number %d`).\n\n", cycleN, cycleN)
+	}
+	return preamble + "---\n\n"
+}
+
 func tuiHeroRejectPreamble(reason string) string {
 	preamble := "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
 		"You are running /hero-reject inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
@@ -155,6 +205,14 @@ func tuiRuntimeCommandPrompt(cmdName, commandBody string, opts heroRuntimeOpts) 
 		preamble = tuiHeroContinuePreamble(opts.ContinueExtra)
 	case "back":
 		preamble = tuiHeroBackPreamble()
+	case "sync":
+		preamble = tuiHeroSyncPreamble()
+	case "status":
+		preamble = tuiHeroStatusPreamble()
+	case "archive":
+		preamble = tuiHeroArchivePreamble()
+	case "resume":
+		preamble = tuiHeroResumePreamble(opts.ResumeCycleNumber)
 	}
 	return preamble + strings.TrimSpace(commandBody) + "\n"
 }

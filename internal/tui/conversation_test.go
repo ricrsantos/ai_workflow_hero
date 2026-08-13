@@ -1681,3 +1681,189 @@ func TestHeroBackRequiresJudgePendingApproval(t *testing.T) {
 		t.Fatalf("missing judge hint: %q", StatusTextForTest(next))
 	}
 }
+
+func TestHeroSyncRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-sync.md"), []byte("# /hero-sync\n\nSYNC_RUNTIME"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH_SYNC"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	h := &streamingHarness{deltas: []string{"sync"}}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-sync")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v", CurrentScreen(next))
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "SYNC_RUNTIME") {
+		t.Fatalf("missing command: %q", h.lastPrompt)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q", h.lastAgentName)
+	}
+	if h.lastSessionID != "" {
+		t.Fatalf("expected fresh session, got %q", h.lastSessionID)
+	}
+}
+
+func TestHeroSyncRequiresModel(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	m := NewTestModel(svc)
+	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-sync")
+	if cmd != nil {
+		t.Fatal("expected no async cmd without model")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("status=%s", StatusKindForTest(next))
+	}
+	if !strings.Contains(StatusTextForTest(next), "/hero-model") {
+		t.Fatalf("missing model hint: %q", StatusTextForTest(next))
+	}
+}
+
+func TestHeroStatusRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-status.md"), []byte("# /hero-status\n\nSTATUS_RUNTIME"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH_STATUS"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newTestServiceInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"status"}}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-status")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v", CurrentScreen(next))
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "STATUS_RUNTIME") {
+		t.Fatalf("missing command: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, "hero status") {
+		t.Fatalf("missing status preamble: %q", h.lastPrompt)
+	}
+}
+
+func TestHeroArchiveRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-archive.md"), []byte("# /hero-archive\n\nARCHIVE_RUNTIME"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH_ARCHIVE"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newTestServiceWithPendingApprovalInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"archiving"}}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-archive")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v", CurrentScreen(next))
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "ARCHIVE_RUNTIME") {
+		t.Fatalf("missing command: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, "hero cycle archive") {
+		t.Fatalf("missing archive preamble: %q", h.lastPrompt)
+	}
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q", h.lastModel)
+	}
+}
+
+func TestHeroArchiveRequiresActiveCycle(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	m := NewTestModel(svc)
+	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-archive")
+	if cmd != nil {
+		t.Fatal("expected no async cmd")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("status=%s", StatusKindForTest(next))
+	}
+	if !strings.Contains(StatusTextForTest(next), "/hero-new") {
+		t.Fatalf("missing hint: %q", StatusTextForTest(next))
+	}
+}
+
+func TestHeroResumeRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-resume.md"), []byte("# /hero-resume\n\nRESUME_RUNTIME"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH_RESUME"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	h := &streamingHarness{deltas: []string{"resuming"}}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-resume")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v", CurrentScreen(next))
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "RESUME_RUNTIME") {
+		t.Fatalf("missing command: %q", h.lastPrompt)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q", h.lastAgentName)
+	}
+}
+
+func TestHeroResumeInlineCycleNumber(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-resume.md"), []byte("# /hero-resume\n\nINLINE_RESUME"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	h := &streamingHarness{deltas: []string{"resume"}}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "/hero-resume 4")
+	next, cmd := SubmitConversationForTest(m)
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v", CurrentScreen(next))
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "INLINE_RESUME") {
+		t.Fatalf("missing command: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, "Resume cycle C4") {
+		t.Fatalf("missing cycle N in preamble: %q", h.lastPrompt)
+	}
+}
