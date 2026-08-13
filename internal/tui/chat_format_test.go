@@ -56,7 +56,7 @@ Reply to confirm when ready, and the cycle will be created via hero cycle new.`
 }
 
 func TestTUIRuntimeCommandPrompt_HeroNewOverrides(t *testing.T) {
-	got := tuiRuntimeCommandPrompt("new", "# /hero-new\n\nbody", "")
+	got := tuiRuntimeCommandPrompt("new", "# /hero-new\n\nbody", heroRuntimeOpts{})
 	if !strings.Contains(got, "TUI will call hero cycle new automatically") {
 		t.Fatalf("missing hero-new override: %q", got)
 	}
@@ -69,7 +69,7 @@ func TestTUIRuntimeCommandPrompt_HeroNewOverrides(t *testing.T) {
 }
 
 func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
-	got := tuiRuntimeCommandPrompt("start", "# /hero-start\n\nbody", "")
+	got := tuiRuntimeCommandPrompt("start", "# /hero-start\n\nbody", heroRuntimeOpts{})
 	if !strings.Contains(got, "orchestration agent") {
 		t.Fatalf("missing start orchestrator context: %q", got)
 	}
@@ -88,7 +88,7 @@ func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
 }
 
 func TestTUIRuntimeCommandPrompt_HeroApproveOverrides(t *testing.T) {
-	got := tuiRuntimeCommandPrompt("approve", "# /hero-approve\n\nbody", "")
+	got := tuiRuntimeCommandPrompt("approve", "# /hero-approve\n\nbody", heroRuntimeOpts{})
 	if !strings.Contains(got, "/hero-approve") {
 		t.Fatalf("missing approve context: %q", got)
 	}
@@ -108,7 +108,7 @@ func TestTUIRuntimeCommandPrompt_HeroApproveOverrides(t *testing.T) {
 
 func TestTUIRuntimeCommandPrompt_HeroRejectOverrides(t *testing.T) {
 	reason := "fix the failing tests"
-	got := tuiRuntimeCommandPrompt("reject", "# /hero-reject\n\nbody", reason)
+	got := tuiRuntimeCommandPrompt("reject", "# /hero-reject\n\nbody", heroRuntimeOpts{RejectReason: reason})
 	if !strings.Contains(got, "/hero-reject") {
 		t.Fatalf("missing reject context: %q", got)
 	}
@@ -124,12 +124,56 @@ func TestTUIRuntimeCommandPrompt_HeroRejectOverrides(t *testing.T) {
 }
 
 func TestTUIRuntimeCommandPrompt_GenericPreamble(t *testing.T) {
-	got := tuiRuntimeCommandPrompt("sync", "# /hero-sync\n\nbody", "")
+	got := tuiRuntimeCommandPrompt("sync", "# /hero-sync\n\nbody", heroRuntimeOpts{})
 	if !strings.Contains(got, "Hero TUI") {
 		t.Fatalf("missing TUI preamble: %q", got)
 	}
 	if strings.Contains(got, "Do NOT run `hero cycle new`") {
 		t.Fatalf("hero-new override should not apply to sync: %q", got)
+	}
+}
+
+func TestTUIRuntimeCommandPrompt_HeroCancelOverrides(t *testing.T) {
+	reason := "scope changed"
+	got := tuiRuntimeCommandPrompt("cancel", "# /hero-cancel\n\nbody", heroRuntimeOpts{CancelReason: reason})
+	if !strings.Contains(got, "hero cancel") {
+		t.Fatalf("missing cancel CLI: %q", got)
+	}
+	if !strings.Contains(got, "git checkout") {
+		t.Fatalf("missing git rollback: %q", got)
+	}
+	if !strings.Contains(got, reason) {
+		t.Fatalf("missing cancel reason: %q", got)
+	}
+}
+
+func TestTUIRuntimeCommandPrompt_HeroFinishOverrides(t *testing.T) {
+	got := tuiRuntimeCommandPrompt("finish", "# /hero-finish\n\nbody", heroRuntimeOpts{})
+	if !strings.Contains(got, "hero finish --metrics-json") {
+		t.Fatalf("missing finish CLI: %q", got)
+	}
+	if !strings.Contains(got, "context-log.md") {
+		t.Fatalf("missing context update: %q", got)
+	}
+}
+
+func TestTUIRuntimeCommandPrompt_HeroContinueOverrides(t *testing.T) {
+	got := tuiRuntimeCommandPrompt("continue", "# /hero-continue\n\nbody", heroRuntimeOpts{ContinueExtra: 3})
+	if !strings.Contains(got, "hero continue --extra 3") {
+		t.Fatalf("missing continue extra: %q", got)
+	}
+	if !strings.Contains(got, "+3") {
+		t.Fatalf("missing +3 in preamble: %q", got)
+	}
+}
+
+func TestTUIRuntimeCommandPrompt_HeroBackOverrides(t *testing.T) {
+	got := tuiRuntimeCommandPrompt("back", "# /hero-back\n\nbody", heroRuntimeOpts{})
+	if !strings.Contains(got, "planning_agent") {
+		t.Fatalf("missing planning_agent: %q", got)
+	}
+	if !strings.Contains(got, "no `hero back` CLI") {
+		t.Fatalf("missing no CLI verb note: %q", got)
 	}
 }
 

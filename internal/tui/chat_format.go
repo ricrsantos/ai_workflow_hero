@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -62,6 +63,61 @@ func tuiHeroApprovePreamble() string {
 		"---\n\n"
 }
 
+func tuiHeroCancelPreamble(reason string) string {
+	preamble := "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running /hero-cancel inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ⚠).\n" +
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
+		"- Run `hero status` (or `hero status --json`) before and after cancel.\n" +
+		"- Persist cancellation via `hero cancel` (optional `--reason`). Do NOT write workflow.md.\n" +
+		"- Roll back uncommitted working-tree changes via `git checkout` / `git restore` when appropriate (CLI does not run git).\n" +
+		"- Tell the user to run /hero-new or /hero-resume in the Hero TUI — not Cursor chat handoff.\n\n"
+	if r := strings.TrimSpace(reason); r != "" {
+		preamble += "## User cancellation reason\n\n" + r + "\n\n"
+	}
+	return preamble + "---\n\n"
+}
+
+func tuiHeroFinishPreamble() string {
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running /hero-finish inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
+		"- Run `hero status` and validate required stages before finishing.\n" +
+		"- Apply the Metrics Procedure; persist via `hero finish --metrics-json '<JSON>'`. Do NOT write workflow.md or metrics.md.\n" +
+		"- Update `context-log.md` and `current-state.md` after cycle completion.\n" +
+		"- Remind the user to run /hero-archive in the Hero TUI when ready.\n\n" +
+		"---\n\n"
+}
+
+func tuiHeroContinuePreamble(extra int) string {
+	if extra <= 0 {
+		extra = 1
+	}
+	return fmt.Sprintf("## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n"+
+		"You are running /hero-continue inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n"+
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n"+
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n"+
+		"- The user requested **+%d** extra iteration(s). Run `hero status` and confirm the current stage is Escalated.\n"+
+		"- Grant iterations via `hero continue --extra %d`. Do NOT edit workflow-config.yml max_iterations.\n"+
+		"- After granting, resume execution of the escalated stage via Task subagents.\n"+
+		"- Apply Metrics Procedure on subsequent stage closes.\n\n"+
+		"---\n\n", extra, extra)
+}
+
+func tuiHeroBackPreamble() string {
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running /hero-back inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ⚠).\n" +
+		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
+		"- Run `hero status` to confirm Judge stage context.\n" +
+		"- There is no `hero back` CLI verb — reopen Planning via Task `planning_agent` with Model Resolution from workflow-config.yml.\n" +
+		"- After Planning completes, re-run Implementation → QA → Judge with fresh Task sessions.\n" +
+		"- Persist each stage close via hero CLI with `--metrics-json` per Metrics Procedure.\n" +
+		"- Record the back-step decision in `context-log.md`.\n\n" +
+		"---\n\n"
+}
+
 func tuiHeroRejectPreamble(reason string) string {
 	preamble := "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
 		"You are running /hero-reject inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
@@ -80,7 +136,7 @@ func tuiHeroRejectPreamble(reason string) string {
 	return preamble
 }
 
-func tuiRuntimeCommandPrompt(cmdName, commandBody, rejectReason string) string {
+func tuiRuntimeCommandPrompt(cmdName, commandBody string, opts heroRuntimeOpts) string {
 	preamble := tuiRuntimePreamble
 	switch cmdName {
 	case "new":
@@ -90,7 +146,15 @@ func tuiRuntimeCommandPrompt(cmdName, commandBody, rejectReason string) string {
 	case "approve":
 		preamble = tuiHeroApprovePreamble()
 	case "reject":
-		preamble = tuiHeroRejectPreamble(rejectReason)
+		preamble = tuiHeroRejectPreamble(opts.RejectReason)
+	case "cancel":
+		preamble = tuiHeroCancelPreamble(opts.CancelReason)
+	case "finish":
+		preamble = tuiHeroFinishPreamble()
+	case "continue":
+		preamble = tuiHeroContinuePreamble(opts.ContinueExtra)
+	case "back":
+		preamble = tuiHeroBackPreamble()
 	}
 	return preamble + strings.TrimSpace(commandBody) + "\n"
 }

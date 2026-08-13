@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-12 — TUI control commands parity (`/hero-cancel`, `/hero-finish`, `/hero-continue`, `/hero-back`)
+
+**Problem**: TUI used CLI direct (`Cancel`/`Finish`/`Continue`) or Dispatch (`/hero-back`) — no orchestrator markdown, no git rollback, no metrics/context updates, fixed +1 continue, no stage resume.
+
+**Decision / Outcome**: All four use Runtime Execute with `orchestration_agent.md` + command markdown + TUI preambles; model from `agents.orchestration_agent`; Go gates (active cycle; Escalated for continue; Judge PendingApproval for back); inline `/hero-cancel <reason>` and `/hero-continue N` in Chat. Removed `cancelCmd`/`finishCmd`/`continueCmd`; `/hero-back` no longer uses Dispatch. Tests + `comparation.md` + `hero-control-alignment-plan.md` updated.
+
+---
+
 ## 2026-08-12 — TUI `/hero-reject` parity
 
 **Problem**: TUI `/hero-reject` called `svc.Reject("")` directly — empty reason, no stage re-run, no orchestrator markdown.

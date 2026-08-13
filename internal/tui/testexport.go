@@ -159,7 +159,22 @@ func EnterConversationForTest(m model) model {
 
 // BeginHeroRuntimeConversationForTest runs a Hero runtime slash via Chat streaming.
 func BeginHeroRuntimeConversationForTest(m model, cmdName string) (model, tea.Cmd) {
-	return m.beginHeroRuntimeConversation(cmdName, "", "")
+	return m.beginHeroRuntimeConversation(cmdName, "", heroRuntimeOpts{})
+}
+
+// EscalatedStageForTest exposes escalated stage detection.
+func EscalatedStageForTest(st cycle.StatusView) string {
+	return escalatedStage(st)
+}
+
+// BeginHeroCancelExecuteForTest runs cancel Runtime Execute with optional reason.
+func BeginHeroCancelExecuteForTest(m model, reason string) (model, tea.Cmd) {
+	return m.beginHeroCancelExecute(reason)
+}
+
+// BeginHeroContinueExecuteForTest runs continue Runtime Execute with extra iterations.
+func BeginHeroContinueExecuteForTest(m model, extra int) (model, tea.Cmd) {
+	return m.beginHeroContinueExecute(extra)
 }
 
 // AwaitingRejectReasonForTest reports whether Chat is collecting rejection feedback.

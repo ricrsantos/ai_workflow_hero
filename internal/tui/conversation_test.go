@@ -1360,3 +1360,324 @@ func TestHeroRejectInlineReason(t *testing.T) {
 		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
 	}
 }
+
+func newTestServiceWithEscalatedStageInDir(t *testing.T, dir string) *cycle.Service {
+	t.Helper()
+	heroDir := dir + "/.workflow-hero/cycles/current"
+	if err := os.MkdirAll(heroDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := []byte(`title: TUI Test
+objective: test
+agents:
+  orchestration_agent:
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: true
+`)
+	if err := os.WriteFile(heroDir+"/workflow-config.yml", cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir+"/.workflow-hero/config", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("research"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CloseStage("research", "ready", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Reject("needs rework"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("research"); err == nil {
+		t.Fatal("expected escalation error on exhausted iteration budget")
+	}
+	st, err := svc.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.EqualFold(EscalatedStageForTest(st), "research") {
+		t.Fatalf("escalated=%q want research", EscalatedStageForTest(st))
+	}
+	return svc
+}
+
+func newTestServiceWithJudgePendingApprovalInDir(t *testing.T, dir string) *cycle.Service {
+	t.Helper()
+	heroDir := dir + "/.workflow-hero/cycles/current"
+	if err := os.MkdirAll(heroDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := []byte(`title: TUI Test
+objective: test
+agents:
+  orchestration_agent:
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+  planning:
+    enabled: false
+  implementation:
+    enabled: false
+  qa:
+    enabled: false
+  judge:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: true
+  browser_ui_validation:
+    enabled: false
+  qa_end_to_end:
+    enabled: false
+`)
+	if err := os.WriteFile(heroDir+"/workflow-config.yml", cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir+"/.workflow-hero/config", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("research"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CloseStage("research", "done", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("judge"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CloseStage("judge", "ambiguous SDD", "", false); err != nil {
+		t.Fatal(err)
+	}
+	st, err := svc.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.EqualFold(PendingApprovalForTest(st), "judge") {
+		t.Fatalf("pending=%q want judge", PendingApprovalForTest(st))
+	}
+	return svc
+}
+
+func TestHeroCancelRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	reason := "scope changed"
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-cancel.md"), []byte("# /hero-cancel\n\nCANCEL_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nCANCEL_AGENT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"cancelled"}, sessionID: "cancel-sess"}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	next, cmd := BeginHeroCancelExecuteForTest(m, reason)
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "CANCEL_MARKER") {
+		t.Fatalf("missing command body: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, "CANCEL_AGENT") {
+		t.Fatalf("missing agent body: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, reason) {
+		t.Fatalf("missing cancel reason: %q", h.lastPrompt)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q", h.lastAgentName)
+	}
+}
+
+func TestHeroCancelRequiresActiveCycle(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	m := NewTestModel(svc)
+	next, cmd := RunPaletteItemForTest(m, "/hero-cancel")
+	if cmd != nil {
+		t.Fatal("expected no async cmd")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("status=%s", StatusKindForTest(next))
+	}
+}
+
+func TestHeroFinishRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-finish.md"), []byte("# /hero-finish\n\nFINISH_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nFINISH_AGENT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"finished"}, sessionID: "finish-sess"}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	next, cmd := RunPaletteItemForTest(m, "/hero-finish")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v", CurrentScreen(next))
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "FINISH_MARKER") {
+		t.Fatalf("missing command: %q", h.lastPrompt)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q", h.lastAgentName)
+	}
+}
+
+func TestHeroContinueRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-continue.md"), []byte("# /hero-continue\n\nCONTINUE_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nCONTINUE_AGENT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithEscalatedStageInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"continued"}, sessionID: "continue-sess"}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	next, cmd := BeginHeroContinueExecuteForTest(m, 2)
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v", CurrentScreen(next))
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "CONTINUE_MARKER") {
+		t.Fatalf("missing command: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, "hero continue --extra 2") {
+		t.Fatalf("missing extra 2: %q", h.lastPrompt)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q", h.lastAgentName)
+	}
+}
+
+func TestHeroContinueRequiresEscalatedStage(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	m := NewTestModel(svc)
+	next, cmd := RunPaletteItemForTest(m, "/hero-continue")
+	if cmd != nil {
+		t.Fatal("expected no async cmd")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("status=%s", StatusKindForTest(next))
+	}
+	if !strings.Contains(StatusTextForTest(next), "Escalated") {
+		t.Fatalf("missing escalated hint: %q", StatusTextForTest(next))
+	}
+}
+
+func TestHeroContinueInlineExtra(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-continue.md"), []byte("# /hero-continue\n\nINLINE_CONTINUE"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nAGENT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithEscalatedStageInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"ok"}, sessionID: "inline-continue"}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "/hero-continue 3")
+	next, cmd := SubmitConversationForTest(m)
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "hero continue --extra 3") {
+		t.Fatalf("prompt=%q", h.lastPrompt)
+	}
+}
+
+func TestHeroBackRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-back.md"), []byte("# /hero-back\n\nBACK_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nBACK_AGENT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithJudgePendingApprovalInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"reopening planning"}, sessionID: "back-sess"}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	next, cmd := RunPaletteItemForTest(m, "/hero-back")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v", CurrentScreen(next))
+	}
+	next = drainConversationStream(t, next, cmd)
+	if !strings.Contains(h.lastPrompt, "BACK_MARKER") {
+		t.Fatalf("missing command: %q", h.lastPrompt)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q", h.lastAgentName)
+	}
+}
+
+func TestHeroBackRequiresJudgePendingApproval(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	svc := newTestServiceWithPendingApprovalInDir(t, dir)
+	m := NewTestModel(svc)
+	next, cmd := RunPaletteItemForTest(m, "/hero-back")
+	if cmd != nil {
+		t.Fatal("expected no async cmd")
+	}
+	if StatusKindForTest(next) != "err" {
+		t.Fatalf("status=%s", StatusKindForTest(next))
+	}
+	if !strings.Contains(StatusTextForTest(next), "Judge") {
+		t.Fatalf("missing judge hint: %q", StatusTextForTest(next))
+	}
+}

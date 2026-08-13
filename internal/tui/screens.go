@@ -349,6 +349,15 @@ func pendingApprovalStage(st cycle.StatusView) string {
 	return ""
 }
 
+func escalatedStage(st cycle.StatusView) string {
+	for _, s := range st.Stages {
+		if s.Status == "Escalated" {
+			return s.Name
+		}
+	}
+	return ""
+}
+
 func truncateTS(ts string) string {
 	if len(ts) >= 19 {
 		return ts[11:19]

@@ -129,18 +129,46 @@ func (m model) enterConversation() (model, tea.Cmd) {
 	return m, nil
 }
 
+// heroRuntimeOpts carries command-specific context for Runtime Execute preambles.
+type heroRuntimeOpts struct {
+	RejectReason  string
+	ContinueExtra int // 0 = default 1
+	CancelReason  string
+}
+
+func usesOrchestratorRuntime(cmdName string) bool {
+	switch cmdName {
+	case "start", "approve", "reject", "cancel", "finish", "continue", "back":
+		return true
+	default:
+		return false
+	}
+}
+
 // beginHeroRuntimeConversation opens Chat and executes a Hero runtime command markdown
 // (same body as Cursor slash expansion). modelSlug is optional; when empty, uses the
-// default harness model from hero.json (/hero-model). rejectReason is used only for reject.
-func (m model) beginHeroRuntimeConversation(cmdName, modelSlug, rejectReason string) (model, tea.Cmd) {
+// default harness model from hero.json (/hero-model).
+func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts heroRuntimeOpts) (model, tea.Cmd) {
 	if m.svc == nil {
 		m, _ = m.enterConversation()
 		m.convError = "cycle service unavailable"
 		return m, nil
 	}
 	label := "/hero-" + cmdName
-	if cmdName == "reject" && strings.TrimSpace(rejectReason) != "" {
-		label = "/hero-reject: " + strings.TrimSpace(rejectReason)
+	if cmdName == "reject" && strings.TrimSpace(opts.RejectReason) != "" {
+		label = "/hero-reject: " + strings.TrimSpace(opts.RejectReason)
+	}
+	if cmdName == "continue" {
+		extra := opts.ContinueExtra
+		if extra <= 0 {
+			extra = 1
+		}
+		if extra != 1 {
+			label = fmt.Sprintf("/hero-continue %d", extra)
+		}
+	}
+	if cmdName == "cancel" && strings.TrimSpace(opts.CancelReason) != "" {
+		label = "/hero-cancel: " + strings.TrimSpace(opts.CancelReason)
 	}
 	cmdPath := filepath.Join(m.svc.ProjectDir, cursoradapter.CommandsDir, "hero-"+cmdName+".md")
 	cmdBody, err := cursoradapter.ReadCommandPrompt(cmdPath)
@@ -158,17 +186,17 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug, rejectReason str
 	m.runtimeAgentName = ""
 
 	var executePrompt string
-	if cmdName == "start" || cmdName == "approve" || cmdName == "reject" {
+	if usesOrchestratorRuntime(cmdName) {
 		composite, err := orchestratorRuntimePrompt(m.svc.ProjectDir, cmdBody)
 		if err != nil {
 			slog.Error("tui orchestration runtime prompt failed", "cmd", cmdName, "error", err)
 			m.convError = err.Error()
 			return m, nil
 		}
-		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite, rejectReason)
+		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite, opts)
 		m.runtimeAgentName = "orchestration_agent"
 	} else {
-		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody, "")
+		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody, heroRuntimeOpts{})
 	}
 
 	m = m.beginConversationExecute(label, executePrompt)
@@ -404,6 +432,22 @@ func (m model) submitConversation() (model, tea.Cmd) {
 		return m.beginHeroRejectExecute(reason)
 	}
 
+	if reason, ok := parseHeroCancelInline(text); ok {
+		m.input = ""
+		m.inputCursor = 0
+		m.inputScrollOffset = 0
+		m.convError = ""
+		return m.beginHeroCancelExecute(reason)
+	}
+
+	if extra, ok := parseHeroContinueInline(text); ok {
+		m.input = ""
+		m.inputCursor = 0
+		m.inputScrollOffset = 0
+		m.convError = ""
+		return m.beginHeroContinueExecute(extra)
+	}
+
 	var cmd tea.Cmd
 	m, cmd, ok := m.ensureDefaultModel("chat")
 	if !ok {
@@ -429,6 +473,40 @@ func parseHeroRejectInline(text string) (string, bool) {
 		return strings.TrimSpace(text[len(prefix):]), true
 	}
 	return "", false
+}
+
+// parseHeroCancelInline returns (reason, true) when text is /hero-cancel with optional reason.
+func parseHeroCancelInline(text string) (string, bool) {
+	lower := strings.ToLower(text)
+	if lower == "/hero-cancel" {
+		return "", true
+	}
+	const prefix = "/hero-cancel "
+	if strings.HasPrefix(lower, prefix) {
+		return strings.TrimSpace(text[len(prefix):]), true
+	}
+	return "", false
+}
+
+// parseHeroContinueInline returns (extra, true) when text is /hero-continue with optional N.
+func parseHeroContinueInline(text string) (int, bool) {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "/hero-continue" {
+		return 1, true
+	}
+	const prefix = "/hero-continue "
+	if !strings.HasPrefix(lower, prefix) {
+		return 0, false
+	}
+	arg := strings.TrimSpace(text[len(prefix):])
+	if arg == "" {
+		return 1, true
+	}
+	var extra int
+	if _, err := fmt.Sscanf(arg, "%d", &extra); err != nil || extra <= 0 {
+		return 0, true // matched command but invalid N — caller shows error
+	}
+	return extra, true
 }
 
 func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {

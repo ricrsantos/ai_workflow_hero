@@ -305,11 +305,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.beginAction("dispatch", m.dispatchCmd())
 	case "f":
 		if m.screen == screenApprovals {
-			return m.beginAction("/hero-finish", m.finishCmd())
+			return m.beginHeroFinish()
 		}
 	case "c":
 		if m.screen == screenApprovals {
-			return m.beginAction("/hero-cancel", m.cancelCmd())
+			return m.beginHeroCancel()
 		}
 	}
 	return m, nil
@@ -435,7 +435,7 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		if !ok {
 			return m, cmd
 		}
-		return m.beginHeroRuntimeConversation("new", "", "")
+		return m.beginHeroRuntimeConversation("new", "", heroRuntimeOpts{})
 	case actionStart:
 		if m.streaming {
 			m = m.setStatusBusyBlocked()
@@ -459,7 +459,7 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 			m = m.setStatusResult(false, "/hero-start", err.Error())
 			return m, nil
 		}
-		return m.beginHeroRuntimeConversation("start", orchestratorSlug, "")
+		return m.beginHeroRuntimeConversation("start", orchestratorSlug, heroRuntimeOpts{})
 	case actionSync:
 		m, cmd, ok := m.ensureDefaultModel("/hero-sync")
 		if !ok {
@@ -470,17 +470,13 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		m.screen = screenStatus
 		return m.beginAction("/hero-status", m.statusCmd())
 	case actionContinue:
-		return m.beginAction("/hero-continue", m.continueCmd())
+		return m.beginHeroContinue(1)
 	case actionBack:
-		m, cmd, ok := m.ensureDefaultModel("/hero-back")
-		if !ok {
-			return m, cmd
-		}
-		return m.beginAction("/hero-back", m.heroAssetCmd("back"))
+		return m.beginHeroBack()
 	case actionCancel:
-		return m.beginAction("/hero-cancel", m.cancelCmd())
+		return m.beginHeroCancel()
 	case actionFinish:
-		return m.beginAction("/hero-finish", m.finishCmd())
+		return m.beginHeroFinish()
 	case actionArchive:
 		return m.beginAction("/hero-archive", m.archiveCmd())
 	case actionResume:
@@ -530,6 +526,21 @@ func (m model) refreshCmd() tea.Cmd {
 			status: st, metrics: metrics, events: events, artifacts: artifacts,
 		}
 	}
+}
+
+func (m model) validateOrchestratorPreconditions() (orchestratorSlug string, errMsg string) {
+	if m.svc == nil {
+		return "", "cycle service unavailable"
+	}
+	st, err := m.svc.Status()
+	if err != nil || st.CycleNumber == 0 {
+		return "", noActiveCycleForStartMessage()
+	}
+	slug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
+	if err != nil {
+		return "", err.Error()
+	}
+	return slug, ""
 }
 
 func (m model) validateHeroRejectPreconditions() (orchestratorSlug string, errMsg string) {
@@ -593,27 +604,111 @@ func (m model) beginHeroRejectExecute(reason string) (model, tea.Cmd) {
 		m.convError = errMsg
 		return m, nil
 	}
-	return m.beginHeroRuntimeConversation("reject", orchestratorSlug, reason)
+	return m.beginHeroRuntimeConversation("reject", orchestratorSlug, heroRuntimeOpts{RejectReason: reason})
 }
 
-func (m model) cancelCmd() tea.Cmd {
-	svc := m.svc
-	return func() tea.Msg {
-		if err := svc.Cancel(""); err != nil {
-			return actionResultMsg{err: err}
-		}
-		return actionResultMsg{success: "Cycle cancelled."}
+func (m model) beginHeroCancel() (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
 	}
+	if _, errMsg := m.validateOrchestratorPreconditions(); errMsg != "" {
+		m = m.setStatusResult(false, "/hero-cancel", errMsg)
+		return m, nil
+	}
+	return m.beginHeroCancelExecute("")
 }
 
-func (m model) finishCmd() tea.Cmd {
-	svc := m.svc
-	return func() tea.Msg {
-		if err := svc.Finish(""); err != nil {
-			return actionResultMsg{err: err}
-		}
-		return actionResultMsg{success: "Cycle finished."}
+func (m model) beginHeroCancelExecute(reason string) (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
 	}
+	orchestratorSlug, errMsg := m.validateOrchestratorPreconditions()
+	if errMsg != "" {
+		m, _ = m.enterConversation()
+		m.convError = errMsg
+		return m, nil
+	}
+	return m.beginHeroRuntimeConversation("cancel", orchestratorSlug, heroRuntimeOpts{CancelReason: strings.TrimSpace(reason)})
+}
+
+func (m model) beginHeroFinish() (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	orchestratorSlug, errMsg := m.validateOrchestratorPreconditions()
+	if errMsg != "" {
+		m = m.setStatusResult(false, "/hero-finish", errMsg)
+		return m, nil
+	}
+	return m.beginHeroRuntimeConversation("finish", orchestratorSlug, heroRuntimeOpts{})
+}
+
+func (m model) beginHeroContinue(extra int) (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	return m.beginHeroContinueExecute(extra)
+}
+
+func (m model) beginHeroContinueExecute(extra int) (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	if extra <= 0 {
+		m, _ = m.enterConversation()
+		m.convError = "Extra iterations must be a positive number (e.g. /hero-continue 2)."
+		return m, nil
+	}
+	if m.svc == nil {
+		m = m.setStatusResult(false, "/hero-continue", "cycle service unavailable")
+		return m, nil
+	}
+	st, err := m.svc.Status()
+	if err != nil || st.CycleNumber == 0 {
+		m = m.setStatusResult(false, "/hero-continue", noActiveCycleForStartMessage())
+		return m, nil
+	}
+	if escalatedStage(st) == "" {
+		m = m.setStatusResult(false, "/hero-continue", noEscalatedStageMessage())
+		return m, nil
+	}
+	orchestratorSlug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
+	if err != nil {
+		m = m.setStatusResult(false, "/hero-continue", err.Error())
+		return m, nil
+	}
+	return m.beginHeroRuntimeConversation("continue", orchestratorSlug, heroRuntimeOpts{ContinueExtra: extra})
+}
+
+func (m model) beginHeroBack() (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	if m.svc == nil {
+		m = m.setStatusResult(false, "/hero-back", "cycle service unavailable")
+		return m, nil
+	}
+	st, err := m.svc.Status()
+	if err != nil || st.CycleNumber == 0 {
+		m = m.setStatusResult(false, "/hero-back", noActiveCycleForStartMessage())
+		return m, nil
+	}
+	if !strings.EqualFold(pendingApprovalStage(st), "judge") {
+		m = m.setStatusResult(false, "/hero-back", noJudgePendingApprovalMessage())
+		return m, nil
+	}
+	orchestratorSlug, err := workflowconfig.OrchestratorModelSlug(m.svc.ProjectDir)
+	if err != nil {
+		m = m.setStatusResult(false, "/hero-back", err.Error())
+		return m, nil
+	}
+	return m.beginHeroRuntimeConversation("back", orchestratorSlug, heroRuntimeOpts{})
 }
 
 func (m model) statusCmd() tea.Cmd {
@@ -640,6 +735,14 @@ func noPendingApprovalMessage() string {
 	return "No stage pending approval."
 }
 
+func noEscalatedStageMessage() string {
+	return "No escalated stage. Run /hero-continue only when a stage is Escalated."
+}
+
+func noJudgePendingApprovalMessage() string {
+	return "No Judge stage pending approval for /hero-back."
+}
+
 func (m model) beginHeroApprove() (model, tea.Cmd) {
 	if m.streaming {
 		m = m.setStatusBusyBlocked()
@@ -663,17 +766,7 @@ func (m model) beginHeroApprove() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-approve", err.Error())
 		return m, nil
 	}
-	return m.beginHeroRuntimeConversation("approve", orchestratorSlug, "")
-}
-
-func (m model) continueCmd() tea.Cmd {
-	svc := m.svc
-	return func() tea.Msg {
-		if err := svc.Continue(1); err != nil {
-			return actionResultMsg{err: err}
-		}
-		return actionResultMsg{success: "Granted +1 extra iteration(s)."}
-	}
+	return m.beginHeroRuntimeConversation("approve", orchestratorSlug, heroRuntimeOpts{})
 }
 
 func (m model) cyclesCmd() tea.Cmd {

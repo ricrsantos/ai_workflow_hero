@@ -394,6 +394,66 @@ func TestRejectActionWithService(t *testing.T) {
 	}
 }
 
+func TestCancelActionWithService(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-cancel.md"), []byte("# /hero-cancel\n\ncancel body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nagent body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"Cycle cancelled."}, sessionID: "cancel-key-sess"}
+	svc.Harness = h
+	m := NewTestModel(svc)
+	m = SetScreen(m, ScreenApprovals)
+	next, cmd := HandleTestKey(m, "c")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming after cancel key")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
+	}
+	if !strings.Contains(h.lastPrompt, "cancel body") {
+		t.Fatalf("prompt missing command body: %q", h.lastPrompt)
+	}
+}
+
+func TestFinishActionWithService(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-finish.md"), []byte("# /hero-finish\n\nfinish body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nagent body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"Cycle finished."}, sessionID: "finish-key-sess"}
+	svc.Harness = h
+	m := NewTestModel(svc)
+	m = SetScreen(m, ScreenApprovals)
+	next, cmd := HandleTestKey(m, "f")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming after finish key")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
+	}
+	if !strings.Contains(h.lastPrompt, "finish body") {
+		t.Fatalf("prompt missing command body: %q", h.lastPrompt)
+	}
+}
+
 func TestDispatchActionWithService(t *testing.T) {
 	m := NewTestModel(newTestService(t))
 	m = SetChatModelSlugForTest(m, "composer-2.5")
