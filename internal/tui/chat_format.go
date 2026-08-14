@@ -152,6 +152,7 @@ func tuiHeroArchivePreamble() string {
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ✗).\n" +
 		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
 		"- Run `hero status` (or `--json`) before archive; persist via `hero cycle archive` — do not hand-roll folder moves.\n" +
+		"- Do NOT dispatch Task or stage agents (including end2end_qa_agent). Archive is orchestrator-only.\n" +
 		"- On OpenSpec failure, offer retry /hero-archive or `hero cycle archive --force` only after explicit user consent.\n" +
 		"- Optionally update metrics-summary.md from `hero metrics` for the archived cycle.\n" +
 		"- Tell the user to run /hero-resume in the Hero TUI when ready — not Cursor chat handoff.\n\n" +

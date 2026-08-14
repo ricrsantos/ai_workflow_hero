@@ -188,7 +188,10 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	// to prompt), so the agent cannot run `hero` and starts searching parent dirs.
 	// --workspace pins the agent to the consumer project (cmd.Dir alone is not enough
 	// when Cursor walks up for a git/workspace root).
-	args := []string{"--print", "--output-format", format, "--trust", "--force"}
+	// --sandbox disabled keeps the user's PATH (nvm/npm/openspec) in Shell; the
+	// default sandbox often strips those dirs so `hero cycle archive` cannot find
+	// openspec even when it is installed for the login shell.
+	args := []string{"--print", "--output-format", format, "--trust", "--force", "--sandbox", "disabled"}
 	if dir != "" {
 		args = append(args, "--workspace", dir)
 	}

@@ -4,5 +4,9 @@
 // Archive orchestration (ADR-023): when Planning knows the OpenSpec change slug,
 // persist it with hero cycle openspec-change <slug> before archive. Archive
 // resolves the name (stored → 0/1/N heuristic under openspec/changes/), runs
-// openspec archive <name> -y, then moves the Hero cycle folder.
+// openspec archive <name> -y when that change dir is still active, then moves
+// the Hero cycle folder. If the linked change is already archived on disk,
+// the OpenSpec CLI step is skipped so a missing sandbox PATH cannot block Hero
+// archive. The default runner also searches nvm/fnm/volta/user bin dirs when
+// PATH is stripped.
 package cycle

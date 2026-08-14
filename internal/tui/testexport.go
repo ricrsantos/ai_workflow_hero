@@ -304,6 +304,10 @@ func PrevScreenForTest(m model) screen {
 	return m.prevScreen
 }
 
+func ContentOffsetForTest(m model) int {
+	return m.contentOffset
+}
+
 // SetHeight sets terminal height for tests.
 func SetHeight(m model, h int) model {
 	m.height = h

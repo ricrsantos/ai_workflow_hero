@@ -147,12 +147,12 @@ func (s *Service) Status() (StatusView, error) {
 
 // MetricsView is the metrics command output.
 type MetricsView struct {
-	CycleNumber int            `json:"cycleNumber"`
-	Title       string         `json:"title"`
-	Rows        []MetricsRow   `json:"rows"`
-	TotalIn     int64          `json:"totalInputTokens"`
-	TotalOut    int64          `json:"totalOutputTokens"`
-	TotalCost   float64        `json:"totalCostUSD"`
+	CycleNumber int          `json:"cycleNumber"`
+	Title       string       `json:"title"`
+	Rows        []MetricsRow `json:"rows"`
+	TotalIn     int64        `json:"totalInputTokens"`
+	TotalOut    int64        `json:"totalOutputTokens"`
+	TotalCost   float64      `json:"totalCostUSD"`
 }
 
 // MetricsRow is one metrics line.
@@ -194,28 +194,6 @@ func (s *Service) Metrics() (MetricsView, error) {
 type EventsView struct {
 	CycleNumber int           `json:"cycleNumber"`
 	Events      []store.Event `json:"events"`
-}
-
-// ArtifactsView wraps artifact listing.
-type ArtifactsView struct {
-	CycleNumber int             `json:"cycleNumber"`
-	Artifacts   []store.Artifact `json:"artifacts"`
-}
-
-// Artifacts returns artifact metadata for the active cycle.
-func (s *Service) Artifacts() (ArtifactsView, error) {
-	c, err := s.Store.GetActiveCycle()
-	if err != nil {
-		if errors.Is(err, store.ErrNoActiveCycle) {
-			return ArtifactsView{Artifacts: nil}, nil
-		}
-		return ArtifactsView{}, err
-	}
-	arts, err := s.Store.ListArtifacts(c.ID)
-	if err != nil {
-		return ArtifactsView{}, err
-	}
-	return ArtifactsView{CycleNumber: c.Number, Artifacts: arts}, nil
 }
 
 // Events lists recent events (optional type filter).
@@ -342,7 +320,7 @@ func (s *Service) ArchiveWithOptions(opts ArchiveOptions) (ArchiveResult, error)
 	forced := opts.Force || opts.SkipOpenspec
 	result := ArchiveResult{OpenspecChange: name}
 
-	if name != "" {
+	if name != "" && openspecChangeActive(s.ProjectDir, name) {
 		if err := s.openspecRunner()(context.Background(), name); err != nil {
 			if !forced {
 				return ArchiveResult{}, fmt.Errorf("%w: %v\n\n%s", ErrOpenspecArchiveFailed, err, ManualOpenspecArchiveInstructions(name))
@@ -350,6 +328,8 @@ func (s *Service) ArchiveWithOptions(opts ArchiveOptions) (ArchiveResult, error)
 			slog.Info("openspec archive failed; forcing hero archive", "change", name, "error", err)
 			result.OpenspecForced = true
 		}
+	} else if name != "" {
+		slog.Info("openspec change already archived or missing; skipping openspec CLI", "change", name)
 	}
 
 	heroResult, err := s.archiveHeroCycle(c)

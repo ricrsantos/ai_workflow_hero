@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"strings"
 )
 
 // AppendEvent inserts an append-only event. Historical rows are never updated.
@@ -54,6 +55,39 @@ WHERE cycle_id = ? AND type = ?
 ORDER BY ts ASC, id ASC
 LIMIT ?`, cycleID, eventType, limit)
 	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Event
+	for rows.Next() {
+		var e Event
+		if err := rows.Scan(&e.ID, &e.CycleID, &e.TS, &e.Type, &e.PayloadJSON); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// ListEventsByTypes returns matching events for a cycle in chronological order.
+func (s *Store) ListEventsByTypes(cycleID int64, types []string) ([]Event, error) {
+	if len(types) == 0 {
+		return s.ListEvents(cycleID, "", 0)
+	}
+	placeholders := make([]string, len(types))
+	args := make([]any, 0, 1+len(types))
+	args = append(args, cycleID)
+	for i, t := range types {
+		placeholders[i] = "?"
+		args = append(args, t)
+	}
+	q := fmt.Sprintf(`
+SELECT id, cycle_id, ts, type, payload_json FROM events
+WHERE cycle_id = ? AND type IN (%s)
+ORDER BY ts ASC, id ASC`, strings.Join(placeholders, ","))
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}

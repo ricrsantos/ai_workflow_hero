@@ -10,13 +10,13 @@ const (
 
 // Stage status constants (ADR-012 / design D4).
 const (
-	StageWaiting          = "Waiting"
-	StageRunning          = "Running"
-	StagePendingApproval  = "PendingApproval"
-	StageCompleted        = "Completed"
-	StageEscalated        = "Escalated"
-	StageFailed           = "Failed"
-	StageSkipped          = "Skipped"
+	StageWaiting         = "Waiting"
+	StageRunning         = "Running"
+	StagePendingApproval = "PendingApproval"
+	StageCompleted       = "Completed"
+	StageEscalated       = "Escalated"
+	StageFailed          = "Failed"
+	StageSkipped         = "Skipped"
 )
 
 // Common event types.
@@ -24,6 +24,7 @@ const (
 	EventCycleCreated    = "cycle_created"
 	EventStageStarted    = "stage_started"
 	EventStageCompleted  = "stage_completed"
+	EventPendingApproval = "pending_approval"
 	EventApproved        = "approved"
 	EventRejected        = "rejected"
 	EventCancelled       = "cancelled"

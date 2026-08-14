@@ -36,8 +36,8 @@ Adopt patterns, not branding or a clone:
 ### 3.3 Minimum screens (1.0)
 
 1. **Cycle status** — title, objective summary, stage table (status, iteration, approval).
-2. **Approvals** — pending stage summary; approve / reject / cancel / finish actions (mapped to CLI API).
-3. **Artifacts** — list metadata from store + paths to project files.
+2. **Approvals** — pending stage plus chronological history (requested / approved / rejected / escalated and when); approve / reject / cancel / finish actions (mapped to CLI API). Scrollable.
+3. **Artifacts** — files generated for the active cycle (`.workflow-hero/cycles/current/`, linked OpenSpec change, `documents.json` entries for this cycle, cycle-tagged docs) plus store metadata; scrollable.
 4. **Costs / metrics** — per-stage and totals (from SQLite).
 5. **Events** — recent append-only event log.
 6. **Commands menu** (`/`) — jump to screens / common actions (slash-style, like Claude Code; avoids IDE `Ctrl+P` conflicts).

@@ -38,6 +38,9 @@ type model struct {
 	metrics   cycle.MetricsView
 	events    cycle.EventsView
 	artifacts cycle.ArtifactsView
+	approvals cycle.ApprovalsView
+
+	contentOffset int // scroll for Status/Approvals/Artifacts/Costs/Events
 
 	// Fixed footer status bar (running / result / error).
 	statusKind    statusKind
@@ -99,6 +102,7 @@ type refreshDataMsg struct {
 	metrics   cycle.MetricsView
 	events    cycle.EventsView
 	artifacts cycle.ArtifactsView
+	approvals cycle.ApprovalsView
 	err       error
 }
 
@@ -165,6 +169,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.scrollResponse(0) // clamp to new response viewport
 			m = m.ensureInputCaretVisible()
 		}
+		m = m.clampContentOffset()
 		return m, nil
 
 	case refreshDataMsg:
@@ -177,6 +182,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.metrics = msg.metrics
 		m.events = msg.events
 		m.artifacts = msg.artifacts
+		m.approvals = msg.approvals
+		m = m.clampContentOffset()
 		slog.Debug("tui data refreshed", "cycle", m.status.CycleNumber)
 		return m, nil
 
@@ -270,27 +277,43 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+r", "f5":
 		return m, m.refreshCmd()
 	case "ctrl+1", "alt+1":
-		m.chatInputFocused = false
-		m.screen = screenStatus
-		return m, nil
+		return m.goListScreen(screenStatus)
 	case "ctrl+2", "alt+2":
-		m.chatInputFocused = false
-		m.screen = screenApprovals
-		return m, nil
+		return m.goListScreen(screenApprovals)
 	case "ctrl+3", "alt+3":
-		m.chatInputFocused = false
-		m.screen = screenArtifacts
-		return m, nil
+		return m.goListScreen(screenArtifacts)
 	case "ctrl+4", "alt+4":
-		m.chatInputFocused = false
-		m.screen = screenCosts
-		return m, nil
+		return m.goListScreen(screenCosts)
 	case "ctrl+5", "alt+5":
-		m.chatInputFocused = false
-		m.screen = screenEvents
-		return m, nil
+		return m.goListScreen(screenEvents)
 	case "ctrl+6", "alt+6":
 		return m.enterConversation()
+	case "up", "ctrl+p":
+		if m.screenHasContentScroll() {
+			return m.scrollContent(-1), nil
+		}
+	case "down", "ctrl+n":
+		if m.screenHasContentScroll() {
+			return m.scrollContent(1), nil
+		}
+	case "pgup":
+		if m.screenHasContentScroll() {
+			return m.scrollContent(-m.frameContentHeight()), nil
+		}
+	case "pgdown":
+		if m.screenHasContentScroll() {
+			return m.scrollContent(m.frameContentHeight()), nil
+		}
+	case "home":
+		if m.screenHasContentScroll() {
+			m.contentOffset = 0
+			return m, nil
+		}
+	case "end":
+		if m.screenHasContentScroll() {
+			m.contentOffset = m.maxContentOffset()
+			return m, nil
+		}
 	case "a":
 		if m.screen == screenApprovals {
 			return m.beginHeroApprove()
@@ -400,9 +423,7 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		if item.screen == screenConversation {
 			return m.enterConversation()
 		}
-		m.chatInputFocused = false
-		m.screen = item.screen
-		return m, nil
+		return m.goListScreen(item.screen)
 	case actionSelectModel:
 		return m.selectChatModel(item.label)
 	case actionQuit:
@@ -463,8 +484,20 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) goListScreen(s screen) (model, tea.Cmd) {
+	m.chatInputFocused = false
+	if m.screen != s {
+		m.contentOffset = 0
+	}
+	m.screen = s
+	return m, m.refreshCmd()
+}
+
 func (m model) refreshCmd() tea.Cmd {
 	svc := m.svc
+	if svc == nil {
+		return nil
+	}
 	return func() tea.Msg {
 		st, err := svc.Status()
 		if err != nil {
@@ -483,11 +516,15 @@ func (m model) refreshCmd() tea.Cmd {
 		if aErr != nil {
 			artifacts = cycle.ArtifactsView{}
 		}
-		if mErr != nil && eErr != nil && aErr != nil && st.CycleNumber == 0 {
+		approvals, apErr := svc.Approvals()
+		if apErr != nil {
+			approvals = cycle.ApprovalsView{}
+		}
+		if mErr != nil && eErr != nil && aErr != nil && apErr != nil && st.CycleNumber == 0 {
 			return refreshDataMsg{err: mErr}
 		}
 		return refreshDataMsg{
-			status: st, metrics: metrics, events: events, artifacts: artifacts,
+			status: st, metrics: metrics, events: events, artifacts: artifacts, approvals: approvals,
 		}
 	}
 }

@@ -127,7 +127,15 @@ Include archive-only cycles from `.workflow-hero/cycles/archive/` when absent fr
 - Buffer partial lines; update transcript incrementally (lipgloss-safe wrapping).
 - On Ctrl+C during stream: call harness `Cancel` if supported; show `Interrupted`.
 
-## 8. Success Criteria
+## 8. Approvals and Artifacts screens
+
+**Approvals** lists the current pending stage (if any) and a chronological **History** of `requested` / `approved` / `rejected` / `escalated` / `continued` events with local timestamps. Empty active cycle: `No approval activity for cycle CN.` Keys `a` `r` `c` `f` unchanged.
+
+**Artifacts** lists files generated for the active cycle: `.workflow-hero/cycles/current/`, the linked OpenSpec change directory, `documents.json` rows for this cycle, and cycle-tagged files under `docs/product|architecture|testing|deployment|ui`. Store metadata is merged (no duplicate paths). Columns: time, kind, label, path.
+
+Status, Approvals, Artifacts, Costs, and Events clip to the content viewport and scroll with ↑↓ / PgUp / PgDn. Switching to those screens refreshes from SQLite + disk.
+
+## 9. Success Criteria
 
 - User never needs open Cursor chat to complete Research grilling in TUI (CLI logged in).
 - All `hero-*.md` commands appear in palette with `/hero-<name>` labels.

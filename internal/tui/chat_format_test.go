@@ -173,6 +173,9 @@ func TestTUIRuntimeCommandPrompt_HeroArchiveOverrides(t *testing.T) {
 	if !strings.Contains(got, "--force") {
 		t.Fatalf("missing force path: %q", got)
 	}
+	if !strings.Contains(got, "end2end_qa_agent") {
+		t.Fatalf("must forbid stage-agent dispatch: %q", got)
+	}
 }
 
 func TestTUIRuntimeCommandPrompt_HeroResumeOverrides(t *testing.T) {

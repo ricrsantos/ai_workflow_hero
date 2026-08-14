@@ -167,7 +167,7 @@ func (e *Engine) CloseStage(cycleID int64, stageName string, in StageCloseInput)
 			return err
 		}
 		_, err = e.Store.AppendEvent(store.Event{
-			CycleID: cycleID, Type: "pending_approval",
+			CycleID: cycleID, Type: store.EventPendingApproval,
 			PayloadJSON: fmt.Sprintf(`{"stage":%q}`, stageName),
 		})
 		return err
@@ -489,11 +489,11 @@ func LoadWorkflowConfig(path string) (WorkflowConfig, []byte, error) {
 
 // NewCycleOptions configures cycle creation from workflow-config.
 type NewCycleOptions struct {
-	ProjectDir   string
-	ConfigPath   string // optional; default current/workflow-config.yml
-	Title        string // override when DeferMeta is false
-	Objective    string // override when DeferMeta is false
-	CycleNumber  int    // 0 = auto
+	ProjectDir  string
+	ConfigPath  string // optional; default current/workflow-config.yml
+	Title       string // override when DeferMeta is false
+	Objective   string // override when DeferMeta is false
+	CycleNumber int    // 0 = auto
 	// DeferMeta leaves title and objective empty in SQLite (filled later via SyncCycleConfigFromWorkflow).
 	DeferMeta bool
 }

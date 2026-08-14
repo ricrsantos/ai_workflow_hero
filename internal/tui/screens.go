@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 func (m model) renderContent() string {
@@ -66,20 +67,97 @@ func (m model) renderStatus() string {
 
 func (m model) renderApprovals() string {
 	var b strings.Builder
-	pending := pendingApprovalStage(m.status)
+	cycleN := m.approvals.CycleNumber
+	if cycleN == 0 {
+		cycleN = m.status.CycleNumber
+	}
+	pending := m.approvals.Pending
 	if pending == "" {
-		b.WriteString(mutedStyle.Render("No stage pending approval."))
-		b.WriteString("\n\n")
-		b.WriteString(footerStyle.Render("Keys: a approve · r reject · c cancel · f finish"))
+		pending = pendingApprovalStage(m.status)
+	}
+
+	if cycleN <= 0 && pending == "" && len(m.approvals.Entries) == 0 {
+		b.WriteString(mutedStyle.Render("No active cycle. Run /hero-new to start."))
 		return b.String()
 	}
-	b.WriteString(headerStyle.Render("Pending approval"))
+
+	title := "Approvals"
+	if cycleN > 0 {
+		if m.approvals.Title != "" {
+			title = fmt.Sprintf("Approvals — C%d %s", cycleN, m.approvals.Title)
+		} else if m.status.Title != "" {
+			title = fmt.Sprintf("Approvals — C%d %s", cycleN, m.status.Title)
+		} else {
+			title = fmt.Sprintf("Approvals — C%d", cycleN)
+		}
+	}
+	b.WriteString(headerStyle.Render(title))
 	b.WriteByte('\n')
-	b.WriteString(warnStyle.Render(fmt.Sprintf("⚠ Stage %q awaits your decision.", pending)))
+
+	if pending != "" {
+		b.WriteByte('\n')
+		b.WriteString(headerStyle.Render("Pending"))
+		b.WriteByte('\n')
+		b.WriteString(warnStyle.Render(fmt.Sprintf("⚠ Stage %q awaits your decision.", pending)))
+		b.WriteByte('\n')
+	}
+
+	if len(m.approvals.Entries) == 0 {
+		if pending == "" {
+			b.WriteByte('\n')
+			b.WriteString(mutedStyle.Render(emptyCycleScreenMessage("approval activity", cycleN)))
+			b.WriteByte('\n')
+		}
+	} else {
+		b.WriteByte('\n')
+		b.WriteString(headerStyle.Render("History"))
+		b.WriteByte('\n')
+		stageW, eventW := approvalColumnWidths(m.approvals.Entries)
+		header := fmt.Sprintf(" %s %s %s %s",
+			padRight("Time", 8),
+			padRight("Stage", stageW),
+			padRight("Event", eventW),
+			"Detail",
+		)
+		b.WriteString(mutedStyle.Render(header))
+		b.WriteByte('\n')
+		for _, e := range m.approvals.Entries {
+			line := fmt.Sprintf(" %s %s %s %s",
+				padRight(formatEventTimeLocal(e.TS), 8),
+				padRight(e.Stage, stageW),
+				padRight(e.Event, eventW),
+				e.Detail,
+			)
+			b.WriteString(approvalEventStyle(e.Event).Render(strings.TrimRight(line, " ")))
+			b.WriteByte('\n')
+		}
+	}
+
 	b.WriteByte('\n')
-	b.WriteString("\n")
 	b.WriteString(footerStyle.Render("Keys: a approve · r reject · c cancel cycle · f finish"))
 	return b.String()
+}
+
+func approvalColumnWidths(entries []cycle.ApprovalEntry) (stageW, eventW int) {
+	stageW, eventW = len("Stage"), len("Event")
+	for _, e := range entries {
+		stageW = max(stageW, len(e.Stage))
+		eventW = max(eventW, len(e.Event))
+	}
+	return stageW + 1, eventW + 1
+}
+
+func approvalEventStyle(event string) lipgloss.Style {
+	switch event {
+	case "approved":
+		return successStyle
+	case "requested", "continued":
+		return infoStyle
+	case "rejected", "escalated":
+		return errorStyle
+	default:
+		return lipgloss.NewStyle()
+	}
 }
 
 func (m model) renderArtifacts() string {
@@ -88,18 +166,58 @@ func (m model) renderArtifacts() string {
 		b.WriteString(mutedStyle.Render(emptyCycleScreenMessage("artifacts", m.artifacts.CycleNumber)))
 		return b.String()
 	}
-	b.WriteString(headerStyle.Render("Artifacts"))
+	title := "Artifacts"
+	if m.artifacts.CycleNumber > 0 {
+		title = fmt.Sprintf("Artifacts — C%d", m.artifacts.CycleNumber)
+	}
+	b.WriteString(headerStyle.Render(title))
+	b.WriteByte('\n')
+	b.WriteByte('\n')
+
+	kindW, labelW := artifactColumnWidths(m.artifacts.Artifacts)
+	header := fmt.Sprintf(" %s %s %s %s",
+		padRight("Time", 8),
+		padRight("Kind", kindW),
+		padRight("Label", labelW),
+		"Path",
+	)
+	b.WriteString(mutedStyle.Render(header))
 	b.WriteByte('\n')
 	for _, a := range m.artifacts.Artifacts {
 		label := a.Label
 		if label == "" {
 			label = a.Kind
 		}
-		line := fmt.Sprintf(" %-20s %-10s %s", label, a.Kind, a.Path)
+		line := fmt.Sprintf(" %s %s %s %s",
+			padRight(formatArtifactTime(a.CreatedAt), 8),
+			padRight(a.Kind, kindW),
+			padRight(label, labelW),
+			a.Path,
+		)
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+func artifactColumnWidths(arts []store.Artifact) (kindW, labelW int) {
+	kindW, labelW = len("Kind"), len("Label")
+	for _, a := range arts {
+		kindW = max(kindW, len(a.Kind))
+		label := a.Label
+		if label == "" {
+			label = a.Kind
+		}
+		labelW = max(labelW, len(label))
+	}
+	return kindW + 1, labelW + 1
+}
+
+func formatArtifactTime(ts string) string {
+	if strings.TrimSpace(ts) == "" {
+		return "—"
+	}
+	return formatEventTimeLocal(ts)
 }
 
 func (m model) renderCosts() string {
@@ -326,8 +444,10 @@ func (m model) renderFrame() string {
 	if m.screen == screenConversation {
 		content = m.renderConversation(contentH)
 	} else {
-		// Leave other screens as-is (no Height/Width wrap — breaks bordered panes).
 		content = m.renderContent()
+		if m.screenHasContentScroll() {
+			content = m.clipScrolledContent(content, contentH)
+		}
 	}
 	content = strings.TrimRight(content, "\n") + "\n"
 
@@ -362,6 +482,9 @@ func (m model) footerHints() string {
 			return "enter insert · tab insert · esc close · ↑↓"
 		}
 		return "tab mode · enter send · ↑↓ scroll · /hero-model · alt+1-6 screens · ctrl+q quit"
+	}
+	if m.screenHasContentScroll() {
+		return "↑↓ scroll · alt+1-6 screens · / commands · ctrl+r refresh · ctrl+q quit"
 	}
 	return "alt+1-6 screens · / commands · ctrl+r refresh · ctrl+q quit"
 }
@@ -446,4 +569,78 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (m model) screenHasContentScroll() bool {
+	switch m.screen {
+	case screenStatus, screenApprovals, screenArtifacts, screenCosts, screenEvents:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m model) frameContentHeight() int {
+	// Match renderFrame chrome: title+tabs, rule, status rules, status bar, footer.
+	h := m.height - (2 + 1 + m.statusBarLineCount() + 1 + 1)
+	if h < 3 {
+		h = 3
+	}
+	return h
+}
+
+func (m model) maxContentOffset() int {
+	n := countContentLines(m.renderContent())
+	maxOff := n - m.frameContentHeight()
+	if maxOff < 0 {
+		return 0
+	}
+	return maxOff
+}
+
+func (m model) clampContentOffset() model {
+	if !m.screenHasContentScroll() {
+		return m
+	}
+	maxOff := m.maxContentOffset()
+	if m.contentOffset > maxOff {
+		m.contentOffset = maxOff
+	}
+	if m.contentOffset < 0 {
+		m.contentOffset = 0
+	}
+	return m
+}
+
+func (m model) scrollContent(delta int) model {
+	m.contentOffset += delta
+	return m.clampContentOffset()
+}
+
+func (m model) clipScrolledContent(content string, height int) string {
+	content = strings.TrimRight(content, "\n")
+	if content == "" {
+		return "\n"
+	}
+	if height < 1 {
+		height = 1
+	}
+	lines := strings.Split(content, "\n")
+	n := len(lines)
+	if n <= height {
+		return content + "\n"
+	}
+	offset := m.contentOffset
+	maxOff := n - height
+	if offset > maxOff {
+		offset = maxOff
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	end := offset + height
+	if end > n {
+		end = n
+	}
+	return strings.Join(lines[offset:end], "\n") + "\n"
 }

@@ -1877,8 +1877,50 @@ func TestHeroArchiveRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, "hero cycle archive") {
 		t.Fatalf("missing archive preamble: %q", h.lastPrompt)
 	}
+	if !strings.Contains(h.lastPrompt, "end2end_qa_agent") {
+		t.Fatalf("archive must forbid stage-agent dispatch: %q", h.lastPrompt)
+	}
 	if h.lastModel != "composer-2.5" {
-		t.Fatalf("model=%q", h.lastModel)
+		t.Fatalf("model=%q want /hero-model default composer-2.5, not YAML stage agent", h.lastModel)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
+	}
+	if h.lastSessionID != "" {
+		t.Fatalf("archive must start a fresh session, got resume %q", h.lastSessionID)
+	}
+}
+
+func TestHeroArchiveUsesDefaultModelNotLiveStageSession(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-archive.md"), []byte("# /hero-archive\n\nARCHIVE_FRESH"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH_ARCHIVE"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newTestServiceWithPendingApprovalInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"archiving"}}
+	svc.Harness = h
+
+	m := withDefaultChatModel(NewTestModel(svc))
+	m = SetOrchestrationLiveForTest(m, true)
+	m = SetHarnessSessionIDForTest(m, "e2e-stage-session")
+	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-archive")
+	next = drainConversationStream(t, next, cmd)
+	if h.lastSessionID != "" {
+		t.Fatalf("must not resume QA E2E/stage session %q", h.lastSessionID)
+	}
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("model=%q want /hero-model default", h.lastModel)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
+	}
+	if !strings.Contains(h.lastPrompt, "ARCHIVE_FRESH") {
+		t.Fatalf("missing command: %q", h.lastPrompt)
 	}
 }
 

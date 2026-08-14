@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -78,6 +79,8 @@ func TestArchiveWithOptionsStoredNameRunsOpenspec(t *testing.T) {
 		gotName = name
 		return nil
 	}
+
+	mkdirOpenspecChange(t, dir, "slash-parity-tui-harness")
 
 	if _, err := svc.NewCycle("", ""); err != nil {
 		t.Fatal(err)
@@ -205,6 +208,8 @@ func TestArchiveWithOptionsOpenspecFailureBlocksHero(t *testing.T) {
 		return errors.New("exit status 1")
 	}
 
+	mkdirOpenspecChange(t, dir, "my-change")
+
 	if _, err := svc.NewCycle("", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -241,6 +246,8 @@ func TestArchiveWithOptionsForceAfterOpenspecFailure(t *testing.T) {
 	svc.OpenspecRunner = func(ctx context.Context, name string) error {
 		return errors.New("boom")
 	}
+
+	mkdirOpenspecChange(t, dir, "forced-change")
 
 	if _, err := svc.NewCycle("", ""); err != nil {
 		t.Fatal(err)
@@ -282,6 +289,8 @@ func TestArchiveWithOptionsSkipOpenspecAlias(t *testing.T) {
 		return errors.New("boom")
 	}
 
+	mkdirOpenspecChange(t, dir, "skip-me")
+
 	if _, err := svc.NewCycle("", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -320,6 +329,8 @@ func TestDefaultOpenspecRunnerUsesLookPathAndExec(t *testing.T) {
 			return nil
 		},
 	}
+
+	mkdirOpenspecChange(t, dir, "wired")
 
 	if _, err := svc.NewCycle("", ""); err != nil {
 		t.Fatal(err)
@@ -391,5 +402,89 @@ func TestListActiveOpenspecChangesIgnoresArchiveDir(t *testing.T) {
 	}
 	if gotName != "live" {
 		t.Fatalf("name=%q want live", gotName)
+	}
+}
+
+func TestArchiveSkipsOpenspecWhenStoredChangeAlreadyArchived(t *testing.T) {
+	dir := setupProject(t)
+	if err := os.MkdirAll(filepath.Join(dir, "openspec", "changes", "archive", "2026-08-13-kanban-task-manager-mvp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	var openspecCalled bool
+	svc.OpenspecRunner = func(ctx context.Context, name string) error {
+		openspecCalled = true
+		return errors.New("openspec binary not found on PATH")
+	}
+
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetOpenspecChange("kanban-task-manager-mvp"); err != nil {
+		t.Fatal(err)
+	}
+	finishCycleForArchive(t, svc)
+
+	res, err := svc.ArchiveWithOptions(cycle.ArchiveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if openspecCalled {
+		t.Fatal("openspec CLI must be skipped when the change dir is already archived")
+	}
+	if res.ArchiveDir == "" {
+		t.Fatal("expected Hero archive to proceed")
+	}
+	if res.OpenspecForced {
+		t.Fatal("skip of already-archived change is not a force path")
+	}
+}
+
+func TestDefaultOpenspecRunnerFindsBinaryOutsidePATH(t *testing.T) {
+	dir := setupProject(t)
+	binDir := t.TempDir()
+	fake := filepath.Join(binDir, "openspec")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var ran []string
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	svc.OpenspecExec = cycle.OpenspecExec{
+		LookPath: func(string) (string, error) {
+			return "", exec.ErrNotFound
+		},
+		ExtraDirs: func() []string { return []string{binDir} },
+		Run: func(ctx context.Context, binary string, args ...string) error {
+			ran = append([]string{binary}, args...)
+			return nil
+		},
+	}
+
+	mkdirOpenspecChange(t, dir, "from-nvm")
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetOpenspecChange("from-nvm"); err != nil {
+		t.Fatal(err)
+	}
+	finishCycleForArchive(t, svc)
+
+	if _, err := svc.ArchiveWithOptions(cycle.ArchiveOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ran) != 4 || ran[0] != fake || ran[2] != "from-nvm" {
+		t.Fatalf("run args=%v want binary %s archive from-nvm -y", ran, fake)
 	}
 }

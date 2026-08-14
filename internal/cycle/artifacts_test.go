@@ -29,8 +29,15 @@ func TestServiceArtifacts(t *testing.T) {
 	if view.CycleNumber != res.Cycle.Number {
 		t.Fatalf("cycle number = %d", view.CycleNumber)
 	}
-	if len(view.Artifacts) != 0 {
-		t.Fatalf("expected no artifacts, got %+v", view.Artifacts)
+	foundConfig := false
+	for _, a := range view.Artifacts {
+		if a.Path == ".workflow-hero/cycles/current/workflow-config.yml" {
+			foundConfig = true
+			break
+		}
+	}
+	if !foundConfig {
+		t.Fatalf("expected cycle config artifact, got %+v", view.Artifacts)
 	}
 
 	c, err := svc.Store.GetActiveCycle()
@@ -47,8 +54,15 @@ func TestServiceArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Artifacts) != 1 || view.Artifacts[0].Path != "docs/product/PRD.md" {
-		t.Fatalf("artifacts: %+v", view.Artifacts)
+	foundPRD := false
+	for _, a := range view.Artifacts {
+		if a.Path == "docs/product/PRD.md" && a.Label == "PRD" {
+			foundPRD = true
+			break
+		}
+	}
+	if !foundPRD {
+		t.Fatalf("expected registered PRD, got %+v", view.Artifacts)
 	}
 
 	// No active cycle returns empty list.

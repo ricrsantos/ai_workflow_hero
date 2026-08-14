@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +27,7 @@ func TestEmptyArtifactsCostsEventsNoC0(t *testing.T) {
 	m.metrics = cycle.MetricsView{}
 	m.events = cycle.EventsView{}
 
-	for _, screen := range []screen{ScreenArtifacts, ScreenCosts, ScreenEvents} {
+	for _, screen := range []screen{ScreenApprovals, ScreenArtifacts, ScreenCosts, ScreenEvents} {
 		m = SetScreen(m, screen)
 		view := ViewForTest(m)
 		if strings.Contains(view, "C0") {
@@ -118,5 +119,79 @@ func TestRenderEventsLocalTime(t *testing.T) {
 	}
 	if strings.Contains(view, "23:44:32") && want.Local().Format("15:04:05") != "23:44:32" {
 		t.Fatalf("must not show UTC time when local differs:\n%s", view)
+	}
+}
+
+func TestRenderApprovalsHistory(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 30)
+	m.approvals = cycle.ApprovalsView{
+		CycleNumber: 4,
+		Title:       "TUI screens",
+		Pending:     "Planning",
+		Entries: []cycle.ApprovalEntry{
+			{Stage: "Research", Event: "requested", TS: "2025-08-13T23:44:32Z"},
+			{Stage: "Research", Event: "approved", TS: "2025-08-13T23:50:00Z"},
+			{Stage: "Planning", Event: "requested", TS: "2025-08-13T23:55:00Z"},
+		},
+	}
+	m = SetScreen(m, ScreenApprovals)
+	view := ViewForTest(m)
+	for _, want := range []string{"Approvals", "Planning", "awaits your decision", "History", "Research", "requested", "approved"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in view:\n%s", want, view)
+		}
+	}
+}
+
+func TestRenderApprovalsEmptyActiveCycle(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m.approvals = cycle.ApprovalsView{CycleNumber: 2}
+	m = SetScreen(m, ScreenApprovals)
+	view := ViewForTest(m)
+	if strings.Contains(view, "C0") {
+		t.Fatalf("must not mention C0: %q", view)
+	}
+	if !strings.Contains(view, "No approval activity for cycle C2") {
+		t.Fatalf("expected empty-history message: %q", view)
+	}
+}
+
+func TestRenderArtifactsTableAndScroll(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 16)
+	arts := make([]store.Artifact, 40)
+	for i := range arts {
+		arts[i] = store.Artifact{
+			Kind:      "prd",
+			Label:     fmt.Sprintf("Doc %02d", i),
+			Path:      fmt.Sprintf("docs/product/file-%02d.md", i),
+			CreatedAt: "2025-08-13T23:44:32Z",
+		}
+	}
+	m.artifacts = cycle.ArtifactsView{CycleNumber: 4, Artifacts: arts}
+	m = SetScreen(m, ScreenArtifacts)
+	view := ViewForTest(m)
+	if !strings.Contains(view, "Artifacts — C4") {
+		t.Fatalf("expected header: %q", view)
+	}
+	if !strings.Contains(view, "file-00.md") {
+		t.Fatalf("expected first artifact: %q", view)
+	}
+	if strings.Contains(view, "file-39.md") {
+		t.Fatalf("last artifact should be scrolled out: %q", view)
+	}
+
+	scrolled, _ := HandleTestKey(m, "end")
+	if ContentOffsetForTest(scrolled) == 0 {
+		t.Fatal("expected content offset after end")
+	}
+	scrolledView := ViewForTest(scrolled)
+	if !strings.Contains(scrolledView, "file-39.md") && !strings.Contains(scrolledView, "Doc 39") {
+		t.Fatalf("expected later artifact after scroll: %q", scrolledView)
 	}
 }

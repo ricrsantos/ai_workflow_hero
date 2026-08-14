@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/userpath"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -33,8 +34,9 @@ var ErrOpenspecArchiveFailed = errors.New("openspec archive failed")
 
 // OpenspecExec hooks LookPath and command execution for the default runner.
 type OpenspecExec struct {
-	LookPath func(string) (string, error)
-	Run      func(ctx context.Context, binary string, args ...string) error
+	LookPath  func(string) (string, error)
+	Run       func(ctx context.Context, binary string, args ...string) error
+	ExtraDirs func() []string // nil → userpath.ExtraBinDirs (nvm/fnm/volta/…)
 }
 
 func (s *Service) openspecRunner() OpenspecRunner {
@@ -42,40 +44,53 @@ func (s *Service) openspecRunner() OpenspecRunner {
 		return s.OpenspecRunner
 	}
 	execHooks := OpenspecExec{}
-	if s != nil && s.OpenspecExec.LookPath != nil {
-		execHooks.LookPath = s.OpenspecExec.LookPath
+	if s != nil {
+		execHooks = s.OpenspecExec
 	}
-	if s != nil && s.OpenspecExec.Run != nil {
-		execHooks.Run = s.OpenspecExec.Run
+	projectDir := ""
+	if s != nil {
+		projectDir = s.ProjectDir
 	}
-	return defaultOpenspecRunner(execHooks)
+	return defaultOpenspecRunner(projectDir, execHooks)
 }
 
-func defaultOpenspecRunner(hooks OpenspecExec) OpenspecRunner {
+func defaultOpenspecRunner(projectDir string, hooks OpenspecExec) OpenspecRunner {
 	lookPath := hooks.LookPath
 	if lookPath == nil {
 		lookPath = exec.LookPath
 	}
+	extra := extraOpenspecDirs(hooks)
 	run := hooks.Run
 	if run == nil {
 		run = func(ctx context.Context, binary string, args ...string) error {
 			cmd := exec.CommandContext(ctx, binary, args...)
+			if projectDir != "" {
+				cmd.Dir = projectDir
+			}
+			cmd.Env = userpath.EnvWithBinaryDir(binary, extra)
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			return cmd.Run()
 		}
 	}
 	return func(ctx context.Context, name string) error {
-		binary, err := lookPath("openspec")
+		binary, err := userpath.LookPath("openspec", lookPath, extra)
 		if err != nil {
 			return fmt.Errorf("openspec binary not found on PATH: %w", err)
 		}
-		slog.Info("running openspec archive", "change", name)
+		slog.Info("running openspec archive", "change", name, "binary", binary)
 		if err := run(ctx, binary, "archive", name, "-y"); err != nil {
 			return fmt.Errorf("openspec archive %s -y: %w", name, err)
 		}
 		return nil
 	}
+}
+
+func extraOpenspecDirs(hooks OpenspecExec) []string {
+	if hooks.ExtraDirs != nil {
+		return hooks.ExtraDirs()
+	}
+	return userpath.ExtraBinDirs()
 }
 
 // ManualOpenspecArchiveCommand returns the manual recovery command for a change name.
@@ -115,6 +130,16 @@ func (s *Service) resolveOpenspecChangeName(c *store.Cycle, override string) (st
 			strings.Join(active, ", "),
 		)
 	}
+}
+
+// openspecChangeActive reports whether openspec/changes/<name> still exists
+// (not yet moved to openspec/changes/archive/).
+func openspecChangeActive(projectDir, name string) bool {
+	if name == "" || strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+		return false
+	}
+	fi, err := os.Stat(filepath.Join(projectDir, "openspec", "changes", name))
+	return err == nil && fi.IsDir()
 }
 
 func listActiveOpenspecChanges(projectDir string) ([]string, error) {

@@ -5,8 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/userpath"
 )
 
 // AgentCLI is the preferred Cursor Agent CLI binary name searched on PATH.
@@ -55,6 +58,7 @@ func (ExecCommandRunner) Run(ctx context.Context, dir string, path string, args 
 	if dir != "" {
 		cmd.Dir = dir
 	}
+	cmd.Env = userpath.AugmentPATH(os.Environ(), userpath.ExtraBinDirs()...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -77,6 +81,7 @@ func (ExecCommandRunner) RunStreaming(ctx context.Context, dir, path string, arg
 	if dir != "" {
 		cmd.Dir = dir
 	}
+	cmd.Env = userpath.AugmentPATH(os.Environ(), userpath.ExtraBinDirs()...)
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return RunResult{ExitCode: -1}, fmt.Errorf("stdout pipe: %w", err)
