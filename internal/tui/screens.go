@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
@@ -109,9 +110,31 @@ func (m model) renderCosts() string {
 	}
 	b.WriteString(headerStyle.Render(fmt.Sprintf("Costs — C%d %s", m.metrics.CycleNumber, m.metrics.Title)))
 	b.WriteByte('\n')
+	b.WriteByte('\n')
+
+	stageW, agentW, modelW := costColumnWidths(m.metrics.Rows)
+	header := fmt.Sprintf(" %s %s %s %s %s %s %s",
+		padRight("Stage", stageW),
+		padRight("Agent", agentW),
+		padRight("Model", modelW),
+		padLeft("In", 8),
+		padLeft("Out", 8),
+		padLeft("Cost", 10),
+		padLeft("Time", 7),
+	)
+	b.WriteString(mutedStyle.Render(header))
+	b.WriteByte('\n')
+
 	for _, r := range m.metrics.Rows {
-		line := fmt.Sprintf(" %-12s %-16s %-14s in:%-6d out:%-6d $%.4f %dms",
-			r.Stage, r.Agent, r.Model, r.InputTokens, r.OutputTokens, r.CostUSD, r.DurationMS)
+		line := fmt.Sprintf(" %s %s %s %s %s %s %s",
+			padRight(r.Stage, stageW),
+			padRight(r.Agent, agentW),
+			padRight(r.Model, modelW),
+			padLeft(fmt.Sprintf("%d", r.InputTokens), 8),
+			padLeft(fmt.Sprintf("%d", r.OutputTokens), 8),
+			padLeft(formatCostCell(r.CostUSD), 10),
+			padLeft(formatDurationMMSS(r.DurationMS), 7),
+		)
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
@@ -134,7 +157,7 @@ func (m model) renderEvents() string {
 		if len(payload) > 48 {
 			payload = payload[:45] + "..."
 		}
-		line := fmt.Sprintf(" %s  %-18s %s", truncateTS(e.TS), e.Type, payload)
+		line := fmt.Sprintf(" %s  %-18s %s", formatEventTimeLocal(e.TS), e.Type, payload)
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
@@ -197,7 +220,7 @@ func (m model) renderPalette() string {
 		item := items[i]
 		line := fmt.Sprintf(" %s — %s", item.label, item.hint)
 		if i == m.paletteIndex {
-			list.WriteString(selectedStyle.Render("▸ "+line))
+			list.WriteString(selectedStyle.Render("▸ " + line))
 		} else {
 			list.WriteString("  " + line)
 		}
@@ -335,6 +358,9 @@ func (m model) footerHints() string {
 		if m.streaming {
 			return "↑↓ scroll · ctrl+c interrupt"
 		}
+		if m.chatSlashOverlayActive() {
+			return "enter insert · tab insert · esc close · ↑↓"
+		}
 		return "tab mode · enter send · ↑↓ scroll · /hero-model · alt+1-6 screens · ctrl+q quit"
 	}
 	return "alt+1-6 screens · / commands · ctrl+r refresh · ctrl+q quit"
@@ -358,11 +384,61 @@ func escalatedStage(st cycle.StatusView) string {
 	return ""
 }
 
+func formatEventTimeLocal(ts string) string {
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339Nano, ts)
+		if err != nil {
+			return truncateTS(ts)
+		}
+	}
+	return t.Local().Format("15:04:05")
+}
+
 func truncateTS(ts string) string {
 	if len(ts) >= 19 {
 		return ts[11:19]
 	}
 	return ts
+}
+
+func costColumnWidths(rows []cycle.MetricsRow) (stageW, agentW, modelW int) {
+	stageW, agentW, modelW = len("Stage"), len("Agent"), len("Model")
+	for _, r := range rows {
+		stageW = max(stageW, len(r.Stage))
+		agentW = max(agentW, len(r.Agent))
+		modelW = max(modelW, len(r.Model))
+	}
+	return stageW + 1, agentW + 1, modelW + 1
+}
+
+func formatCostCell(cost float64) string {
+	return fmt.Sprintf("$%.4f", cost)
+}
+
+// formatDurationMMSS renders stage duration as mm:ss (truncated to whole seconds).
+func formatDurationMMSS(ms int64) string {
+	if ms <= 0 {
+		return "—"
+	}
+	totalSec := ms / 1000
+	mins := totalSec / 60
+	secs := totalSec % 60
+	return fmt.Sprintf("%02d:%02d", mins, secs)
+}
+
+func padRight(s string, width int) string {
+	if len(s) >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-len(s))
+}
+
+func padLeft(s string, width int) string {
+	if len(s) >= width {
+		return s
+	}
+	return strings.Repeat(" ", width-len(s)) + s
 }
 
 func max(a, b int) int {

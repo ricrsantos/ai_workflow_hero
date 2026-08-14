@@ -80,15 +80,18 @@ type model struct {
 	waitAnimFrame     int
 
 	// Chat OpenCode-style controls.
-	chatMode        string // harness.ModeBuild | harness.ModePlan
-	chatModelSlug   string
-	availableModels []string
-	pickingModel    bool
-	runtimeCommandName string // hero runtime slash body name (e.g. "new") for Chat output normalization
-	runtimeModelSlug   string // explicit harness model for active runtime slash (e.g. /hero-start orchestrator)
-	runtimeAgentName   string // harness agent name for active runtime slash (e.g. orchestration_agent)
-	orchestrationLive  bool   // /hero-start session: follow-ups resume orchestrator model + session
+	chatMode             string // harness.ModeBuild | harness.ModePlan
+	chatModelSlug        string
+	availableModels      []string
+	pickingModel         bool
+	runtimeCommandName   string // hero runtime slash body name (e.g. "new") for Chat output normalization
+	runtimeModelSlug     string // explicit harness model for active runtime slash (e.g. /hero-start orchestrator)
+	runtimeAgentName     string // harness agent name for active runtime slash (e.g. orchestration_agent)
+	orchestrationLive    bool   // /hero-start session: follow-ups resume orchestrator model + session
 	awaitingRejectReason bool   // Chat is collecting rejection feedback before Runtime Execute
+
+	slashOverlayIndex     int  // selected row in Chat `/` autocomplete
+	slashOverlayDismissed bool // Esc or insert closed the overlay until the token changes
 }
 
 type refreshDataMsg struct {
@@ -423,42 +426,9 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	case actionReject:
 		return m.beginHeroReject()
 	case actionNew:
-		if m.streaming {
-			m = m.setStatusBusyBlocked()
-			return m, nil
-		}
-		var cmd tea.Cmd
-		m, cmd, ok := m.ensureDefaultModel("/hero-new")
-		if !ok {
-			return m, cmd
-		}
-		return m.beginHeroRuntimeConversation("new", "", heroRuntimeOpts{})
+		return m.beginHeroNew()
 	case actionStart:
-		if m.streaming {
-			m = m.setStatusBusyBlocked()
-			return m, nil
-		}
-		if m.svc == nil {
-			m = m.setStatusResult(false, "/hero-start", "cycle service unavailable")
-			return m, nil
-		}
-		st, err := m.svc.Status()
-		if err != nil || st.CycleNumber == 0 {
-			m = m.setStatusResult(false, "/hero-start", noActiveCycleForStartMessage())
-			return m, nil
-		}
-		var cmd tea.Cmd
-		var slug string
-		var ok bool
-		m, cmd, slug, ok = m.defaultExecuteModel("/hero-start")
-		if !ok {
-			return m, cmd
-		}
-		if err := m.svc.SyncCycleConfig(); err != nil {
-			m = m.setStatusResult(false, "/hero-start", err.Error())
-			return m, nil
-		}
-		return m.beginHeroRuntimeConversation("start", slug, heroRuntimeOpts{})
+		return m.beginHeroStart()
 	case actionSync:
 		return m.beginHeroSync()
 	case actionStatus:
@@ -531,6 +501,43 @@ func (m model) validateOrchestratorPreconditions() (errMsg string) {
 		return noActiveCycleForStartMessage()
 	}
 	return ""
+}
+
+func (m model) beginHeroNew() (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	m, cmd, ok := m.ensureDefaultModel("/hero-new")
+	if !ok {
+		return m, cmd
+	}
+	return m.beginHeroRuntimeConversation("new", "", heroRuntimeOpts{})
+}
+
+func (m model) beginHeroStart() (model, tea.Cmd) {
+	if m.streaming {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	if m.svc == nil {
+		m = m.setStatusResult(false, "/hero-start", "cycle service unavailable")
+		return m, nil
+	}
+	st, err := m.svc.Status()
+	if err != nil || st.CycleNumber == 0 {
+		m = m.setStatusResult(false, "/hero-start", noActiveCycleForStartMessage())
+		return m, nil
+	}
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-start")
+	if !ok {
+		return m, cmd
+	}
+	if err := m.svc.SyncCycleConfig(); err != nil {
+		m = m.setStatusResult(false, "/hero-start", err.Error())
+		return m, nil
+	}
+	return m.beginHeroRuntimeConversation("start", slug, heroRuntimeOpts{})
 }
 
 func (m model) beginHeroSync() (model, tea.Cmd) {

@@ -331,6 +331,33 @@ func ChatInputFocusedForTest(m model) bool {
 	return m.chatInputFocused
 }
 
+func ChatSlashOverlayActiveForTest(m model) bool {
+	return m.chatSlashOverlayActive()
+}
+
+func FilteredChatSlashForTest(m model) []PaletteItemView {
+	items := m.filteredChatSlashItems()
+	out := make([]PaletteItemView, len(items))
+	for i, item := range items {
+		out[i] = PaletteItemView{Label: item.label, Hint: item.hint}
+	}
+	return out
+}
+
+func SetOrchestrationLiveForTest(m model, live bool) model {
+	m.orchestrationLive = live
+	return m
+}
+
+func SetHarnessSessionIDForTest(m model, id string) model {
+	m.harnessSessionID = id
+	return m
+}
+
+func SlashOverlayDismissedForTest(m model) bool {
+	return m.slashOverlayDismissed
+}
+
 // SetChatModeForTest sets the chat mode.
 func SetChatModeForTest(m model, mode string) model {
 	m.chatMode = mode

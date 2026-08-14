@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-08-13 — Release v1.0.7
+
+**Problem**: Chat `/` opened the full-screen palette during live `/hero-start` sessions; Events showed UTC; Costs showed raw ms with broken column alignment.
+
+**Decision / Outcome**: Inline Chat slash overlay; Events local timestamps; Costs aligned table with `mm:ss` duration. Tagged `v1.0.7`.
+
+---
+
+## 2026-08-13 — TUI Events/Costs display polish
+
+**Problem**: Events screen showed UTC timestamps (`truncateTS` on RFC3339). Costs screen showed duration in raw milliseconds with misaligned columns (long model names broke layout).
+
+**Decision / Outcome**: `formatEventTimeLocal` parses stored UTC RFC3339 and renders local `15:04:05`. Costs table uses dynamic column widths, header row, right-aligned numeric columns, and `formatDurationMMSS` (e.g. `540000ms` → `09:00`, no rounding).
+
+---
+
+## 2026-08-13 — Chat `/` overlay (Cursor-style)
+
+**Problem**: Typing `/hero-approve` in Chat opened the full-screen palette. Enter ran TUI Execute, which failed with `No stage pending approval` while the orchestrator was still asking in Chat (SQLite not yet `PendingApproval`). Typing `hero-approve` without `/` worked as a follow-up.
+
+**Decision / Outcome**: In Chat, `/` stays in the composer with a filtered `/hero-*` overlay (Enter inserts; next Enter sends). Other screens keep the palette. Live `/hero-start` session: `/hero-approve` and other control slashes are follow-ups, not TUI Execute.
+
+---
+
 ## 2026-08-13 — Release v1.0.6
 
 **Problem**: TUI Execute used YAML orchestrator model slugs rejected by Cursor Agent CLI; long errors clipped; `resource_exhausted` failed follow-ups after `/hero-start`.

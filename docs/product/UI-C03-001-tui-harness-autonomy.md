@@ -45,7 +45,7 @@ New screen (or primary mode when an etapa requires interações):
 | Header | With etapa: Cycle C{N}, etapa name, iteration, harness session. Without etapa (**freechat**): `Free chat · harness <tool>` |
 | Transcript | User, **thinking** (muted), **tool activity**, and agent answer; all stream as `stream-json` events arrive |
 
-| Input | OpenCode-style boxed prompt with colored accent bar; status line shows **Build** or **Plan**, model slug, and harness name; Enter submits **interação**; Esc clears input; **Tab** toggles Build ↔ Plan (Plan → Cursor Agent CLI `--mode plan`) |
+| Input | OpenCode-style boxed prompt with colored accent bar; status line shows **Build** or **Plan**, model slug, and harness name; Enter submits **interação**; Esc clears input (or dismisses the slash overlay first). **`/` stays in the composer** and opens a filtered autocomplete overlay of `/hero-*` (and imported) commands — Enter/Tab on an item **inserts** the token; a second Enter sends. **Tab** toggles Build ↔ Plan only when the overlay is closed (Plan → Cursor Agent CLI `--mode plan`). `/` on other screens still opens the full command palette. With a live `/hero-start` orchestrator session, `/hero-approve` (and `/hero-reject` `/hero-cancel` `/hero-finish` `/hero-continue` `/hero-back`) are sent as **follow-ups** to that session — they must not fail on SQLite `PendingApproval` (the waiting agent persists via CLI). |
 | Footer | Hints: `tab mode`, `/hero-model`, `alt+1–6` screens, `ctrl+q` quit |
 
 Chat **works without an active cycle/etapa** using `hero.json` → `harnesses.<tool>` defaults (Cursor: `composer-2.5`, `enable_fast_model: false`). Freechat session ids stay in TUI memory for the process lifetime.

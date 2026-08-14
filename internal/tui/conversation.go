@@ -175,10 +175,10 @@ func (m model) enterConversation() (model, tea.Cmd) {
 
 // heroRuntimeOpts carries command-specific context for Runtime Execute preambles.
 type heroRuntimeOpts struct {
-	RejectReason       string
-	ContinueExtra      int // 0 = default 1
-	CancelReason       string
-	ResumeCycleNumber  int // 0 = latest non-archived
+	RejectReason      string
+	ContinueExtra     int // 0 = default 1
+	CancelReason      string
+	ResumeCycleNumber int // 0 = latest non-archived
 }
 
 func usesOrchestratorRuntime(cmdName string) bool {
@@ -318,14 +318,42 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.chatInputFocused = true
 
 	// Global shortcuts (modifier+key) work even while typing in chat.
+	// `/` is NOT global here — it stays in the composer (Cursor-style overlay).
 	switch s {
 	case "ctrl+q", "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5", "ctrl+6",
 		"alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6",
-		"/", "ctrl+r", "f5":
+		"ctrl+r", "f5":
 		return m.handleKey(msg)
 	}
 
+	if m.chatSlashOverlayActive() {
+		switch s {
+		case "up", "ctrl+p":
+			if m.slashOverlayIndex > 0 {
+				m.slashOverlayIndex--
+			}
+			return m, nil
+		case "down", "ctrl+n":
+			items := m.filteredChatSlashItems()
+			if m.slashOverlayIndex < len(items)-1 {
+				m.slashOverlayIndex++
+			}
+			return m, nil
+		case "enter", "tab":
+			m = m.insertChatSlashSelection()
+			return m, nil
+		case "esc":
+			m.slashOverlayDismissed = true
+			return m, nil
+		}
+	}
+
 	switch s {
+	case "esc":
+		if strings.TrimSpace(m.input) != "" {
+			m = m.clearChatInput()
+		}
+		return m, nil
 	case "tab":
 		if m.chatMode == harness.ModePlan {
 			m.chatMode = harness.ModeBuild
@@ -382,18 +410,24 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "backspace":
+		prev := chatSlashToken(m.input)
 		m = m.deleteRuneBeforeCursor()
+		m = m.afterChatInputEdit(prev)
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "delete":
+		prev := chatSlashToken(m.input)
 		m = m.deleteRuneAtCursor()
+		m = m.afterChatInputEdit(prev)
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	default:
 		if len(msg.Runes) == 0 || msg.Alt {
 			return m, nil
 		}
+		prev := chatSlashToken(m.input)
 		m = m.insertRunesAtCursor(msg.Runes)
+		m = m.afterChatInputEdit(prev)
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	}
@@ -463,18 +497,21 @@ func (m model) submitConversation() (model, tea.Cmd) {
 	}
 
 	if m.awaitingRejectReason {
-		m.input = ""
-		m.inputCursor = 0
-		m.inputScrollOffset = 0
+		m = m.clearChatInput()
 		m.awaitingRejectReason = false
 		m.convError = ""
 		return m.beginHeroRejectExecute(text)
 	}
 
+	// Live orchestrator (e.g. waiting for /hero-approve): send the slash as a
+	// follow-up. TUI Execute would gate on SQLite PendingApproval and fail
+	// while the agent is still asking in Chat.
+	if m.chatFollowUpControlSlash(text) {
+		return m.submitChatFollowUp(text)
+	}
+
 	if reason, ok := parseHeroRejectInline(text); ok {
-		m.input = ""
-		m.inputCursor = 0
-		m.inputScrollOffset = 0
+		m = m.clearChatInput()
 		m.convError = ""
 		if reason == "" {
 			return m.beginHeroRejectPrompt()
@@ -483,29 +520,31 @@ func (m model) submitConversation() (model, tea.Cmd) {
 	}
 
 	if reason, ok := parseHeroCancelInline(text); ok {
-		m.input = ""
-		m.inputCursor = 0
-		m.inputScrollOffset = 0
+		m = m.clearChatInput()
 		m.convError = ""
 		return m.beginHeroCancelExecute(reason)
 	}
 
 	if extra, ok := parseHeroContinueInline(text); ok {
-		m.input = ""
-		m.inputCursor = 0
-		m.inputScrollOffset = 0
+		m = m.clearChatInput()
 		m.convError = ""
 		return m.beginHeroContinueExecute(extra)
 	}
 
 	if cycleN, ok := parseHeroResumeInline(text); ok {
-		m.input = ""
-		m.inputCursor = 0
-		m.inputScrollOffset = 0
+		m = m.clearChatInput()
 		m.convError = ""
 		return m.beginHeroResumeExecute(cycleN)
 	}
 
+	if next, cmd, ok := m.dispatchExactHeroSlash(text); ok {
+		return next, cmd
+	}
+
+	return m.submitChatFollowUp(text)
+}
+
+func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
 	if m.orchestrationLive {
 		if strings.TrimSpace(m.runtimeModelSlug) == "" {
 			var cmd tea.Cmd
@@ -528,11 +567,64 @@ func (m model) submitConversation() (model, tea.Cmd) {
 	}
 	m.runtimeCommandName = ""
 	m = m.syncConversationContext()
-	m.input = ""
-	m.inputCursor = 0
-	m.inputScrollOffset = 0
+	m = m.clearChatInput()
 	m = m.beginConversationExecute(text, text)
 	return m, tea.Batch(waitConvMsg(m.convStreamCh), convWaitTickCmd())
+}
+
+func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "/hero-approve":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroApprove()
+		return next, cmd, true
+	case "/hero-finish":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroFinish()
+		return next, cmd, true
+	case "/hero-new":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroNew()
+		return next, cmd, true
+	case "/hero-start":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroStart()
+		return next, cmd, true
+	case "/hero-sync":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroSync()
+		return next, cmd, true
+	case "/hero-status":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroStatus()
+		return next, cmd, true
+	case "/hero-archive":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroArchive()
+		return next, cmd, true
+	case "/hero-back":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroBack()
+		return next, cmd, true
+	case "/hero-model":
+		m = m.clearChatInput()
+		next, cmd := m.openModelPicker()
+		return next, cmd, true
+	case "/hero-cycles":
+		m = m.clearChatInput()
+		next, cmd := m.beginAction("/hero-cycles", m.cyclesCmd())
+		return next, cmd, true
+	case "/hero-todos":
+		m = m.clearChatInput()
+		next, cmd := m.beginAction("/hero-todos", m.todosCmd())
+		return next, cmd, true
+	case "/hero-help":
+		m = m.clearChatInput()
+		next, cmd := m.beginAction("/hero-help", m.helpCmd())
+		return next, cmd, true
+	default:
+		return m, nil, false
+	}
 }
 
 // parseHeroRejectInline returns (reason, true) when text is /hero-reject with optional reason.
@@ -839,6 +931,7 @@ func (m model) buildConversation(responseLines int) string {
 		b.WriteString(m.renderWrappedConvError())
 	}
 
+	b.WriteString(m.renderChatSlashOverlay())
 	b.WriteString(m.renderConversationInput())
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -1155,7 +1248,11 @@ func (m model) renderConversationInput() string {
 	b.WriteString(chatBoxStyle.Width(m.chatBoxWidth()).Render(strings.Join(rows, "\n")))
 	b.WriteByte('\n')
 	if !m.streaming {
-		b.WriteString(mutedStyle.Render("tab mode · / commands · enter send · ←→ move · ↑↓ scroll"))
+		if m.chatSlashOverlayActive() {
+			b.WriteString(mutedStyle.Render("enter insert · tab insert · esc close · ↑↓"))
+		} else {
+			b.WriteString(mutedStyle.Render("tab mode · / commands · enter send · ←→ move · ↑↓ scroll"))
+		}
 	} else {
 		b.WriteString(mutedStyle.Render("ctrl+c interrupt"))
 	}
