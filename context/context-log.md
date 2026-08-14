@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-08-14 — Release v1.1.1
+
+**Problem**: Chat was first in the tab bar but boot still opened Status; the Chat `/` overlay hid `Go to` items and inserted every slash into the composer.
+
+**Decision / Outcome**: Boot opens Chat with the composer focused. Chat `/` overlay lists the full palette; only `/hero-approve` `/hero-reject` `/hero-cancel` `/hero-continue` `/hero-finish` `/hero-back` insert-then-send — other items execute immediately. Tagged `v1.1.1`.
+
+---
+
+## 2026-08-14 — TUI boot Chat + selective slash overlay
+
+**Problem**: Chat was first in the tab bar but boot still opened Status. Typing `/` in Chat hid `Go to - *` and inserted every slash into the composer.
+
+**Decision / Outcome**: Boot opens Chat with the composer focused. The Chat `/` overlay lists the full palette (including `Go to`). Only `/hero-approve` `/hero-reject` `/hero-cancel` `/hero-continue` `/hero-finish` `/hero-back` insert-then-send; all other items execute immediately like the palette on other screens.
+
+---
+
 ## 2026-08-14 — Release v1.1.0
 
 **Problem**: Chat was last in the tab bar; the response pane showed only the parent harness session; nested Task work was a `→ Task name` line with no live agent count.

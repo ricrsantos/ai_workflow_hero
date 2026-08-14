@@ -117,17 +117,19 @@ type actionResultMsg struct {
 func newModel(svc *cycle.Service) model {
 	m := model{
 		svc:              svc,
-		screen:           screenStatus,
-		prevScreen:       screenStatus,
+		screen:           screenConversation,
+		prevScreen:       screenConversation,
 		chatMode:         harness.ModeBuild,
 		agentMsgIndex:    -1,
 		thinkingMsgIndex: -1,
 		respFollowBottom: true,
+		chatInputFocused: true,
 	}
 	if svc != nil {
 		m.chatModelSlug = install.HarnessModelSlugForProject(svc.ProjectDir, "cursor")
 	}
-	return m.reloadPaletteItems()
+	m = m.reloadPaletteItems()
+	return m.syncConversationContext()
 }
 
 func newModelWithChat(svc *cycle.Service, models []string, modelSlug, modelWarn string) model {

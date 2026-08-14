@@ -353,8 +353,7 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter", "tab":
-			m = m.insertChatSlashSelection()
-			return m, nil
+			return m.applyChatSlashSelection()
 		case "esc":
 			m.slashOverlayDismissed = true
 			return m, nil

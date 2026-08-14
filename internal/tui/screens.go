@@ -479,7 +479,7 @@ func (m model) footerHints() string {
 			return "↑↓ scroll · ctrl+c interrupt"
 		}
 		if m.chatSlashOverlayActive() {
-			return "enter insert · tab insert · esc close · ↑↓"
+			return "enter select · tab select · esc close · ↑↓"
 		}
 		return "tab mode · enter send · ↑↓ scroll · /hero-model · alt+1-6 screens · ctrl+q quit"
 	}

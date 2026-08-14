@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -73,11 +74,18 @@ func (m model) filteredChatSlashItems() []paletteItem {
 }
 
 func chatSlashOverlayItem(item paletteItem) bool {
+	return item.action != actionSelectModel
+}
+
+// chatComposerControlSlash is true for agent-reply slashes that stay in the
+// composer (insert, then Enter to send). All other overlay items run immediately
+// like the full-screen palette.
+func chatComposerControlSlash(item paletteItem) bool {
 	switch item.action {
-	case actionGoScreen, actionRefresh, actionQuit, actionSelectModel:
-		return false
+	case actionApprove, actionReject, actionCancel, actionContinue, actionFinish, actionBack:
+		return true
 	default:
-		return strings.HasPrefix(item.label, "/")
+		return false
 	}
 }
 
@@ -116,6 +124,22 @@ func (m model) insertChatSlashSelection() model {
 	m.slashOverlayDismissed = true
 	m.slashOverlayIndex = 0
 	return m.ensureInputCaretVisible()
+}
+
+func (m model) applyChatSlashSelection() (model, tea.Cmd) {
+	items := m.filteredChatSlashItems()
+	if len(items) == 0 {
+		return m, nil
+	}
+	item := items[m.clampedSlashOverlayIndex()]
+	if chatComposerControlSlash(item) {
+		return m.insertChatSlashSelection(), nil
+	}
+	m = m.clearChatInput()
+	// Overlay is not the full-screen palette; keep Chat as the restore target
+	// so closePalette() does not jump to a stale prevScreen (e.g. Status).
+	m.prevScreen = screenConversation
+	return m.runPaletteAction(item)
 }
 
 func (m model) clearChatInput() model {

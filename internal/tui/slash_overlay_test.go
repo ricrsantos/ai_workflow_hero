@@ -35,8 +35,11 @@ func TestChatSlashDoesNotOpenPalette(t *testing.T) {
 		t.Fatal("expected slash overlay after /")
 	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "/hero-approve") {
-		t.Fatalf("overlay missing /hero-approve: %q", view)
+	if !strings.Contains(view, "Go to - Status") {
+		t.Fatalf("overlay missing Go to - Status: %q", view)
+	}
+	if !strings.Contains(view, "Go to - Chat") {
+		t.Fatalf("overlay missing Go to - Chat: %q", view)
 	}
 }
 
@@ -86,7 +89,26 @@ func TestChatSlashOverlayInsertThenSend(t *testing.T) {
 	}
 }
 
-func TestChatSlashTabInsertsNotModeToggle(t *testing.T) {
+func TestChatSlashTabInsertsControlNotModeToggle(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	next := typeChat(t, m, "/hero-approve")
+	if ChatModeForTest(next) != harness.ModeBuild {
+		t.Fatalf("mode=%q", ChatModeForTest(next))
+	}
+	next, _ = HandleTestKey(next, "tab")
+	if ChatModeForTest(next) != harness.ModeBuild {
+		t.Fatalf("tab on overlay should not toggle mode, got %q", ChatModeForTest(next))
+	}
+	if ConversationInputForTest(next) != "/hero-approve" {
+		t.Fatalf("tab should insert control slash, input=%q", ConversationInputForTest(next))
+	}
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatal("should stay on chat")
+	}
+}
+
+func TestChatSlashTabOnGoToDoesNotToggleMode(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	next, _ := HandleTestKey(m, "/")
@@ -97,8 +119,59 @@ func TestChatSlashTabInsertsNotModeToggle(t *testing.T) {
 	if ChatModeForTest(next) != harness.ModeBuild {
 		t.Fatalf("tab on overlay should not toggle mode, got %q", ChatModeForTest(next))
 	}
-	if ConversationInputForTest(next) != "/hero-new" {
-		t.Fatalf("tab should insert first slash command, input=%q", ConversationInputForTest(next))
+	if ConversationInputForTest(next) != "" {
+		t.Fatalf("tab on Go to should execute, not insert, input=%q", ConversationInputForTest(next))
+	}
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("first overlay item is Go to - Chat, screen=%v", CurrentScreen(next))
+	}
+}
+
+func TestChatSlashEnterGoToStatusNavigates(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	next, _ := HandleTestKey(m, "/")
+	items := FilteredChatSlashForTest(next)
+	idx := -1
+	for i, item := range items {
+		if item.Label == "Go to - Status" {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("overlay missing Go to - Status: %+v", items)
+	}
+	for i := 0; i < idx; i++ {
+		var cmd interface{}
+		next, cmd = HandleTestKey(next, "down")
+		_ = cmd
+	}
+	next, _ = HandleTestKey(next, "enter")
+	if CurrentScreen(next) != ScreenStatus {
+		t.Fatalf("screen=%v want status", CurrentScreen(next))
+	}
+	if ConversationInputForTest(next) != "" {
+		t.Fatalf("composer should be empty after Go to, input=%q", ConversationInputForTest(next))
+	}
+}
+
+func TestChatSlashEnterHeroNewExecutesNotInserts(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	next := typeChat(t, m, "/hero-new")
+	if !ChatSlashOverlayActiveForTest(next) {
+		t.Fatal("overlay should be open for /hero-new")
+	}
+	next, _ = HandleTestKey(next, "enter")
+	if ConversationInputForTest(next) != "" {
+		t.Fatalf("composer should clear on execute, not insert /hero-new, input=%q", ConversationInputForTest(next))
+	}
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
+	}
+	if !strings.Contains(StatusTextForTest(next), "/hero-model") {
+		t.Fatalf("expected palette-style execute (model required), status=%q", StatusTextForTest(next))
 	}
 }
 

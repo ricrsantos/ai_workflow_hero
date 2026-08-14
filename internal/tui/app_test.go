@@ -43,6 +43,20 @@ func TestNavigateScreens(t *testing.T) {
 	}
 }
 
+func TestBootOpensChat(t *testing.T) {
+	m := NewTestModel(nil)
+	if CurrentScreen(m) != ScreenConversation {
+		t.Fatalf("boot screen = %v want conversation", CurrentScreen(m))
+	}
+	if !ChatInputFocusedForTest(m) {
+		t.Fatal("expected chat input focused at boot")
+	}
+	view := ViewForTest(SetWidth(SetHeight(m, 24), 80))
+	if !strings.Contains(view, "Chat") {
+		t.Fatalf("expected Chat tab in view: %q", view)
+	}
+}
+
 func TestSlashOpensCommands(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetScreen(m, ScreenStatus)
@@ -96,6 +110,7 @@ func TestHeroPaletteSlashLabels(t *testing.T) {
 
 func TestEmptyCycleHintMentionsHeroNew(t *testing.T) {
 	m := NewTestModel(nil)
+	m = SetScreen(m, ScreenStatus)
 	m = SetWidth(m, 80)
 	view := ViewForTest(m)
 	if !contains(view, "/hero-new") {
@@ -290,6 +305,7 @@ func (unavailableHarness) Dispatch(context.Context, harness.DispatchRequest) (ha
 
 func TestRefreshDataMsgUpdatesModel(t *testing.T) {
 	m := NewTestModel(nil)
+	m = SetScreen(m, ScreenStatus)
 	m = SetWidth(m, 80)
 	msg := RefreshDataForTest(cycle.StatusView{
 		CycleNumber: 1,
@@ -459,6 +475,7 @@ func TestFinishActionWithService(t *testing.T) {
 func TestDispatchKeyRemoved(t *testing.T) {
 	m := NewTestModel(newTestService(t))
 	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m = SetScreen(m, ScreenStatus)
 	next, cmd := HandleTestKey(m, "d")
 	if cmd != nil {
 		t.Fatal("d must not start harness dispatch")
