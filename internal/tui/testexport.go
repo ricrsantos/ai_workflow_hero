@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
 // Exported screen aliases for tests.
@@ -395,4 +396,31 @@ func LiveAgentsForTest(m model) []liveAgent {
 	out := make([]liveAgent, len(m.liveAgents))
 	copy(out, m.liveAgents)
 	return out
+}
+
+// ConfirmPendingForTest reports whether an inline confirmation dialog is active.
+func ConfirmPendingForTest(m model) bool {
+	return m.confirmPending
+}
+
+// ConfirmMsgForTest returns the current confirmation prompt text.
+func ConfirmMsgForTest(m model) string {
+	return m.confirmMsg
+}
+
+// SetStreamingForTest forcibly sets the streaming flag (for unit tests that need
+// to simulate a running agent without a real goroutine).
+func SetStreamingForTest(m model, streaming bool) model {
+	m.streaming = streaming
+	return m
+}
+
+// StreamDeltaMsgForTest wraps a delta into a streamDeltaMsg for Update injection.
+func StreamDeltaMsgForTest(text string) tea.Msg {
+	return streamDeltaMsg{delta: harness.StreamDelta{Text: text}}
+}
+
+// ExecuteDoneMsgForTest builds an executeDoneMsg for test Update injection.
+func ExecuteDoneMsgForTest(err error) tea.Msg {
+	return executeDoneMsg{err: err}
 }

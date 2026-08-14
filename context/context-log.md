@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-08-14 — TUI navigation while agent streaming
+
+**Problem**: While `streaming == true` on the Chat screen, all navigation keys (`ctrl+1–6`, `alt+1–6`) were swallowed. Also, `handleConversationMsg` (stream deltas, done, cancel) only ran when `m.screen == screenConversation`, so the stream goroutine was effectively orphaned when the user navigated away from Chat.
+
+**Decision / Outcome**:
+1. **Stream messages always processed** — removed `if m.screen == screenConversation` guard in `Update`; `handleConversationMsg` now always runs regardless of active screen. `executeDoneMsg` / `streamCancelDoneMsg` also auto-clear `confirmPending`.
+2. **Navigation while streaming** — `handleConversationKey` forwards `ctrl+1–6` / `alt+1–6` to `handleKey` while `streaming == true`. `goListScreen` does not touch `streaming` or `convStreamCh`, so the goroutine keeps running.
+3. **Confirmation dialog for destructive actions** — added `confirmPending / confirmMsg / confirmAction / confirmActionN` to `model`. When a destructive palette action (`/hero-new`, `/hero-start`, `/hero-cancel`, `/hero-finish`, `/hero-archive`, `/hero-back`) or `ctrl+q` is requested while streaming, a yellow footer prompt `"Agent is running. <action> will interrupt it. Continue? [y/N]"` is shown. `y` cancels the stream then dispatches the action via `confirmResumeMsg`; any other key dismisses. Non-destructive actions (`/hero-approve`, `/hero-reject`, `/hero-sync`, `/hero-status`, `/hero-continue`) remain silently blocked with `setStatusBusyBlocked`.
+4. Added 8 new tests covering all behaviours; full test suite passes.
+
+---
+
 ## 2026-08-14 — Release v1.1.1
 
 **Problem**: Chat was first in the tab bar but boot still opened Status; the Chat `/` overlay hid `Go to` items and inserted every slash into the composer.

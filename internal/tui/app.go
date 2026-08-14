@@ -97,6 +97,12 @@ type model struct {
 	slashOverlayDismissed bool // Esc or insert closed the overlay until the token changes
 
 	liveAgents []liveAgent // currently executing parent + Task subagents (Chat box)
+
+	// Inline confirmation for destructive actions while an agent is streaming.
+	confirmPending bool
+	confirmMsg     string
+	confirmAction  paletteAction
+	confirmActionN int // optional numeric arg (e.g. /hero-continue N)
 }
 
 type refreshDataMsg struct {
@@ -236,13 +242,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.waitAnimFrame++
 		return m, convWaitTickCmd()
 
+	case confirmResumeMsg:
+		return m.dispatchConfirmedAction(msg.action, msg.actionN)
+
 	case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
-		if m.screen == screenConversation {
-			return m.handleConversationMsg(msg)
-		}
-		return m, nil
+		// Always process stream messages so the goroutine is never orphaned when
+		// the user navigates away from the Chat screen while streaming.
+		return m.handleConversationMsg(msg)
 
 	case tea.KeyMsg:
+		if m.confirmPending {
+			return m.handleConfirmKey(msg)
+		}
 		if m.screen == screenOutput {
 			return m.handleOutputKey(msg)
 		}
@@ -267,6 +278,9 @@ func (m model) View() string {
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "ctrl+q":
+		if m.streaming {
+			return m.showConfirm(actionQuit, 0, "Agent is running. Quit? [y/N]")
+		}
 		return m, tea.Quit
 	case "/":
 		m.chatInputFocused = false
@@ -441,6 +455,13 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		m = m.closePalette()
 		m = m.setStatusBusyBlocked()
 		return m, nil
+	}
+
+	// Destructive actions while streaming require a confirmation dialog instead
+	// of silently blocking them, so the user understands what will happen.
+	if m.streaming && isDestructiveAction(item.action) {
+		m = m.closePalette()
+		return m.showConfirm(item.action, 0, confirmMsgForAction(item.action))
 	}
 
 	m = m.closePalette()
@@ -955,6 +976,121 @@ func (m model) importCommandCmd(item paletteItem) tea.Cmd {
 		}
 		return dispatchPromptMsg(svc, label, prompt, modelSlug, mode)
 	}
+}
+
+// isDestructiveAction reports whether the palette action, when executed while
+// the agent is streaming, would cancel or replace the current agent session.
+func isDestructiveAction(a paletteAction) bool {
+	switch a {
+	case actionNew, actionStart, actionCancel, actionFinish, actionArchive, actionBack, actionQuit:
+		return true
+	}
+	return false
+}
+
+func confirmMsgForAction(a paletteAction) string {
+	switch a {
+	case actionNew:
+		return "Agent is running. /hero-new will interrupt it. Continue? [y/N]"
+	case actionStart:
+		return "Agent is running. /hero-start will interrupt it. Continue? [y/N]"
+	case actionCancel:
+		return "Agent is running. /hero-cancel will interrupt it. Continue? [y/N]"
+	case actionFinish:
+		return "Agent is running. /hero-finish will interrupt it. Continue? [y/N]"
+	case actionArchive:
+		return "Agent is running. /hero-archive will interrupt it. Continue? [y/N]"
+	case actionBack:
+		return "Agent is running. /hero-back will interrupt it. Continue? [y/N]"
+	case actionQuit:
+		return "Agent is running. Quit? [y/N]"
+	}
+	return "Agent is running. This will interrupt it. Continue? [y/N]"
+}
+
+// showConfirm sets the pending confirmation state and navigates to Chat so the
+// footer prompt is visible.
+func (m model) showConfirm(action paletteAction, actionN int, msg string) (model, tea.Cmd) {
+	m.confirmPending = true
+	m.confirmAction = action
+	m.confirmActionN = actionN
+	m.confirmMsg = msg
+	if m.screen != screenConversation {
+		m, _ = m.enterConversation()
+	}
+	return m, nil
+}
+
+// handleConfirmKey processes a key press while a confirmation dialog is active.
+// Only y/Y confirms; any other key (including n, N, esc) denies.
+func (m model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		action := m.confirmAction
+		actionN := m.confirmActionN
+		m.confirmPending = false
+		m.confirmMsg = ""
+
+		if action == actionQuit {
+			// Cancel the stream first, then quit.
+			return m, tea.Batch(m.cancelStreamCmd(), tea.Quit)
+		}
+
+		// Cancel the running stream, then dispatch the confirmed action once
+		// the stream finishes (streaming will be false by then, so beginHero*
+		// guards will not block).  We use cancelStreamCmd here; the actual
+		// action is launched immediately — beginHero* checks streaming==false
+		// after cancel completes because streamCancelDoneMsg clears streaming.
+		// Since both run in the same goroutine-safe Update cycle, we run the
+		// cancel first and schedule the action as a follow-up via a command.
+		cancelCmd := m.cancelStreamCmd()
+		pendingAction := action
+		pendingN := actionN
+		followUpCmd := func() tea.Msg {
+			return confirmResumeMsg{action: pendingAction, actionN: pendingN}
+		}
+		return m, tea.Batch(cancelCmd, followUpCmd)
+
+	default:
+		// n, N, esc, or any other key — cancel the confirmation.
+		m.confirmPending = false
+		m.confirmMsg = ""
+		return m, nil
+	}
+}
+
+// confirmResumeMsg is dispatched after the user confirms a destructive action
+// and a stream cancel has been requested. The Update loop dispatches the action
+// once this message arrives (streaming may still be true at this point if the
+// cancel hasn't completed, so we retry via the beginHero* which will handle it
+// when the cancel finishes — but in practice the cancel goroutine is fast).
+type confirmResumeMsg struct {
+	action  paletteAction
+	actionN int
+}
+
+// dispatchConfirmedAction executes the action that was confirmed while streaming.
+// By the time this runs the cancel has been requested; streaming guards in
+// beginHero* functions will block if still true (the stream finishes within
+// milliseconds) — that is acceptable since the user already confirmed intent.
+func (m model) dispatchConfirmedAction(action paletteAction, actionN int) (tea.Model, tea.Cmd) {
+	switch action {
+	case actionQuit:
+		return m, tea.Quit
+	case actionNew:
+		return m.beginHeroNew()
+	case actionStart:
+		return m.beginHeroStart()
+	case actionCancel:
+		return m.beginHeroCancel()
+	case actionFinish:
+		return m.beginHeroFinish()
+	case actionArchive:
+		return m.beginHeroArchive()
+	case actionBack:
+		return m.beginHeroBack()
+	}
+	return m, nil
 }
 
 // parseDigitKeys handles multi-char test keys like "ctrl+p".

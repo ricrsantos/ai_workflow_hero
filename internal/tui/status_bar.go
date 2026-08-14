@@ -106,6 +106,9 @@ func (m model) renderStatusBar() string {
 }
 
 func (m model) statusBarDisplayLines(width int) []string {
+	if m.confirmPending {
+		return []string{warnStyle.Render(m.confirmMsg)}
+	}
 	switch m.statusKind {
 	case statusRunning:
 		elapsed := time.Since(m.statusStarted).Truncate(time.Second)

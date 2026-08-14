@@ -569,6 +569,193 @@ func TestPaletteViewportHidesOverflow(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Navigation while streaming
+// ---------------------------------------------------------------------------
+
+func TestNavigationAllowedWhileStreaming(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetStreamingForTest(m, true)
+
+	for _, key := range []string{"alt+2", "alt+3", "alt+4", "alt+5", "alt+6"} {
+		next, _ := HandleTestKey(m, key)
+		if CurrentScreen(next) == ScreenConversation {
+			t.Errorf("key %q: expected to leave Chat while streaming, got ScreenConversation", key)
+		}
+		if !IsConversationStreaming(next) {
+			t.Errorf("key %q: streaming must remain true after navigation", key)
+		}
+	}
+}
+
+func TestNavigateBackToChatWhileStreaming(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetScreen(m, ScreenStatus)
+	m = SetStreamingForTest(m, true)
+
+	// alt+1 goes back to chat
+	next, _ := HandleTestKey(m, "alt+1")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("alt+1 from Status while streaming: screen=%v want conversation", CurrentScreen(next))
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("streaming must remain true after returning to Chat")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Stream messages processed regardless of current screen
+// ---------------------------------------------------------------------------
+
+func TestStreamDeltaProcessedOffChatScreen(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetStreamingForTest(m, true)
+	// Navigate away to Status
+	m, _ = HandleTestKey(m, "alt+2")
+	if CurrentScreen(m) != ScreenStatus {
+		t.Fatal("expected Status screen")
+	}
+
+	// Inject a stream delta — it must be processed even off Chat.
+	next, _ := m.Update(StreamDeltaMsgForTest("hello world"))
+	nextM := next.(model)
+	transcript := ConversationTranscriptForTest(nextM)
+	if !strings.Contains(transcript, "hello world") {
+		t.Fatalf("stream delta not processed off-Chat: transcript=%q", transcript)
+	}
+}
+
+func TestExecuteDoneProcessedOffChatScreen(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetStreamingForTest(m, true)
+	// Navigate away
+	m, _ = HandleTestKey(m, "alt+3")
+
+	// Inject executeDoneMsg — streaming must clear.
+	next, _ := m.Update(ExecuteDoneMsgForTest(nil))
+	nextM := next.(model)
+	if IsConversationStreaming(nextM) {
+		t.Fatal("streaming must clear when executeDoneMsg arrives off-Chat screen")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Confirmation dialog
+// ---------------------------------------------------------------------------
+
+func TestDestructivePaletteActionWhileStreamingShowsConfirm(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetStreamingForTest(m, true)
+	m = OpenPalette(m)
+
+	next, _ := RunPaletteItemForTest(m, "/hero-cancel")
+	if !ConfirmPendingForTest(next) {
+		t.Fatal("expected confirmPending after /hero-cancel while streaming")
+	}
+	if !strings.Contains(ConfirmMsgForTest(next), "y/N") {
+		t.Fatalf("confirm msg missing [y/N]: %q", ConfirmMsgForTest(next))
+	}
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("expected Chat screen for confirm prompt, got %v", CurrentScreen(next))
+	}
+	// Confirm dialog must be visible in the rendered view.
+	view := ViewForTest(SetWidth(SetHeight(next, 24), 80))
+	if !strings.Contains(view, "y/N") {
+		t.Fatalf("confirm prompt not in view: %q", view)
+	}
+}
+
+func TestConfirmDialogNDenies(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetStreamingForTest(m, true)
+	m = OpenPalette(m)
+	next, _ := RunPaletteItemForTest(m, "/hero-cancel")
+	if !ConfirmPendingForTest(next) {
+		t.Fatal("expected confirmPending")
+	}
+
+	// Press n — confirmation must be dismissed, streaming still running.
+	denied, _ := HandleTestKey(next, "n")
+	if ConfirmPendingForTest(denied) {
+		t.Fatal("confirmPending must clear after n")
+	}
+	if !IsConversationStreaming(denied) {
+		t.Fatal("streaming must still be true after denial")
+	}
+}
+
+func TestConfirmDialogEscDenies(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetStreamingForTest(m, true)
+	m = OpenPalette(m)
+	next, _ := RunPaletteItemForTest(m, "/hero-new")
+	if !ConfirmPendingForTest(next) {
+		t.Fatal("expected confirmPending")
+	}
+
+	denied, _ := HandleTestKey(next, "esc")
+	if ConfirmPendingForTest(denied) {
+		t.Fatal("confirmPending must clear after esc")
+	}
+	if !IsConversationStreaming(denied) {
+		t.Fatal("streaming must still be true after esc denial")
+	}
+}
+
+func TestConfirmClearsWhenStreamFinishes(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetStreamingForTest(m, true)
+	m = OpenPalette(m)
+	next, _ := RunPaletteItemForTest(m, "/hero-cancel")
+	if !ConfirmPendingForTest(next) {
+		t.Fatal("expected confirmPending")
+	}
+
+	// Stream finishes naturally before the user answers.
+	afterDone, _ := next.Update(ExecuteDoneMsgForTest(nil))
+	afterM := afterDone.(model)
+	if ConfirmPendingForTest(afterM) {
+		t.Fatal("confirmPending must auto-clear when stream finishes")
+	}
+}
+
+func TestNonDestructivePaletteActionNotConfirmedWhileStreaming(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetStreamingForTest(m, true)
+	m = OpenPalette(m)
+
+	// /hero-approve is non-destructive while streaming (needs stream to end first).
+	next, _ := RunPaletteItemForTest(m, "/hero-approve")
+	if ConfirmPendingForTest(next) {
+		t.Fatal("/hero-approve must not trigger confirm dialog while streaming")
+	}
+}
+
+func TestCtrlQWhileStreamingShowsConfirm(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetStreamingForTest(m, true)
+
+	next, cmd := HandleTestKey(m, "ctrl+q")
+	// cmd should NOT be tea.Quit — that would exit without asking.
+	if cmd != nil {
+		// Run the cmd to see if it's Quit.
+		msg := RunCmdForTest(cmd)
+		if _, isQuit := msg.(tea.QuitMsg); isQuit {
+			t.Fatal("ctrl+q while streaming must not quit immediately — should show confirm dialog")
+		}
+	}
+	if !ConfirmPendingForTest(next) {
+		t.Fatal("ctrl+q while streaming must set confirmPending")
+	}
+	if !strings.Contains(ConfirmMsgForTest(next), "Quit") {
+		t.Fatalf("confirm msg should mention Quit: %q", ConfirmMsgForTest(next))
+	}
+}
+
 func itoa(n int) string {
 	return fmt.Sprintf("%d", n)
 }

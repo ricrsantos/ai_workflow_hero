@@ -309,7 +309,11 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, m.cancelStreamCmd()
 		case "ctrl+q":
-			return m, tea.Quit
+			return m.showConfirm(actionQuit, 0, "Agent is running. Quit? [y/N]")
+		case "ctrl+1", "alt+1", "ctrl+2", "alt+2", "ctrl+3", "alt+3",
+			"ctrl+4", "alt+4", "ctrl+5", "alt+5", "ctrl+6", "alt+6":
+			// Allow screen navigation while streaming; the goroutine keeps running.
+			return m.handleKey(msg)
 		case "up", "ctrl+p":
 			m = m.scrollResponse(-1)
 			return m, nil
@@ -789,6 +793,8 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.convStreamCh = nil
 		m.chatInputFocused = true
 		m.liveAgents = nil
+		m.confirmPending = false
+		m.confirmMsg = ""
 		if !m.orchestrationLive {
 			m.runtimeModelSlug = ""
 			m.runtimeAgentName = ""
@@ -835,6 +841,8 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.convStreamCh = nil
 		m.chatInputFocused = true
 		m.liveAgents = nil
+		m.confirmPending = false
+		m.confirmMsg = ""
 		if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 			m.transcript[m.agentMsgIndex].interrupted = true
 		}
