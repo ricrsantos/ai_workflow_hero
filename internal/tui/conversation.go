@@ -36,13 +36,15 @@ var waitAnimFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "
 type convMessage struct {
 	role        convRole
 	content     string
+	agentName   string
+	modelSlug   string
+	callID      string
 	interrupted bool
 	failed      bool
 }
 
 type streamDeltaMsg struct {
-	kind  harness.StreamKind
-	delta string
+	delta harness.StreamDelta
 }
 
 type executeDoneMsg struct {
@@ -277,8 +279,19 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	m.respFollowBottom = true
 	m.respScrollOffset = 0
 	m.chatInputFocused = false
+	parentName := strings.TrimSpace(m.runtimeAgentName)
+	parentModel := m.conversationModelSlug()
+	m.liveAgents = []liveAgent{{
+		Name:  parentName,
+		Label: agentShortLabel(parentName),
+	}}
 	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: userLabel})
-	m.transcript = append(m.transcript, convMessage{role: convRoleAgent, content: ""})
+	m.transcript = append(m.transcript, convMessage{
+		role:      convRoleAgent,
+		content:   "",
+		agentName: parentName,
+		modelSlug: parentModel,
+	})
 	m.agentMsgIndex = len(m.transcript) - 1
 	m.thinkingMsgIndex = -1
 
@@ -727,7 +740,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			Model:      modelSlug,
 			Mode:       mode,
 			OnStreamDelta: func(delta harness.StreamDelta) {
-				ch <- streamDeltaMsg{kind: delta.Kind, delta: delta.Text}
+				ch <- streamDeltaMsg{delta: delta}
 			},
 		}
 		res, err := adapter.Execute(ctx, req)
@@ -765,7 +778,7 @@ func (m model) cancelStreamCmd() tea.Cmd {
 func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case streamDeltaMsg:
-		m = m.appendStreamDelta(msg.kind, msg.delta)
+		m = m.appendStreamDelta(msg.delta)
 		m = m.maybeFollowResponseBottom()
 		if m.streaming && m.convStreamCh != nil {
 			return m, waitConvMsg(m.convStreamCh)
@@ -776,6 +789,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.convStreamCh = nil
 		m.chatInputFocused = true
+		m.liveAgents = nil
 		if !m.orchestrationLive {
 			m.runtimeModelSlug = ""
 			m.runtimeAgentName = ""
@@ -800,8 +814,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.result.SessionID != "" {
 				m = m.persistHarnessSession(msg.result.SessionID)
 			}
-			// Prefer canonical result text over accumulated deltas (partial vs final).
-			if msg.result.Output != "" && m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
+			// Prefer canonical result text over accumulated deltas (partial vs final)
+			// unless subagent blocks are in the turn — replacing would wipe labels.
+			if msg.result.Output != "" && m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) && !m.transcriptHasSubagent() {
 				m.transcript[m.agentMsgIndex].content = msg.result.Output
 			}
 		}
@@ -820,6 +835,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streamInterrupted = true
 		m.convStreamCh = nil
 		m.chatInputFocused = true
+		m.liveAgents = nil
 		if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 			m.transcript[m.agentMsgIndex].interrupted = true
 		}
@@ -829,26 +845,143 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) appendStreamDelta(kind harness.StreamKind, delta string) model {
-	if delta == "" {
+func (m model) appendStreamDelta(d harness.StreamDelta) model {
+	if d.Phase == harness.StreamPhaseStarted {
+		m = m.addLiveAgent(d)
+	}
+	if d.Phase == harness.StreamPhaseCompleted {
+		m = m.removeLiveAgent(d.CallID)
+		if d.Kind == harness.StreamKindTool {
+			return m
+		}
+	}
+	if d.Phase == harness.StreamPhaseStarted && d.Kind == harness.StreamKindTool {
 		return m
 	}
-	switch kind {
+	if d.Text == "" {
+		return m
+	}
+	if d.CallID == "" {
+		d.AgentName = strings.TrimSpace(d.AgentName)
+		if d.AgentName == "" {
+			d.AgentName = strings.TrimSpace(m.runtimeAgentName)
+		}
+		if strings.TrimSpace(d.Model) == "" {
+			d.Model = m.conversationModelSlug()
+		}
+	}
+	switch d.Kind {
 	case harness.StreamKindThinking:
+		if d.CallID != "" {
+			m.appendAttributed(convRoleThinking, d)
+			return m
+		}
 		if m.thinkingMsgIndex >= 0 && m.thinkingMsgIndex < len(m.transcript) &&
 			m.transcript[m.thinkingMsgIndex].role == convRoleThinking &&
 			m.thinkingMsgIndex == m.agentMsgIndex-1 {
-			m.transcript[m.thinkingMsgIndex].content += delta
+			m.transcript[m.thinkingMsgIndex].content += d.Text
 			return m
 		}
-		m.thinkingMsgIndex = m.insertBeforeAgent(convMessage{role: convRoleThinking, content: delta})
+		m.thinkingMsgIndex = m.insertBeforeAgent(convMessage{
+			role:      convRoleThinking,
+			content:   d.Text,
+			agentName: d.AgentName,
+			modelSlug: d.Model,
+		})
 		return m
 	case harness.StreamKindTool:
-		m.insertBeforeAgent(convMessage{role: convRoleTool, content: delta})
+		m.insertBeforeAgent(convMessage{
+			role:      convRoleTool,
+			content:   d.Text,
+			agentName: d.AgentName,
+			modelSlug: d.Model,
+			callID:    d.CallID,
+		})
 		return m
 	default:
-		m.appendAgentDelta(delta)
+		if d.CallID != "" {
+			m.appendAttributed(convRoleAgent, d)
+			return m
+		}
+		m.appendAgentDelta(d.Text)
+		if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
+			if m.transcript[m.agentMsgIndex].agentName == "" {
+				m.transcript[m.agentMsgIndex].agentName = d.AgentName
+			}
+			if m.transcript[m.agentMsgIndex].modelSlug == "" {
+				m.transcript[m.agentMsgIndex].modelSlug = d.Model
+			}
+		}
 		return m
+	}
+}
+
+func (m model) addLiveAgent(d harness.StreamDelta) model {
+	callID := strings.TrimSpace(d.CallID)
+	if callID == "" {
+		return m
+	}
+	for _, a := range m.liveAgents {
+		if a.CallID == callID {
+			return m
+		}
+	}
+	name := strings.TrimSpace(d.AgentName)
+	m.liveAgents = append(m.liveAgents, liveAgent{
+		CallID: callID,
+		Name:   name,
+		Label:  agentShortLabel(name),
+	})
+	return m
+}
+
+func (m model) removeLiveAgent(callID string) model {
+	callID = strings.TrimSpace(callID)
+	if callID == "" {
+		return m
+	}
+	out := m.liveAgents[:0]
+	for _, a := range m.liveAgents {
+		if a.CallID != callID {
+			out = append(out, a)
+		}
+	}
+	m.liveAgents = out
+	return m
+}
+
+func (m model) transcriptHasSubagent() bool {
+	for _, msg := range m.latestAgentTurn() {
+		if strings.TrimSpace(msg.callID) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *model) appendAttributed(role convRole, d harness.StreamDelta) {
+	for i := m.agentMsgIndex - 1; i >= 0; i-- {
+		msg := m.transcript[i]
+		if msg.role == convRoleUser {
+			break
+		}
+		if msg.role == role && msg.callID == d.CallID {
+			m.transcript[i].content += d.Text
+			if role == convRoleThinking {
+				m.thinkingMsgIndex = i
+			}
+			return
+		}
+	}
+	idx := m.insertBeforeAgent(convMessage{
+		role:      role,
+		content:   d.Text,
+		agentName: d.AgentName,
+		modelSlug: d.Model,
+		callID:    d.CallID,
+	})
+	if role == convRoleThinking {
+		m.thinkingMsgIndex = idx
 	}
 }
 
@@ -897,30 +1030,8 @@ func (m model) buildConversation(responseLines int) string {
 		responseLines = 0
 	}
 	var b strings.Builder
-	stage := m.conversationStage
-	tool := m.conversationHarnessTool()
-	if stage == "" {
-		b.WriteString(headerStyle.Render(fmt.Sprintf("Chat · harness %s", tool)))
-		if m.harnessSessionID != "" {
-			b.WriteString(mutedStyle.Render(" │ "))
-			b.WriteString(mutedStyle.Render("session: " + truncateSessionID(m.harnessSessionID)))
-		}
-		b.WriteByte('\n')
-	} else {
-		iter := ""
-		for _, st := range m.status.Stages {
-			if strings.EqualFold(st.Name, stage) {
-				iter = st.Iteration
-				break
-			}
-		}
-		b.WriteString(headerStyle.Render(fmt.Sprintf("Cycle C%d — %s · iter %s", m.status.CycleNumber, stage, iter)))
-		if m.harnessSessionID != "" {
-			b.WriteString(mutedStyle.Render(" │ "))
-			b.WriteString(mutedStyle.Render("session: " + truncateSessionID(m.harnessSessionID)))
-		}
-		b.WriteByte('\n')
-	}
+	b.WriteString(m.renderConversationHeader())
+	b.WriteByte('\n')
 
 	b.WriteString(m.renderConversationHistory())
 	b.WriteByte('\n')
@@ -934,6 +1045,61 @@ func (m model) buildConversation(responseLines int) string {
 	b.WriteString(m.renderChatSlashOverlay())
 	b.WriteString(m.renderConversationInput())
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m model) renderConversationHeader() string {
+	stage := m.conversationStage
+	tool := m.conversationHarnessTool()
+	var left strings.Builder
+	if stage == "" {
+		left.WriteString(headerStyle.Render(fmt.Sprintf("Chat · harness %s", tool)))
+		if m.harnessSessionID != "" {
+			left.WriteString(mutedStyle.Render(" │ "))
+			left.WriteString(mutedStyle.Render("session: " + truncateSessionID(m.harnessSessionID)))
+		}
+	} else {
+		iter := ""
+		for _, st := range m.status.Stages {
+			if strings.EqualFold(st.Name, stage) {
+				iter = st.Iteration
+				break
+			}
+		}
+		left.WriteString(headerStyle.Render(fmt.Sprintf("Cycle C%d — %s · iter %s", m.status.CycleNumber, stage, iter)))
+		if m.harnessSessionID != "" {
+			left.WriteString(mutedStyle.Render(" │ "))
+			left.WriteString(mutedStyle.Render("session: " + truncateSessionID(m.harnessSessionID)))
+		}
+	}
+	right := m.renderAgentsBox()
+	gap := 1
+	leftW := m.width - agentsBoxWidth - gap
+	if m.width <= 0 || leftW < 20 {
+		return left.String() + "\n" + right
+	}
+	leftBlock := lipgloss.NewStyle().Width(leftW).MaxWidth(leftW).Render(left.String())
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftBlock, right)
+}
+
+func (m model) renderAgentsBox() string {
+	n := len(m.liveAgents)
+	labels := make([]string, 0, n)
+	for _, a := range m.liveAgents {
+		labels = append(labels, a.Label)
+	}
+	innerW := agentsBoxWidth - 2
+	if innerW < 8 {
+		innerW = 8
+	}
+	line1 := fmt.Sprintf("agents: %d", n)
+	line2 := wrapAgentLabels(labels, innerW)
+	body := line1
+	if line2 != "" {
+		body += "\n" + line2
+	} else {
+		body += "\n"
+	}
+	return chatBoxStyle.Width(agentsBoxWidth).Render(body)
 }
 
 func (m model) latestAgentFailed() bool {
@@ -1127,7 +1293,26 @@ func (m model) responseContentLines(contentW int) []string {
 	}
 
 	var out []string
+	prevKey := ""
+	prevWasSub := false
 	for _, msg := range turn {
+		if msg.role == convRoleAgent && strings.TrimSpace(msg.content) == "" && m.streaming && !msg.failed && !msg.interrupted {
+			continue
+		}
+		key := messageAgentKey(msg)
+		isSub := strings.TrimSpace(msg.callID) != ""
+		if key != prevKey {
+			if prevKey != "" && prevWasSub {
+				out = append(out, "")
+			}
+			if isSub {
+				out = append(out, "")
+			}
+			header := formatAgentHeader(msg.agentName, msg.modelSlug, isSub)
+			out = append(out, chatInAgent.Render(header))
+			prevKey = key
+			prevWasSub = isSub
+		}
 		switch msg.role {
 		case convRoleThinking:
 			text := formatChatAgentText(m.runtimeCommandName, "Thinking: "+msg.content)
@@ -1161,10 +1346,20 @@ func (m model) responseContentLines(contentW int) []string {
 			}
 		}
 	}
+	if prevWasSub {
+		out = append(out, "")
+	}
 	if len(out) == 0 && m.streaming {
 		return []string{chatInMuted.Render("Waiting for harness…")}
 	}
 	return out
+}
+
+func messageAgentKey(msg convMessage) string {
+	if id := strings.TrimSpace(msg.callID); id != "" {
+		return "sub:" + id
+	}
+	return "parent"
 }
 
 // latestAgentTurn returns thinking/tool/agent messages after the last user message.

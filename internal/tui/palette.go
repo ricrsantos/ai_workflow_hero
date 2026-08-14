@@ -44,12 +44,12 @@ type paletteItem struct {
 
 func defaultHeroPaletteItems() []paletteItem {
 	return []paletteItem{
+		{label: "Go to - Chat", hint: "conversation", action: actionGoScreen, screen: screenConversation},
 		{label: "Go to - Status", hint: "cycle overview", action: actionGoScreen, screen: screenStatus},
 		{label: "Go to - Approvals", hint: "approve or reject", action: actionGoScreen, screen: screenApprovals},
 		{label: "Go to - Artifacts", hint: "linked files", action: actionGoScreen, screen: screenArtifacts},
 		{label: "Go to - Costs", hint: "token metrics", action: actionGoScreen, screen: screenCosts},
 		{label: "Go to - Events", hint: "event log", action: actionGoScreen, screen: screenEvents},
-		{label: "Go to - Chat", hint: "conversation", action: actionGoScreen, screen: screenConversation},
 		{label: "/hero-new", hint: "create cycle", action: actionNew},
 		{label: "/hero-start", hint: "start workflow", action: actionStart},
 		{label: "/hero-sync", hint: "sync project", action: actionSync},

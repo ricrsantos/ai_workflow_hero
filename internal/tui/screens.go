@@ -455,7 +455,7 @@ func (m model) renderFrame() string {
 }
 
 func screenTabBar(active screen) string {
-	names := []string{"Status", "Approvals", "Artifacts", "Costs", "Events", "Chat"}
+	names := []string{"Chat", "Status", "Approvals", "Artifacts", "Costs", "Events"}
 	var parts []string
 	for i, name := range names {
 		if screen(i) == active {

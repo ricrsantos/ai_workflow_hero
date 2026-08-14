@@ -389,3 +389,10 @@ func StatusTextForTest(m model) string {
 func PickingModelForTest(m model) bool {
 	return m.pickingModel
 }
+
+// LiveAgentsForTest returns the live agent labels currently tracked on Chat.
+func LiveAgentsForTest(m model) []liveAgent {
+	out := make([]liveAgent, len(m.liveAgents))
+	copy(out, m.liveAgents)
+	return out
+}

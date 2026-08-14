@@ -64,10 +64,20 @@ const (
 	StreamKindTool     StreamKind = "tool"
 )
 
+// StreamPhase marks Task lifecycle events on StreamDelta.
+const (
+	StreamPhaseStarted   = "started"
+	StreamPhaseCompleted = "completed"
+)
+
 // StreamDelta is a live event emitted during Execute when Stream is true.
 type StreamDelta struct {
-	Kind StreamKind
-	Text string
+	Kind      StreamKind
+	Text      string
+	AgentName string // Hero agent id (qa_agent) or empty for the parent session
+	Model     string // kebab model slug when known
+	CallID    string // Task call_id when attributed to a subagent
+	Phase     string // StreamPhaseStarted / StreamPhaseCompleted, or empty
 }
 
 // Usage holds optional token counts parsed from harness output.

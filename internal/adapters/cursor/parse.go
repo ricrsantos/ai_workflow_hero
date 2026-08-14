@@ -14,14 +14,14 @@ import (
 
 // cliResultJSON is the Cursor Agent CLI terminal JSON / stream-json result event.
 type cliResultJSON struct {
-	Type         string `json:"type"`
-	Subtype      string `json:"subtype"`
-	IsError      bool   `json:"is_error"`
-	DurationMS   int64  `json:"duration_ms"`
-	Result       string `json:"result"`
-	SessionID    string `json:"session_id"`
-	RequestID    string `json:"request_id"`
-	Usage        *cliUsageJSON `json:"usage"`
+	Type       string        `json:"type"`
+	Subtype    string        `json:"subtype"`
+	IsError    bool          `json:"is_error"`
+	DurationMS int64         `json:"duration_ms"`
+	Result     string        `json:"result"`
+	SessionID  string        `json:"session_id"`
+	RequestID  string        `json:"request_id"`
+	Usage      *cliUsageJSON `json:"usage"`
 }
 
 type cliUsageJSON struct {
@@ -32,16 +32,19 @@ type cliUsageJSON struct {
 }
 
 type cliStreamEvent struct {
-	Type       string          `json:"type"`
-	Subtype    string          `json:"subtype"`
-	SessionID  string          `json:"session_id"`
-	Result     string          `json:"result"`
-	IsError    bool            `json:"is_error"`
-	DurationMS int64           `json:"duration_ms"`
-	Usage      *cliUsageJSON   `json:"usage"`
-	Message    *cliMessage     `json:"message"`
-	Text       string          `json:"text"` // thinking delta
-	ToolCall   json.RawMessage `json:"tool_call"`
+	Type             string          `json:"type"`
+	Subtype          string          `json:"subtype"`
+	SessionID        string          `json:"session_id"`
+	Result           string          `json:"result"`
+	IsError          bool            `json:"is_error"`
+	DurationMS       int64           `json:"duration_ms"`
+	Usage            *cliUsageJSON   `json:"usage"`
+	Message          *cliMessage     `json:"message"`
+	Text             string          `json:"text"` // thinking delta
+	ToolCall         json.RawMessage `json:"tool_call"`
+	CallID           string          `json:"call_id"`
+	AgentID          string          `json:"agent_id"`
+	ParentToolCallID string          `json:"parent_tool_call_id"`
 	// Partial-stream filters (docs): skip when model_call_id set or timestamp absent on final flush.
 	TimestampMS *int64  `json:"timestamp_ms"`
 	ModelCallID *string `json:"model_call_id"`
@@ -55,6 +58,67 @@ type cliMessage struct {
 type cliContentPart struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+}
+
+type taskInfo struct {
+	Name  string
+	Model string
+}
+
+type streamParseState struct {
+	openTasks   map[string]taskInfo
+	taskOrder   []string
+	emittedText map[string]bool
+}
+
+func newStreamParseState() *streamParseState {
+	return &streamParseState{
+		openTasks:   make(map[string]taskInfo),
+		emittedText: make(map[string]bool),
+	}
+}
+
+func (s *streamParseState) openTask(id string, info taskInfo) {
+	if id == "" {
+		return
+	}
+	if _, exists := s.openTasks[id]; !exists {
+		s.taskOrder = append(s.taskOrder, id)
+	}
+	s.openTasks[id] = info
+}
+
+func (s *streamParseState) closeTask(id string) taskInfo {
+	info := s.openTasks[id]
+	delete(s.openTasks, id)
+	out := s.taskOrder[:0]
+	for _, existing := range s.taskOrder {
+		if existing != id {
+			out = append(out, existing)
+		}
+	}
+	s.taskOrder = out
+	return info
+}
+
+func (s *streamParseState) soleOpenTask() (id string, info taskInfo, ok bool) {
+	if len(s.taskOrder) != 1 {
+		return "", taskInfo{}, false
+	}
+	id = s.taskOrder[0]
+	return id, s.openTasks[id], true
+}
+
+func (s *streamParseState) attrFromEvent(ev cliStreamEvent) (name, model, callID string) {
+	if parent := strings.TrimSpace(ev.ParentToolCallID); parent != "" {
+		if info, ok := s.openTasks[parent]; ok {
+			return info.Name, info.Model, parent
+		}
+	}
+	if id, info, ok := s.soleOpenTask(); ok {
+		return info.Name, info.Model, id
+	}
+	return "", "", ""
 }
 
 func (u *cliUsageJSON) toHarness() harness.Usage {
@@ -99,7 +163,8 @@ func ParseJSONResult(data []byte) (*harness.ExecutionResult, error) {
 // ParseStreamJSON reads NDJSON stream-json events and builds an ExecutionResult.
 // When onDelta is non-nil, thinking, tool activity, and assistant text are forwarded
 // (partial assistant deltas preferred). Thinking/tools are display-only and not
-// included in ExecutionResult.Output.
+// included in ExecutionResult.Output. Nested Task assistant text is attributed to
+// the open Task when the CLI forwards it (or when exactly one Task is in flight).
 func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.ExecutionResult, error) {
 	sc := bufio.NewScanner(r)
 	// Cursor stream lines can be large (tool payloads); raise limit.
@@ -111,13 +176,34 @@ func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.E
 		result     *harness.ExecutionResult
 		assistant  strings.Builder
 		sawPartial bool
+		state      = newStreamParseState()
 	)
 
-	emit := func(kind harness.StreamKind, text string) {
-		if onDelta == nil || text == "" {
+	emit := func(d harness.StreamDelta) {
+		if onDelta == nil {
 			return
 		}
-		onDelta(harness.StreamDelta{Kind: kind, Text: text})
+		if d.Text == "" && d.Phase == "" {
+			return
+		}
+		if d.Kind == harness.StreamKindText && d.CallID != "" && d.Text != "" {
+			state.emittedText[d.CallID] = true
+		}
+		onDelta(d)
+	}
+
+	emitAttr := func(kind harness.StreamKind, text, name, model, callID, phase string) {
+		if text == "" && phase == "" {
+			return
+		}
+		emit(harness.StreamDelta{
+			Kind:      kind,
+			Text:      text,
+			AgentName: name,
+			Model:     model,
+			CallID:    callID,
+			Phase:     phase,
+		})
 	}
 
 	for sc.Scan() {
@@ -142,26 +228,66 @@ func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.E
 			if text == "" {
 				text = extractContentText(ev, "thinking", "reasoning")
 			}
-			emit(harness.StreamKindThinking, text)
+			name, model, callID := state.attrFromEvent(ev)
+			emitAttr(harness.StreamKindThinking, text, name, model, callID, "")
 		case "tool_call":
 			label := formatToolCall(ev.ToolCall)
-			if label == "" {
-				continue
+			info, resultContent, isTask := extractTaskMeta(ev.ToolCall)
+			if !isTask {
+				isTask = isTaskToolLabel(label)
 			}
+			if info.Name == "" && isTask {
+				info.Name = taskNameFromLabel(label)
+			}
+			callID := strings.TrimSpace(ev.CallID)
 			switch ev.Subtype {
 			case "", "started":
-				emit(harness.StreamKindTool, label)
+				if isTask {
+					if callID == "" {
+						callID = "task:" + info.Name
+					}
+					if ev.AgentID != "" && info.Name == "" {
+						info.Name = ev.AgentID
+					}
+					state.openTask(callID, info)
+					emitAttr(harness.StreamKindTool, label, info.Name, info.Model, callID, harness.StreamPhaseStarted)
+					break
+				}
+				if label == "" {
+					break
+				}
+				name, model, parentID := state.attrFromEvent(ev)
+				emitAttr(harness.StreamKindTool, label, name, model, parentID, "")
 			case "completed":
-				if isTaskToolLabel(label) {
-					emit(harness.StreamKindTool, label+" (completed)")
+				if isTask {
+					if callID == "" {
+						callID = "task:" + info.Name
+					}
+					closed := state.closeTask(callID)
+					if info.Name == "" {
+						info.Name = closed.Name
+					}
+					if info.Model == "" {
+						info.Model = closed.Model
+					}
+					if resultContent != "" && !state.emittedText[callID] {
+						emitAttr(harness.StreamKindText, resultContent, info.Name, info.Model, callID, "")
+					}
+					if label != "" {
+						emitAttr(harness.StreamKindTool, label+" (completed)", info.Name, info.Model, callID, harness.StreamPhaseCompleted)
+					} else {
+						emitAttr(harness.StreamKindTool, "", info.Name, info.Model, callID, harness.StreamPhaseCompleted)
+					}
+					break
 				}
 			}
 		case "assistant":
 			if ev.TimestampMS != nil {
 				sawPartial = true
 			}
+			name, model, callID := state.attrFromEvent(ev)
 			if thinking := extractContentText(ev, "thinking", "reasoning"); thinking != "" && shouldEmitDelta(ev, sawPartial) {
-				emit(harness.StreamKindThinking, thinking)
+				emitAttr(harness.StreamKindThinking, thinking, name, model, callID, "")
 			}
 			text := extractAssistantText(ev)
 			if text == "" {
@@ -170,8 +296,10 @@ func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.E
 			if !shouldEmitDelta(ev, sawPartial) {
 				continue
 			}
-			emit(harness.StreamKindText, text)
-			assistant.WriteString(text)
+			emitAttr(harness.StreamKindText, text, name, model, callID, "")
+			if callID == "" {
+				assistant.WriteString(text)
+			}
 		case "result":
 			if ev.IsError || ev.Subtype == "error" {
 				return nil, fmt.Errorf("cursor agent stream error: %s", strings.TrimSpace(ev.Result))
@@ -267,6 +395,115 @@ func formatToolCall(raw json.RawMessage) string {
 		}
 	}
 	return ""
+}
+
+func extractTaskMeta(raw json.RawMessage) (info taskInfo, resultContent string, ok bool) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return taskInfo{}, "", false
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return taskInfo{}, "", false
+	}
+	if val, found := obj["taskToolCall"]; found {
+		return taskWrapMeta(val)
+	}
+	if fn, found := obj["function"]; found {
+		var f struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		}
+		if json.Unmarshal(fn, &f) == nil && isTaskToolLabel(f.Name) {
+			return taskInfoFromArgs(parseArgsMap(f.Arguments)), "", true
+		}
+	}
+	return taskInfo{}, "", false
+}
+
+func taskWrapMeta(val json.RawMessage) (taskInfo, string, bool) {
+	var wrap struct {
+		Args   map[string]any  `json:"args"`
+		Result json.RawMessage `json:"result"`
+	}
+	if json.Unmarshal(val, &wrap) != nil {
+		return taskInfo{}, "", true
+	}
+	return taskInfoFromArgs(wrap.Args), extractTaskResultContent(wrap.Result), true
+}
+
+func taskInfoFromArgs(args map[string]any) taskInfo {
+	if args == nil {
+		return taskInfo{}
+	}
+	return taskInfo{
+		Name:  firstArgString(args, "subagent_type", "name", "description"),
+		Model: firstArgString(args, "model"),
+	}
+}
+
+func firstArgString(args map[string]any, keys ...string) string {
+	for _, k := range keys {
+		v, ok := args[k]
+		if !ok {
+			continue
+		}
+		s, ok := v.(string)
+		if !ok {
+			continue
+		}
+		s = strings.TrimSpace(s)
+		if s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func parseArgsMap(raw string) map[string]any {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var args map[string]any
+	if json.Unmarshal([]byte(raw), &args) != nil {
+		return nil
+	}
+	return args
+}
+
+func extractTaskResultContent(result json.RawMessage) string {
+	if len(bytes.TrimSpace(result)) == 0 {
+		return ""
+	}
+	var asStr string
+	if json.Unmarshal(result, &asStr) == nil {
+		return strings.TrimSpace(asStr)
+	}
+	var wrap struct {
+		Success struct {
+			Content string `json:"content"`
+		} `json:"success"`
+		Content string `json:"content"`
+	}
+	if json.Unmarshal(result, &wrap) == nil {
+		if s := strings.TrimSpace(wrap.Success.Content); s != "" {
+			return s
+		}
+		return strings.TrimSpace(wrap.Content)
+	}
+	return ""
+}
+
+func taskNameFromLabel(label string) string {
+	label = strings.TrimSpace(label)
+	lower := strings.ToLower(label)
+	if strings.HasPrefix(lower, "task ") {
+		return strings.TrimSpace(label[5:])
+	}
+	if strings.EqualFold(label, "task") {
+		return ""
+	}
+	return label
 }
 
 func formatNamedTool(key string, val json.RawMessage) string {

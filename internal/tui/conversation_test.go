@@ -28,7 +28,7 @@ type streamingHarness struct {
 	err           error
 }
 
-func (h *streamingHarness) Name() string { return "streaming" }
+func (h *streamingHarness) Name() string                      { return "streaming" }
 func (h *streamingHarness) IsAvailable(context.Context) error { return nil }
 func (h *streamingHarness) CreateSession(context.Context, harness.SessionRequest) (*harness.Session, error) {
 	return &harness.Session{ID: "new"}, nil
@@ -148,7 +148,7 @@ stages:
 
 func TestConversationScreenNavigation(t *testing.T) {
 	m := NewTestModel(nil)
-	next, _ := HandleTestKey(m, "ctrl+6")
+	next, _ := HandleTestKey(m, "ctrl+1")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen = %v", CurrentScreen(next))
 	}
@@ -605,7 +605,7 @@ func TestConversationFocusCaretNoBlinkPipe(t *testing.T) {
 		t.Fatalf("unexpected placeholder: %q", view)
 	}
 	// Leave chat → hollow caret when returning via view of unfocused model.
-	next, _ := HandleTestKey(m, "ctrl+1")
+	next, _ := HandleTestKey(m, "ctrl+2")
 	if ChatInputFocusedForTest(next) {
 		t.Fatal("expected focus lost on Status")
 	}
@@ -618,12 +618,12 @@ func TestConversationFocusCaretNoBlinkPipe(t *testing.T) {
 func TestConversationScreenNavFromEmptyInput(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
-	next, _ := HandleTestKey(m, "ctrl+1")
+	next, _ := HandleTestKey(m, "ctrl+2")
 	if CurrentScreen(next) != ScreenStatus {
 		t.Fatalf("screen = %v, want Status", CurrentScreen(next))
 	}
 	m = EnterConversationForTest(m)
-	next, _ = HandleTestKey(m, "ctrl+5")
+	next, _ = HandleTestKey(m, "ctrl+6")
 	if CurrentScreen(next) != ScreenEvents {
 		t.Fatalf("screen = %v, want Events", CurrentScreen(next))
 	}
@@ -2060,5 +2060,83 @@ func TestConversationExecuteErrorWrapsInView(t *testing.T) {
 	}
 	if errorLines < 2 {
 		t.Fatalf("expected wrapped error across multiple lines, got %d in %q", errorLines, view)
+	}
+}
+
+func TestTabBarListsChatFirst(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	view := ViewForTest(m)
+	chat := strings.Index(view, "Chat")
+	status := strings.Index(view, "Status")
+	if chat < 0 || status < 0 || chat > status {
+		t.Fatalf("expected Chat before Status in tab bar: %q", view)
+	}
+}
+
+func TestConversationAgentsBoxIdle(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	view := ViewForTest(m)
+	if !strings.Contains(view, "agents: 0") {
+		t.Fatalf("expected idle agents box: %q", view)
+	}
+}
+
+func TestConversationAgentsBoxLiveLabels(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m.liveAgents = []liveAgent{
+		{Name: "orchestration_agent", Label: "ORCH"},
+		{Name: "backend_agent", Label: "BACK"},
+	}
+	view := ViewForTest(m)
+	if !strings.Contains(view, "agents: 2") {
+		t.Fatalf("expected agents: 2: %q", view)
+	}
+	if !strings.Contains(view, "ORCH") || !strings.Contains(view, "BACK") {
+		t.Fatalf("expected ORCH | BACK labels: %q", view)
+	}
+}
+
+func TestConversationSubagentTranscriptLabels(t *testing.T) {
+	m, h, _ := newConversationTestModel(t)
+	h.deltas = nil
+	h.events = []harness.StreamDelta{
+		{Kind: harness.StreamKindText, Text: "Launching QA\n"},
+		{Kind: harness.StreamKindTool, Text: "Task qa_agent", AgentName: "qa_agent", Model: "composer-2.5", CallID: "t1", Phase: harness.StreamPhaseStarted},
+		{Kind: harness.StreamKindText, Text: "Running unit tests\n", AgentName: "qa_agent", Model: "composer-2.5", CallID: "t1"},
+		{Kind: harness.StreamKindTool, Text: "Task qa_agent (completed)", AgentName: "qa_agent", Model: "composer-2.5", CallID: "t1", Phase: harness.StreamPhaseCompleted},
+		{Kind: harness.StreamKindText, Text: "QA failed\n"},
+	}
+	h.sessionID = "sess-sub"
+
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 40)
+	m = EnterConversationForTest(m)
+	m.runtimeAgentName = "orchestration_agent"
+	m = SetConversationInput(m, "start qa")
+	next, cmd := SubmitConversationForTest(m)
+	next = drainConversationStream(t, next, cmd)
+	if len(LiveAgentsForTest(next)) != 0 {
+		t.Fatalf("live agents after stream: %+v", LiveAgentsForTest(next))
+	}
+	view := ViewForTest(next)
+	if !strings.Contains(view, "[Orchestrator]") {
+		t.Fatalf("missing orchestrator label: %q", view)
+	}
+	if !strings.Contains(view, "[QA - composer-2.5]") {
+		t.Fatalf("missing QA label: %q", view)
+	}
+	if !strings.Contains(view, "Launching QA") || !strings.Contains(view, "Running unit tests") || !strings.Contains(view, "QA failed") {
+		t.Fatalf("missing transcript text: %q", view)
+	}
+	if strings.Contains(view, "Task qa_agent (completed)") {
+		t.Fatalf("task lifecycle should not render as tool line: %q", view)
 	}
 }

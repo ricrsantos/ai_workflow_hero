@@ -38,12 +38,14 @@ TUI **exits** with non-zero status on validation failure.
 
 ## 3. Conversation screen
 
+Tab bar order (left to right): **Chat | Status | Approvals | Artifacts | Costs | Events**. Shortcuts follow visual order (`alt+1` / `ctrl+1` = Chat, `alt+2` = Status, … `alt+6` = Events). TUI boot still opens **Status**.
+
 New screen (or primary mode when an etapa requires interações):
 
 | Region | Content |
 |---|---|
-| Header | With etapa: Cycle C{N}, etapa name, iteration, harness session. Without etapa (**freechat**): `Free chat · harness <tool>` |
-| Transcript | User, **thinking** (muted), **tool activity**, and agent answer; all stream as `stream-json` events arrive |
+| Header | Left: with etapa Cycle C{N}, etapa name, iteration, harness session; without etapa (**freechat**): `Chat · harness <tool>`. Right: live **agents** box (`agents: N` plus 4-letter labels such as `ORCH \| BACK`; `HARN` for harness-native / freechat / unknown Task). |
+| Transcript | User, **thinking** (muted), **tool activity**, and agent answer; all stream as `stream-json` events arrive. Parent text is labeled `[Orchestrator]` or `[Agent - {model}]`. Subagent blocks use `[Name - model]` with a blank line before and after. Task start/complete updates the agents box; nested Task text is shown when the CLI forwards it, otherwise Task `result.content` is printed in the subagent block. |
 
 | Input | OpenCode-style boxed prompt with colored accent bar; status line shows **Build** or **Plan**, model slug, and harness name; Enter submits **interação**; Esc clears input (or dismisses the slash overlay first). **`/` stays in the composer** and opens a filtered autocomplete overlay of `/hero-*` (and imported) commands — Enter/Tab on an item **inserts** the token; a second Enter sends. **Tab** toggles Build ↔ Plan only when the overlay is closed (Plan → Cursor Agent CLI `--mode plan`). `/` on other screens still opens the full command palette. With a live `/hero-start` orchestrator session, `/hero-approve` (and `/hero-reject` `/hero-cancel` `/hero-finish` `/hero-continue` `/hero-back`) are sent as **follow-ups** to that session — they must not fail on SQLite `PendingApproval` (the waiting agent persists via CLI). |
 | Footer | Hints: `tab mode`, `/hero-model`, `alt+1–6` screens, `ctrl+q` quit |
@@ -123,7 +125,8 @@ Include archive-only cycles from `.workflow-hero/cycles/archive/` when absent fr
 
 - Use harness `stream-json` with `--stream-partial-output` when TUI conversation is active.
 - Pipe CLI stdout into the NDJSON parser **while the process runs** so transcript deltas appear before exit (not only after buffered `Run`).
-- Forward `thinking` deltas (muted italic `Thinking:`) and `tool_call` started events (`→ Read path`) in addition to assistant text. Thinking/tools stay in the transcript after completion; the agent bubble is replaced with canonical `result.Output`.
+- Forward `thinking` deltas (muted italic `Thinking:`), `tool_call` started events (`→ Read path`), and Task lifecycle (live agents box + labeled subagent blocks). Thinking/tools stay in the transcript after completion. The parent agent bubble is replaced with canonical `result.Output` **only when the turn has no subagent blocks** (replacing would wipe labels).
+- Attribute assistant/tool events to an in-flight Task when the CLI tags them (`parent_tool_call_id`) or when exactly one Task is open. If no nested text arrived, print Task `result.content` in that subagent block.
 - Buffer partial lines; update transcript incrementally (lipgloss-safe wrapping).
 - On Ctrl+C during stream: call harness `Cancel` if supported; show `Interrupted`.
 

@@ -18,12 +18,12 @@ import (
 type screen int
 
 const (
-	screenStatus screen = iota
+	screenConversation screen = iota
+	screenStatus
 	screenApprovals
 	screenArtifacts
 	screenCosts
 	screenEvents
-	screenConversation
 	screenPalette
 	screenOutput
 )
@@ -95,6 +95,8 @@ type model struct {
 
 	slashOverlayIndex     int  // selected row in Chat `/` autocomplete
 	slashOverlayDismissed bool // Esc or insert closed the overlay until the token changes
+
+	liveAgents []liveAgent // currently executing parent + Task subagents (Chat box)
 }
 
 type refreshDataMsg struct {
@@ -277,17 +279,17 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+r", "f5":
 		return m, m.refreshCmd()
 	case "ctrl+1", "alt+1":
-		return m.goListScreen(screenStatus)
-	case "ctrl+2", "alt+2":
-		return m.goListScreen(screenApprovals)
-	case "ctrl+3", "alt+3":
-		return m.goListScreen(screenArtifacts)
-	case "ctrl+4", "alt+4":
-		return m.goListScreen(screenCosts)
-	case "ctrl+5", "alt+5":
-		return m.goListScreen(screenEvents)
-	case "ctrl+6", "alt+6":
 		return m.enterConversation()
+	case "ctrl+2", "alt+2":
+		return m.goListScreen(screenStatus)
+	case "ctrl+3", "alt+3":
+		return m.goListScreen(screenApprovals)
+	case "ctrl+4", "alt+4":
+		return m.goListScreen(screenArtifacts)
+	case "ctrl+5", "alt+5":
+		return m.goListScreen(screenCosts)
+	case "ctrl+6", "alt+6":
+		return m.goListScreen(screenEvents)
 	case "up", "ctrl+p":
 		if m.screenHasContentScroll() {
 			return m.scrollContent(-1), nil

@@ -37,7 +37,7 @@ func TestNavigateScreens(t *testing.T) {
 	if CurrentScreen(m) != ScreenStatus {
 		t.Fatalf("screen = %v", CurrentScreen(m))
 	}
-	next, _ := HandleTestKey(m, "ctrl+3")
+	next, _ := HandleTestKey(m, "ctrl+4")
 	if CurrentScreen(next) != ScreenArtifacts {
 		t.Fatalf("artifacts screen = %v", CurrentScreen(next))
 	}
@@ -167,7 +167,7 @@ type recordingHarness struct {
 	dispatched bool
 }
 
-func (h *recordingHarness) Name() string { return "recording" }
+func (h *recordingHarness) Name() string                      { return "recording" }
 func (h *recordingHarness) IsAvailable(context.Context) error { return nil }
 func (h *recordingHarness) CreateSession(context.Context, harness.SessionRequest) (*harness.Session, error) {
 	return &harness.Session{ID: "rec"}, nil
@@ -274,7 +274,9 @@ func (unavailableHarness) IsAvailable(context.Context) error {
 func (unavailableHarness) CreateSession(context.Context, harness.SessionRequest) (*harness.Session, error) {
 	return nil, errors.New("unavailable")
 }
-func (unavailableHarness) ResumeSession(context.Context, string) error { return errors.New("unavailable") }
+func (unavailableHarness) ResumeSession(context.Context, string) error {
+	return errors.New("unavailable")
+}
 func (unavailableHarness) Execute(context.Context, harness.ExecuteRequest) (*harness.ExecutionResult, error) {
 	return nil, errors.New("unavailable")
 }
@@ -529,7 +531,7 @@ func TestPaletteScrollKeepsSelectionVisible(t *testing.T) {
 		t.Fatalf("expected range caption: %q", view)
 	}
 	// Top item should no longer be the selected line when scrolled.
-	if strings.Contains(view, "▸  Go to - Status") || strings.Contains(view, "▸ Go to - Status") {
+	if strings.Contains(view, "▸  Go to - Chat") || strings.Contains(view, "▸ Go to - Chat") {
 		t.Fatalf("scrolled view should not keep first item selected: %q", view)
 	}
 }

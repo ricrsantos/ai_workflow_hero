@@ -111,6 +111,70 @@ func TestParseStreamJSONTaskToolCall(t *testing.T) {
 	if !strings.Contains(joined, "Task frontend_agent (completed)") {
 		t.Fatalf("missing Task completed: %q", joined)
 	}
+	if !strings.Contains(joined, `{"stage":"implementation"}`) {
+		t.Fatalf("missing Task result content: %q", joined)
+	}
+}
+
+func TestParseStreamJSONTaskAttributesNestedText(t *testing.T) {
+	ndjson := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"s"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Launching QA"}]},"session_id":"s","timestamp_ms":1}`,
+		`{"type":"tool_call","subtype":"started","call_id":"t1","tool_call":{"taskToolCall":{"args":{"description":"qa_agent","model":"composer-2.5"}}},"session_id":"s"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Running unit tests"}]},"session_id":"s","timestamp_ms":2}`,
+		`{"type":"tool_call","subtype":"started","call_id":"c2","tool_call":{"shellToolCall":{"args":{"command":"go test ./..."}}},"session_id":"s"}`,
+		`{"type":"tool_call","subtype":"completed","call_id":"t1","tool_call":{"taskToolCall":{"args":{"description":"qa_agent","model":"composer-2.5"},"result":{"success":{"content":"duplicate"}}}},"session_id":"s"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"QA failed"}]},"session_id":"s","timestamp_ms":3}`,
+		`{"type":"result","subtype":"success","is_error":false,"duration_ms":5,"result":"Launching QAQA failed","session_id":"s"}`,
+	}, "\n") + "\n"
+
+	var deltas []harness.StreamDelta
+	res, err := cursoradapter.ParseStreamJSON(strings.NewReader(ndjson), func(d harness.StreamDelta) {
+		deltas = append(deltas, d)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Output != "Launching QAQA failed" {
+		t.Fatalf("parent output=%q", res.Output)
+	}
+
+	find := func(kind harness.StreamKind, text string) harness.StreamDelta {
+		t.Helper()
+		for _, d := range deltas {
+			if d.Kind == kind && d.Text == text {
+				return d
+			}
+		}
+		t.Fatalf("missing %s %q in %+v", kind, text, deltas)
+		return harness.StreamDelta{}
+	}
+
+	start := find(harness.StreamKindTool, "Task qa_agent")
+	if start.AgentName != "qa_agent" || start.Model != "composer-2.5" || start.CallID != "t1" || start.Phase != harness.StreamPhaseStarted {
+		t.Fatalf("task start = %+v", start)
+	}
+	nested := find(harness.StreamKindText, "Running unit tests")
+	if nested.AgentName != "qa_agent" || nested.CallID != "t1" {
+		t.Fatalf("nested text = %+v", nested)
+	}
+	shell := find(harness.StreamKindTool, "Shell go test ./...")
+	if shell.CallID != "t1" {
+		t.Fatalf("nested tool = %+v", shell)
+	}
+	for _, d := range deltas {
+		if d.Text == "duplicate" {
+			t.Fatalf("emitted Task result despite live text: %+v", deltas)
+		}
+	}
+	parent := find(harness.StreamKindText, "QA failed")
+	if parent.CallID != "" || parent.AgentName != "" {
+		t.Fatalf("parent text should be unattributed: %+v", parent)
+	}
+	done := find(harness.StreamKindTool, "Task qa_agent (completed)")
+	if done.Phase != harness.StreamPhaseCompleted || done.CallID != "t1" {
+		t.Fatalf("task done = %+v", done)
+	}
 }
 
 func TestIsAuthFailure(t *testing.T) {

@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-14 — Release v1.1.0
+
+**Problem**: Chat was last in the tab bar; the response pane showed only the parent harness session; nested Task work was a `→ Task name` line with no live agent count.
+
+**Decision / Outcome**: Tab order is Chat | Status | … | Events (`alt+1` = Chat; boot still Status). Cursor `stream-json` parser tracks open Tasks (`AgentName`/`Model`/`CallID`/`Phase`); TUI labels `[Orchestrator]` / `[QA - model]` with blank lines around subagent blocks and skips `result.Output` replacement when those blocks exist. Chat header has a live `agents: N` box with 4-letter labels (`ORCH`, `BACK`, `HARN`, …). Nested Task text is best-effort: attributed while a Task is open, else Task `result.content`. Tagged `v1.1.0`.
+
+---
+
 ## 2026-08-13 — Release v1.0.8
 
 **Problem**: TUI Approvals had no history; Artifacts was empty; `/hero-archive` failed when `openspec` was only on the user shell PATH (nvm/fnm); manual OpenSpec archive left Hero archive blocked.
