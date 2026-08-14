@@ -20,7 +20,6 @@ type screen int
 const (
 	screenConversation screen = iota
 	screenStatus
-	screenApprovals
 	screenArtifacts
 	screenCosts
 	screenEvents
@@ -40,7 +39,7 @@ type model struct {
 	artifacts cycle.ArtifactsView
 	approvals cycle.ApprovalsView
 
-	contentOffset int // scroll for Status/Approvals/Artifacts/Costs/Events
+	contentOffset int // scroll for Status/Artifacts/Costs/Events
 
 	// Fixed footer status bar (running / result / error).
 	statusKind    statusKind
@@ -299,12 +298,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+2", "alt+2":
 		return m.goListScreen(screenStatus)
 	case "ctrl+3", "alt+3":
-		return m.goListScreen(screenApprovals)
-	case "ctrl+4", "alt+4":
 		return m.goListScreen(screenArtifacts)
-	case "ctrl+5", "alt+5":
+	case "ctrl+4", "alt+4":
 		return m.goListScreen(screenCosts)
-	case "ctrl+6", "alt+6":
+	case "ctrl+5", "alt+5":
 		return m.goListScreen(screenEvents)
 	case "up", "ctrl+p":
 		if m.screenHasContentScroll() {
@@ -332,22 +329,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.contentOffset = m.maxContentOffset()
 			return m, nil
 		}
-	case "a":
-		if m.screen == screenApprovals {
-			return m.beginHeroApprove()
-		}
-	case "r":
-		if m.screen == screenApprovals {
-			return m.beginHeroReject()
-		}
-	case "f":
-		if m.screen == screenApprovals {
-			return m.beginHeroFinish()
-		}
-	case "c":
-		if m.screen == screenApprovals {
-			return m.beginHeroCancel()
-		}
 	}
 	return m, nil
 }
@@ -359,8 +340,8 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+c":
 		return m, tea.Quit
-	case "ctrl+q", "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5", "ctrl+6",
-		"alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6",
+	case "ctrl+q", "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5",
+		"alt+1", "alt+2", "alt+3", "alt+4", "alt+5",
 		"ctrl+r", "f5":
 		// Leave palette chrome before global navigation / refresh / quit.
 		m.pickingModel = false
@@ -505,6 +486,8 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 			return m, cmd
 		}
 		return m.beginAction(item.commandLabel, m.importCommandCmd(item))
+	case actionNewChat:
+		return m.beginNewChat()
 	}
 	return m, nil
 }
@@ -563,6 +546,26 @@ func (m model) validateOrchestratorPreconditions() (errMsg string) {
 		return noActiveCycleForStartMessage()
 	}
 	return ""
+}
+
+func (m model) beginNewChat() (model, tea.Cmd) {
+	if m.streaming {
+		m, _ = m.enterConversation()
+		m = m.setStatusResult(false, "/new-chat", newChatBlockedMessage())
+		return m, nil
+	}
+	if m.actionBusy {
+		m = m.setStatusBusyBlocked()
+		return m, nil
+	}
+	m, _ = m.enterConversation()
+	m = m.resetChatSession()
+	m = m.setStatusResult(true, "/new-chat", "New chat started with default model.")
+	return m, nil
+}
+
+func newChatBlockedMessage() string {
+	return "Wait for the agent to finish or press ctrl+c to interrupt before starting a new chat."
 }
 
 func (m model) beginHeroNew() (model, tea.Cmd) {
@@ -1140,8 +1143,6 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}, Alt: true}
 	case "ctrl+5", "alt+5":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}, Alt: true}
-	case "ctrl+6", "alt+6":
-		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'6'}, Alt: true}
 	default:
 		if len(s) == 1 {
 			return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(s[0])}}

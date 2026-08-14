@@ -204,6 +204,36 @@ func (m model) enterConversation() (model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) resetChatSession() model {
+	m.transcript = nil
+	m.harnessSessionID = ""
+	m.conversationStage = ""
+	m.orchestrationLive = false
+	m.awaitingRejectReason = false
+	m.runtimeCommandName = ""
+	m.runtimeModelSlug = ""
+	m.runtimeAgentName = ""
+	m.liveAgents = nil
+	m.convError = ""
+	m.streamInterrupted = false
+	m.agentMsgIndex = -1
+	m.thinkingMsgIndex = -1
+	m.respScrollOffset = 0
+	m.respFollowBottom = true
+	m.waitAnimFrame = 0
+	m = m.clearChatInput()
+	if m.svc != nil {
+		stage, _, err := m.svc.ConversationContext()
+		if err == nil && stage != "" {
+			if err := m.svc.SetStageHarnessSessionID(stage, ""); err != nil {
+				slog.Debug("tui clear harness session failed", "error", err)
+			}
+		}
+	}
+	m = m.syncConversationContext()
+	return m
+}
+
 // heroRuntimeOpts carries command-specific context for Runtime Execute preambles.
 type heroRuntimeOpts struct {
 	RejectReason      string
@@ -341,7 +371,7 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "ctrl+q":
 			return m.showConfirm(actionQuit, 0, "Agent is running. Quit? [y/N]")
 		case "ctrl+1", "alt+1", "ctrl+2", "alt+2", "ctrl+3", "alt+3",
-			"ctrl+4", "alt+4", "ctrl+5", "alt+5", "ctrl+6", "alt+6":
+			"ctrl+4", "alt+4", "ctrl+5", "alt+5":
 			// Allow screen navigation while streaming; the goroutine keeps running.
 			return m.handleKey(msg)
 		case "up", "ctrl+p":
@@ -367,8 +397,8 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Global shortcuts (modifier+key) work even while typing in chat.
 	// `/` is NOT global here — it stays in the composer (Cursor-style overlay).
 	switch s {
-	case "ctrl+q", "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5", "ctrl+6",
-		"alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6",
+	case "ctrl+q", "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5",
+		"alt+1", "alt+2", "alt+3", "alt+4", "alt+5",
 		"ctrl+r", "f5":
 		return m.handleKey(msg)
 	}
@@ -667,6 +697,10 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 	case "/hero-help":
 		m = m.clearChatInput()
 		next, cmd := m.beginAction("/hero-help", m.helpCmd())
+		return next, cmd, true
+	case "/new-chat":
+		m = m.clearChatInput()
+		next, cmd := m.beginNewChat()
 		return next, cmd, true
 	default:
 		return m, nil, false

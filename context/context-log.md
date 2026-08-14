@@ -196,4 +196,12 @@
 
 ---
 
+## 2026-08-14 — TUI: remove Approvals, `/new-chat`
+
+**Problem**: Approvals screen duplicated Chat slash workflow; users needed a way to reset the chat session without `/hero-new`.
+
+**Decision / Outcome**: Removed Approvals screen and `Go to - Approvals` (tabs/shortcuts now Chat, Status, Artifacts, Costs, Events — `alt+1`–`alt+5`). Added `/new-chat` to palette + Chat slash overlay: clears transcript, harness session, orchestrator state; uses default model; blocked while agent is streaming (message prompts wait or ctrl+c). Chat newline (shift+enter) attempted and **reverted** — caused TUI input freeze; Enter submits only.
+
+---
+
 _Older 2026-08-12 / 2026-08-10 notes (cycle prepare/sync, slash parity, Chat panes) are in git history._

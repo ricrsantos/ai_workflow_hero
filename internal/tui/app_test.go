@@ -37,7 +37,7 @@ func TestNavigateScreens(t *testing.T) {
 	if CurrentScreen(m) != ScreenStatus {
 		t.Fatalf("screen = %v", CurrentScreen(m))
 	}
-	next, _ := HandleTestKey(m, "ctrl+4")
+	next, _ := HandleTestKey(m, "ctrl+3")
 	if CurrentScreen(next) != ScreenArtifacts {
 		t.Fatalf("artifacts screen = %v", CurrentScreen(next))
 	}
@@ -347,8 +347,7 @@ func TestApproveActionWithService(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"Stage approved."}, sessionID: "approve-key-sess"}
 	svc.Harness = h
 	m := withDefaultChatModel(NewTestModel(svc))
-	m = SetScreen(m, ScreenApprovals)
-	next, cmd := HandleTestKey(m, "a")
+	next, cmd := RunPaletteItemForTest(m, "/hero-approve")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
 	}
@@ -380,8 +379,7 @@ func TestRejectActionWithService(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"Stage rejected."}, sessionID: "reject-key-sess"}
 	svc.Harness = h
 	m := withDefaultChatModel(NewTestModel(svc))
-	m = SetScreen(m, ScreenApprovals)
-	next, cmd := HandleTestKey(m, "r")
+	next, cmd := RunPaletteItemForTest(m, "/hero-reject")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
 	}
@@ -425,8 +423,7 @@ func TestCancelActionWithService(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"Cycle cancelled."}, sessionID: "cancel-key-sess"}
 	svc.Harness = h
 	m := withDefaultChatModel(NewTestModel(svc))
-	m = SetScreen(m, ScreenApprovals)
-	next, cmd := HandleTestKey(m, "c")
+	next, cmd := RunPaletteItemForTest(m, "/hero-cancel")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
 	}
@@ -455,8 +452,7 @@ func TestFinishActionWithService(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"Cycle finished."}, sessionID: "finish-key-sess"}
 	svc.Harness = h
 	m := withDefaultChatModel(NewTestModel(svc))
-	m = SetScreen(m, ScreenApprovals)
-	next, cmd := HandleTestKey(m, "f")
+	next, cmd := RunPaletteItemForTest(m, "/hero-finish")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
 	}
@@ -578,7 +574,7 @@ func TestNavigationAllowedWhileStreaming(t *testing.T) {
 	m = EnterConversationForTest(m)
 	m = SetStreamingForTest(m, true)
 
-	for _, key := range []string{"alt+2", "alt+3", "alt+4", "alt+5", "alt+6"} {
+	for _, key := range []string{"alt+2", "alt+3", "alt+4", "alt+5"} {
 		next, _ := HandleTestKey(m, key)
 		if CurrentScreen(next) == ScreenConversation {
 			t.Errorf("key %q: expected to leave Chat while streaming, got ScreenConversation", key)

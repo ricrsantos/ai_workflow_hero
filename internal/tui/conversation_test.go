@@ -623,7 +623,7 @@ func TestConversationScreenNavFromEmptyInput(t *testing.T) {
 		t.Fatalf("screen = %v, want Status", CurrentScreen(next))
 	}
 	m = EnterConversationForTest(m)
-	next, _ = HandleTestKey(m, "ctrl+6")
+	next, _ = HandleTestKey(m, "ctrl+5")
 	if CurrentScreen(next) != ScreenEvents {
 		t.Fatalf("screen = %v, want Events", CurrentScreen(next))
 	}
@@ -2157,5 +2157,43 @@ func TestConversationSubagentTranscriptLabels(t *testing.T) {
 	}
 	if strings.Contains(view, "Task qa_agent (completed)") {
 		t.Fatalf("task lifecycle should not render as tool line: %q", view)
+	}
+}
+
+func TestNewChatClearsSession(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m.harnessSessionID = "old-session"
+	m.orchestrationLive = true
+	m.transcript = []convMessage{{role: convRoleUser, content: "hello"}}
+	next, cmd := RunPaletteItemForTest(m, "/new-chat")
+	if cmd != nil {
+		t.Fatal("new-chat should not spawn async cmd")
+	}
+	if len(ConversationTranscriptForTest(next)) != 0 {
+		t.Fatal("expected empty transcript after new-chat")
+	}
+	if HarnessSessionIDForTest(next) != "" {
+		t.Fatalf("session=%q want empty", HarnessSessionIDForTest(next))
+	}
+	if next.orchestrationLive {
+		t.Fatal("orchestrationLive should be false")
+	}
+	if StatusTextForTest(next) != "New chat started with default model." {
+		t.Fatalf("status=%q", StatusTextForTest(next))
+	}
+}
+
+func TestNewChatBlockedWhileStreaming(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetStreamingForTest(m, true)
+	next, cmd := RunPaletteItemForTest(m, "/new-chat")
+	if cmd != nil {
+		t.Fatal("blocked new-chat should not spawn cmd")
+	}
+	if !strings.Contains(StatusTextForTest(next), "ctrl+c") {
+		t.Fatalf("status=%q", StatusTextForTest(next))
 	}
 }

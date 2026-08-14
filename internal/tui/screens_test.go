@@ -27,7 +27,7 @@ func TestEmptyArtifactsCostsEventsNoC0(t *testing.T) {
 	m.metrics = cycle.MetricsView{}
 	m.events = cycle.EventsView{}
 
-	for _, screen := range []screen{ScreenApprovals, ScreenArtifacts, ScreenCosts, ScreenEvents} {
+	for _, screen := range []screen{ScreenArtifacts, ScreenCosts, ScreenEvents} {
 		m = SetScreen(m, screen)
 		view := ViewForTest(m)
 		if strings.Contains(view, "C0") {
@@ -119,44 +119,6 @@ func TestRenderEventsLocalTime(t *testing.T) {
 	}
 	if strings.Contains(view, "23:44:32") && want.Local().Format("15:04:05") != "23:44:32" {
 		t.Fatalf("must not show UTC time when local differs:\n%s", view)
-	}
-}
-
-func TestRenderApprovalsHistory(t *testing.T) {
-	m := NewTestModel(nil)
-	m = SetWidth(m, 100)
-	m = SetHeight(m, 30)
-	m.approvals = cycle.ApprovalsView{
-		CycleNumber: 4,
-		Title:       "TUI screens",
-		Pending:     "Planning",
-		Entries: []cycle.ApprovalEntry{
-			{Stage: "Research", Event: "requested", TS: "2025-08-13T23:44:32Z"},
-			{Stage: "Research", Event: "approved", TS: "2025-08-13T23:50:00Z"},
-			{Stage: "Planning", Event: "requested", TS: "2025-08-13T23:55:00Z"},
-		},
-	}
-	m = SetScreen(m, ScreenApprovals)
-	view := ViewForTest(m)
-	for _, want := range []string{"Approvals", "Planning", "awaits your decision", "History", "Research", "requested", "approved"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("expected %q in view:\n%s", want, view)
-		}
-	}
-}
-
-func TestRenderApprovalsEmptyActiveCycle(t *testing.T) {
-	m := NewTestModel(nil)
-	m = SetWidth(m, 80)
-	m = SetHeight(m, 24)
-	m.approvals = cycle.ApprovalsView{CycleNumber: 2}
-	m = SetScreen(m, ScreenApprovals)
-	view := ViewForTest(m)
-	if strings.Contains(view, "C0") {
-		t.Fatalf("must not mention C0: %q", view)
-	}
-	if !strings.Contains(view, "No approval activity for cycle C2") {
-		t.Fatalf("expected empty-history message: %q", view)
 	}
 }
 

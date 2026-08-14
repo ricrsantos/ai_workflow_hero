@@ -14,8 +14,6 @@ func (m model) renderContent() string {
 	switch m.screen {
 	case screenStatus:
 		return m.renderStatus()
-	case screenApprovals:
-		return m.renderApprovals()
 	case screenArtifacts:
 		return m.renderArtifacts()
 	case screenCosts:
@@ -63,101 +61,6 @@ func (m model) renderStatus() string {
 		b.WriteByte('\n')
 	}
 	return b.String()
-}
-
-func (m model) renderApprovals() string {
-	var b strings.Builder
-	cycleN := m.approvals.CycleNumber
-	if cycleN == 0 {
-		cycleN = m.status.CycleNumber
-	}
-	pending := m.approvals.Pending
-	if pending == "" {
-		pending = pendingApprovalStage(m.status)
-	}
-
-	if cycleN <= 0 && pending == "" && len(m.approvals.Entries) == 0 {
-		b.WriteString(mutedStyle.Render("No active cycle. Run /hero-new to start."))
-		return b.String()
-	}
-
-	title := "Approvals"
-	if cycleN > 0 {
-		if m.approvals.Title != "" {
-			title = fmt.Sprintf("Approvals — C%d %s", cycleN, m.approvals.Title)
-		} else if m.status.Title != "" {
-			title = fmt.Sprintf("Approvals — C%d %s", cycleN, m.status.Title)
-		} else {
-			title = fmt.Sprintf("Approvals — C%d", cycleN)
-		}
-	}
-	b.WriteString(headerStyle.Render(title))
-	b.WriteByte('\n')
-
-	if pending != "" {
-		b.WriteByte('\n')
-		b.WriteString(headerStyle.Render("Pending"))
-		b.WriteByte('\n')
-		b.WriteString(warnStyle.Render(fmt.Sprintf("⚠ Stage %q awaits your decision.", pending)))
-		b.WriteByte('\n')
-	}
-
-	if len(m.approvals.Entries) == 0 {
-		if pending == "" {
-			b.WriteByte('\n')
-			b.WriteString(mutedStyle.Render(emptyCycleScreenMessage("approval activity", cycleN)))
-			b.WriteByte('\n')
-		}
-	} else {
-		b.WriteByte('\n')
-		b.WriteString(headerStyle.Render("History"))
-		b.WriteByte('\n')
-		stageW, eventW := approvalColumnWidths(m.approvals.Entries)
-		header := fmt.Sprintf(" %s %s %s %s",
-			padRight("Time", 8),
-			padRight("Stage", stageW),
-			padRight("Event", eventW),
-			"Detail",
-		)
-		b.WriteString(mutedStyle.Render(header))
-		b.WriteByte('\n')
-		for _, e := range m.approvals.Entries {
-			line := fmt.Sprintf(" %s %s %s %s",
-				padRight(formatEventTimeLocal(e.TS), 8),
-				padRight(e.Stage, stageW),
-				padRight(e.Event, eventW),
-				e.Detail,
-			)
-			b.WriteString(approvalEventStyle(e.Event).Render(strings.TrimRight(line, " ")))
-			b.WriteByte('\n')
-		}
-	}
-
-	b.WriteByte('\n')
-	b.WriteString(footerStyle.Render("Keys: a approve · r reject · c cancel cycle · f finish"))
-	return b.String()
-}
-
-func approvalColumnWidths(entries []cycle.ApprovalEntry) (stageW, eventW int) {
-	stageW, eventW = len("Stage"), len("Event")
-	for _, e := range entries {
-		stageW = max(stageW, len(e.Stage))
-		eventW = max(eventW, len(e.Event))
-	}
-	return stageW + 1, eventW + 1
-}
-
-func approvalEventStyle(event string) lipgloss.Style {
-	switch event {
-	case "approved":
-		return successStyle
-	case "requested", "continued":
-		return infoStyle
-	case "rejected", "escalated":
-		return errorStyle
-	default:
-		return lipgloss.NewStyle()
-	}
 }
 
 func (m model) renderArtifacts() string {
@@ -455,7 +358,7 @@ func (m model) renderFrame() string {
 }
 
 func screenTabBar(active screen) string {
-	names := []string{"Chat", "Status", "Approvals", "Artifacts", "Costs", "Events"}
+	names := []string{"Chat", "Status", "Artifacts", "Costs", "Events"}
 	var parts []string
 	for i, name := range names {
 		if screen(i) == active {
@@ -481,12 +384,12 @@ func (m model) footerHints() string {
 		if m.chatSlashOverlayActive() {
 			return "enter select · tab select · esc close · ↑↓"
 		}
-		return "tab mode · enter send · ↑↓ scroll · /hero-model · alt+1-6 screens · ctrl+q quit"
+		return "tab mode · enter send · ↑↓ scroll · /hero-model · alt+1-5 screens · ctrl+q quit"
 	}
 	if m.screenHasContentScroll() {
-		return "↑↓ scroll · alt+1-6 screens · / commands · ctrl+r refresh · ctrl+q quit"
+		return "↑↓ scroll · alt+1-5 screens · / commands · ctrl+r refresh · ctrl+q quit"
 	}
-	return "alt+1-6 screens · / commands · ctrl+r refresh · ctrl+q quit"
+	return "alt+1-5 screens · / commands · ctrl+r refresh · ctrl+q quit"
 }
 
 func pendingApprovalStage(st cycle.StatusView) string {
@@ -573,7 +476,7 @@ func max(a, b int) int {
 
 func (m model) screenHasContentScroll() bool {
 	switch m.screen {
-	case screenStatus, screenApprovals, screenArtifacts, screenCosts, screenEvents:
+	case screenStatus, screenArtifacts, screenCosts, screenEvents:
 		return true
 	default:
 		return false

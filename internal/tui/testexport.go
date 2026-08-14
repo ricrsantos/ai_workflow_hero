@@ -11,7 +11,6 @@ import (
 // Exported screen aliases for tests.
 const (
 	ScreenStatus       = screenStatus
-	ScreenApprovals    = screenApprovals
 	ScreenArtifacts    = screenArtifacts
 	ScreenCosts        = screenCosts
 	ScreenEvents       = screenEvents
