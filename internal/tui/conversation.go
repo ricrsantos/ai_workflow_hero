@@ -167,6 +167,35 @@ func (m model) conversationModelLabel() string {
 	return "not set"
 }
 
+// responseSpeakerHeader is the green-pane origin label: [QA - composer-2.5], [HARN - grok-4.6].
+func (m model) responseSpeakerHeader() string {
+	name := strings.TrimSpace(m.runtimeAgentName)
+	model := m.conversationModelSlug()
+	if n := len(m.liveAgents); n > 0 {
+		a := m.liveAgents[n-1]
+		name = a.Name
+		if slug := strings.TrimSpace(a.Model); slug != "" {
+			model = slug
+		}
+		return formatAgentHeader(name, model)
+	}
+	turn := m.latestAgentTurn()
+	for i := len(turn) - 1; i >= 0; i-- {
+		msg := turn[i]
+		if strings.TrimSpace(msg.agentName) == "" && strings.TrimSpace(msg.modelSlug) == "" {
+			continue
+		}
+		if n := strings.TrimSpace(msg.agentName); n != "" {
+			name = n
+		}
+		if slug := strings.TrimSpace(msg.modelSlug); slug != "" {
+			model = slug
+		}
+		break
+	}
+	return formatAgentHeader(name, model)
+}
+
 func (m model) enterConversation() (model, tea.Cmd) {
 	m.screen = screenConversation
 	m.chatInputFocused = true
@@ -284,6 +313,7 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	m.liveAgents = []liveAgent{{
 		Name:  parentName,
 		Label: agentShortLabel(parentName),
+		Model: parentModel,
 	}}
 	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: userLabel})
 	m.transcript = append(m.transcript, convMessage{
@@ -938,6 +968,7 @@ func (m model) addLiveAgent(d harness.StreamDelta) model {
 		CallID: callID,
 		Name:   name,
 		Label:  agentShortLabel(name),
+		Model:  strings.TrimSpace(d.Model),
 	})
 	return m
 }
@@ -1268,9 +1299,7 @@ func (m model) renderConversationResponse(responseLines int) string {
 		frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
 		statusContent = chatInText.Render(frame) + chatInMuted.Render(" ")
 	}
-	statusContent += chatInAgent.Render("Agent") +
-		chatInMuted.Render(" · ") +
-		chatInModel.Render(m.conversationModelLabel()) +
+	statusContent += chatInAgent.Render(m.responseSpeakerHeader()) +
 		chatInMuted.Render(" · ") +
 		chatInMuted.Render(m.conversationHarnessTool())
 	if visible > 0 && len(lines) > visible {
@@ -1315,7 +1344,7 @@ func (m model) responseContentLines(contentW int) []string {
 			if isSub {
 				out = append(out, "")
 			}
-			header := formatAgentHeader(msg.agentName, msg.modelSlug, isSub)
+			header := formatAgentHeader(msg.agentName, msg.modelSlug)
 			out = append(out, chatInAgent.Render(header))
 			prevKey = key
 			prevWasSub = isSub

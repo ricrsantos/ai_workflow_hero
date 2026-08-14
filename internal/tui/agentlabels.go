@@ -15,6 +15,7 @@ type liveAgent struct {
 	CallID string
 	Name   string
 	Label  string
+	Model  string
 }
 
 var agentShortLabels = map[string]string{
@@ -30,21 +31,6 @@ var agentShortLabels = map[string]string{
 	"context_agent":       "CTX",
 	"browser_ui_agent":    "BUI",
 	"end2end_qa_agent":    "E2E",
-}
-
-var agentTranscriptNames = map[string]string{
-	"orchestration_agent": "Orchestrator",
-	"orchestrator":        "Orchestrator",
-	"backend_agent":       "Backend",
-	"frontend_agent":      "Frontend",
-	"generic_agent":       "Generic",
-	"qa_agent":            "QA",
-	"judge_agent":         "Judge",
-	"planning_agent":      "Planning",
-	"discover_agent":      "Discover",
-	"context_agent":       "Context",
-	"browser_ui_agent":    "Browser UI",
-	"end2end_qa_agent":    "E2E QA",
 }
 
 func normalizeAgentKey(name string) string {
@@ -82,25 +68,11 @@ func agentShortLabel(name string) string {
 	return agentLabelHARN
 }
 
-func agentTranscriptName(name string) string {
-	key := resolveAgentKey(name)
-	if key == "" {
-		return "Agent"
-	}
-	if display, ok := agentTranscriptNames[key]; ok {
-		return display
-	}
-	return "Agent"
-}
-
-func formatAgentHeader(name, model string, isSubagent bool) string {
-	display := agentTranscriptName(name)
+func formatAgentHeader(name, model string) string {
+	display := agentShortLabel(name)
 	model = strings.TrimSpace(model)
 	if model == "not set" {
 		model = ""
-	}
-	if !isSubagent && agentShortLabel(name) == "ORCH" {
-		return "[Orchestrator]"
 	}
 	if model != "" {
 		return fmt.Sprintf("[%s - %s]", display, model)

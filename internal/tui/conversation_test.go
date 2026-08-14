@@ -335,8 +335,8 @@ func TestConversationResponsePaneLayout(t *testing.T) {
 	if !strings.Contains(view, "Agent response will appear here") {
 		t.Fatalf("expected empty response pane: %q", view)
 	}
-	if !strings.Contains(view, "Agent") {
-		t.Fatalf("expected Agent status label: %q", view)
+	if !strings.Contains(view, "[HARN]") {
+		t.Fatalf("expected HARN speaker label: %q", view)
 	}
 	if !strings.Contains(view, "↑↓ scroll") {
 		t.Fatalf("expected scroll hint: %q", view)
@@ -379,8 +379,8 @@ func TestConversationViewWhileStreaming(t *testing.T) {
 	if !strings.Contains(view, "Waiting for harness") {
 		t.Fatalf("view missing wait placeholder: %q", view)
 	}
-	if !strings.Contains(view, "Agent") {
-		t.Fatalf("view missing response pane: %q", view)
+	if !strings.Contains(view, "[HARN - composer-2.5]") {
+		t.Fatalf("view missing response speaker label: %q", view)
 	}
 	foundSpinner := false
 	for _, frame := range waitAnimFrames {
@@ -392,7 +392,7 @@ func TestConversationViewWhileStreaming(t *testing.T) {
 		}
 	}
 	if !foundSpinner {
-		t.Fatalf("wait spinner must sit on the Agent status line: %q", view)
+		t.Fatalf("wait spinner must sit on the speaker status line: %q", view)
 	}
 }
 
@@ -2104,6 +2104,25 @@ func TestConversationAgentsBoxLiveLabels(t *testing.T) {
 	}
 }
 
+func TestConversationResponseSpeakerFollowsLiveAgent(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "grok-4.6")
+	m.liveAgents = []liveAgent{
+		{Name: "orchestration_agent", Label: "ORCH", Model: "grok-4.6"},
+		{Name: "qa_agent", Label: "QA", Model: "composer-2.5", CallID: "t1"},
+	}
+	view := ViewForTest(m)
+	if !strings.Contains(view, "[QA - composer-2.5]") {
+		t.Fatalf("expected QA speaker on response status: %q", view)
+	}
+	if strings.Contains(view, "[Agent") {
+		t.Fatalf("must not print fixed Agent label: %q", view)
+	}
+}
+
 func TestConversationSubagentTranscriptLabels(t *testing.T) {
 	m, h, _ := newConversationTestModel(t)
 	h.deltas = nil
@@ -2127,7 +2146,7 @@ func TestConversationSubagentTranscriptLabels(t *testing.T) {
 		t.Fatalf("live agents after stream: %+v", LiveAgentsForTest(next))
 	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "[Orchestrator]") {
+	if !strings.Contains(view, "[ORCH - composer-2.5]") {
 		t.Fatalf("missing orchestrator label: %q", view)
 	}
 	if !strings.Contains(view, "[QA - composer-2.5]") {

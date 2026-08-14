@@ -28,14 +28,20 @@ func TestAgentShortLabel(t *testing.T) {
 }
 
 func TestFormatAgentHeader(t *testing.T) {
-	if got := formatAgentHeader("orchestration_agent", "composer-2.5", false); got != "[Orchestrator]" {
+	if got := formatAgentHeader("orchestration_agent", "composer-2.5"); got != "[ORCH - composer-2.5]" {
 		t.Fatalf("parent orch=%q", got)
 	}
-	if got := formatAgentHeader("qa_agent", "composer-2.5", true); got != "[QA - composer-2.5]" {
+	if got := formatAgentHeader("qa_agent", "composer-2.5"); got != "[QA - composer-2.5]" {
 		t.Fatalf("sub qa=%q", got)
 	}
-	if got := formatAgentHeader("", "composer-2.5", false); got != "[Agent - composer-2.5]" {
+	if got := formatAgentHeader("", "grok-4.6"); got != "[HARN - grok-4.6]" {
 		t.Fatalf("freechat=%q", got)
+	}
+	if got := formatAgentHeader("explore", "composer-2.5"); got != "[HARN - composer-2.5]" {
+		t.Fatalf("harness-native=%q", got)
+	}
+	if got := formatAgentHeader("backend_agent", ""); got != "[BACK]" {
+		t.Fatalf("no model=%q", got)
 	}
 }
 
