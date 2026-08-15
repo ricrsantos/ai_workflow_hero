@@ -194,7 +194,7 @@ func TestAssets_WorkflowConfigNestedSubagent(t *testing.T) {
 	}
 	content := string(data)
 	agents := []string{
-		"orchestration_agent", "planning_agent", "context_agent", "backend_agent", "frontend_agent",
+		"orchestration_agent", "discover_agent", "planning_agent", "context_agent", "backend_agent", "frontend_agent",
 		"generic_agent", "qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent",
 	}
 	agentsIdx := strings.Index(content, "\nagents:")

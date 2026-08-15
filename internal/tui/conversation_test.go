@@ -17,6 +17,8 @@ import (
 type streamingHarness struct {
 	deltas        []string
 	events        []harness.StreamDelta
+	sessionIDs    []string
+	executeCount  int
 	sessionID     string
 	cancelCalled  bool
 	lastPrompt    string
@@ -41,6 +43,15 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 	h.lastMode = req.Mode
 	h.lastStageName = req.StageName
 	h.lastAgentName = req.AgentName
+	h.executeCount++
+	resultSession := h.sessionID
+	if n := len(h.sessionIDs); n > 0 {
+		idx := h.executeCount - 1
+		if idx >= n {
+			idx = n - 1
+		}
+		resultSession = h.sessionIDs[idx]
+	}
 	if h.err != nil {
 		return nil, h.err
 	}
@@ -62,9 +73,9 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 			}
 		}
 	}
-	if h.sessionID != "" {
+	if resultSession != "" {
 		return &harness.ExecutionResult{
-			SessionID:  h.sessionID,
+			SessionID:  resultSession,
 			Output:     out,
 			StreamDone: true,
 		}, nil
@@ -187,10 +198,26 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 			}
 			inner := nested()
 			switch inner.(type) {
+			case tea.BatchMsg:
+				if got := runConversationCmd(func() tea.Msg { return inner }); got != nil {
+					switch got.(type) {
+					case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
+						return got
+					default:
+						if found == nil {
+							found = got
+						}
+					}
+				}
 			case convWaitTickMsg, statusTickMsg:
 				continue
 			case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
 				return inner
+			case refreshDataMsg:
+				if found == nil {
+					found = inner
+				}
+				continue
 			default:
 				if found == nil {
 					found = inner
@@ -2195,5 +2222,199 @@ func TestNewChatBlockedWhileStreaming(t *testing.T) {
 	}
 	if !strings.Contains(StatusTextForTest(next), "ctrl+c") {
 		t.Fatalf("status=%q", StatusTextForTest(next))
+	}
+}
+
+func setupDiscoverRuntimeFiles(t *testing.T, dir string) {
+	t.Helper()
+	cmdDir := filepath.Join(dir, ".cursor", "commands")
+	agentDir := filepath.Join(dir, ".cursor", "agents")
+	if err := os.MkdirAll(cmdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cmdDir, "hero-start.md"), []byte("# /hero-start\n\nHERO_START_RUNTIME_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCHESTRATION_AGENT_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "discover_agent.md"), []byte("---\nname: discover_agent\n---\n\nDISCOVER_AGENT_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeDiscoverAgentYAML(t *testing.T, dir string) {
+	t.Helper()
+	heroDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")
+	cfg := []byte(`title: TUI Test
+objective: test
+agents:
+  orchestration_agent:
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+  discover_agent:
+    model: claude-sonnet-4.6
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+fallback_model:
+  model: composer-2.5
+  reasoning_effort: na
+  enable_fast_model: false
+  thinking: na
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+`)
+	if err := os.WriteFile(filepath.Join(heroDir, "workflow-config.yml"), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHeroStartHandsOffToDiscoverAgent(t *testing.T) {
+	dir := t.TempDir()
+	setupDiscoverRuntimeFiles(t, dir)
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	writeDiscoverAgentYAML(t, dir)
+	h := &streamingHarness{
+		deltas:     []string{"ok"},
+		sessionIDs: []string{"orch-sess", "disc-sess"},
+	}
+	svc.Harness = h
+
+	m := withDefaultChatModel(NewTestModel(svc))
+	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	next = drainConversationStream(t, next, cmd)
+
+	if h.lastAgentName != "discover_agent" {
+		t.Fatalf("agent=%q want discover_agent", h.lastAgentName)
+	}
+	if !strings.Contains(h.lastPrompt, "DISCOVER_AGENT_MARKER") {
+		t.Fatalf("prompt missing discover body: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, "hero stage close") {
+		t.Fatalf("prompt missing research close override: %q", h.lastPrompt)
+	}
+	if h.lastModel != "claude-sonnet-4.6-medium" {
+		t.Fatalf("model=%q want claude-sonnet-4.6-medium", h.lastModel)
+	}
+	if h.lastSessionID != "" {
+		t.Fatalf("discover execute should be a fresh session, got resume %q", h.lastSessionID)
+	}
+	if !ResearchLiveForTest(next) {
+		t.Fatal("expected researchLive")
+	}
+	if RuntimeAgentNameForTest(next) != "discover_agent" {
+		t.Fatalf("runtime agent=%q", RuntimeAgentNameForTest(next))
+	}
+	if OrchestrationSessionIDForTest(next) != "orch-sess" {
+		t.Fatalf("orch session=%q", OrchestrationSessionIDForTest(next))
+	}
+	if ResearchSessionIDForTest(next) != "disc-sess" {
+		t.Fatalf("disc session=%q", ResearchSessionIDForTest(next))
+	}
+	if HarnessSessionIDForTest(next) != "disc-sess" {
+		t.Fatalf("live session=%q", HarnessSessionIDForTest(next))
+	}
+	stored, err := svc.StageHarnessSessionID("research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != "disc-sess" {
+		t.Fatalf("stored research session=%q", stored)
+	}
+
+	h.deltas = []string{"grilling"}
+	next = SetConversationInput(next, "continue grilling")
+	next, cmd = SubmitConversationForTest(next)
+	next = drainConversationStream(t, next, cmd)
+	if h.lastAgentName != "discover_agent" {
+		t.Fatalf("follow-up agent=%q", h.lastAgentName)
+	}
+	if h.lastSessionID != "disc-sess" {
+		t.Fatalf("follow-up resume=%q want disc-sess", h.lastSessionID)
+	}
+	if h.lastModel != "claude-sonnet-4.6-medium" {
+		t.Fatalf("follow-up model=%q", h.lastModel)
+	}
+}
+
+func TestResearchControlSlashGoesToOrchestrator(t *testing.T) {
+	dir := t.TempDir()
+	setupDiscoverRuntimeFiles(t, dir)
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	writeDiscoverAgentYAML(t, dir)
+	h := &streamingHarness{
+		deltas:     []string{"ok"},
+		sessionIDs: []string{"orch-sess", "disc-sess", "orch-sess"},
+	}
+	svc.Harness = h
+
+	m := withDefaultChatModel(NewTestModel(svc))
+	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	next = drainConversationStream(t, next, cmd)
+	if !ResearchLiveForTest(next) {
+		t.Fatal("expected researchLive")
+	}
+
+	next = SetConversationInput(next, "/hero-approve")
+	next.slashOverlayDismissed = true
+	next, cmd = SubmitConversationForTest(next)
+	next = drainConversationStream(t, next, cmd)
+	if h.lastPrompt != "/hero-approve" {
+		t.Fatalf("prompt=%q want /hero-approve follow-up", h.lastPrompt)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
+	}
+	if h.lastSessionID != "orch-sess" {
+		t.Fatalf("control slash session=%q want orch-sess", h.lastSessionID)
+	}
+}
+
+func TestDiscoverCloseResumesOrchestrator(t *testing.T) {
+	dir := t.TempDir()
+	setupDiscoverRuntimeFiles(t, dir)
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	writeDiscoverAgentYAML(t, dir)
+	h := &streamingHarness{
+		deltas:     []string{"ok"},
+		sessionIDs: []string{"orch-sess", "disc-sess", "disc-sess", "orch-sess"},
+	}
+	svc.Harness = h
+
+	m := withDefaultChatModel(NewTestModel(svc))
+	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	next = drainConversationStream(t, next, cmd)
+
+	if err := svc.CloseStage("research", "done", `{"agent":"discover_agent","input_tokens":1,"output_tokens":1}`, false); err != nil {
+		t.Fatal(err)
+	}
+
+	next = SetConversationInput(next, "research finished")
+	next, cmd = SubmitConversationForTest(next)
+	next = drainConversationStream(t, next, cmd)
+
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent after research close", h.lastAgentName)
+	}
+	if !strings.Contains(h.lastPrompt, "Research closed") {
+		t.Fatalf("prompt missing continue-after-research: %q", h.lastPrompt)
+	}
+	if h.lastSessionID != "orch-sess" {
+		t.Fatalf("resume session=%q want orch-sess", h.lastSessionID)
+	}
+	if ResearchLiveForTest(next) {
+		t.Fatal("researchLive should be false after close")
+	}
+	if RuntimeAgentNameForTest(next) != "orchestration_agent" {
+		t.Fatalf("runtime agent=%q", RuntimeAgentNameForTest(next))
 	}
 }

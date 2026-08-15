@@ -76,22 +76,37 @@ func LoadCurrent(projectDir string) (ConfigFile, string, error) {
 	return ConfigFile{}, "", fmt.Errorf("workflow-config.yml not found under %s", projectDir)
 }
 
-// OrchestratorModelSlug resolves agents.orchestration_agent from the current workflow-config,
-// falling back to fallback_model when the orchestrator block is missing or has no model id.
-func OrchestratorModelSlug(projectDir string) (string, error) {
+// AgentModelSlug resolves agents.<agentName> from the current workflow-config,
+// falling back to fallback_model when the named block is missing or has no model id.
+// usedFallback is true when the slug came from fallback_model rather than the agent block.
+func AgentModelSlug(projectDir, agentName string) (slug string, usedFallback bool, err error) {
 	cfg, _, err := LoadCurrent(projectDir)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	if cfg.Agents != nil {
-		if orch, ok := cfg.Agents["orchestration_agent"]; ok {
-			if slug := ResolveModelSlug(orch); slug != "" {
-				return slug, nil
+	name := strings.TrimSpace(agentName)
+	if name != "" && cfg.Agents != nil {
+		if agent, ok := cfg.Agents[name]; ok {
+			if slug := ResolveModelSlug(agent); slug != "" {
+				return slug, false, nil
 			}
 		}
 	}
 	if slug := ResolveModelSlug(cfg.FallbackModel); slug != "" {
-		return slug, nil
+		return slug, true, nil
 	}
-	return "", fmt.Errorf("set agents.orchestration_agent.model in workflow-config.yml (TUI /hero-start)")
+	if name == "" {
+		return "", false, fmt.Errorf("set agents.<name>.model in workflow-config.yml")
+	}
+	return "", false, fmt.Errorf("set agents.%s.model in workflow-config.yml", name)
+}
+
+// OrchestratorModelSlug resolves agents.orchestration_agent from the current workflow-config,
+// falling back to fallback_model when the orchestrator block is missing or has no model id.
+func OrchestratorModelSlug(projectDir string) (string, error) {
+	slug, _, err := AgentModelSlug(projectDir, "orchestration_agent")
+	if err != nil {
+		return "", fmt.Errorf("set agents.orchestration_agent.model in workflow-config.yml (TUI /hero-start)")
+	}
+	return slug, nil
 }

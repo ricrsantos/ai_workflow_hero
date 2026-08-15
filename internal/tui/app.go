@@ -82,15 +82,18 @@ type model struct {
 	waitAnimFrame     int
 
 	// Chat OpenCode-style controls.
-	chatMode             string // harness.ModeBuild | harness.ModePlan
-	chatModelSlug        string
-	availableModels      []string
-	pickingModel         bool
-	runtimeCommandName   string // hero runtime slash body name (e.g. "new") for Chat output normalization
-	runtimeModelSlug     string // explicit harness model for active runtime slash (e.g. /hero-start orchestrator)
-	runtimeAgentName     string // harness agent name for active runtime slash (e.g. orchestration_agent)
-	orchestrationLive    bool   // /hero-start session: follow-ups resume orchestrator model + session
-	awaitingRejectReason bool   // Chat is collecting rejection feedback before Runtime Execute
+	chatMode               string // harness.ModeBuild | harness.ModePlan
+	chatModelSlug          string
+	availableModels        []string
+	pickingModel           bool
+	runtimeCommandName     string // hero runtime slash body name (e.g. "new") for Chat output normalization
+	runtimeModelSlug       string // explicit harness model for active runtime slash (e.g. /hero-start orchestrator)
+	runtimeAgentName       string // harness agent name for active runtime slash (e.g. orchestration_agent)
+	orchestrationLive      bool   // /hero-start session: follow-ups resume orchestrator model + session
+	researchLive           bool   // TUI Research: free-text follow-ups resume discover_agent
+	orchestrationSessionID string // saved orchestrator harness session while Research is live
+	researchSessionID      string // discover_agent harness session
+	awaitingRejectReason   bool   // Chat is collecting rejection feedback before Runtime Execute
 
 	slashOverlayIndex     int  // selected row in Chat `/` autocomplete
 	slashOverlayDismissed bool // Esc or insert closed the overlay until the token changes

@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-14 — TUI Research agent model (discover_agent YAML)
+
+**Problem**: `workflow-config.yml` had no `discover_agent` block. Research grilling always used the orchestrator session (IDE model in Cursor chat; `/hero-model` in TUI), so a cheaper/different Research model was impossible in TUI.
+
+**Decision / Outcome**: Added `agents.discover_agent` (same fields as other agents) with a comment that Cursor chat ignores it. TUI `/hero-start` stops the orchestrator after `hero stage start --name research`, then Execute-s `discover_agent.md` with the YAML kebab slug (`AgentModelSlug`; fallback_model then `/hero-model`). Free-text follow-ups resume DISC; control slashes still resume ORCH. When Research closes, TUI resumes ORCH. Chat Runtime prompts stay in-session grilling. `go test ./...` passes.
+
+---
+
 ## 2026-08-14 — TUI wrap panic on Angular/Unicode output
 
 **Problem**: Running an Angular app via the TUI harness panicked the Chat pane: `runtime error: slice bounds out of range [149:148]` in `wrapOutputLine` (`output_view.go`). Bubble Tea recovered and killed the program.

@@ -84,6 +84,66 @@ fallback_model:
 	}
 }
 
+func TestAgentModelSlug_NamedAgent(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := []byte(`agents:
+  discover_agent:
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+fallback_model:
+  model: cursor-grok-4.5
+  reasoning_effort: high
+  enable_fast_model: false
+  thinking: na
+`)
+	if err := os.WriteFile(filepath.Join(cfgDir, "workflow-config.yml"), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, usedFallback, err := workflowconfig.AgentModelSlug(dir, "discover_agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usedFallback {
+		t.Fatal("expected agent block, not fallback")
+	}
+	if got != "gpt-5.3-codex-medium" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestAgentModelSlug_FallbackWhenAgentMissing(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := []byte(`fallback_model:
+  model: composer-2.5
+  reasoning_effort: na
+  enable_fast_model: false
+  thinking: na
+`)
+	if err := os.WriteFile(filepath.Join(cfgDir, "workflow-config.yml"), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, usedFallback, err := workflowconfig.AgentModelSlug(dir, "discover_agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !usedFallback {
+		t.Fatal("expected fallback")
+	}
+	if got != "composer-2.5" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestOrchestratorModelSlug_FallbackWhenOrchestratorMissing(t *testing.T) {
 	dir := t.TempDir()
 	cfgDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")

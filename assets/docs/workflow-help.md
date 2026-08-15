@@ -279,8 +279,8 @@ hero update-models
 
 | Agent | Role |
 |-------|------|
-| `orchestration_agent` | Orchestrates the loop (IDE session model in chat; TUI `/hero-start` uses `agents.orchestration_agent` in workflow-config) |
-| `discover_agent` | Research / grilling → specs (PRD, ADR, UI, …) |
+| `orchestration_agent` | Orchestrates the loop (IDE session model in chat; TUI Execute uses `/hero-model`) |
+| `discover_agent` | Research / grilling → specs. TUI uses `agents.discover_agent` in workflow-config.yml; Cursor IDE chat ignores that block (same session as the orchestrator) |
 | `planning_agent` | OpenSpec SDD |
 | `context_agent` | On-demand project context (read-only) |
 | `backend_agent` | Backend implementation + logging standard |
@@ -513,7 +513,7 @@ Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`
 
 ## 11. Agentes, documentos, arquitetura e logs
 
-- **Agentes:** orquestração, discovery (Research + docs), planning (OpenSpec), context, backend/frontend/generic (implementação + logs), QA (inclui logs), Judge, Browser UI Validation (`browser_ui_agent`), End-to-End.
+- **Agentes:** orquestração, discovery (Research + docs; no TUI o modelo vem de `agents.discover_agent`; no chat do Cursor o YAML é ignorado), planning (OpenSpec), context, backend/frontend/generic (implementação + logs), QA (inclui logs), Judge, Browser UI Validation (`browser_ui_agent`), End-to-End.
 - **Documentos:** PRD/ADR/UI/DEPLOY/TESTING; ADRs definem arquitetura.
 - **Logs:** `error` / `info` / `debug`, default `info`; QA falha se o padrão não for seguido.
 - **Secrets:** só `.env.example` no git; valores reais em `.env` local.

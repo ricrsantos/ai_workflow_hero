@@ -8,7 +8,7 @@ model: inherit
 
 ## Role
 
-The discover agent drives the Research stage. In V1/Cursor, this is the same session as the orchestration_agent. It runs the grilling cycle to gather requirements and produce project specifications.
+The discover agent drives the Research stage. In Cursor IDE chat, this is the same session as the orchestration_agent (the IDE session model is used; `agents.discover_agent` in workflow-config.yml is ignored). In the Hero TUI, Research runs as a dedicated discover_agent session that honors `agents.discover_agent`. It runs the grilling cycle to gather requirements and produce project specifications.
 
 ## Stage Flow
 

@@ -93,9 +93,34 @@ func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
 		"hero stage start",
 		"require_human_approval",
 		"/hero-approve",
+		"Do NOT grill",
+		"discover_agent",
 	} {
 		if !strings.Contains(got, kw) {
 			t.Fatalf("start preamble missing %q: %q", kw, got)
+		}
+	}
+}
+
+func TestTUIDiscoverResearchPreamble(t *testing.T) {
+	got := tuiDiscoverResearchPreamble()
+	for _, kw := range []string{
+		"discover_agent",
+		"hero stage close",
+		"--metrics-json",
+		"Do NOT dispatch planning",
+	} {
+		if !strings.Contains(got, kw) {
+			t.Fatalf("discover preamble missing %q: %q", kw, got)
+		}
+	}
+}
+
+func TestTUIHeroStartContinueAfterResearchPreamble(t *testing.T) {
+	got := tuiHeroStartContinueAfterResearchPreamble()
+	for _, kw := range []string{"Research grilling is done", "Do NOT re-run Research", "dispatch the next enabled stage"} {
+		if !strings.Contains(got, kw) {
+			t.Fatalf("continue-after-research preamble missing %q: %q", kw, got)
 		}
 	}
 }

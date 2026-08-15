@@ -553,6 +553,19 @@ func (s *Service) ActiveRunStage() (string, error) {
 	return s.resolveRunStage(c.ID, "")
 }
 
+// ActiveStage returns the store row for ActiveRunStage.
+func (s *Service) ActiveStage() (store.Stage, error) {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return store.Stage{}, err
+	}
+	name, err := s.resolveRunStage(c.ID, "")
+	if err != nil {
+		return store.Stage{}, err
+	}
+	return s.Store.GetStage(c.ID, name)
+}
+
 // StageHarnessSessionID returns the stored harness session id for a stage.
 func (s *Service) StageHarnessSessionID(stageName string) (string, error) {
 	c, err := s.Store.GetActiveCycle()

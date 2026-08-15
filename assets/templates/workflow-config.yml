@@ -90,6 +90,21 @@ agents:
       enable_fast_model: false
       thinking: na
 
+  # Cursor IDE chat: Research grilling runs in the orchestrator session, so this
+  # model is ignored (the IDE session model is used). Hero TUI honors this block:
+  # Research runs as a dedicated discover_agent session with this model.
+  discover_agent:
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
   planning_agent:
     model: gpt-5.3-codex
     reasoning_effort: medium

@@ -414,6 +414,22 @@ func SetStreamingForTest(m model, streaming bool) model {
 	return m
 }
 
+func ResearchLiveForTest(m model) bool {
+	return m.researchLive
+}
+
+func RuntimeAgentNameForTest(m model) string {
+	return m.runtimeAgentName
+}
+
+func OrchestrationSessionIDForTest(m model) string {
+	return m.orchestrationSessionID
+}
+
+func ResearchSessionIDForTest(m model) string {
+	return m.researchSessionID
+}
+
 // StreamDeltaMsgForTest wraps a delta into a streamDeltaMsg for Update injection.
 func StreamDeltaMsgForTest(text string) tea.Msg {
 	return streamDeltaMsg{delta: harness.StreamDelta{Text: text}}

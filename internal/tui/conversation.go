@@ -89,8 +89,12 @@ func (m model) syncConversationContext() model {
 	live := strings.TrimSpace(m.harnessSessionID)
 	stored := strings.TrimSpace(sessionID)
 	if live != "" {
+		if m.researchLive {
+			// Discover and orchestrator sessions are stored separately during Research.
+			return m
+		}
 		// The TUI orchestrator session spans stages. Never replace a live id with
-		// an empty (or different) per-stage SQLite value — that dropped session:
+		// an empty (or different) per-stage SQLite value — that dropped session
 		// from the Chat header and forced follow-ups into a fresh agent with no context.
 		if stage != "" && live != stored {
 			if err := m.svc.SetStageHarnessSessionID(stage, live); err != nil {
@@ -108,6 +112,25 @@ func (m model) syncConversationContext() model {
 func (m model) persistHarnessSession(sessionID string) model {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
+		return m
+	}
+	agent := strings.TrimSpace(m.runtimeAgentName)
+	if agent == agentDiscover {
+		m.researchSessionID = sessionID
+		m.harnessSessionID = sessionID
+		m.conversationStage = stageResearch
+		if m.svc != nil {
+			if err := m.svc.SetStageHarnessSessionID(stageResearch, sessionID); err != nil {
+				slog.Error("tui persist harness session failed", "error", err)
+			}
+		}
+		return m
+	}
+	if m.orchestrationLive {
+		m.orchestrationSessionID = sessionID
+	}
+	if m.researchLive {
+		// Orchestrator result while Research is the live Chat session — keep DISC id.
 		return m
 	}
 	m.harnessSessionID = sessionID
@@ -209,6 +232,9 @@ func (m model) resetChatSession() model {
 	m.harnessSessionID = ""
 	m.conversationStage = ""
 	m.orchestrationLive = false
+	m.researchLive = false
+	m.orchestrationSessionID = ""
+	m.researchSessionID = ""
 	m.awaitingRejectReason = false
 	m.runtimeCommandName = ""
 	m.runtimeModelSlug = ""
@@ -295,6 +321,11 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	m.runtimeModelSlug = strings.TrimSpace(modelSlug)
 	m.runtimeAgentName = ""
 	m.orchestrationLive = cmdName == "start"
+	if cmdName == "start" {
+		m.researchLive = false
+		m.orchestrationSessionID = ""
+		m.researchSessionID = ""
+	}
 
 	var executePrompt string
 	if usesOrchestratorRuntime(cmdName) {
@@ -305,7 +336,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 			return m, nil
 		}
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite, opts)
-		m.runtimeAgentName = "orchestration_agent"
+		m.runtimeAgentName = agentOrchestration
 	} else {
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody, opts)
 	}
@@ -627,7 +658,19 @@ func (m model) submitConversation() (model, tea.Cmd) {
 }
 
 func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
-	if m.orchestrationLive {
+	if m.chatFollowUpControlSlash(text) && m.researchLive {
+		var cmd tea.Cmd
+		var slug string
+		var ok bool
+		m, cmd, slug, ok = m.defaultExecuteModel("chat")
+		if !ok {
+			return m, cmd
+		}
+		m.runtimeModelSlug = slug
+		m = m.prepareOrchestratorFollowUp()
+	} else if m.researchLive {
+		m = m.prepareDiscoverFollowUp()
+	} else if m.orchestrationLive {
 		if strings.TrimSpace(m.runtimeModelSlug) == "" {
 			var cmd tea.Cmd
 			var slug string
@@ -638,7 +681,7 @@ func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
 			}
 			m.runtimeModelSlug = slug
 		}
-		m.runtimeAgentName = "orchestration_agent"
+		m.runtimeAgentName = agentOrchestration
 	} else {
 		var cmd tea.Cmd
 		var ok bool
@@ -903,7 +946,11 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m = m.maybeFollowResponseBottom()
 		slog.Info("tui conversation execute complete", "stage", m.conversationStage)
-		return m, m.refreshCmd()
+		next, handoffCmd := m.maybeHandoffAfterExecute()
+		if handoffCmd != nil {
+			return next, tea.Batch(next.refreshCmd(), handoffCmd, convWaitTickCmd())
+		}
+		return next, next.refreshCmd()
 
 	case streamCancelDoneMsg:
 		m.streaming = false
