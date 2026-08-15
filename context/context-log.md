@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-14 — Chat composer newline (alt+enter)
+
+**Problem**: Shift+Enter is the same CR as Enter in Cursor xterm.js. Ctrl+J is stolen by Cursor `togglePanel`. Ctrl+Enter did not reach the TUI.
+
+**Decision / Outcome**: **Alt+Enter** is the only newline binding (xterm.js sends ESC+CR; no conflict with Alt+1–5). Enter still sends.
+
+---
+
 ## 2026-08-14 — Release v1.2.1
 
 **Problem**: Chat response pane and transcript used inconsistent speaker labels (`Agent`, `[Orchestrator]`) instead of the same 4-letter codes as the agents box.
@@ -200,7 +208,7 @@
 
 **Problem**: Approvals screen duplicated Chat slash workflow; users needed a way to reset the chat session without `/hero-new`.
 
-**Decision / Outcome**: Removed Approvals screen and `Go to - Approvals` (tabs/shortcuts now Chat, Status, Artifacts, Costs, Events — `alt+1`–`alt+5`). Added `/new-chat` to palette + Chat slash overlay: clears transcript, harness session, orchestrator state; uses default model; blocked while agent is streaming (message prompts wait or ctrl+c). Chat newline (shift+enter) attempted and **reverted** — caused TUI input freeze; Enter submits only.
+**Decision / Outcome**: Removed Approvals screen and `Go to - Approvals` (tabs/shortcuts now Chat, Status, Artifacts, Costs, Events — `alt+1`–`alt+5`). Added `/new-chat` to palette + Chat slash overlay: clears transcript, harness session, orchestrator state; uses default model; blocked while agent is streaming (message prompts wait or ctrl+c). (Chat newline shipped later the same day without enabling Kitty keyboard protocol.)
 
 ---
 

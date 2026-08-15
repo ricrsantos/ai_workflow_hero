@@ -14,7 +14,7 @@ func chatSlashToken(text string) string {
 	if !strings.HasPrefix(s, "/") {
 		return ""
 	}
-	if i := strings.IndexAny(s, " \t"); i >= 0 {
+	if i := strings.IndexAny(s, " \t\n"); i >= 0 {
 		return s[:i]
 	}
 	return s
@@ -42,6 +42,9 @@ func (m model) chatFollowUpControlSlash(text string) bool {
 
 func (m model) chatSlashOverlayActive() bool {
 	if m.streaming || m.slashOverlayDismissed {
+		return false
+	}
+	if strings.Contains(m.input, "\n") {
 		return false
 	}
 	if strings.ContainsAny(strings.TrimSpace(m.input), " \t") {

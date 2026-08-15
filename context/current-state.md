@@ -77,6 +77,7 @@
 
 ## Recent Decisions
 
+- Chat composer: **Enter** sends; **Alt+Enter** inserts a newline (does not conflict with Alt+1–5). Ctrl+Enter is not bound (Cursor/xterm.js does not deliver it). (2026-08-14).
 - Chat is first in the TUI tab bar (`alt+1`) and is the boot screen. Approvals screen removed — approve/reject via Chat `/hero-*` only. `/new-chat` clears session (blocked while streaming). Chat `/` overlay lists Go to / palette items; only `/hero-approve` `/hero-reject` `/hero-cancel` `/hero-continue` `/hero-finish` `/hero-back` insert into the composer — other items execute immediately like the full-screen palette. Chat header shows a live agents box; green-pane transcript/status labels use `[QA - model]` / `[HARN - model]` (same 4-letter codes as the agents box) (2026-08-14).
 - **TUI navigation while streaming**: `ctrl+1–6` / `alt+1–6` navigate between screens even while an agent is streaming — stream goroutine keeps running. Stream messages (`streamDeltaMsg`, `executeDoneMsg`, `streamCancelDoneMsg`) are always processed regardless of current screen. Destructive actions while streaming (`/hero-new`, `/hero-start`, `/hero-cancel`, `/hero-finish`, `/hero-archive`, `/hero-back`, `ctrl+q`) display a yellow footer confirmation prompt `[y/N]`; `y` cancels the stream and dispatches the action; any other key dismisses. Non-destructive actions remain silently blocked (2026-08-14).
 - C3 archived 2026-08-09 (Cursor harness autonomy + TUI conversation).

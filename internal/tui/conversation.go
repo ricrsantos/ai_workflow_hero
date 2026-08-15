@@ -403,6 +403,12 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 
+	// Newline keys are handled before the slash overlay so they never select
+	// an item. Enter remains send (or overlay insert/execute).
+	if isComposerNewlineKey(s) {
+		return m.insertComposerNewline(), nil
+	}
+
 	if m.chatSlashOverlayActive() {
 		switch s {
 		case "up", "ctrl+p":
@@ -1516,7 +1522,7 @@ func (m model) renderConversationInput() string {
 		if m.chatSlashOverlayActive() {
 			b.WriteString(mutedStyle.Render("enter insert · tab insert · esc close · ↑↓"))
 		} else {
-			b.WriteString(mutedStyle.Render("tab mode · / commands · enter send · ←→ move · ↑↓ scroll"))
+			b.WriteString(mutedStyle.Render("tab mode · / commands · enter send · alt+enter newline · ←→ move · ↑↓ scroll"))
 		}
 	} else {
 		b.WriteString(mutedStyle.Render("ctrl+c interrupt"))

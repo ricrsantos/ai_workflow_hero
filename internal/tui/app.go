@@ -1113,6 +1113,8 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEscape}
 	case "enter":
 		return tea.KeyMsg{Type: tea.KeyEnter}
+	case "alt+enter":
+		return tea.KeyMsg{Type: tea.KeyEnter, Alt: true}
 	case "pgup":
 		return tea.KeyMsg{Type: tea.KeyPgUp}
 	case "pgdown":
