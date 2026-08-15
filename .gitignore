@@ -41,3 +41,4 @@ secrets.json
 # Hero CLI build artifacts
 /dist/
 /hero
+.workflow-hero/tui.log
