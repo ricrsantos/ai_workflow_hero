@@ -1,6 +1,6 @@
 provider: moonshot
 version: 1
-last_updated: 2026-07-28
+last_updated: 2026-08-15
 currency: usd
 unit: per_1m_tokens
 
@@ -11,14 +11,17 @@ models:
     cache_write: 0.00
     cache_read: 0.19
     output: 4.00
+    context_window: 256000
   kimi-k3:
     input: 3.00
     cache_write: 0.00
     cache_read: 0.30
     output: 15.00
+    context_window: 256000
   # Task often exposes the max-effort variant as a distinct slug.
   kimi-k3-max:
     input: 3.00
     cache_write: 0.00
     cache_read: 0.30
     output: 15.00
+    context_window: 1000000

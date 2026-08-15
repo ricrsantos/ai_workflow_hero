@@ -545,6 +545,7 @@ models:
     cache_write: 3.75
     cache_read: 0.3
     output: 15
+    context_window: 200000
 ```
 
-Used by the token/cost estimation heuristic (character count ÷ ~4, multiplied by the model's price here) referenced in [PRD.md §5.10](../product/PRD.md#510-metrics).
+`context_window` is the model's published token limit (integer). The TUI Chat context bar looks up this field by the running agent slug; the bar is omitted when the slug is missing or the field is unset. Pricing fields remain the token/cost estimation heuristic (character count ÷ ~4, multiplied by the model's price here) referenced in [PRD.md §5.10](../product/PRD.md#510-metrics).

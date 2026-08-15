@@ -1,6 +1,6 @@
 provider: zhipu
 version: 1
-last_updated: 2026-07-28
+last_updated: 2026-08-15
 currency: usd
 unit: per_1m_tokens
 
@@ -11,9 +11,11 @@ models:
     cache_write: 0.00
     cache_read: 0.26
     output: 4.40
+    context_window: 200000
   # Task often exposes the high-effort variant as a distinct slug.
   glm-5.2-high:
     input: 1.40
     cache_write: 0.00
     cache_read: 0.26
     output: 4.40
+    context_window: 200000

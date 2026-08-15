@@ -100,6 +100,9 @@ type model struct {
 
 	liveAgents []liveAgent // currently executing parent + Task subagents (Chat box)
 
+	contextUsedTokens int64
+	contextWindows    contextWindowCatalog
+
 	// Inline confirmation for destructive actions while an agent is streaming.
 	confirmPending bool
 	confirmMsg     string
@@ -133,9 +136,12 @@ func newModel(svc *cycle.Service) model {
 		respFollowBottom: true,
 		chatInputFocused: true,
 	}
+	projectDir := ""
 	if svc != nil {
-		m.chatModelSlug = install.HarnessModelSlugForProject(svc.ProjectDir, "cursor")
+		projectDir = svc.ProjectDir
+		m.chatModelSlug = install.HarnessModelSlugForProject(projectDir, "cursor")
 	}
+	m.contextWindows = loadContextWindowCatalog(projectDir)
 	m = m.reloadPaletteItems()
 	return m.syncConversationContext()
 }

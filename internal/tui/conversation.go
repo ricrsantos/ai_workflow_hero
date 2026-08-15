@@ -247,6 +247,7 @@ func (m model) resetChatSession() model {
 	m.respScrollOffset = 0
 	m.respFollowBottom = true
 	m.waitAnimFrame = 0
+	m.contextUsedTokens = 0
 	m = m.clearChatInput()
 	if m.svc != nil {
 		stage, _, err := m.svc.ConversationContext()
@@ -929,6 +930,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.result != nil {
+			m.contextUsedTokens = msg.result.Usage.InputTokens + msg.result.Usage.OutputTokens
 			if msg.result.SessionID != "" {
 				m = m.persistHarnessSession(msg.result.SessionID)
 			}
@@ -1412,11 +1414,7 @@ func (m model) renderConversationResponse(responseLines int) string {
 	var b strings.Builder
 	b.WriteString(chatBoxStyle.Width(m.chatBoxWidth()).Render(strings.Join(rows, "\n")))
 	b.WriteByte('\n')
-	if m.streaming {
-		b.WriteString(mutedStyle.Render("↑↓ scroll · ctrl+c interrupt"))
-	} else {
-		b.WriteString(mutedStyle.Render("↑↓ scroll response"))
-	}
+	b.WriteString(m.renderScrollHintLine())
 	b.WriteByte('\n')
 	return b.String()
 }

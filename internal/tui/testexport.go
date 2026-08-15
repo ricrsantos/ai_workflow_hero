@@ -439,3 +439,8 @@ func StreamDeltaMsgForTest(text string) tea.Msg {
 func ExecuteDoneMsgForTest(err error) tea.Msg {
 	return executeDoneMsg{err: err}
 }
+
+// ExecuteDoneResultForTest builds an executeDoneMsg with a harness result.
+func ExecuteDoneResultForTest(res *harness.ExecutionResult, err error) tea.Msg {
+	return executeDoneMsg{result: res, err: err}
+}

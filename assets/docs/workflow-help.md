@@ -273,6 +273,8 @@ hero update-models
 | `/hero-model` | Select TUI default model (persists to `hero.json`; Chat screen + non-agent dispatches) |
 | `/hero-help` | List Runtime commands |
 
+**TUI Chat** (`hero tui`): the line under the green response pane shows a context bar (last harness turn `usage` vs the model's `context_window` in `.workflow-hero/models/*.yml`) when the running slug is in the catalog. Hidden when the model has no window.
+
 ---
 
 ## 11. Agents (who does what)
@@ -508,6 +510,8 @@ Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`
 ## 10. Comandos Runtime (chat do Cursor)
 
 `/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-continue`, `/hero-back`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-cycles`, `/hero-todos`, `/hero-model`, `/hero-help` — ver tabela da §10 (inglês).
+
+**TUI Chat** (`hero tui`): a linha sob o painel verde de resposta mostra uma barra de contexto (uso do último turno do harness vs `context_window` em `.workflow-hero/models/*.yml`) quando o slug em execução está no catálogo. Oculta se o modelo não tiver janela.
 
 ---
 

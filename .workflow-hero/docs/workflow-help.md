@@ -273,14 +273,16 @@ hero update-models
 | `/hero-model` | Select TUI default model (persists to `hero.json`; Chat screen + non-agent dispatches) |
 | `/hero-help` | List Runtime commands |
 
+**TUI Chat** (`hero tui`): the line under the green response pane shows a context bar (last harness turn `usage` vs the model's `context_window` in `.workflow-hero/models/*.yml`) when the running slug is in the catalog. Hidden when the model has no window.
+
 ---
 
 ## 11. Agents (who does what)
 
 | Agent | Role |
 |-------|------|
-| `orchestration_agent` | Orchestrates the loop (IDE session model in chat; TUI `/hero-start` uses `agents.orchestration_agent` in workflow-config) |
-| `discover_agent` | Research / grilling → specs (PRD, ADR, UI, …) |
+| `orchestration_agent` | Orchestrates the loop (IDE session model in chat; TUI Execute uses `agents.orchestration_agent`, then `fallback_model`, then `/hero-model`) |
+| `discover_agent` | Research / grilling → specs. TUI uses `agents.discover_agent` in workflow-config.yml; Cursor IDE chat ignores that block (same session as the orchestrator) |
 | `planning_agent` | OpenSpec SDD |
 | `context_agent` | On-demand project context (read-only) |
 | `backend_agent` | Backend implementation + logging standard |
@@ -509,11 +511,13 @@ Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`
 
 `/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-continue`, `/hero-back`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-cycles`, `/hero-todos`, `/hero-model`, `/hero-help` — ver tabela da §10 (inglês).
 
+**TUI Chat** (`hero tui`): a linha sob o painel verde de resposta mostra uma barra de contexto (uso do último turno do harness vs `context_window` em `.workflow-hero/models/*.yml`) quando o slug em execução está no catálogo. Oculta se o modelo não tiver janela.
+
 ---
 
 ## 11. Agentes, documentos, arquitetura e logs
 
-- **Agentes:** orquestração, discovery (Research + docs), planning (OpenSpec), context, backend/frontend/generic (implementação + logs), QA (inclui logs), Judge, Browser UI Validation (`browser_ui_agent`), End-to-End.
+- **Agentes:** orquestração, discovery (Research + docs; no TUI o modelo vem de `agents.discover_agent`; no chat do Cursor o YAML é ignorado), planning (OpenSpec), context, backend/frontend/generic (implementação + logs), QA (inclui logs), Judge, Browser UI Validation (`browser_ui_agent`), End-to-End.
 - **Documentos:** PRD/ADR/UI/DEPLOY/TESTING; ADRs definem arquitetura.
 - **Logs:** `error` / `info` / `debug`, default `info`; QA falha se o padrão não for seguido.
 - **Secrets:** só `.env.example` no git; valores reais em `.env` local.

@@ -2279,6 +2279,7 @@ func TestNewChatClearsSession(t *testing.T) {
 	m = SetChatModelSlugForTest(m, "composer-2.5")
 	m.harnessSessionID = "old-session"
 	m.orchestrationLive = true
+	m.contextUsedTokens = 180000
 	m.transcript = []convMessage{{role: convRoleUser, content: "hello"}}
 	next, cmd := RunPaletteItemForTest(m, "/new-chat")
 	if cmd != nil {
@@ -2292,6 +2293,9 @@ func TestNewChatClearsSession(t *testing.T) {
 	}
 	if next.orchestrationLive {
 		t.Fatal("orchestrationLive should be false")
+	}
+	if next.contextUsedTokens != 0 {
+		t.Fatalf("context used=%d want 0", next.contextUsedTokens)
 	}
 	if StatusTextForTest(next) != "New chat started with default model." {
 		t.Fatalf("status=%q", StatusTextForTest(next))
@@ -2504,3 +2508,55 @@ func TestDiscoverCloseResumesOrchestrator(t *testing.T) {
 		t.Fatalf("runtime agent=%q", RuntimeAgentNameForTest(next))
 	}
 }
+
+func TestConversationContextBarShownWhenCatalogHasWindow(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m.contextUsedTokens = 180000
+	view := stripANSI(ViewForTest(m))
+	if !strings.Contains(view, "↑↓ scroll") {
+		t.Fatalf("missing scroll hint: %q", view)
+	}
+	if !strings.Contains(view, "180k/200k") {
+		t.Fatalf("expected context bar label: %q", view)
+	}
+	if !strings.Contains(view, contextBarFillChar) {
+		t.Fatalf("expected filled context bar: %q", view)
+	}
+}
+
+func TestConversationContextBarHiddenWithoutWindow(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "not-a-catalog-model")
+	m.contextUsedTokens = 180000
+	view := stripANSI(ViewForTest(m))
+	if strings.Contains(view, contextBarFillChar) || strings.Contains(view, contextBarEmptyChar) {
+		t.Fatalf("bar should be omitted without context_window: %q", view)
+	}
+	if strings.Contains(view, "/200k") || strings.Contains(view, "180k/") {
+		t.Fatalf("label should be omitted without context_window: %q", view)
+	}
+}
+
+func TestExecuteDoneUpdatesContextUsedTokens(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m.streaming = true
+	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
+		SessionID: "sess-1",
+		Output:    "done",
+		Usage:     harness.Usage{InputTokens: 100000, OutputTokens: 80000},
+	}, nil))
+	got := next.(model)
+	if got.contextUsedTokens != 180000 {
+		t.Fatalf("used=%d want 180000", got.contextUsedTokens)
+	}
+	view := stripANSI(ViewForTest(got))
+	if !strings.Contains(view, "180k/200k") {
+		t.Fatalf("view missing updated bar: %q", view)
+	}
+}
+
