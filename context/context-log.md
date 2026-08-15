@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-08-14 — TUI wrap panic on Angular/Unicode output
+
+**Problem**: Running an Angular app via the TUI harness panicked the Chat pane: `runtime error: slice bounds out of range [149:148]` in `wrapOutputLine` (`output_view.go`). Bubble Tea recovered and killed the program.
+
+**Cause**: `wrapOutputLine` converted the line to `[]rune`, then called `strings.LastIndex` on `string(runes[:width])`. That returns a **byte** index. Multi-byte glyphs (`✔`, box drawing) make the UTF-8 string longer than the rune slice, so `runes[sp:]` sliced past `len(runes)`.
+
+**Decision / Outcome**: Break on the last space in the rune slice (`lastSpaceRune`). Regression test with Angular-like `✔` lines and ANSI-colored paths. `go test ./...` passes.
+
+---
+
 ## 2026-08-14 — Chat composer newline (alt+enter)
 
 **Problem**: Shift+Enter is the same CR as Enter in Cursor xterm.js. Ctrl+J is stolen by Cursor `togglePanel`. Ctrl+Enter did not reach the TUI.

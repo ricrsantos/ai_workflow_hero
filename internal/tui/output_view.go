@@ -70,16 +70,28 @@ func wrapOutputLine(s string, width int) []string {
 			break
 		}
 		cut := width
-		chunk := string(runes[:cut])
-		if sp := strings.LastIndex(chunk, " "); sp > width/4 {
-			lines = append(lines, strings.TrimSpace(chunk[:sp]))
+		sp := lastSpaceRune(runes[:cut])
+		if sp > width/4 {
+			lines = append(lines, strings.TrimSpace(string(runes[:sp])))
 			runes = []rune(strings.TrimLeft(string(runes[sp:]), " "))
 			continue
 		}
-		lines = append(lines, chunk)
+		lines = append(lines, string(runes[:cut]))
 		runes = runes[cut:]
 	}
 	return lines
+}
+
+// lastSpaceRune returns the last space index, or -1. Search runes — not the
+// UTF-8 string — so multi-byte glyphs (Angular ✔) cannot yield a byte index
+// past len(runes).
+func lastSpaceRune(runes []rune) int {
+	for i := len(runes) - 1; i >= 0; i-- {
+		if runes[i] == ' ' {
+			return i
+		}
+	}
+	return -1
 }
 
 func shouldOpenOutputPanel(text string, width int) bool {

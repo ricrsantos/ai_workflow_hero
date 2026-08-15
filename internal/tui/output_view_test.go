@@ -5,6 +5,25 @@ import (
 	"testing"
 )
 
+func TestWrapOutputLine_UnicodeDoesNotPanic(t *testing.T) {
+	// Multi-byte runes make len(string) > len([]rune). The old wrap used
+	// strings.LastIndex (byte index) as a rune slice index → panic
+	// "slice bounds out of range [n:m]" while rendering Angular CLI output.
+	line := strings.Repeat("✔", 140) + " Browser application bundle generation complete."
+	got := wrapOutputLine(line, 142)
+	if len(got) < 2 {
+		t.Fatalf("expected wrap, got %v", got)
+	}
+	for i, l := range got {
+		if n := len([]rune(l)); n > 142 {
+			t.Fatalf("line %d has %d runes (max 142): %q", i, n, l)
+		}
+	}
+
+	ansiAngular := "\x1b[32m✔\x1b[39m Compiled successfully. " + strings.Repeat("src/app/feature/component.ts ", 20)
+	_ = splitOutputLines(ansiAngular, 80)
+}
+
 func TestSplitOutputLinesWraps(t *testing.T) {
 	lines := splitOutputLines("abcdefghijklmnop\nxy", 8)
 	if len(lines) < 3 {
