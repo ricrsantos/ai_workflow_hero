@@ -28,6 +28,15 @@ func (m model) defaultExecuteModel(actionLabel string) (model, tea.Cmd, string, 
 	return m, nil, m.defaultHarnessModelSlug(), true
 }
 
+// orchestratorExecuteModel resolves agents.orchestration_agent (then fallback_model,
+// then /hero-model) for TUI Runtime Execute of orchestrator commands.
+func (m model) orchestratorExecuteModel(actionLabel string) (model, tea.Cmd, string, bool) {
+	if slug, _ := m.orchestratorModelSlug(); strings.TrimSpace(slug) != "" {
+		return m, nil, slug, true
+	}
+	return m.defaultExecuteModel(actionLabel)
+}
+
 func defaultModelRequiredMessage(actionLabel string) string {
 	switch actionLabel {
 	case "/hero-new":

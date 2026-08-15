@@ -267,8 +267,8 @@ func (s *Service) PrepareCycle() (engine.NewCycleResult, error) {
 	return res, nil
 }
 
-// SyncCycleConfig updates the active cycle title/objective from workflow-config.yml.
-// Called by /hero-start before stage orchestration.
+// SyncCycleConfig updates the active cycle title/objective and still-open stage
+// budgets from workflow-config.yml. Called by /hero-start before stage orchestration.
 func (s *Service) SyncCycleConfig() error {
 	return s.Engine.SyncCycleConfigFromWorkflow(s.ProjectDir)
 }

@@ -280,7 +280,7 @@ func usesOrchestratorRuntime(cmdName string) bool {
 
 // beginHeroRuntimeConversation opens Chat and executes a Hero runtime command markdown
 // (same body as Cursor slash expansion). modelSlug is optional; when empty, uses the
-// default harness model from hero.json (/hero-model).
+// conversation model (YAML orchestrator, discover agent, or /hero-model default).
 func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts heroRuntimeOpts) (model, tea.Cmd) {
 	if m.svc == nil {
 		m, _ = m.enterConversation()
@@ -662,7 +662,7 @@ func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
 		var cmd tea.Cmd
 		var slug string
 		var ok bool
-		m, cmd, slug, ok = m.defaultExecuteModel("chat")
+		m, cmd, slug, ok = m.orchestratorExecuteModel("chat")
 		if !ok {
 			return m, cmd
 		}
@@ -675,7 +675,7 @@ func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
 			var cmd tea.Cmd
 			var slug string
 			var ok bool
-			m, cmd, slug, ok = m.defaultExecuteModel("chat")
+			m, cmd, slug, ok = m.orchestratorExecuteModel("chat")
 			if !ok {
 				return m, cmd
 			}
@@ -1051,6 +1051,11 @@ func (m model) addLiveAgent(d harness.StreamDelta) model {
 		}
 	}
 	name := strings.TrimSpace(d.AgentName)
+	if !isKnownHeroAgent(name) {
+		// Nested generic Tasks (explore, generalPurpose, …) must not chip HARN.
+		// HARN is only the parent session when no Hero agent is bound.
+		return m
+	}
 	m.liveAgents = append(m.liveAgents, liveAgent{
 		CallID: callID,
 		Name:   name,
@@ -1184,8 +1189,9 @@ func (m model) renderConversationHeader() string {
 		}
 	} else {
 		iter := ""
+		want := stageNameKey(stage)
 		for _, st := range m.status.Stages {
-			if strings.EqualFold(st.Name, stage) {
+			if stageNameKey(st.Name) == want {
 				iter = st.Iteration
 				break
 			}
@@ -1204,6 +1210,15 @@ func (m model) renderConversationHeader() string {
 	}
 	leftBlock := lipgloss.NewStyle().Width(leftW).MaxWidth(leftW).Render(left.String())
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftBlock, right)
+}
+
+// stageNameKey normalizes SQLite slugs (qa_end_to_end) and status display names
+// ("Qa End To End") so the Chat header can look up iteration counts.
+func stageNameKey(name string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	s = strings.ReplaceAll(s, " ", "_")
+	s = strings.ReplaceAll(s, "-", "_")
+	return s
 }
 
 func (m model) renderAgentsBox() string {

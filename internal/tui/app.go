@@ -87,7 +87,7 @@ type model struct {
 	availableModels        []string
 	pickingModel           bool
 	runtimeCommandName     string // hero runtime slash body name (e.g. "new") for Chat output normalization
-	runtimeModelSlug       string // explicit harness model for active runtime slash (e.g. /hero-start orchestrator)
+	runtimeModelSlug       string // YAML orch/discover slug or /hero-model default for the active runtime slash
 	runtimeAgentName       string // harness agent name for active runtime slash (e.g. orchestration_agent)
 	orchestrationLive      bool   // /hero-start session: follow-ups resume orchestrator model + session
 	researchLive           bool   // TUI Research: free-text follow-ups resume discover_agent
@@ -597,7 +597,7 @@ func (m model) beginHeroStart() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-start", noActiveCycleForStartMessage())
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-start")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-start")
 	if !ok {
 		return m, cmd
 	}
@@ -613,7 +613,7 @@ func (m model) beginHeroSync() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-sync")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-sync")
 	if !ok {
 		return m, cmd
 	}
@@ -625,7 +625,7 @@ func (m model) beginHeroStatus() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-status")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-status")
 	if !ok {
 		return m, cmd
 	}
@@ -641,7 +641,7 @@ func (m model) beginHeroArchive() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-archive", errMsg)
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-archive")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-archive")
 	if !ok {
 		return m, cmd
 	}
@@ -666,7 +666,7 @@ func (m model) beginHeroResumeExecute(cycleN int) (model, tea.Cmd) {
 		m.convError = "Cycle number must be a positive integer (e.g. /hero-resume 4)."
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-resume")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-resume")
 	if !ok {
 		if cycleN > 0 {
 			m, _ = m.enterConversation()
@@ -701,7 +701,7 @@ func (m model) beginHeroReject() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-reject", errMsg)
 		return m, nil
 	}
-	m, cmd, _, ok := m.defaultExecuteModel("/hero-reject")
+	m, cmd, _, ok := m.orchestratorExecuteModel("/hero-reject")
 	if !ok {
 		return m, cmd
 	}
@@ -738,7 +738,7 @@ func (m model) beginHeroRejectExecute(reason string) (model, tea.Cmd) {
 		m.convError = errMsg
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-reject")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-reject")
 	if !ok {
 		m, _ = m.enterConversation()
 		m.convError = defaultModelRequiredMessage("/hero-reject")
@@ -769,7 +769,7 @@ func (m model) beginHeroCancelExecute(reason string) (model, tea.Cmd) {
 		m.convError = errMsg
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-cancel")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-cancel")
 	if !ok {
 		m, _ = m.enterConversation()
 		m.convError = defaultModelRequiredMessage("/hero-cancel")
@@ -787,7 +787,7 @@ func (m model) beginHeroFinish() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-finish", errMsg)
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-finish")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-finish")
 	if !ok {
 		return m, cmd
 	}
@@ -825,7 +825,7 @@ func (m model) beginHeroContinueExecute(extra int) (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-continue", noEscalatedStageMessage())
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-continue")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-continue")
 	if !ok {
 		return m, cmd
 	}
@@ -850,7 +850,7 @@ func (m model) beginHeroBack() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-back", noJudgePendingApprovalMessage())
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-back")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-back")
 	if !ok {
 		return m, cmd
 	}
@@ -891,7 +891,7 @@ func (m model) beginHeroApprove() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-approve", noPendingApprovalMessage())
 		return m, nil
 	}
-	m, cmd, slug, ok := m.defaultExecuteModel("/hero-approve")
+	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-approve")
 	if !ok {
 		return m, cmd
 	}

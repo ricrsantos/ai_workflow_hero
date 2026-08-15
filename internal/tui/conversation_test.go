@@ -901,8 +901,8 @@ func TestHeroStartRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, agentMarker) {
 		t.Fatalf("prompt missing orchestration_agent body: %q", h.lastPrompt)
 	}
-	if h.lastModel != "composer-2.5" {
-		t.Fatalf("model=%q want composer-2.5", h.lastModel)
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q want YAML orchestration_agent slug", h.lastModel)
 	}
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
@@ -932,8 +932,8 @@ func TestHeroStartRuntimeConversation(t *testing.T) {
 	if h.lastSessionID != "start-cycle-sess" {
 		t.Fatalf("follow-up resume session=%q", h.lastSessionID)
 	}
-	if h.lastModel != "composer-2.5" {
-		t.Fatalf("follow-up model=%q want default /hero-model slug", h.lastModel)
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("follow-up model=%q want YAML orchestration_agent slug", h.lastModel)
 	}
 }
 
@@ -1150,8 +1150,8 @@ func TestHeroApproveRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, agentMarker) {
 		t.Fatalf("prompt missing orchestration_agent body: %q", h.lastPrompt)
 	}
-	if h.lastModel != "composer-2.5" {
-		t.Fatalf("model=%q want composer-2.5", h.lastModel)
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q want YAML orchestration_agent slug", h.lastModel)
 	}
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
@@ -1300,8 +1300,8 @@ func TestHeroRejectRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, reason) {
 		t.Fatalf("prompt missing rejection reason: %q", h.lastPrompt)
 	}
-	if h.lastModel != "composer-2.5" {
-		t.Fatalf("model=%q want composer-2.5", h.lastModel)
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q want YAML orchestration_agent slug", h.lastModel)
 	}
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
@@ -1907,8 +1907,8 @@ func TestHeroArchiveRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, "end2end_qa_agent") {
 		t.Fatalf("archive must forbid stage-agent dispatch: %q", h.lastPrompt)
 	}
-	if h.lastModel != "composer-2.5" {
-		t.Fatalf("model=%q want /hero-model default composer-2.5, not YAML stage agent", h.lastModel)
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q want YAML orchestration_agent slug, not YAML stage agent", h.lastModel)
 	}
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
@@ -1940,8 +1940,8 @@ func TestHeroArchiveUsesDefaultModelNotLiveStageSession(t *testing.T) {
 	if h.lastSessionID != "" {
 		t.Fatalf("must not resume QA E2E/stage session %q", h.lastSessionID)
 	}
-	if h.lastModel != "composer-2.5" {
-		t.Fatalf("model=%q want /hero-model default", h.lastModel)
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q want YAML orchestration_agent slug", h.lastModel)
 	}
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)
@@ -2028,24 +2028,35 @@ func TestHeroResumeInlineCycleNumber(t *testing.T) {
 	}
 }
 
-func TestHeroStartRequiresDefaultModel(t *testing.T) {
+func TestHeroStartUsesYamlOrchestratorWithoutHeroModel(t *testing.T) {
 	dir := t.TempDir()
 	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-start.md"), []byte("# /hero-start\n\nSTART_YAML"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"starting"}}
+	svc.Harness = h
+
 	m := NewTestModel(svc)
 	next, cmd := RunPaletteItemForTest(m, "/hero-start")
-	if cmd != nil {
-		t.Fatal("expected no async cmd without default model")
+	if cmd == nil {
+		t.Fatalf("expected execute with YAML orch model; status=%s %q", StatusKindForTest(next), StatusTextForTest(next))
 	}
-	if StatusKindForTest(next) != "err" {
-		t.Fatalf("status=%s", StatusKindForTest(next))
+	next = drainConversationStream(t, next, cmd)
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q want YAML orchestration_agent without /hero-model", h.lastModel)
 	}
-	if !strings.Contains(StatusTextForTest(next), "/hero-model") {
-		t.Fatalf("missing model hint: %q", StatusTextForTest(next))
+	view := ViewForTest(next)
+	if !strings.Contains(view, "gpt-5.3-codex-medium") {
+		t.Fatalf("input box missing YAML orch model: %q", view)
 	}
 }
 
-func TestHeroSyncPrefersDefaultOverYamlOrchestrator(t *testing.T) {
+func TestHeroSyncPrefersYamlOrchestratorOverDefault(t *testing.T) {
 	dir := t.TempDir()
 	setupHeroApproveRuntimeFiles(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-sync.md"), []byte("# /hero-sync\n\nSYNC_YAML"), 0o644); err != nil {
@@ -2061,8 +2072,8 @@ func TestHeroSyncPrefersDefaultOverYamlOrchestrator(t *testing.T) {
 	m := withDefaultChatModel(NewTestModel(svc))
 	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-sync")
 	next = drainConversationStream(t, next, cmd)
-	if h.lastModel != "composer-2.5" {
-		t.Fatalf("model=%q want composer-2.5, YAML orchestrator must not override /hero-model", h.lastModel)
+	if h.lastModel != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q want YAML orchestration_agent, not /hero-model", h.lastModel)
 	}
 }
 
@@ -2110,6 +2121,81 @@ func TestConversationAgentsBoxIdle(t *testing.T) {
 	view := ViewForTest(m)
 	if !strings.Contains(view, "agents: 0") {
 		t.Fatalf("expected idle agents box: %q", view)
+	}
+}
+
+func TestConversationHeaderMatchesDisplayStageName(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m.conversationStage = "qa_end_to_end"
+	m.status = cycle.StatusView{
+		CycleNumber: 1,
+		Stages: []cycle.StatusStage{
+			{Name: "Qa End To End", Iteration: "1/3"},
+		},
+	}
+	view := ViewForTest(m)
+	if !strings.Contains(view, "iter 1/3") {
+		t.Fatalf("header should resolve display stage name to slug iter: %q", view)
+	}
+	if !strings.Contains(view, "qa_end_to_end") {
+		t.Fatalf("header missing stage slug: %q", view)
+	}
+}
+
+func TestConversationAgentsBoxAddsHeroTaskNotGenericHARN(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m.runtimeAgentName = "orchestration_agent"
+	m.liveAgents = []liveAgent{{Name: "orchestration_agent", Label: "ORCH", Model: "gpt-5.3-codex-medium"}}
+	m.streaming = true
+
+	next, _ := m.Update(streamDeltaMsg{delta: harness.StreamDelta{
+		Kind:      harness.StreamKindTool,
+		AgentName: "planning_agent",
+		Model:     "gpt-5.3-codex-medium",
+		CallID:    "t-plan",
+		Phase:     harness.StreamPhaseStarted,
+	}})
+	got := LiveAgentsForTest(next.(model))
+	if len(got) != 2 {
+		t.Fatalf("live agents=%+v want ORCH+PLAN", got)
+	}
+	labels := got[0].Label + " " + got[1].Label
+	if !strings.Contains(labels, "ORCH") || !strings.Contains(labels, "PLAN") {
+		t.Fatalf("labels=%q want ORCH PLAN", labels)
+	}
+
+	next, _ = next.Update(streamDeltaMsg{delta: harness.StreamDelta{
+		Kind:      harness.StreamKindTool,
+		AgentName: "explore",
+		Model:     "composer-2.5",
+		CallID:    "t-explore",
+		Phase:     harness.StreamPhaseStarted,
+	}})
+	got = LiveAgentsForTest(next.(model))
+	if len(got) != 2 {
+		t.Fatalf("nested explore must not chip HARN: %+v", got)
+	}
+	view := ViewForTest(next.(model))
+	if strings.Contains(view, "HARN") {
+		t.Fatalf("agents box must not show HARN for nested generic Task: %q", view)
+	}
+}
+
+func TestConversationFreechatParentShowsHARN(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m.liveAgents = []liveAgent{{Name: "", Label: agentShortLabel(""), Model: "composer-2.5"}}
+	view := ViewForTest(m)
+	if !strings.Contains(view, "HARN") {
+		t.Fatalf("freechat parent should show HARN: %q", view)
 	}
 }
 

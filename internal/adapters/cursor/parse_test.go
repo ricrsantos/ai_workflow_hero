@@ -50,6 +50,31 @@ func TestParseStreamJSONPartialSkipsDuplicates(t *testing.T) {
 	}
 }
 
+func TestParseStreamJSONTaskPrefersHeroAgentOverGenericType(t *testing.T) {
+	ndjson := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"s"}`,
+		`{"type":"tool_call","subtype":"started","call_id":"t1","tool_call":{"taskToolCall":{"args":{"subagent_type":"generalPurpose","description":"planning_agent","model":"gpt-5.3-codex-medium"}}},"session_id":"s"}`,
+		`{"type":"tool_call","subtype":"completed","call_id":"t1","tool_call":{"taskToolCall":{"args":{"subagent_type":"generalPurpose","description":"planning_agent","model":"gpt-5.3-codex-medium"},"result":{"success":{"content":"sdd ready"}}}},"session_id":"s"}`,
+		`{"type":"result","subtype":"success","is_error":false,"duration_ms":5,"result":"done","session_id":"s"}`,
+	}, "\n") + "\n"
+
+	var start harness.StreamDelta
+	_, err := cursoradapter.ParseStreamJSON(strings.NewReader(ndjson), func(d harness.StreamDelta) {
+		if d.Phase == harness.StreamPhaseStarted {
+			start = d
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if start.AgentName != "planning_agent" {
+		t.Fatalf("agent=%q want planning_agent, not generic subagent_type", start.AgentName)
+	}
+	if start.Model != "gpt-5.3-codex-medium" {
+		t.Fatalf("model=%q", start.Model)
+	}
+}
+
 func TestParseStreamJSONThinkingAndToolCalls(t *testing.T) {
 	ndjson := strings.Join([]string{
 		`{"type":"system","subtype":"init","session_id":"s"}`,

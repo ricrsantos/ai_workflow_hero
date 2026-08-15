@@ -70,6 +70,21 @@ func (m model) discoverModelSlug() (slug string, warned bool) {
 	return slug, false
 }
 
+func (m model) orchestratorModelSlug() (slug string, warned bool) {
+	projectDir := ""
+	if m.svc != nil {
+		projectDir = m.svc.ProjectDir
+	}
+	slug, usedFallback, err := workflowconfig.AgentModelSlug(projectDir, agentOrchestration)
+	if err != nil || strings.TrimSpace(slug) == "" {
+		return m.defaultHarnessModelSlug(), true
+	}
+	if usedFallback {
+		return slug, true
+	}
+	return slug, false
+}
+
 func (m model) maybeHandoffAfterExecute() (model, tea.Cmd) {
 	if !m.orchestrationLive || m.svc == nil {
 		return m, nil
@@ -130,7 +145,7 @@ func (m model) resumeOrchestratorAfterResearch() (model, tea.Cmd) {
 	m.harnessSessionID = orchID
 	m.runtimeAgentName = agentOrchestration
 	m.runtimeCommandName = "start"
-	if slug := strings.TrimSpace(m.defaultHarnessModelSlug()); slug != "" {
+	if slug, _ := m.orchestratorModelSlug(); slug != "" {
 		m.runtimeModelSlug = slug
 	}
 	if s, err := m.svc.ActiveRunStage(); err == nil {
@@ -160,7 +175,7 @@ func (m model) prepareOrchestratorFollowUp() model {
 	if sid := strings.TrimSpace(m.orchestrationSessionID); sid != "" {
 		m.harnessSessionID = sid
 	}
-	if slug := strings.TrimSpace(m.defaultHarnessModelSlug()); slug != "" {
+	if slug, _ := m.orchestratorModelSlug(); slug != "" {
 		m.runtimeModelSlug = slug
 	}
 	return m

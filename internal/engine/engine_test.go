@@ -353,6 +353,110 @@ stages:
 	}
 }
 
+func TestSyncCycleConfigUpdatesStageBudgets(t *testing.T) {
+	dir := t.TempDir()
+	cycleDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")
+	if err := os.MkdirAll(cycleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `title: Budgets
+objective: Pending
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    timeout_minutes: 5
+    require_human_approval: false
+  planning:
+    enabled: true
+    max_iterations: 1
+    timeout_minutes: 5
+    require_human_approval: false
+  qa_end_to_end:
+    enabled: true
+    max_iterations: 1
+    timeout_minutes: 5
+    require_human_approval: true
+`
+	if err := os.WriteFile(filepath.Join(cycleDir, "workflow-config.yml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	e, s := openTestEngine(t)
+	res, err := e.CreateCycleFromConfig(NewCycleOptions{ProjectDir: dir, DeferMeta: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.StartStage(res.Cycle.ID, "research"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.CloseStage(res.Cycle.ID, "research", StageCloseInput{Summary: "done"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.StartStage(res.Cycle.ID, "planning"); err != nil {
+		t.Fatal(err)
+	}
+
+	updated := `title: Budgets
+objective: Synced
+stages:
+  research:
+    enabled: true
+    max_iterations: 50
+    timeout_minutes: 15
+    require_human_approval: false
+  planning:
+    enabled: true
+    max_iterations: 4
+    timeout_minutes: 20
+    require_human_approval: true
+  qa_end_to_end:
+    enabled: false
+    max_iterations: 3
+    timeout_minutes: 15
+    require_human_approval: false
+`
+	if err := os.WriteFile(filepath.Join(cycleDir, "workflow-config.yml"), []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SyncCycleConfigFromWorkflow(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	research, err := s.GetStage(res.Cycle.ID, "research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if research.Status != store.StageCompleted || research.MaxIterations != 1 {
+		t.Fatalf("completed research must keep original budget: %+v", research)
+	}
+
+	planning, err := s.GetStage(res.Cycle.ID, "planning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if planning.Status != store.StageRunning {
+		t.Fatalf("running planning status=%s", planning.Status)
+	}
+	if planning.MaxIterations != 4 || planning.TimeoutMinutes != 20 || !planning.RequireHumanApproval {
+		t.Fatalf("running planning budgets not synced: %+v", planning)
+	}
+	if planning.Iteration != 1 {
+		t.Fatalf("running planning iteration reset: %+v", planning)
+	}
+
+	e2e, err := s.GetStage(res.Cycle.ID, "qa_end_to_end")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e2e.Status != store.StageSkipped {
+		t.Fatalf("waiting e2e should become skipped, got %s", e2e.Status)
+	}
+	if e2e.MaxIterations != 3 || e2e.TimeoutMinutes != 15 || e2e.RequireHumanApproval {
+		t.Fatalf("waiting e2e budgets not synced: %+v", e2e)
+	}
+}
+
 func TestParseMetricsJSON(t *testing.T) {
 	m, err := ParseMetricsJSON(`{"agent":"qa_agent","input_tokens":12,"output_tokens":3}`)
 	if err != nil || len(m) != 1 || m[0].InputTokens != 12 {

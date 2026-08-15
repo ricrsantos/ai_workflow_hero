@@ -279,7 +279,7 @@ hero update-models
 
 | Agent | Role |
 |-------|------|
-| `orchestration_agent` | Orchestrates the loop (IDE session model in chat; TUI Execute uses `/hero-model`) |
+| `orchestration_agent` | Orchestrates the loop (IDE session model in chat; TUI Execute uses `agents.orchestration_agent`, then `fallback_model`, then `/hero-model`) |
 | `discover_agent` | Research / grilling → specs. TUI uses `agents.discover_agent` in workflow-config.yml; Cursor IDE chat ignores that block (same session as the orchestrator) |
 | `planning_agent` | OpenSpec SDD |
 | `context_agent` | On-demand project context (read-only) |

@@ -577,7 +577,8 @@ func (e *Engine) CreateCycleFromConfig(opts NewCycleOptions) (NewCycleResult, er
 }
 
 // SyncCycleConfigFromWorkflow reads workflow-config.yml and updates the active cycle's
-// title, objective, and config snapshot (used by /hero-start before stage orchestration).
+// title, objective, config snapshot, and still-open stage budgets (used by /hero-start
+// before stage orchestration). Completed/failed stages are left unchanged.
 func (e *Engine) SyncCycleConfigFromWorkflow(projectDir string) error {
 	configPath := resolveWorkflowConfigPath(projectDir)
 	cfg, raw, err := LoadWorkflowConfig(configPath)
@@ -591,7 +592,52 @@ func (e *Engine) SyncCycleConfigFromWorkflow(projectDir string) error {
 	if err := e.Store.UpdateCycleMeta(c.ID, cfg.Title, cfg.Objective, string(raw)); err != nil {
 		return err
 	}
+	if err := e.syncStagesFromWorkflow(c.ID, cfg); err != nil {
+		return err
+	}
 	e.Logger.Info("cycle config synced", "cycle", c.Number, "title", cfg.Title)
+	return nil
+}
+
+func (e *Engine) syncStagesFromWorkflow(cycleID int64, cfg WorkflowConfig) error {
+	existing, err := e.Store.ListStages(cycleID)
+	if err != nil {
+		return err
+	}
+	byName := make(map[string]store.Stage, len(existing))
+	for _, st := range existing {
+		byName[st.Name] = st
+	}
+	for _, name := range canonicalStageOrder {
+		sc, ok := cfg.Stages[name]
+		if !ok {
+			continue
+		}
+		st, ok := byName[name]
+		if !ok {
+			continue
+		}
+		if st.Status == store.StageCompleted || st.Status == store.StageFailed {
+			continue
+		}
+		maxIter := sc.MaxIterations
+		if maxIter <= 0 {
+			maxIter = 1
+		}
+		st.MaxIterations = maxIter
+		st.TimeoutMinutes = sc.TimeoutMinutes
+		st.RequireHumanApproval = sc.RequireHumanApproval
+		if st.Status == store.StageWaiting || st.Status == store.StageSkipped {
+			if sc.Enabled {
+				st.Status = store.StageWaiting
+			} else {
+				st.Status = store.StageSkipped
+			}
+		}
+		if err := e.Store.UpdateStage(st); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-08-14 — TUI Chat: iterations, orch model, HARN
+
+**Problem**: Chat header `iter x/x` missed YAML `max_iterations` (especially `qa_end_to_end`); input/Execute used `/hero-model` instead of `agents.orchestration_agent`; agents box showed `ORCH | HARN` during Planning.
+
+**Cause**: Header compared SQLite slugs to `displayStageName` (`Qa End To End`); `SyncCycleConfig` did not update stage rows. Orchestrator Execute always called `defaultExecuteModel`. Task parse took the first of `subagent_type`/`description`, so `generalPurpose` became HARN.
+
+**Decision / Outcome**: Normalize stage keys in the header; sync still-open stage budgets from YAML on `/hero-start`. Orchestrator Execute + follow-ups + input box use `AgentModelSlug(orchestration_agent)` → fallback_model → `/hero-model`. `/hero-new` and freechat stay on `/hero-model`. Task parse prefers named Hero agents; agents box omits nested generic Tasks (`HARN` only for parent with no Hero agent). Amends ADR-030 §4 for orchestrator Execute. `go test ./...` passes.
+
+---
+
 ## 2026-08-14 — TUI Research agent model (discover_agent YAML)
 
 **Problem**: `workflow-config.yml` had no `discover_agent` block. Research grilling always used the orchestrator session (IDE model in Cursor chat; `/hero-model` in TUI), so a cheaper/different Research model was impossible in TUI.

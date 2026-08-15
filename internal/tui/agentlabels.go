@@ -57,6 +57,15 @@ func resolveAgentKey(name string) string {
 	return key
 }
 
+func isKnownHeroAgent(name string) bool {
+	key := resolveAgentKey(name)
+	if key == "" {
+		return false
+	}
+	_, ok := agentShortLabels[key]
+	return ok
+}
+
 func agentShortLabel(name string) string {
 	key := resolveAgentKey(name)
 	if key == "" {
