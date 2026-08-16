@@ -14,6 +14,7 @@ type MarkerDir struct {
 // KnownMarkers is the versioned table of harness directories Hero can detect.
 var KnownMarkers = []MarkerDir{
 	{Dir: ".cursor", ToolID: "cursor", Supported: true},
+	{Dir: ".opencode", ToolID: "opencode", Supported: true},
 	{Dir: ".claude", ToolID: "claude", Supported: false},
 	{Dir: ".windsurf", ToolID: "windsurf", Supported: false},
 	{Dir: ".codex", ToolID: "codex", Supported: false},

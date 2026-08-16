@@ -14,21 +14,16 @@ import (
 // Runtime TUI/harness defaults are not pre-filled; users choose via /hero-model.
 const DefaultCursorModel = "composer-2.5"
 
-// HarnessConfig holds per-harness defaults in hero.json (ADR-030).
+// HarnessConfig holds per-harness defaults in hero.json (ADR-030; ADR-034 enabled).
 type HarnessConfig struct {
+	Enabled         bool   `json:"enabled"`
 	Model           string `json:"model"`
 	EnableFastModel bool   `json:"enable_fast_model"`
 }
 
-// DefaultHarnesses returns the install-time harness block shape (Cursor V1 only).
-// Model is intentionally empty until the user selects /hero-model in the TUI.
+// DefaultHarnesses returns the install-time harness block when no selection is provided (tests).
 func DefaultHarnesses() map[string]HarnessConfig {
-	return map[string]HarnessConfig{
-		"cursor": {
-			Model:           "",
-			EnableFastModel: false,
-		},
-	}
+	return HarnessesFromSelection([]string{"cursor"})
 }
 
 // ResolveHarnessModelSlug builds the kebab model id for Cursor Agent CLI --model
@@ -47,16 +42,12 @@ func ResolveHarnessModelSlug(cfg HarnessConfig) string {
 	return id + "-fast"
 }
 
-// EnsureHarnessDefaults merges missing harness defaults into hero. Returns true if hero was modified.
+// EnsureHarnessDefaults merges missing harness defaults and migrates legacy state. Returns true if hero was modified.
 func EnsureHarnessDefaults(hero *HeroJSON) bool {
 	if hero == nil {
 		return false
 	}
-	modified := false
-	if hero.Harnesses == nil {
-		hero.Harnesses = make(map[string]HarnessConfig)
-		modified = true
-	}
+	modified := MigrateHarnessState(hero)
 	for tool, def := range DefaultHarnesses() {
 		if _, ok := hero.Harnesses[tool]; !ok {
 			hero.Harnesses[tool] = def

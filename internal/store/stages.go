@@ -16,7 +16,7 @@ var ErrNotFound = errors.New("not found")
 var ErrBusy = errors.New("cycle is locked by another session")
 
 const stageSelectCols = `id, cycle_id, name, status, iteration, max_iterations, extra_iterations,
-  require_human_approval, timeout_minutes, started_at, completed_at, summary, sort_order, harness_session_id`
+  require_human_approval, timeout_minutes, started_at, completed_at, summary, sort_order, harness_session_id, harness_id`
 
 // CreateStages inserts stage rows for a cycle.
 func (s *Store) CreateStages(stages []Stage) error {
@@ -28,8 +28,8 @@ func (s *Store) CreateStages(stages []Stage) error {
 
 	stmt, err := tx.Prepare(`
 INSERT INTO stages(cycle_id, name, status, iteration, max_iterations, extra_iterations,
-  require_human_approval, timeout_minutes, started_at, completed_at, summary, sort_order, harness_session_id)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  require_human_approval, timeout_minutes, started_at, completed_at, summary, sort_order, harness_session_id, harness_id)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 		if _, err := stmt.Exec(
 			st.CycleID, st.Name, st.Status, st.Iteration, st.MaxIterations, st.ExtraIterations,
 			approval, st.TimeoutMinutes, nullStr(st.StartedAt), nullStr(st.CompletedAt),
-			nullStr(st.Summary), st.SortOrder, st.HarnessSessionID,
+			nullStr(st.Summary), st.SortOrder, st.HarnessSessionID, st.HarnessID,
 		); err != nil {
 			return fmt.Errorf("insert stage %s: %w", st.Name, err)
 		}
@@ -93,11 +93,11 @@ func (s *Store) UpdateStage(st Stage) error {
 	res, err := s.db.Exec(`
 UPDATE stages SET status = ?, iteration = ?, max_iterations = ?, extra_iterations = ?,
   require_human_approval = ?, timeout_minutes = ?, started_at = ?, completed_at = ?, summary = ?,
-  harness_session_id = ?
+  harness_session_id = ?, harness_id = ?
 WHERE id = ?`,
 		st.Status, st.Iteration, st.MaxIterations, st.ExtraIterations,
 		approval, st.TimeoutMinutes, nullStr(st.StartedAt), nullStr(st.CompletedAt),
-		nullStr(st.Summary), st.HarnessSessionID, st.ID,
+		nullStr(st.Summary), st.HarnessSessionID, st.HarnessID, st.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update stage: %w", err)
@@ -140,7 +140,7 @@ func scanStage(row scannable) (Stage, error) {
 	var started, completed, summary sql.NullString
 	err := row.Scan(
 		&st.ID, &st.CycleID, &st.Name, &st.Status, &st.Iteration, &st.MaxIterations, &st.ExtraIterations,
-		&approval, &st.TimeoutMinutes, &started, &completed, &summary, &st.SortOrder, &st.HarnessSessionID,
+		&approval, &st.TimeoutMinutes, &started, &completed, &summary, &st.SortOrder, &st.HarnessSessionID, &st.HarnessID,
 	)
 	if err != nil {
 		return Stage{}, err

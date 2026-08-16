@@ -24,13 +24,14 @@ const statusBarMaxLines = 2
 type statusTickMsg struct{}
 
 func (m model) closePalette() model {
-	wasPicking := m.pickingModel
+	wasPicking := m.pickingModel || m.pickingHarness
 	m.screen = m.prevScreen
 	m.paletteFilter = ""
 	m.paletteIndex = 0
 	m.paletteOffset = 0
 	if wasPicking {
 		m.pickingModel = false
+		m.pickingHarness = false
 		m = m.reloadPaletteItems()
 	}
 	if m.screen == screenConversation {

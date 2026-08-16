@@ -23,3 +23,16 @@ models:
     cache_read: 1.50
     output: 75.00
     context_window: 200000
+  # OpenCode-native provider/model ids (PRD-C04-001 §4.10)
+  anthropic/claude-sonnet-4:
+    input: 3.00
+    cache_write: 3.75
+    cache_read: 0.30
+    output: 15.00
+    context_window: 200000
+  anthropic/claude-opus-4:
+    input: 15.00
+    cache_write: 18.75
+    cache_read: 1.50
+    output: 75.00
+    context_window: 200000

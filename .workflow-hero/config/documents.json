@@ -89,12 +89,44 @@
       "title": "TUI Harness Autonomy & Conversation UX"
     },
     {
+      "category": "ADR",
+      "cycle": "living",
+      "seq": 0,
+      "slug": "architecture-overview",
+      "path": "docs/architecture/architecture-overview.md",
+      "title": "Architecture overview (diagrams, package map; non-normative)"
+    },
+    {
       "category": "TESTING",
       "cycle": "living",
       "seq": 0,
       "slug": "testing",
       "path": "docs/testing/TESTING.md",
       "title": "Testing strategy and commands"
+    },
+    {
+      "category": "PRD",
+      "cycle": "C04",
+      "seq": 1,
+      "slug": "multi-harness",
+      "path": "docs/product/PRD-C04-001-multi-harness.md",
+      "title": "Multi-Harness (Cursor + OpenCode) via Hero TUI"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C04",
+      "seq": 1,
+      "slug": "multi-harness",
+      "path": "docs/architecture/ADR-C04-001-multi-harness.md",
+      "title": "Multi-Harness Cursor + OpenCode (ADR-031–037)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C04",
+      "seq": 1,
+      "slug": "tui-multi-harness",
+      "path": "docs/product/UI-C04-001-tui-multi-harness.md",
+      "title": "TUI Multi-Harness (Cursor + OpenCode)"
     }
   ]
 }

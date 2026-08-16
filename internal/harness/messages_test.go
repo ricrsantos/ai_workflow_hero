@@ -11,7 +11,7 @@ func TestUnsupportedMarkerMessage(t *testing.T) {
 	if !strings.Contains(msg, "⚠ Detected .claude/ but cli.tools does not include it") {
 		t.Fatalf("message = %q", msg)
 	}
-	if !strings.Contains(msg, "→ Supported today: cursor.") {
+	if !strings.Contains(msg, "→ Supported today: cursor, opencode.") {
 		t.Fatalf("message = %q", msg)
 	}
 }
@@ -29,7 +29,7 @@ func TestUnsupportedMarkerMessage_InCLITools(t *testing.T) {
 
 func TestSupportedToolIDs(t *testing.T) {
 	ids := SupportedToolIDs()
-	if len(ids) != 1 || ids[0] != "cursor" {
+	if len(ids) != 2 || ids[0] != "cursor" || ids[1] != "opencode" {
 		t.Fatalf("SupportedToolIDs() = %v", ids)
 	}
 }

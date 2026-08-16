@@ -101,12 +101,14 @@ sudo mv hero /usr/local/bin/hero
 Inside the target project (must be a git repository, or pass `--git-init`):
 
 ```bash
-# Interactive
-hero install --tools cursor
+# Interactive (select Cursor and/or OpenCode harnesses)
+hero install
 
-# Fully scripted (CI-friendly)
-hero install --tools cursor --name "My Project" --summary "Short project summary" --yes --git-init
+# Scripted project fields only (harness choice stays interactive in 2.0)
+hero install --name "My Project" --summary "Short project summary" --yes --git-init
 ```
+
+After install, manage harnesses in the TUI with `/hero-harness` and pick the default freechat model pair with `/hero-model` (`model · harness`). OpenCode runs via Hero-managed `opencode serve` (started lazily on first TUI Execute).
 
 Then, in Cursor chat:
 
@@ -144,7 +146,7 @@ The **Hero Terminal UI** is the interactive front door for the CLI after the pro
 ### Prerequisites
 
 1. Hero binary on your `PATH` (release or built from source). Use a **1.0+** binary (`hero version`) — older 0.9 installs on `PATH` will not open this TUI.
-2. Project already initialized: `hero install --tools cursor` (creates `.workflow-hero/` **and** `hero.db`).
+2. Project already initialized: `hero install` (creates `.workflow-hero/` **and** `hero.db`; select at least one harness).
 3. A real interactive terminal (TTY). The integrated Cursor terminal works; piping or `NO_COLOR=1` will refuse to launch the TUI.
 
 The operational database is **never** a manual step: `hero install` creates it, and any later `hero` / `hero status` / `hero doctor` run will create or migrate it automatically (including a one-shot import of legacy `workflow.md` when upgrading from 0.9.x layouts).
@@ -161,7 +163,7 @@ hero tui
 If Hero is **not** installed in the current project:
 
 ```text
-✗ Error: Hero is not installed in this project — run: hero install --tools cursor.
+✗ Error: Hero is not installed in this project — run: hero install.
 → Suggestion: Install Hero in this project first, then run `hero` again to open the TUI.
 ```
 
@@ -468,12 +470,14 @@ sudo mv hero /usr/local/bin/hero
 Dentro do projeto-alvo (precisa ser um repositório git, ou use `--git-init`):
 
 ```bash
-# Interativo
-hero install --tools cursor
+# Interativo (selecione Cursor e/ou OpenCode)
+hero install
 
-# Totalmente scriptado (amigável a CI)
-hero install --tools cursor --name "Meu Projeto" --summary "Resumo curto do projeto" --yes --git-init
+# Campos do projeto scriptados (escolha de harness continua interativa no 2.0)
+hero install --name "Meu Projeto" --summary "Resumo curto do projeto" --yes --git-init
 ```
+
+Depois do install, gerencie harnesses no TUI com `/hero-harness` e escolha o par padrão freechat com `/hero-model`. OpenCode usa `opencode serve` gerenciado pelo Hero.
 
 Em seguida, no chat do Cursor:
 
@@ -511,7 +515,7 @@ A **Hero Terminal UI** é a porta de entrada interativa da CLI depois que o proj
 ### Pré-requisitos
 
 1. Binário `hero` no `PATH` (release ou build local). Use um binário **1.0+** (`hero version`) — instalações 0.9 no `PATH` não abrem esta TUI.
-2. Projeto já inicializado: `hero install --tools cursor` (cria `.workflow-hero/` **e** `hero.db`).
+2. Projeto já inicializado: `hero install` (cria `.workflow-hero/` **e** `hero.db`; selecione ao menos um harness).
 3. Terminal interativo de verdade (TTY). O terminal integrado do Cursor serve; pipe ou `NO_COLOR=1` impedem a TUI.
 
 O banco operacional **não** é um passo manual: `hero install` cria o arquivo, e qualquer `hero` / `hero status` / `hero doctor` posterior cria ou migra automaticamente (incluindo import único de `workflow.md` legado ao subir de layouts 0.9.x).
@@ -528,7 +532,7 @@ hero tui
 Se o Hero **não** estiver instalado no projeto atual:
 
 ```text
-✗ Error: Hero is not installed in this project — run: hero install --tools cursor.
+✗ Error: Hero is not installed in this project — run: hero install.
 → Suggestion: Install Hero in this project first, then run `hero` again to open the TUI.
 ```
 

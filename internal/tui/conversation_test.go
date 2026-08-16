@@ -113,7 +113,8 @@ func newConversationTestModel(t *testing.T) (model, *streamingHarness, *cycle.Se
 }
 
 func withDefaultChatModel(m model) model {
-	return SetChatModelSlugForTest(m, "composer-2.5")
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	return SetChatHarnessIDForTest(m, "cursor")
 }
 
 func newTestServiceWithRunningResearch(t *testing.T) *cycle.Service {
@@ -127,10 +128,18 @@ func newTestServiceWithRunningResearch(t *testing.T) *cycle.Service {
 objective: test
 agents:
   orchestration_agent:
+    harness: cursor
     model: gpt-5.3-codex
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
+fallback_model:
+  harness: cursor
+  model: composer-2.5
+  reasoning_effort: na
+  enable_fast_model: false
+  thinking: na
+
 stages:
   research:
     enabled: true
@@ -406,7 +415,7 @@ func TestConversationViewWhileStreaming(t *testing.T) {
 	if !strings.Contains(view, "Waiting for harness") {
 		t.Fatalf("view missing wait placeholder: %q", view)
 	}
-	if !strings.Contains(view, "[HARN - composer-2.5]") {
+	if !strings.Contains(view, "[HARN - composer-2.5 · cursor]") {
 		t.Fatalf("view missing response speaker label: %q", view)
 	}
 	foundSpinner := false
@@ -965,10 +974,18 @@ func newTestServiceWithRunningResearchInDir(t *testing.T, dir string) *cycle.Ser
 objective: test
 agents:
   orchestration_agent:
+    harness: cursor
     model: gpt-5.3-codex
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
+fallback_model:
+  harness: cursor
+  model: composer-2.5
+  reasoning_effort: na
+  enable_fast_model: false
+  thinking: na
+
 stages:
   research:
     enabled: true
@@ -1076,10 +1093,18 @@ func newTestServiceWithPendingApprovalInDir(t *testing.T, dir string) *cycle.Ser
 objective: test
 agents:
   orchestration_agent:
+    harness: cursor
     model: gpt-5.3-codex
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
+fallback_model:
+  harness: cursor
+  model: composer-2.5
+  reasoning_effort: na
+  enable_fast_model: false
+  thinking: na
+
 stages:
   research:
     enabled: true
@@ -1483,10 +1508,18 @@ func newTestServiceWithEscalatedStageInDir(t *testing.T, dir string) *cycle.Serv
 objective: test
 agents:
   orchestration_agent:
+    harness: cursor
     model: gpt-5.3-codex
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
+fallback_model:
+  harness: cursor
+  model: composer-2.5
+  reasoning_effort: na
+  enable_fast_model: false
+  thinking: na
+
 stages:
   research:
     enabled: true
@@ -1539,10 +1572,18 @@ func newTestServiceWithJudgePendingApprovalInDir(t *testing.T, dir string) *cycl
 objective: test
 agents:
   orchestration_agent:
+    harness: cursor
     model: gpt-5.3-codex
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
+fallback_model:
+  harness: cursor
+  model: composer-2.5
+  reasoning_effort: na
+  enable_fast_model: false
+  thinking: na
+
 stages:
   research:
     enabled: true
@@ -2223,12 +2264,13 @@ func TestConversationResponseSpeakerFollowsLiveAgent(t *testing.T) {
 	m = SetHeight(m, 24)
 	m = EnterConversationForTest(m)
 	m = SetChatModelSlugForTest(m, "grok-4.6")
+	m = SetChatHarnessIDForTest(m, "cursor")
 	m.liveAgents = []liveAgent{
 		{Name: "orchestration_agent", Label: "ORCH", Model: "grok-4.6"},
 		{Name: "qa_agent", Label: "QA", Model: "composer-2.5", CallID: "t1"},
 	}
 	view := ViewForTest(m)
-	if !strings.Contains(view, "[QA - composer-2.5]") {
+	if !strings.Contains(view, "[QA - composer-2.5 · cursor]") {
 		t.Fatalf("expected QA speaker on response status: %q", view)
 	}
 	if strings.Contains(view, "[Agent") {
@@ -2259,10 +2301,10 @@ func TestConversationSubagentTranscriptLabels(t *testing.T) {
 		t.Fatalf("live agents after stream: %+v", LiveAgentsForTest(next))
 	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "[ORCH - composer-2.5]") {
+	if !strings.Contains(view, "[ORCH - composer-2.5 · cursor]") {
 		t.Fatalf("missing orchestrator label: %q", view)
 	}
-	if !strings.Contains(view, "[QA - composer-2.5]") {
+	if !strings.Contains(view, "[QA - composer-2.5 · cursor]") {
 		t.Fatalf("missing QA label: %q", view)
 	}
 	if !strings.Contains(view, "Launching QA") || !strings.Contains(view, "Running unit tests") || !strings.Contains(view, "QA failed") {
@@ -2343,16 +2385,19 @@ func writeDiscoverAgentYAML(t *testing.T, dir string) {
 objective: test
 agents:
   orchestration_agent:
+    harness: cursor
     model: gpt-5.3-codex
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
   discover_agent:
+    harness: cursor
     model: claude-sonnet-4.6
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
 fallback_model:
+  harness: cursor
   model: composer-2.5
   reasoning_effort: na
   enable_fast_model: false
@@ -2560,3 +2605,40 @@ func TestExecuteDoneUpdatesContextUsedTokens(t *testing.T) {
 	}
 }
 
+func TestHarnessSessionIDForPair_BlocksStageHarnessMismatch(t *testing.T) {
+	svc := newTestServiceWithRunningResearch(t)
+	if err := svc.SetStageHarnessID("research", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+	m := NewTestModel(svc)
+	m = SetHarnessSessionIDForTest(m, "cursor-sess-abc")
+	m = SetHarnessSessionHarnessIDForTest(m, "cursor")
+	m.conversationStage = "research"
+
+	got := HarnessSessionIDForPairForTest(m, "research", "opencode")
+	if got != "" {
+		t.Fatalf("session=%q want empty when stage harness differs", got)
+	}
+}
+
+func TestHarnessSessionIDForPair_BlocksInMemoryHarnessMismatch(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetHarnessSessionIDForTest(m, "cursor-sess-abc")
+	m = SetHarnessSessionHarnessIDForTest(m, "cursor")
+
+	got := HarnessSessionIDForPairForTest(m, "", "opencode")
+	if got != "" {
+		t.Fatalf("session=%q want empty when in-memory harness differs", got)
+	}
+}
+
+func TestHarnessSessionIDForPair_AllowsSameHarness(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetHarnessSessionIDForTest(m, "cursor-sess-abc")
+	m = SetHarnessSessionHarnessIDForTest(m, "cursor")
+
+	got := HarnessSessionIDForPairForTest(m, "", "cursor")
+	if got != "cursor-sess-abc" {
+		t.Fatalf("session=%q want preserved for same harness", got)
+	}
+}

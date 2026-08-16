@@ -12,6 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -44,11 +46,11 @@ func CanLaunch(stdout io.Writer) *LaunchRefusal {
 
 // Run launches the Bubble Tea application using an opened cycle service.
 func Run(svc *cycle.Service) error {
-	return RunWithChat(svc, nil, "", "")
+	return RunWithChat(svc, nil, "", "", "")
 }
 
 // RunWithChat launches the TUI with optional harness model catalog from boot.
-func RunWithChat(svc *cycle.Service, models []string, modelSlug, modelWarn string) error {
+func RunWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn string) error {
 	if svc == nil {
 		return fmt.Errorf("cycle service is nil")
 	}
@@ -57,7 +59,18 @@ func RunWithChat(svc *cycle.Service, models []string, modelSlug, modelWarn strin
 	defer restoreLog()
 
 	slog.Info("starting hero tui")
-	m := newModelWithChat(svc, models, modelSlug, modelWarn)
+	defer func() {
+		if svc != nil {
+			var st *store.Store
+			if svc.Store != nil {
+				st = svc.Store
+			}
+			if err := stopOpenCodeServe(context.Background(), svc.ProjectDir, st); err != nil {
+				slog.Warn("stop opencode serve on tui exit failed", "error", err)
+			}
+		}
+	}()
+	m := newModelWithChat(svc, models, modelSlug, harnessID, modelWarn)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		slog.Error("tui exited with error", "error", err)
@@ -127,9 +140,11 @@ func RunDefault(stdout, stderr io.Writer) error {
 		clierr.Format(stderr, e)
 		return e
 	}
-	svc.Harness = adapter.Adapter
+	if adapter.Registry != nil {
+		svc.Registry = adapter.Registry
+	}
 
-	if err := RunWithChat(svc, adapter.Models, adapter.ModelSlug, adapter.ModelWarn); err != nil {
+	if err := RunWithChat(svc, adapter.Models, adapter.ModelSlug, adapter.HarnessID, adapter.ModelWarn); err != nil {
 		e := clierr.New(err.Error())
 		clierr.Format(stderr, e)
 		return e

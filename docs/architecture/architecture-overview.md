@@ -1,0 +1,484 @@
+# Architecture Overview — AI Workflow Hero
+
+> High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
+> For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
+> **Status:** reflects codebase at Hero **1.1.1** (C3 archived; no active cycle).
+
+Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
+
+---
+
+## Technology stack
+
+| Concern | Choice |
+|---|---|
+| Language | Go 1.25+ (`modernc.org/sqlite`, no CGO) |
+| Module | `github.com/ricrsantos/ai_workflow_hero` |
+| CLI | Cobra + `internal/common/clierr` |
+| TUI | Bubble Tea + lipgloss + huh (install prompts) |
+| Assets | `assets.FS` (`embed.FS`) |
+| Operational store | SQLite at `.workflow-hero/hero.db` (schema v3) |
+| SDD | OpenSpec (external CLI; coupled at archive) |
+| V1 harness | Cursor Agent CLI (`cursor-agent` / `cursor agent`) |
+| Platforms | Linux/macOS `amd64` / `arm64` |
+| License | BSD-2-Clause |
+
+---
+
+## Repository topology
+
+```
+ai_workflow_hero/
+├── cmd/hero/              # Cobra root; default RunE → TUI
+├── assets/                # embed.FS: cursor/, templates/, models/, config/, docs/
+├── internal/
+│   ├── install · upgrade · uninstall · doctor · status · variables · update_models
+│   ├── cycle · engine · store · tui · harness · todos · workflowconfig
+│   ├── adapters/cursor/   # Cursor Agent CLI adapter
+│   ├── common/            # template, clierr, output, envhygiene, userpath
+│   └── integration/       # install/upgrade/doctor integration tests
+├── scripts/               # release.sh, build_dev.sh (+ contract tests)
+├── docs/                  # PRD, UI, ADR, deployment, testing
+├── context/               # current-state.md, context-log.md (dogfood state)
+├── openspec/              # living specs + archived changes
+└── .workflow-hero/        # this repo's own Hero install (config, cycles, templates)
+```
+
+Runtime markdown for consumers is **not** edited under `.cursor/` in the framework repo long-term — canonical copies live in `assets/cursor/` and are materialized by `hero install`.
+
+---
+
+## Level 0 — Binary and project boundary
+
+```
+                    ┌─────────────────────────────────────────────────────────┐
+                    │              HERO BINARY (`hero`)                       │
+                    │         Go + Cobra + embed.FS (`assets.FS`)             │
+                    └───────────────────────────┬─────────────────────────────┘
+                                                │
+              ┌─────────────────────────────────┴─────────────────────────────────┐
+              │                                                                   │
+       HERO CLI (deterministic)                              HERO RUNTIME (reasoning)
+       never calls LLM                                        IDE / harness only
+              │                                                                   │
+              │                              materialized by `hero install`         │
+              │                              into `.cursor/` + `.workflow-hero/`    │
+              │                                                                   │
+              └───────────────────────────┬───────────────────────────────────────┘
+                                          │
+                              User project (git required, ADR-004)
+```
+
+- **Single binary** ships CLI logic and embedded assets (`assets.version` == `cli.version`, ADR-001).
+- **Install** copies commands, agents, skills, templates, and docs into the consumer project.
+- **Git** is mandatory for checkpoints and rollback semantics.
+
+---
+
+## Level 1 — CLI vs Runtime (ADR-003)
+
+```
+  HERO CLI                              HERO RUNTIME (Cursor V1)
+  ─────────                             ─────────────────────────
+  install · upgrade · uninstall         `.cursor/commands/`   (slash command markdown)
+  doctor · status · variables           `.cursor/agents/`     (specialized agents)
+  update-models                         `.cursor/skills/`     (workflow-hero, grilling)
+  metrics · events · approve · …        orchestration agent   (main session)
+  cycle · run · tui                     Task tool → subagents (isolated sessions)
+        │                                      │
+        │  persistence via `hero …`            │  reasoning + agent dispatch
+        └──────────────────┬───────────────────┘
+                             │
+                    SQLite + filesystem
+```
+
+| Plane | Responsibility | Must not |
+|---|---|---|
+| **CLI** | Install, upgrade, state transitions, metrics, TUI shell | Call LLMs or scrape the web for reasoning |
+| **Runtime** | Research, planning, implementation, QA, judge, sync | Own canonical cycle state without `hero` CLI |
+
+Administrative operations may exist in both planes (e.g. status). Work that requires agent reasoning exists **only** in Runtime (and TUI harness execution), not as hidden logic inside the binary.
+
+---
+
+## Level 2 — CLI internal structure (ADR-002)
+
+Repository layout: **feature-based vertical slices** under `internal/<feature>/`, plus `internal/adapters/cursor/` and `internal/common/`.
+
+```
+                         `cmd/hero/main.go` (Cobra root; no args → TUI)
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        │                           │                           │
+   Lifecycle / Admin            Operational API              Bubble Tea TUI
+   (vertical slices)            (`internal/cycle`)          (`internal/tui`)
+        │                           │                           │
+   install ──┐                 cycle.Service ◄──────────────────┘
+   upgrade   │                      │
+   uninstall │              ┌───────┴───────┐
+   doctor     │              │               │
+   status      │         store.Store    engine.Engine
+   variables   │    (`internal/store`)  (`internal/engine`)
+   update-models│         SQLite            │
+        │      │    `.workflow-hero/      deterministic
+        │      │         hero.db`         state machine
+        │      │                          (stages, locks,
+        │      │                           approvals, metrics)
+        └──────┴──────────────────────────────────────────────┐
+                                                              │
+                    internal/harness.HarnessAdapter           │
+                    + DetectMarkers (ADR-022)                 │
+                              │                               │
+                    internal/adapters/cursor.Adapter          │
+                    runner · parse · commands · models        │
+                              │                               │
+                    internal/common/                          │
+                    template · clierr · output · envhygiene   │
+                    userpath (nvm/fnm/volta bin discovery)    │
+```
+
+### CLI command surface
+
+| Group | Commands | Notes |
+|---|---|---|
+| **Default** | `hero` (no args) | Opens TUI; requires prior `hero install` |
+| **Lifecycle** | `install`, `upgrade`, `uninstall` | Materialize/sync embedded assets |
+| **Diagnostics** | `doctor`, `status`, `variables`, `version` | Table default; `--json` where supported |
+| **Models** | `update-models` | Fetches upstream pricing YAML from GitHub |
+| **TUI** | `tui` | Explicit TUI entry (same as default) |
+| **Cycle API** | `metrics`, `events`, `approve`, `reject`, `cancel`, `finish`, `continue` | CLI-as-API (ADR-014) |
+| **Stage** | `stage start`, `stage close` | Direct stage transitions |
+| **Cycle** | `cycle new`, `cycle sync-config`, `cycle archive`, `cycle resume`, `cycle openspec-change` | Lifecycle + OpenSpec coupling |
+| **Harness** | `run` | One-shot harness Execute (tests / automation) |
+
+Global flags: `--verbose`, `--debug` (registered; not fully wired to stack traces yet).
+
+### `internal/cycle` responsibilities
+
+| File / area | Role |
+|---|---|
+| `service.go` | Façade for CLI, TUI, and `hero run`; archive/OpenSpec coupling (`Archive*`) |
+| `command.go` | Cobra wiring for operational API |
+| `ensure.go` | `EnsureOperationalStore`: open/migrate DB; one-time legacy `workflow.md` import |
+| `openspec.go` | OpenSpec archive runner + change resolution (PATH + nvm/fnm/volta/user bins) |
+| `approvals.go` | Approve/reject/continue payloads |
+| `artifacts.go` | Artifact metadata registration |
+| `cycles_list.go` | List/resume archived cycles |
+| `project_json.go` | `project.json` helpers |
+
+### Operational API
+
+`internal/cycle` exposes the **CLI-as-API** (ADR-014): deterministic verbs for cycle lifecycle, stage transitions, metrics, and events. The Runtime orchestrator and TUI call the same API; SQLite is the **source of truth** for operational state (ADR-013).
+
+### Workflow engine
+
+`internal/engine` implements the **AI Loop** state machine (ADR-012): enabled stages, iterations, human approval gates, escalation, and transitions. It does **not** orchestrate LLMs — it only validates and persists state.
+
+---
+
+## Level 3 — Hero TUI (ADR-015, ADR-017, ADR-026)
+
+Default entry: `hero` / `hero tui`. Requires a TTY; uses Bubble Tea + lipgloss.
+
+```
+  `hero` (default) / `hero tui`
+              │
+       Bubble Tea App (`internal/tui`)
+              │
+    ┌─────────┼─────────┬──────────┬──────────┬──────────────┐
+    │         │         │          │          │              │
+  Chat    Status   Artifacts    Costs     Events      (palette)
+    │         │         │          │          │              │
+    └─────────┴─────────┴──────────┴──────────┘              │
+              │                                              │
+         cycle.Service (read / mutate views)           HarnessAdapter
+              │                                    Execute · Cancel · Stream
+    Command palette + imported harness prompts                 │
+    (markdown expansion)                              Cursor Adapter
+              │                                              │
+         hero.db mutations                              cursor-agent CLI
+```
+
+**Screens** (`alt+1` … `alt+5`): Chat, Status, Artifacts, Costs, Events. Approvals are handled in Chat via `/hero-approve` / `/hero-reject` (no separate Approvals screen).
+
+**TUI modules** (selected):
+
+| Module | Role |
+|---|---|
+| `app.go` / `screens.go` | Bubble Tea model, screen routing, keybindings |
+| `conversation.go` | Chat transcript, harness streaming, Execute lifecycle |
+| `research_session.go` | Dedicated `discover_agent` session during Research |
+| `herocmd.go` | `/hero-*` slash dispatch and orchestrator prompt assembly |
+| `palette.go` / `slash_overlay.go` | Command palette and Chat `/` autocomplete |
+| `harness_boot.go` / `model_gate.go` | Harness availability, model picker at boot |
+| `agentlabels.go` / `chat_format.go` | Live agents box and `[LABEL - model]` transcript |
+| `contextbar.go` | Token usage bar from `result.usage` vs `models/*.yml` |
+| `output_view.go` | Shared scrollable output for Status/Costs/Events |
+
+**Design principles:**
+
+- **Go owns the state machine**; TUI reads and mutates via `cycle.Service`.
+- **Harness conversations** use `HarnessAdapter.Execute` with streaming (`stream-json`), not IDE chat injection (ADR-026).
+- **Dual OpenCode-style panes** on Chat: composer + response area; session IDs for harness runs are held in TUI memory and/or SQLite `stages.harness_session_id` (schema v3).
+- **Orchestrator vs Research**: TUI Execute for control slashes uses `agents.orchestration_agent` from `workflow-config.yml`; Research uses a separate `discover_agent` session (`research_session.go`); Cursor IDE chat keeps grilling in the orchestrator session.
+- **Boot** validates harness availability (`IsAvailable`); may prompt for harness selection when `cli.tools` is empty (ADR-027).
+- **Default harness model** is stored in `hero.json` → `harnesses.<tool>` (ADR-030); per-cycle agent models live in `workflow-config.yml`. Freechat and `/hero-new` use the harness default; orchestrator slashes use YAML `orchestration_agent` (then `fallback_model`, then `/hero-model`).
+
+---
+
+## Level 4 — Runtime orchestration (Cursor)
+
+```
+  Cursor IDE Chat
+        │
+  Slash commands (hero-*.md assets)
+        │
+  orchestration_agent  ← continuous cycle session
+        │
+        ├─► Task (clean session per subagent, ADR-005)
+        │         │
+        │    discover · planning · context · backend · frontend
+        │    generic · qa · judge · browser_ui · end2end_qa
+        │
+        ├─► `hero …` CLI verbs (CLI-as-API)
+        │
+        ├─► OpenSpec (SDD in Planning; archive coupling, ADR-007 / ADR-023)
+        │
+        └─► git checkpoints (rollback on cancel, ADR-004)
+```
+
+### Stage pipeline
+
+```
+Configuration → Research → Planning → Implementation → QA → Judge
+                                                      → Browser UI Validation (optional, default off)
+                                                      → QA End-to-End (optional)
+```
+
+Stages are configured per cycle in `workflow-config.yml`; the engine enforces which stages exist and their approval rules. Stage statuses: `Waiting`, `Running`, `PendingApproval`, `Completed`, `Escalated`, `Failed`, `Skipped`.
+
+### Embedded Runtime inventory (`assets/`)
+
+| Asset type | Count | Install target |
+|---|---|---|
+| Slash commands (`hero-*.md`) | 16 | `.cursor/commands/` |
+| Agents (`*_agent.md`) | 11 | `.cursor/agents/` |
+| Skills | 2 (`workflow-hero`, `grilling`) | `.cursor/skills/` |
+| Model pricing YAML | 7 providers | `.workflow-hero/models/` |
+| Templates | AGENTS.md, workflow-config.yml, context files, etc. | `.workflow-hero/templates/` + project root |
+| Config | `documents.json` (+ generated `hero.json`, `project.json`) | `.workflow-hero/config/` |
+| End-user guide | `workflow-help.md` | `.workflow-hero/docs/` |
+
+Agents: `orchestration_agent`, `discover_agent`, `planning_agent`, `context_agent`, `backend_agent`, `frontend_agent`, `generic_agent`, `qa_agent`, `judge_agent`, `browser_ui_agent`, `end2end_qa_agent`.
+
+---
+
+## Persistence and on-disk layout
+
+```
+  Installed project
+        │
+  ┌─────┴──────────────────────────────────────────────────────────────┐
+  │                                                                    │
+  .cursor/                          .workflow-hero/                    │
+  ├── commands/                     ├── hero.db          ← SQLite SoT   │
+  ├── agents/                       ├── config/          ← hero.json,   │
+  └── skills/                       │                      project.json │
+                                    ├── templates/                         │
+                                    ├── models/          ← pricing YAML   │
+                                    ├── docs/            ← workflow-help  │
+                                    └── cycles/current/  ← cycle config   │
+                                        and artifacts                      │
+  context/ · openspec/ · docs/ · AGENTS.md  (project knowledge, not SoT)   │
+```
+
+**SQLite** (`internal/store`) holds cycles, stages, events, metrics, artifact metadata, and harness session references per stage where persisted.
+
+**Schema v3** (`internal/store/migrate.go`):
+
+| Table | Purpose |
+|---|---|
+| `cycles` | Cycle row; v2 adds `openspec_change` |
+| `stages` | Per-cycle stage state; v3 adds `harness_session_id` |
+| `events` | Append-only operational log |
+| `metrics` | Per-stage/agent token/cost estimates |
+| `artifacts` | Linked file metadata |
+| `conversation` | Approval/question records (not TUI chat SoT) |
+| `schema_migrations` | Applied migration versions |
+
+On first open with an empty DB, `cycle.EnsureOperationalStore` may **import once** from legacy `workflow.md` / `metrics.md` (`store/import_legacy.go`).
+
+Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational source of truth after import.
+
+**Install materialization** (`internal/install`): git check (optional `git init`), huh prompts for name/summary, copy assets with checksum tracking (`checksums.json`), render templates via `{{path.key}}`, write `hero.json` / `project.json`, env-hygiene patterns, harness-marker warnings (`harness.DetectMarkers`).
+
+---
+
+## Harness abstraction (ADR-016, ADR-025)
+
+```
+                    HarnessAdapter (interface)
+                              │
+                    Cursor Adapter (V1 only)
+                              │
+              ┌───────────────┼───────────────┐
+              │               │               │
+         IsAvailable    Execute/Stream    Dispatch
+         ListModels     Cancel/Status     (thin / best-effort)
+              │               │               │
+              └───────────────┴───────────────┘
+                              │
+              cursor-agent / `cursor agent`  (Agent CLI)
+              json · stream-json · --resume · --model · --mode
+                              │
+                    Cursor IDE (native chat + Task tool)
+```
+
+- **Execute**: multi-turn agent runs from TUI Chat (and `hero run` paths). Passes `--trust --force --sandbox disabled --workspace`; retries `RetriableError` / `resource_exhausted`; `Cancel("")` aborts before session id exists.
+- **Dispatch**: thin wrapper → fresh Execute session (palette paths; no leaked `--resume`).
+- **Parse** (`adapters/cursor/parse.go`): `json` and `stream-json` (+ `--stream-partial-output`); Task attribution for nested subagents.
+- **Runner** (`runner.go`): `StreamingCommandRunner` pipes stdout; prepends user bin dirs to PATH.
+- **Runtime** uses IDE chat and Task directly; TUI uses Agent CLI — same project cwd, different UX surfaces.
+
+---
+
+## Conversation model (three layers)
+
+There is **no** standalone `internal/conversation` package. Conversation appears in three places:
+
+| Layer | Where | Lifetime |
+|---|---|---|
+| **TUI Chat UI** | `internal/tui/conversation.go` — transcript in memory, streaming via harness | Process lifetime; optional resume via harness session id |
+| **IDE Runtime** | Cursor chat + Task sessions | IDE session / Task isolation (ADR-005) |
+| **SQLite `conversation` table** | `internal/store` | Persisted messages; **not** wired as the TUI chat transcript SoT in V1 |
+
+**Free chat** (no active dispatchable stage): TUI sets `conversationStage == ""`; harness session may exist only in TUI memory until the user starts a cycle-bound stage.
+
+---
+
+## Dual entry — execution paths (architectural)
+
+Both **Cursor chat** and **Hero TUI** read and write the same SQLite store when the CLI API is invoked.
+
+```
+                    TUI                              IDE Runtime
+                     │                                │
+         ┌───────────┼───────────┬──────────┐         │
+         │           │           │          │         │
+    CLI direct   Go format   Dispatch   Execute    Orchestrator
+    (state API)  (views)     (harness)  (Chat)     (agents + Task)
+         │           │           │          │         │
+         └───────────┴───────────┴──────────┘         │
+                     │                                │
+                     └────────────┬───────────────────┘
+                                  ▼
+                         hero.db (SQLite)
+```
+
+- **CLI direct**: deterministic `cycle.Service` mutations and queries.
+- **Go format**: TUI renders lists/tables from store and parsers (no LLM).
+- **Harness Execute / Dispatch**: TUI expands embedded or installed markdown into Agent CLI prompts.
+- **Orchestrator**: Runtime interprets command assets, calls `hero …`, and fans out Task subagents.
+
+Parity between TUI and chat is **intentional but not identical** — see [idea note on command alignment](../idea/commands_alignments/comparation.md) for a command-level matrix (non-normative).
+
+---
+
+## External dependencies
+
+| Dependency | Role |
+|---|---|
+| **Git** | Mandatory; checkpoints and rollback |
+| **Cursor Agent CLI** | TUI harness execution; doctor validation |
+| **Cursor IDE** | Runtime chat, Task tool, subagents |
+| **OpenSpec** | SDD workflow; archive coupling with Hero cycles |
+| **GitHub (raw)** | `hero update-models` upstream pricing YAML |
+
+---
+
+## V1 boundaries (not implemented)
+
+| Concept | V1 state |
+|---|---|
+| Generic **Conversation Layer** service | Chat in TUI + IDE only |
+| **Multi-harness** adapters | Cursor only; others post-1.0 (PRD D1–D13) |
+| **Daemon / RPC** | CLI-as-API only (ADR-014) |
+| **Distributed event bus** | Events in SQLite |
+| **LLM inside CLI** | Forbidden (ADR-003) |
+
+---
+
+## End-to-end cycle flow
+
+```mermaid
+flowchart TB
+  subgraph Runtime["HERO RUNTIME (Cursor IDE)"]
+    Slash["Slash commands"]
+    Orch["orchestration_agent"]
+    Sub["Subagents via Task"]
+    Slash --> Orch --> Sub
+  end
+
+  subgraph CLI["HERO CLI (Go)"]
+    CycleSvc["cycle.Service"]
+    Engine["engine.Engine"]
+    Store["store.Store / hero.db"]
+    CycleSvc --> Engine --> Store
+  end
+
+  subgraph TUI["HERO TUI"]
+    BT["Bubble Tea screens"]
+    Harness["HarnessAdapter"]
+    BT --> CycleSvc
+    BT --> Harness
+  end
+
+  Orch -->|"hero CLI API"| CycleSvc
+  Harness --> CursorCLI["Cursor Agent CLI"]
+  Sub --> CursorIDE["Cursor IDE Task"]
+```
+
+---
+
+## Testing layout (ADR-009)
+
+| Location | Scope |
+|---|---|
+| `internal/<feature>/*_test.go` | Colocated unit/golden tests per vertical slice |
+| `internal/integration/` | Real `t.TempDir()` install/upgrade/uninstall/doctor flows |
+| `scripts/release_test.go` | Release artifact naming, platforms, checksum contract |
+| `internal/common/runtime_assets_test.go` | Embedded asset inventory and Runtime semantics |
+
+Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
+
+---
+
+## Go package map
+
+| Package | Responsibility |
+|---|---|
+| `cmd/hero` | Cobra entrypoint; version via `-ldflags` |
+| `assets` | `embed.FS` of Runtime assets |
+| `internal/install` · `upgrade` · `uninstall` | Project materialization and maintenance |
+| `internal/doctor` · `status` · `variables` | Diagnostics and introspection (`doctor/cursor_cli.go` checks Agent CLI) |
+| `internal/update_models` | Upstream model pricing sync |
+| `internal/cycle` | CLI-as-API, archive, OpenSpec coupling, legacy import |
+| `internal/engine` | Deterministic AI Loop state machine |
+| `internal/store` | SQLite operational store + migrations |
+| `internal/harness` | `HarnessAdapter` interface + marker detection |
+| `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import |
+| `internal/tui` | Bubble Tea terminal UI |
+| `internal/todos` | `## Pending` section parser in `current-state.md` |
+| `internal/workflowconfig` | `workflow-config.yml` load/normalize |
+| `internal/integration` | Cross-feature integration tests (test-only) |
+| `internal/common/template` | `{{path.key}}` substitution (ADR-006) |
+| `internal/common/clierr` | Formatted CLI errors with suggestions |
+| `internal/common/output` | Table/JSON output helpers |
+| `internal/common/envhygiene` | `.env.example`, gitignore secrets patterns |
+| `internal/common/userpath` | nvm/fnm/volta/`~/.local/bin` discovery for subprocess PATH |
+
+---
+
+## Summary
+
+Hero **installs** Runtime assets into the consumer project, **persists** cycle state in SQLite through a deterministic engine, and exposes **two entry UIs**: Cursor chat (full orchestration) and Hero TUI (monitoring, approvals, and harness-driven conversation). Reasoning always happens in the harness; the Go binary coordinates, validates, and records — it does not replace the IDE orchestrator for full workflow execution unless explicitly driven through harness Execute from the TUI.

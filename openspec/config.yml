@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   Project: AI Workflow Hero (Hero) — the Hero CLI + Runtime assets themselves.
   This is Hero's own source code repository, not a project that consumes Hero.
-  Phase: Cycle C3 — Cursor Harness Autonomy & TUI Orchestration.
+  Phase: Cycle C4 — Multi-Harness (Cursor + OpenCode) via Hero TUI — Hero 2.0.0.
 
   Authoritative sources — read before planning or writing any artifact:
     - AGENTS.md (project summary, doc map, reference lookup order, testing loop, ambiguity policy)
@@ -11,41 +11,54 @@ context: |
     - docs/architecture/ADR.md (ADR-001–011 index + Appendix schemas; cycle ADRs linked)
     - docs/deployment/DEPLOY.md (Build, Release, and Distribution (updated for 1.0 upgrade))
     - docs/product/UI.md (CLI/TUI visual conventions index)
+    - docs/testing/TESTING.md (Test strategy and commands (go test ./...))
     - context/current-state.md (current implementation status, architecture summary, pending features)
     - context/context-log.md (recent decisions and session history)
     - Cycle documents (from .workflow-hero/config/documents.json):
-      - docs/product/PRD-C01-001-hero-1-0.md — Hero 1.0 (PRD)
-      - docs/architecture/ADR-C01-001-hero-1-0.md — Hero 1.0 ADRs (ADR)
-      - docs/product/UI-C01-001-hero-tui.md — Hero 1.0 TUI (UI)
-      - docs/product/PRD-C02-001-slash-parity-tui-harness.md — C2 slash parity (PRD)
-      - docs/architecture/ADR-C02-001-slash-parity-harness-archive.md — ADR-020–023 (ADR)
-      - docs/product/UI-C02-001-tui-slash-command-parity.md — C2 TUI (UI)
-      - docs/product/PRD-C03-001-cursor-harness-tui-autonomy.md — C3 harness autonomy (PRD)
-      - docs/architecture/ADR-C03-001-cursor-harness-tui-autonomy.md — ADR-024–029 (ADR)
-      - docs/product/UI-C03-001-tui-harness-autonomy.md — C3 TUI conversation UX (UI)
-    - docs/idea/archive/v1/06_harness_adapter.md, 07_cursor_adapter.md (design reference; non-normative)
+      - docs/product/PRD-C01-001-hero-1-0.md — Hero 1.0: Harness Orchestrator, AI Loop, TUI & SQLite (PRD)
+      - docs/architecture/ADR-C01-001-hero-1-0.md — Hero 1.0 Architecture Decisions (ADR-012–019) (ADR)
+      - docs/product/UI-C01-001-hero-tui.md — Hero 1.0 TUI & CLI Query UX (UI)
+      - docs/deployment/DEPLOY.md — Build, Release, and Distribution (updated for 1.0 upgrade) (DEPLOY)
+      - docs/testing/TESTING.md — Test strategy and commands (go test ./...) (TESTING)
+      - docs/product/PRD-C02-001-slash-parity-tui-harness.md — Slash Command Parity, TUI Harness Commands & Archive Coupling (PRD)
+      - docs/architecture/ADR-C02-001-slash-parity-harness-archive.md — Slash Parity, Harness Command Expansion & Archive Coupling (ADR-020–023) (ADR)
+      - docs/product/UI-C02-001-tui-slash-command-parity.md — TUI Slash Command Parity & Imported Commands (UI)
+      - docs/product/PRD-C03-001-cursor-harness-tui-autonomy.md — Cursor Harness Autonomy & TUI Orchestration (PRD)
+      - docs/architecture/ADR-C03-001-cursor-harness-tui-autonomy.md — Cursor Harness Autonomy & TUI Orchestration (ADR-024–029) (ADR)
+      - docs/product/UI-C03-001-tui-harness-autonomy.md — TUI Harness Autonomy & Conversation UX (UI)
+      - docs/architecture/architecture-overview.md — Architecture overview (diagrams, package map; non-normative) (ADR)
+      - docs/testing/TESTING.md — Testing strategy and commands (TESTING)
+      - docs/product/PRD-C04-001-multi-harness.md — Multi-Harness (Cursor + OpenCode) via Hero TUI (PRD)
+      - docs/architecture/ADR-C04-001-multi-harness.md — Multi-Harness Cursor + OpenCode (ADR-031–037) (ADR)
+      - docs/product/UI-C04-001-tui-multi-harness.md — TUI Multi-Harness (Cursor + OpenCode) (UI)
+    - docs/idea/v2_multi_harness/multi_harness.md (inspiration only; cycle PRD/ADR win on conflict)
 
-  Terminology: **etapa** = workflow stage; **interação** = one conversational round within an etapa.
+  Terminology: **etapa** = workflow stage; **interação** = one conversational round within an etapa;
+  **enabled** = user selected harness in hero.json; **available** = adapter IsAvailable true;
+  **native model id** = harness-specific model string (Cursor slug vs OpenCode provider/model).
 
-  Do not invent requirements. Respect Deferred D1 multi-harness adapters, IDE chat injection,
-  Go LLM reasoning, and Windows. Scope: native=true (generic_agent).
+  Do not invent requirements. Preserve Cursor adapter, Cursor IDE Runtime, checksum upgrade,
+  dual-entry, and deterministic engine. Minimize Cursor adapter diffs. No hero serve daemon.
+  Scope: native=true (generic_agent).
 
   Stack: Go, Cobra, embed.FS, Feature Based + Vertical Slice, huh + Bubble Tea, SQLite (ADR-013).
-  Test command: `go test ./...`. Active OpenSpec change: `cursor-harness-tui-autonomy`.
+  Test command: `go test ./...`. Active OpenSpec change: `hero-2-0-multi-harness`.
 
 rules:
   proposal:
-    - Reference PRD-C03-001 sections; cite ADR-024–029
-    - State in/out of scope; exclude D1, IDE inject, Go LLM, Windows
+    - Reference PRD-C04-001 sections; cite ADR-031–037
+    - State in/out of scope; preserve 1.x Cursor behavior except explicit 2.0 breaks
     - Classify CLI vs Runtime per ADR-003
+    - Include dedicated opencode-model-catalog task (PRD §4.10)
 
   specs:
     - Use WHEN/THEN acceptance scenarios (exactly 4 hashtags for `#### Scenario:`)
-    - Align with PRD-C03-001 and UI-C03-001
+    - Align with PRD-C04-001 and UI-C04-001
 
   design:
-    - Follow ADR-002, ADR-003, ADR-024–029; layer separation: only cursor adapter execs CLI
+    - Follow ADR-002, ADR-003, ADR-031–037; OpenCode protocol stays in opencode adapter only
 
   tasks:
     - Atomic checklist; `go test ./...`; mark PARALLEL vs SERIES
     - Scope native → generic_agent; colocated _test.go per package touched
+    - Standalone task for assets/models/*.yml OpenCode-native ids (do not fold into docs)

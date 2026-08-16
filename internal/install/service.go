@@ -41,9 +41,10 @@ type Options struct {
 
 // HeroJSON is the hero.json schema.
 type HeroJSON struct {
-	CLI       CLIInfo                   `json:"cli"`
-	Assets    AssetsInfo                `json:"assets"`
-	Harnesses map[string]HarnessConfig  `json:"harnesses,omitempty"`
+	CLI             CLIInfo                  `json:"cli"`
+	Assets          AssetsInfo               `json:"assets"`
+	Harnesses       map[string]HarnessConfig `json:"harnesses,omitempty"`
+	FreechatDefault FreechatDefault          `json:"freechat_default,omitempty"`
 }
 
 // CLIInfo holds CLI installation metadata.
@@ -61,10 +62,10 @@ type AssetsInfo struct {
 
 // ProjectJSON is the project.json schema.
 type ProjectJSON struct {
-	Name      string          `json:"name"`
-	Summary   string          `json:"summary"`
-	CreatedAt string          `json:"createdAt"`
-	Workflow  WorkflowInfo    `json:"workflow"`
+	Name       string         `json:"name"`
+	Summary    string         `json:"summary"`
+	CreatedAt  string         `json:"createdAt"`
+	Workflow   WorkflowInfo   `json:"workflow"`
 	Technology TechnologyInfo `json:"technology"`
 }
 
@@ -77,8 +78,8 @@ type WorkflowInfo struct {
 
 // TechnologyInfo holds technology stack metadata.
 type TechnologyInfo struct {
-	Stack   string   `json:"stack"`
-	Backend string   `json:"backend"`
+	Stack     string   `json:"stack"`
+	Backend   string   `json:"backend"`
 	Languages []string `json:"languages"`
 }
 
@@ -132,53 +133,41 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 
 	checksums := make(Checksums)
 
-	// 3. Copy cursor/commands → .cursor/commands/
-	if err := copyAssetDir(opts.AssetsFS, "cursor/commands", filepath.Join(opts.ProjectDir, cursoradapter.CommandsDir), opts.ProjectDir, checksums); err != nil {
-		return fmt.Errorf("copy commands: %w", err)
+	if err := CopyCoreAssets(opts, checksums); err != nil {
+		return fmt.Errorf("copy core assets: %w", err)
 	}
 
-	// 4. Copy cursor/agents → .cursor/agents/
-	if err := copyAssetDir(opts.AssetsFS, "cursor/agents", filepath.Join(opts.ProjectDir, cursoradapter.AgentsDir), opts.ProjectDir, checksums); err != nil {
-		return fmt.Errorf("copy agents: %w", err)
+	enabled := normalizeSelectedTools(opts.Tools)
+	if len(enabled) == 0 {
+		return fmt.Errorf("at least one harness must be enabled")
+	}
+	if containsTool(enabled, "cursor") {
+		if err := CopyCursorAssets(opts, checksums); err != nil {
+			return fmt.Errorf("copy cursor assets: %w", err)
+		}
+	}
+	if containsTool(enabled, "opencode") {
+		if err := ProvisionOpenCode(opts.ProjectDir, opts.AssetsFS, checksums); err != nil {
+			return fmt.Errorf("provision opencode: %w", err)
+		}
 	}
 
-	// 5. Copy cursor/skills/workflow-hero → .cursor/skills/workflow-hero/
-	if err := copyAssetDir(opts.AssetsFS, "cursor/skills/workflow-hero", filepath.Join(opts.ProjectDir, cursoradapter.WorkflowHeroSkillDir), opts.ProjectDir, checksums); err != nil {
-		return fmt.Errorf("copy workflow-hero skill: %w", err)
-	}
-
-	// 6. Copy cursor/skills/grilling → .cursor/skills/grilling/
-	if err := copyAssetDir(opts.AssetsFS, "cursor/skills/grilling", filepath.Join(opts.ProjectDir, cursoradapter.GrillingSkillDir), opts.ProjectDir, checksums); err != nil {
-		return fmt.Errorf("copy grilling skill: %w", err)
-	}
-
-	// 7. Copy templates → .workflow-hero/templates/
-	if err := copyAssetDir(opts.AssetsFS, "templates", filepath.Join(opts.ProjectDir, cursoradapter.HeroTemplatesDir), opts.ProjectDir, checksums); err != nil {
-		return fmt.Errorf("copy templates: %w", err)
-	}
-
-	// 8. Copy models → .workflow-hero/models/
-	if err := copyAssetDir(opts.AssetsFS, "models", filepath.Join(opts.ProjectDir, cursoradapter.HeroModelsDir), opts.ProjectDir, checksums); err != nil {
-		return fmt.Errorf("copy models: %w", err)
-	}
-
-	// 9. Copy docs → .workflow-hero/docs/
-	if err := copyAssetDir(opts.AssetsFS, "docs", filepath.Join(opts.ProjectDir, cursoradapter.HeroDocsDir), opts.ProjectDir, checksums); err != nil {
-		return fmt.Errorf("copy docs: %w", err)
-	}
+	harnesses := HarnessesFromSelection(enabled)
+	freechat := DefaultFreechatDefault(harnesses)
 
 	// 10. Write hero.json
 	heroData := HeroJSON{
 		CLI: CLIInfo{
 			Version:     opts.Version,
 			InstalledAt: now,
-			Tools:       opts.Tools,
+			Tools:       enabled,
 		},
 		Assets: AssetsInfo{
 			Version:     opts.Version,
 			InstalledAt: now,
 		},
-		Harnesses: DefaultHarnesses(),
+		Harnesses:       harnesses,
+		FreechatDefault: freechat,
 	}
 	if err := writeJSON(filepath.Join(opts.ProjectDir, cursoradapter.HeroJSONPath), heroData); err != nil {
 		return fmt.Errorf("write hero.json: %w", err)
@@ -236,9 +225,29 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 	}
 	slog.Info("operational store ready", "path", filepath.Join(opts.ProjectDir, store.RelativeDBPath))
 
-	emitHarnessMarkerWarnings(opts.ProjectDir, opts.Tools, stderr)
+	emitHarnessMarkerWarnings(opts.ProjectDir, enabled, stderr)
 
 	return nil
+}
+
+func normalizeSelectedTools(tools []string) []string {
+	var out []string
+	for _, t := range tools {
+		t = strings.TrimSpace(strings.ToLower(t))
+		if t != "" && !containsTool(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func containsTool(tools []string, want string) bool {
+	for _, t := range tools {
+		if t == want {
+			return true
+		}
+	}
+	return false
 }
 
 func emitHarnessMarkerWarnings(projectDir string, configuredTools []string, stderr io.Writer) {

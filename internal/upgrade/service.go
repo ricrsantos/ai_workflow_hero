@@ -30,11 +30,11 @@ type Options struct {
 
 // Result reports the outcome of an upgrade operation.
 type Result struct {
-	Updated         []string
-	Skipped         []string // skipped due to local customization
-	Migrated        []string // workflow-config.yml files migrated from generic_model
-	LegacyImported  bool
-	LegacyCycleNum  int
+	Updated        []string
+	Skipped        []string // skipped due to local customization
+	Migrated       []string // workflow-config.yml files migrated from generic_model
+	LegacyImported bool
+	LegacyCycleNum int
 }
 
 // Run performs the upgrade: re-copies assets, protecting customized files.
@@ -149,6 +149,7 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 	heroJSON.CLI.Version = opts.Version
 	heroJSON.Assets.Version = opts.Version
 	heroJSON.Assets.InstalledAt = now
+	_ = install.MigrateHarnessState(&heroJSON)
 	_ = install.EnsureHarnessDefaults(&heroJSON)
 	updatedHero, _ := json.MarshalIndent(heroJSON, "", "  ")
 	if err := os.WriteFile(heroPath, append(updatedHero, '\n'), 0o644); err != nil {

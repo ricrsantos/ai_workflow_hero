@@ -205,6 +205,7 @@ func Run(opts Options) Report {
 	// 11. Cursor Agent CLI diagnostics (warn-only; PRD-C03-001 §4.10; complementary to TUI boot).
 	if heroInstalled {
 		addCursorCLIChecks(context.Background(), opts.ProjectDir, opts.CursorCLIProbe, addCheck)
+		addOpenCodeCLIChecks(opts.ProjectDir, addCheck)
 	}
 
 	return report

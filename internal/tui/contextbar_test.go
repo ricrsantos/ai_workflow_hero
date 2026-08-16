@@ -24,6 +24,9 @@ func TestContextWindowLookup(t *testing.T) {
 	if cat.lookup("unknown-model") != 0 {
 		t.Fatalf("unknown slug should be 0, got %d", cat.lookup("unknown-model"))
 	}
+	if cat.lookup("anthropic/claude-sonnet-4") != 200000 {
+		t.Fatalf("opencode id window=%d", cat.lookup("anthropic/claude-sonnet-4"))
+	}
 	if cat.lookup("") != 0 {
 		t.Fatal("empty slug should be 0")
 	}

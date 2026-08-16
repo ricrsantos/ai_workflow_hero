@@ -75,17 +75,35 @@ func TestRootCommand_DefaultRunsTUIEntry(t *testing.T) {
 	}
 }
 
-func TestInstallCommand_RequiresToolsFlag(t *testing.T) {
+func TestInstallCommand_RejectsToolsFlag(t *testing.T) {
 	root := newRootCommand()
 
 	var errOut bytes.Buffer
 	root.SetErr(&errOut)
-	root.SetArgs([]string{"install"})
+	root.SetArgs([]string{"install", "--tools", "cursor"})
 
 	err := root.Execute()
-	// install requires --tools, so it should fail.
 	if err == nil {
-		t.Error("expected error when --tools is not provided")
+		t.Fatal("expected error when --tools is passed")
+	}
+	if !strings.Contains(errOut.String(), "--tools") {
+		t.Fatalf("stderr=%q", errOut.String())
+	}
+}
+
+func TestUpgradeCommand_RejectsToolsFlag(t *testing.T) {
+	root := newRootCommand()
+
+	var errOut bytes.Buffer
+	root.SetErr(&errOut)
+	root.SetArgs([]string{"upgrade", "--tools", "cursor"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --tools is passed")
+	}
+	if !strings.Contains(errOut.String(), "--tools") {
+		t.Fatalf("stderr=%q", errOut.String())
 	}
 }
 

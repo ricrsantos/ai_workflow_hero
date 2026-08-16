@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"context"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 // Exported screen aliases for tests.
@@ -374,6 +376,12 @@ func SetChatModelSlugForTest(m model, slug string) model {
 	return m
 }
 
+// SetChatHarnessIDForTest sets the active chat harness id.
+func SetChatHarnessIDForTest(m model, harnessID string) model {
+	m.chatHarnessID = harnessID
+	return m
+}
+
 // SetAvailableModelsForTest sets the harness model catalog.
 func SetAvailableModelsForTest(m model, models []string) model {
 	m.availableModels = append([]string(nil), models...)
@@ -383,6 +391,35 @@ func SetAvailableModelsForTest(m model, models []string) model {
 // StatusTextForTest returns the footer status text.
 func StatusTextForTest(m model) string {
 	return m.statusText
+}
+
+// ReapOpenCodeOrphansForTest runs orphan serve cleanup (integration tests).
+func ReapOpenCodeOrphansForTest(ctx context.Context, projectDir string, st *store.Store) error {
+	return reapOpenCodeOrphans(ctx, projectDir, st)
+}
+
+// StopOpenCodeServeFnForTest returns the injectable stop hook.
+func StopOpenCodeServeFnForTest() func(context.Context, string, *store.Store) error {
+	return stopOpenCodeServeFn
+}
+
+// SetStopOpenCodeServeFnForTest replaces the injectable stop hook for tests.
+func SetStopOpenCodeServeFnForTest(fn func(context.Context, string, *store.Store) error) {
+	stopOpenCodeServeFn = fn
+}
+
+// HarnessSessionIDForPairForTest exposes session binding for tests.
+func HarnessSessionIDForPairForTest(m model, stageName, pairHarness string) string {
+	return m.harnessSessionIDForPair(stageName, pairHarness)
+}
+
+// SetHarnessSessionHarnessIDForTest sets the in-memory session harness id.
+func SetHarnessSessionHarnessIDForTest(m model, harnessID string) model {
+	m.harnessSessionHarnessID = harnessID
+	return m
+}
+func PickingHarnessForTest(m model) bool {
+	return m.pickingHarness
 }
 
 // PickingModelForTest reports whether the model picker is open.

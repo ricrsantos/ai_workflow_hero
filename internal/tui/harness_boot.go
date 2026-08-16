@@ -12,120 +12,204 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 // harnessBootResult is the outcome of bootHarness before the Bubble Tea loop.
 type harnessBootResult struct {
-	Adapter   harness.HarnessAdapter
-	Models    []string
-	ModelSlug string
-	ModelWarn string
+	Registry      harnessmgr.Registry
+	Enabled       []string
+	Models        []harnessmgr.ModelOption
+	ModelSlug     string
+	HarnessID     string
+	ModelWarn     string
+	AvailWarnings []string
 }
 
-// harnessBootDeps groups injectable dependencies for harness boot (tests).
 type harnessBootDeps struct {
 	readHeroJSON  func(projectDir string) (install.HeroJSON, error)
-	writeCLITools func(projectDir string, tools []string) error
-	promptTool    func(stdout io.Writer, projectDir string) (string, error)
-	newAdapter    func(projectDir, toolID string) (harness.HarnessAdapter, error)
-	versionLabel  func(projectDir, toolID string) string
-	listModels    func(ctx context.Context, adapter harness.HarnessAdapter) ([]string, error)
+	writeHeroJSON func(projectDir string, hero install.HeroJSON) error
+	promptHarness func(stdout io.Writer) ([]string, error)
+	newRegistry   func(projectDir string, st *store.Store) harnessmgr.Registry
+	reapOrphans   func(ctx context.Context, projectDir string, st *store.Store) error
+	listModels    func(ctx context.Context, reg harnessmgr.Registry, hero install.HeroJSON) ([]harnessmgr.ModelOption, error)
+	openStore     func(projectDir string) (*store.Store, error)
 }
 
 func defaultHarnessBootDeps() harnessBootDeps {
 	return harnessBootDeps{
 		readHeroJSON:  readHeroJSON,
-		writeCLITools: writeCLITools,
-		promptTool:    promptHarnessTool,
-		newAdapter:    newHarnessAdapter,
-		versionLabel:  cursorVersionLabel,
-		listModels:    listHarnessModels,
+		writeHeroJSON: writeHeroJSONFile,
+		promptHarness: promptInstallLikeHarnesses,
+		newRegistry: func(projectDir string, st *store.Store) harnessmgr.Registry {
+			return harnessmgr.NewRegistry(projectDir, st)
+		},
+		reapOrphans: reapOpenCodeOrphans,
+		listModels:  harnessmgr.ListModels,
+		openStore:   store.OpenProject,
 	}
 }
 
-// bootHarness selects (when needed), validates, and persists the harness before TUI start (design D5).
 func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir string, deps harnessBootDeps) (harnessBootResult, error) {
 	hero, err := deps.readHeroJSON(projectDir)
 	if err != nil {
 		slog.Error("harness boot read hero.json failed", "error", err)
 		return harnessBootResult{}, fmt.Errorf("read hero.json: %w", err)
 	}
+	install.MigrateHarnessState(&hero)
 
-	tools := nonEmptyTools(hero.CLI.Tools)
-	selected := ""
-	persist := false
-
-	if len(tools) == 0 {
+	enabled := install.ListEnabledHarnesses(hero)
+	if len(enabled) == 0 {
 		output.Progress(stdout, "No harness configured for this project.")
-		selected, err = deps.promptTool(stdout, projectDir)
+		selected, err := deps.promptHarness(stdout)
 		if err != nil {
-			slog.Error("harness boot prompt failed", "error", err)
 			return harnessBootResult{}, err
 		}
-		persist = true
-	} else {
-		selected = tools[0]
+		for _, id := range selected {
+			_ = install.SetHarnessEnabled(projectDir, id, true)
+		}
+		hero, _ = deps.readHeroJSON(projectDir)
+		install.MigrateHarnessState(&hero)
+		enabled = install.ListEnabledHarnesses(hero)
+		if err := deps.writeHeroJSON(projectDir, hero); err != nil {
+			return harnessBootResult{}, fmt.Errorf("persist harness selection: %w", err)
+		}
 	}
 
-	adapter, err := deps.newAdapter(projectDir, selected)
+	st, err := deps.openStore(projectDir)
 	if err != nil {
-		slog.Error("harness boot adapter init failed", "tool", selected, "error", err)
-		return harnessBootResult{}, err
+		return harnessBootResult{}, fmt.Errorf("open store: %w", err)
+	}
+	defer st.Close()
+
+	if err := deps.reapOrphans(ctx, projectDir, st); err != nil {
+		slog.Warn("orphan serve reap failed", "error", err)
 	}
 
-	if err := adapter.IsAvailable(ctx); err != nil {
-		slog.Error("harness boot validation failed", "tool", selected, "error", err)
-		formatHarnessBootFailure(stderr, selected, err)
-		return harnessBootResult{}, &harnessBootError{tool: selected, cause: err}
-	}
-
-	if persist {
-		if err := deps.writeCLITools(projectDir, []string{selected}); err != nil {
-			slog.Error("harness boot persist cli.tools failed", "error", err)
-			return harnessBootResult{}, fmt.Errorf("persist cli.tools: %w", err)
+	reg := deps.newRegistry(projectDir, st)
+	warnings := []string{}
+	for _, id := range enabled {
+		adapter, err := reg.Adapter(id)
+		if err != nil {
+			continue
 		}
-		slog.Info("harness boot persisted cli.tools", "tool", selected)
-	}
-
-	if persist {
-		label := deps.versionLabel(projectDir, selected)
-		if label != "" {
-			output.Successf(stdout, "Cursor harness ready (%s)", label)
-		} else {
-			output.Success(stdout, "Cursor harness ready")
+		if err := adapter.IsAvailable(ctx); err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s harness unavailable: %s", harnessDisplayName(id), harnessUnavailableReason(err)))
+			slog.Warn("harness boot unavailable", "harness", id, "error", err)
 		}
 	}
-
-	slug := install.HarnessModelSlugForProject(projectDir, selected)
-	models := []string{}
-	modelWarn := ""
-	listFn := deps.listModels
-	if listFn == nil {
-		listFn = listHarnessModels
+	if len(warnings) > 0 {
+		for _, w := range warnings {
+			output.Warning(stderr, w)
+		}
+		output.Progress(stderr, "Fix harness setup, then retry commands that need it.")
 	}
-	listed, listErr := listFn(ctx, adapter)
+
+	h, m := install.GetFreechatDefault(hero)
+	models, listErr := deps.listModels(ctx, reg, hero)
 	if listErr != nil {
-		slog.Warn("harness boot list models failed", "tool", selected, "error", listErr)
-	} else {
-		models = listed
-		if slug != "" && len(models) > 0 && !containsString(models, slug) {
-			modelWarn = fmt.Sprintf("configured model %q not in harness catalog", slug)
-			slog.Warn("harness boot model not in catalog", "model", slug)
+		slog.Warn("harness boot list models failed", "error", listErr)
+	}
+	modelWarn := ""
+	if m != "" && len(models) > 0 {
+		found := false
+		for _, opt := range models {
+			if opt.Model == m && opt.Harness == h {
+				found = true
+				break
+			}
+		}
+		if !found {
+			modelWarn = fmt.Sprintf("configured model %q not in harness catalog", m)
 		}
 	}
 
-	slog.Info("harness boot ready", "tool", selected, "adapter", adapter.Name(), "models", len(models))
+	slog.Info("harness boot ready", "enabled", enabled, "default_harness", h, "models", len(models))
 	return harnessBootResult{
-		Adapter:   adapter,
-		Models:    models,
-		ModelSlug: slug,
-		ModelWarn: modelWarn,
+		Registry:      reg,
+		Enabled:       enabled,
+		Models:        models,
+		ModelSlug:     m,
+		HarnessID:     h,
+		ModelWarn:     modelWarn,
+		AvailWarnings: warnings,
 	}, nil
+}
+
+func reapOpenCodeOrphans(ctx context.Context, projectDir string, st *store.Store) error {
+	if st == nil {
+		return nil
+	}
+	entries, err := st.ListServeRegistry()
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Harness != "opencode" {
+			continue
+		}
+		if !processIsOpenCodeServe(e.PID) {
+			_ = st.DeleteServeRegistry(e.ID)
+			continue
+		}
+		slog.Info("reaping orphan opencode serve", "pid", e.PID)
+		adapter := opencodeadapter.NewAdapter(projectDir, st)
+		_ = adapter.StopServe(ctx)
+		_ = st.DeleteServeRegistry(e.ID)
+	}
+	return nil
+}
+
+func processIsOpenCodeServe(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil {
+		return false
+	}
+	cmd := strings.ReplaceAll(string(data), "\x00", " ")
+	return strings.Contains(cmd, "opencode") && strings.Contains(cmd, "serve")
+}
+
+func writeHeroJSONFile(projectDir string, hero install.HeroJSON) error {
+	path := filepath.Join(projectDir, cursoradapter.HeroJSONPath)
+	encoded, err := json.MarshalIndent(hero, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(encoded, '\n'), 0o644)
+}
+
+func promptInstallLikeHarnesses(_ io.Writer) ([]string, error) {
+	var selected []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Select the AI Harnesses you want to use (at least one):").
+				Options(
+					huh.NewOption("Cursor", "cursor"),
+					huh.NewOption("OpenCode", "opencode"),
+				).
+				Value(&selected).
+				Validate(func(v []string) error {
+					if len(v) == 0 {
+						return fmt.Errorf("select at least one harness")
+					}
+					return nil
+				}),
+		),
+	).WithTheme(harnessBootTheme())
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("harness selection cancelled: %w", err)
+	}
+	return selected, nil
 }
 
 func listHarnessModels(ctx context.Context, adapter harness.HarnessAdapter) ([]string, error) {
@@ -134,15 +218,6 @@ func listHarnessModels(ctx context.Context, adapter harness.HarnessAdapter) ([]s
 		return nil, fmt.Errorf("harness %q does not support model listing", adapter.Name())
 	}
 	return lister.ListModels(ctx)
-}
-
-func containsString(items []string, want string) bool {
-	for _, s := range items {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 type harnessBootError struct {
@@ -201,6 +276,8 @@ func harnessDisplayName(toolID string) string {
 	switch toolID {
 	case "cursor":
 		return "Cursor"
+	case "opencode":
+		return "OpenCode"
 	default:
 		if toolID == "" {
 			return "Harness"
@@ -209,125 +286,15 @@ func harnessDisplayName(toolID string) string {
 	}
 }
 
-func nonEmptyTools(tools []string) []string {
-	out := make([]string, 0, len(tools))
-	for _, t := range tools {
-		if strings.TrimSpace(t) != "" {
-			out = append(out, strings.TrimSpace(t))
-		}
-	}
-	return out
-}
-
 func readHeroJSON(projectDir string) (install.HeroJSON, error) {
-	path := filepath.Join(projectDir, cursoradapter.HeroJSONPath)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return install.HeroJSON{}, err
-	}
-	var hero install.HeroJSON
-	if err := json.Unmarshal(data, &hero); err != nil {
-		return install.HeroJSON{}, err
-	}
-	return hero, nil
-}
-
-func writeCLITools(projectDir string, tools []string) error {
-	path := filepath.Join(projectDir, cursoradapter.HeroJSONPath)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	var hero install.HeroJSON
-	if err := json.Unmarshal(data, &hero); err != nil {
-		return err
-	}
-	hero.CLI.Tools = tools
-	encoded, err := json.MarshalIndent(hero, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(encoded, '\n'), 0o644)
+	return install.LoadHeroJSON(projectDir)
 }
 
 func newHarnessAdapter(projectDir, toolID string) (harness.HarnessAdapter, error) {
-	switch toolID {
-	case "cursor":
-		return cursoradapter.NewAdapter(projectDir), nil
-	default:
-		return nil, fmt.Errorf("unsupported harness %q", toolID)
-	}
-}
-
-func promptHarnessTool(_ io.Writer, projectDir string) (string, error) {
-	var selected string
-	label := cursorSelectLabel(projectDir)
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Select harness:").
-				Description("[Only supported harness in V1]").
-				Options(huh.NewOption(label, "cursor")).
-				Value(&selected),
-		),
-	).WithTheme(harnessBootTheme())
-	if err := form.Run(); err != nil {
-		return "", fmt.Errorf("harness selection cancelled: %w", err)
-	}
-	if strings.TrimSpace(selected) == "" {
-		return "", fmt.Errorf("harness selection required")
-	}
-	return selected, nil
-}
-
-func cursorSelectLabel(projectDir string) string {
-	det, err := harness.DetectMarkers(projectDir, nil)
-	if err != nil {
-		return "cursor"
-	}
-	for _, m := range det.Present {
-		if m.ToolID == "cursor" {
-			return "cursor (detected: .cursor/)"
-		}
-	}
-	return "cursor"
-}
-
-func cursorVersionLabel(projectDir, toolID string) string {
-	if toolID != "cursor" {
-		return ""
-	}
-	spec, err := cursoradapter.ResolveAgentCLI(nil)
-	if err != nil {
-		return ""
-	}
-	adapter := cursoradapter.NewAdapter(projectDir)
-	res, err := adapter.Runner.Run(context.Background(), projectDir, spec.Path, spec.BuildArgs("--version"))
-	if err != nil {
-		return ""
-	}
-	ver := strings.TrimSpace(string(res.Stdout))
-	if ver == "" {
-		ver = strings.TrimSpace(string(res.Stderr))
-	}
-	bin := cursoradapter.AgentCLI
-	if len(spec.Base) > 0 {
-		bin = cursoradapter.CursorCLI + " agent"
-	}
-	if ver == "" {
-		return bin
-	}
-	return fmt.Sprintf("%s %s", bin, ver)
+	return harnessmgr.NewRegistry(projectDir, nil).Adapter(toolID)
 }
 
 func harnessBootTheme() *huh.Theme {
 	t := huh.ThemeBase()
-	clean := lipgloss.NewStyle()
-	t.Focused.Base = clean
-	t.Focused.Card = clean
-	t.Blurred.Base = clean
-	t.Blurred.Card = clean
-	t.Focused.Title = lipgloss.NewStyle()
-	t.Blurred.Title = lipgloss.NewStyle()
 	return t
 }

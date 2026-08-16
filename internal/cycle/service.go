@@ -13,6 +13,7 @@ import (
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/engine"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -23,6 +24,8 @@ type Service struct {
 	Engine     *engine.Engine
 	// Harness is optional; defaults to the Cursor adapter for hero run.
 	Harness harness.HarnessAdapter
+	// Registry resolves multi-harness adapters for TUI (Hero 2.0).
+	Registry harnessmgr.Registry
 	// OpenspecRunner runs `openspec archive <name> -y` before Hero archive; inject for tests.
 	OpenspecRunner OpenspecRunner
 	// OpenspecExec configures LookPath/exec for the default OpenspecRunner when OpenspecRunner is nil.
@@ -52,6 +55,7 @@ func OpenService(projectDir string) (*Service, error) {
 		ProjectDir: root,
 		Store:      st,
 		Engine:     engine.New(st),
+		Registry:   harnessmgr.NewRegistry(root, st),
 	}, nil
 }
 
@@ -83,7 +87,7 @@ func FindProjectRoot(start string) (string, error) {
 }
 
 // ErrNotInstalled is returned when no Hero project is found.
-var ErrNotInstalled = errors.New("Hero is not installed in this project — run: hero install --tools cursor")
+var ErrNotInstalled = errors.New("Hero is not installed in this project — run: hero install and select harnesses interactively, or enable them later in the TUI with /hero-harness")
 
 // StatusView is the JSON/table shape for hero status.
 type StatusView struct {
@@ -586,6 +590,24 @@ func (s *Service) SetStageHarnessSessionID(stageName, sessionID string) error {
 		return err
 	}
 	return s.Store.SetStageHarnessSessionID(c.ID, stageName, sessionID)
+}
+
+// SetStageHarnessID persists the harness adapter id used for a stage (multi-harness routing).
+func (s *Service) SetStageHarnessID(stageName, harnessID string) error {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	return s.Store.SetStageHarnessID(c.ID, stageName, harnessID)
+}
+
+// StageHarnessID returns the harness id bound to a stage, or empty when unset.
+func (s *Service) StageHarnessID(stageName string) (string, error) {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return "", err
+	}
+	return s.Store.StageHarnessID(c.ID, stageName)
 }
 
 // ConversationContext returns the active run stage and its harness session id.

@@ -883,6 +883,34 @@ func TestRuntimeAssets_ArchiveUsesCompletedDate(t *testing.T) {
 	}
 }
 
+// TestRuntimeAssets_WorkflowConfigRequiresHarness verifies Hero 2.0 template agents include harness.
+func TestRuntimeAssets_WorkflowConfigRequiresHarness(t *testing.T) {
+	data, err := fs.ReadFile(assets.FS, "templates/workflow-config.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	for _, agent := range []string{
+		"orchestration_agent:", "discover_agent:", "planning_agent:", "fallback_model:",
+	} {
+		idx := strings.Index(body, agent)
+		if idx < 0 {
+			t.Fatalf("missing %s", agent)
+		}
+		chunk := body[idx:minInt(idx+200, len(body))]
+		if !strings.Contains(chunk, "harness:") {
+			t.Fatalf("%s block missing harness: in template", agent)
+		}
+	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // loadAllAssetContent concatenates the content of all files under dirPrefix in the embedded FS.
 func loadAllAssetContent(t *testing.T, dirPrefix string) string {
 	t.Helper()

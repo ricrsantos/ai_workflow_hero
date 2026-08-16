@@ -1,6 +1,8 @@
 # Architecture Decision Records — AI Workflow Hero
 
-> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md). **C3 ADRs (024–030):** [ADR-C03-001-cursor-harness-tui-autonomy.md](ADR-C03-001-cursor-harness-tui-autonomy.md).
+> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md). **C3 ADRs (024–030):** [ADR-C03-001-cursor-harness-tui-autonomy.md](ADR-C03-001-cursor-harness-tui-autonomy.md). **C4 ADRs (031–037):** [ADR-C04-001-multi-harness.md](ADR-C04-001-multi-harness.md).
+>
+> **Architecture overview** (high-level diagrams and package map; non-normative): [architecture-overview.md](architecture-overview.md).
 
 | # | Title | Status |
 |---|---|---|
@@ -11,13 +13,13 @@
 | [ADR-005](#adr-005-subagent-invocation-via-task-tool-with-clean-sessions) | Subagent invocation via Task tool, with clean sessions | Accepted |
 | [ADR-006](#adr-006-simple-placeholder-templating-no-loop-engine) | Simple placeholder templating, no loop engine | Accepted |
 | [ADR-007](#adr-007-openspec-as-the-sdd-framework) | OpenSpec as the SDD framework | Accepted (amended C2 — see ADR-C02-001 / ADR-023) |
-| [ADR-008](#adr-008-three-level-model-fallback-chain) | Three-level model fallback chain | Accepted |
+| [ADR-008](#adr-008-three-level-model-fallback-chain) | Three-level model fallback chain | Accepted (amended C4 — see ADR-C04-001 / ADR-033) |
 | [ADR-009](#adr-009-test-real-dependencies-over-mocks) | Test real dependencies over mocks | Accepted |
 | [ADR-010](#adr-010-manual-release-process-via-a-single-script) | Manual release process via a single script | Accepted |
 | [ADR-011](#adr-011-one-asset-file-per-runtime-command-and-agent) | One asset file per Runtime command and per agent | Accepted |
 | [ADR-012](ADR-C01-001-hero-1-0.md#adr-012-go-owns-deterministic-ai-loop-state-machine) | Go owns deterministic AI Loop state machine | Accepted |
 | [ADR-013](ADR-C01-001-hero-1-0.md#adr-013-sqlite-as-sole-hero-operational-store) | SQLite as sole Hero operational store | Accepted |
-| [ADR-014](ADR-C01-001-hero-1-0.md#adr-014-cli-as-api-no-daemon-in-10) | CLI as API; no daemon in 1.0 | Accepted |
+| [ADR-014](ADR-C01-001-hero-1-0.md#adr-014-cli-as-api-no-daemon-in-10) | CLI as API; no daemon in 1.0 | Accepted (amended C4 — adapter-owned opencode serve, not hero serve) |
 | [ADR-015](ADR-C01-001-hero-1-0.md#adr-015-dual-entry-ui-chat-and-tui-parity) | Dual entry UI: chat and TUI parity | Accepted |
 | [ADR-016](ADR-C01-001-hero-1-0.md#adr-016-harness-adapter-interface-cursor-only-impl) | HarnessAdapter interface; Cursor-only impl | Accepted |
 | [ADR-017](ADR-C01-001-hero-1-0.md#adr-017-bubble-tea-tui-claude-code-inspired) | Bubble Tea TUI; Claude Code inspired | Accepted |
@@ -34,6 +36,13 @@
 | [ADR-028](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-028-hero-cycles-and-hero-todos-runtime-commands) | `hero-cycles` and `hero-todos` Runtime commands | Accepted |
 | [ADR-029](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-029-hero-sync-scans-product-and-architecture-pending-items) | `hero-sync` scans product and architecture pending items | Accepted |
 | [ADR-030](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-030-harness-default-model-in-herojson-tui-freechat-without-cycle) | Harness default model in hero.json; TUI freechat without cycle | Accepted |
+| [ADR-031](ADR-C04-001-multi-harness.md#adr-031-multi-harness-is-tui-only-cursor-ide-stays-cursor-only) | Multi-harness is TUI-only; Cursor IDE stays Cursor-only | Accepted |
+| [ADR-032](ADR-C04-001-multi-harness.md#adr-032-agents-declare-harness--native-model-id-no-hero-canonical-id) | Agents declare harness + native model id; no Hero canonical id | Accepted |
+| [ADR-033](ADR-C04-001-multi-harness.md#adr-033-fallback-may-use-explicit-fallback-harness-never-a-third) | Fallback may use explicit fallback harness; never a third | Accepted |
+| [ADR-034](ADR-C04-001-multi-harness.md#adr-034-hero-200-interactive-harness-install-tools-removed) | Hero 2.0.0: interactive harness install; `--tools` removed | Accepted |
+| [ADR-035](ADR-C04-001-multi-harness.md#adr-035-opencode-via-hero-managed-serve--http-api-project-sqlite-registry) | OpenCode via Hero-managed serve + HTTP API; project SQLite registry | Accepted |
+| [ADR-036](ADR-C04-001-multi-harness.md#adr-036-single-asset-source-projections-enable-provisions-disable-keeps-files) | Single asset source; projections; enable provisions; disable keeps files | Accepted |
+| [ADR-037](ADR-C04-001-multi-harness.md#adr-037-hero-harness-and-hero-model-pair-chat-shows-harness) | `/hero-harness` and `/hero-model` pair; Chat shows harness | Accepted |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 
@@ -141,6 +150,8 @@ Only purely administrative commands may have equivalents in both (e.g. `hero sta
 **Context**: A key Hero goal is reducing dependency on any single LLM model. If an agent's configured model becomes unavailable (deprecated, rate-limited, not present on the user's plan), the workflow should not hard-fail silently or produce a confusing error.
 
 **Decision**: Implement a 3-level fallback: 1) the agent's model as configured in `workflow-config.yml`; 2) `fallback_model`, a top-level block in the same file (`model`, `reasoning_effort`, `enable_fast_model`, `thinking`) — **the user is always explicitly warned whenever this fallback activates**; 3) if still unavailable, the orchestrator warns the user and waits for `/hero:continue` after they fix the configuration. At invocation time, the chosen id is passed as the Task tool `model` parameter (ADR-005 Model Resolution), not left to frontmatter inherit.
+
+**C4 amendment**: `fallback_model` also declares `harness`. The chain is agent pair → fallback pair → human `/hero-continue`. Never invent a third harness. See [ADR-033](ADR-C04-001-multi-harness.md#adr-033-fallback-may-use-explicit-fallback-harness-never-a-third).
 
 **Consequences**:
 - `fallback_model` is scoped per-cycle (top-level in `workflow-config.yml`), not globally in `hero.json`, since budget/availability may vary by cycle.

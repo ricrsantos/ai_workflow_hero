@@ -6,28 +6,36 @@
 
 ---
 
+## 2026-08-15 — C4 finished (Hero 2.0.0 multi-harness)
+
+**Problem**: Close cycle after Research→Judge; Browser UI / E2E were skipped.
+
+**Decision / Outcome**: `hero finish` recorded `completed_at`. All 47 SDD tasks landed (OpenCode adapter + managed serve/HTTP, `/hero-harness`, `/hero-model` pair, native model ids, `--tools` removed). Judge gaps fixed: StopServe on quit/disable, no cross-harness session resume, two-step fallback only. Totals: 224200 tokens, ~$0.406. Archive next via `/hero-archive` (OpenSpec change `hero-2-0-multi-harness`).
+
+---
+
+## 2026-08-15 — C4 Research + Planning
+
+**Problem**: Hero 1.x is Cursor-only; need TUI multi-harness without breaking IDE Runtime.
+
+**Decision / Outcome**: PRD/ADR/UI C04 + SDD `hero-2-0-multi-harness`. TUI-only multi-harness; native model ids; `--tools` error; OpenCode via Hero-managed `opencode serve` + HTTP API; project `hero.db` orphan reap; enable provisions `.opencode/`; `models/*.yml` OpenCode ids. Cursor IDE ignores `harness`.
+
+---
+
+## 2026-08-15 — Architecture overview (codebase audit)
+
+**Problem**: High-level architecture lived only in scattered ADRs and an untracked overview file.
+
+**Decision / Outcome**: Living `docs/architecture/architecture-overview.md` registered in `documents.json`. C4 later added OpenCode / `harnessmgr` / schema v4 (see current-state).
+
+---
+
 ## 2026-08-15 — TUI Chat context bar
 
-**Problem**: Chat had no view of how full the running agent's context window was. Cursor CLI only reports `usage` on the terminal `result` event; Hero parsed it into `ExecutionResult.Usage` but the TUI ignored it. Model YAML had pricing only.
+**Problem**: Chat had no view of context-window fill.
 
-**Decision / Outcome**: Added `context_window` to `assets/models/*.yml`. TUI loads embed then overlays `.workflow-hero/models`. Lookup is exact slug, then one effort suffix (`-high`/`-fast`/`-medium`/`-low`/`-max`). The scroll-hint line under the green pane shows a right-aligned bar (`█`/`░`, green/yellow/red) plus `used/max`. Used = last Execute input+output tokens; `/new-chat` resets. Bar hidden when the slug has no window. Not a live mid-stream meter (CLI limitation). `go test ./...` passes.
-
----
-
-## 2026-08-14 — TUI Chat: iterations, orch/discover models, HARN
-
-**Problem**: Header `iter x/x` missed YAML `max_iterations`; Execute used `/hero-model` instead of `agents.orchestration_agent`; Research could not pick a distinct model; agents box showed extra `HARN` for nested generic Tasks.
-
-**Decision / Outcome**: Normalize stage keys in the header; `SyncCycleConfig` updates still-open stage budgets. Orchestrator Execute uses `AgentModelSlug(orchestration_agent)` → fallback_model → `/hero-model`. Added `agents.discover_agent`; TUI Research is a dedicated session with that YAML slug; control slashes stay on ORCH; Research close resumes ORCH. Task parse prefers named Hero agents; `HARN` only for the parent with no Hero agent. Amends ADR-030 §4.
+**Decision / Outcome**: `context_window` in `assets/models/*.yml`; TUI scroll-hint bar from last Execute `usage`. Not a live mid-stream meter.
 
 ---
 
-## 2026-08-14 — Chat wrap panic, newline, speaker labels, streaming nav
-
-**Problem**: `wrapOutputLine` panicked on multi-byte glyphs (`✔`); Shift/Ctrl+Enter could not insert a newline; green pane said `Agent` instead of 4-letter labels; navigation keys were swallowed while streaming.
-
-**Decision / Outcome**: Wrap on rune spaces (`lastSpaceRune`). **Alt+Enter** inserts a newline. Transcript/status use `[LABEL - model]`. Stream messages always process off Chat; `ctrl/alt+1–6` navigate while streaming; destructive actions show `[y/N]` confirm.
-
----
-
-_Older 2026-08-13 / 2026-08-12 notes (releases v1.0.4–v1.2.1, slash overlay, archive PATH, Approvals/`/new-chat`) are in git history._
+_Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+Enter, streaming nav) are in git history._

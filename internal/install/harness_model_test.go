@@ -40,7 +40,7 @@ func TestEnsureHarnessDefaults(t *testing.T) {
 	if EnsureHarnessDefaults(&hero) {
 		t.Fatal("expected no change on second call")
 	}
-	hero.Harnesses["cursor"] = HarnessConfig{Model: "", EnableFastModel: true}
+	hero.Harnesses["cursor"] = HarnessConfig{Enabled: true, Model: "", EnableFastModel: true}
 	if EnsureHarnessDefaults(&hero) {
 		t.Fatal("expected no change when model empty but harness exists")
 	}

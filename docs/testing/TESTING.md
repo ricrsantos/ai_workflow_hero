@@ -14,7 +14,7 @@ Run from the repository root after any code change. All tests must pass before m
 
 - **Unit tests**: colocated `*_test.go` in each `internal/<feature>/` package; same package; test behavior, not implementation details.
 - **Golden tests**: template rendering and asset output fixtures.
-- **Integration tests**: compiled `hero` binary against `t.TempDir()` for `install`, `upgrade`, `uninstall`, and `doctor`.
+- **Integration tests**: compiled `hero` binary against `t.TempDir()` for `install`, `upgrade`, `uninstall`, and `doctor`. Cover install without `--tools`, `--tools` error, 1.x-style upgrade leaving OpenCode disabled, and OpenCode projection on enable.
 - **Dependencies**: prefer real filesystem and `embed.FS` over mocks; keep tests deterministic and fast.
 
 ## Coverage areas
@@ -24,7 +24,7 @@ Run from the repository root after any code change. All tests must pass before m
 | Install / upgrade / uninstall | `internal/install`, `internal/upgrade`, `internal/uninstall` |
 | Doctor / status | `internal/doctor`, `internal/status` |
 | Cycle / store / engine | `internal/cycle`, `internal/store`, `internal/engine` |
-| TUI / harness | `internal/tui`, `internal/harness`, `internal/adapters/cursor` |
+| TUI / harness | `internal/tui`, `internal/harness`, `internal/adapters/cursor`, `internal/adapters/opencode` |
 | Templates / assets | `internal/common/template`, `assets/` |
 | Release contract | `scripts/release_test.go` |
 

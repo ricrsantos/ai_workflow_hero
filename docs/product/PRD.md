@@ -1,6 +1,6 @@
 # PRD — AI Workflow Hero (Hero) CLI & Runtime
 
-> Product Requirements Document index. Baseline (0.9.x / pre-1.0 chat Runtime): design notes and grilling 2026-07-20. **Hero 1.0** requirements: [PRD-C01-001-hero-1-0.md](PRD-C01-001-hero-1-0.md) (cycle C1). **C2** slash/TUI/archive delta: [PRD-C02-001-slash-parity-tui-harness.md](PRD-C02-001-slash-parity-tui-harness.md). **C3** Cursor harness autonomy: [PRD-C03-001-cursor-harness-tui-autonomy.md](PRD-C03-001-cursor-harness-tui-autonomy.md).
+> Product Requirements Document index. Baseline (0.9.x / pre-1.0 chat Runtime): design notes and grilling 2026-07-20. **Hero 1.0** requirements: [PRD-C01-001-hero-1-0.md](PRD-C01-001-hero-1-0.md) (cycle C1). **C2** slash/TUI/archive delta: [PRD-C02-001-slash-parity-tui-harness.md](PRD-C02-001-slash-parity-tui-harness.md). **C3** Cursor harness autonomy: [PRD-C03-001-cursor-harness-tui-autonomy.md](PRD-C03-001-cursor-harness-tui-autonomy.md). **C4** multi-harness (Hero 2.0.0): [PRD-C04-001-multi-harness.md](PRD-C04-001-multi-harness.md).
 
 ## Cycle PRDs
 
@@ -9,6 +9,7 @@
 | [PRD-C01-001-hero-1-0.md](PRD-C01-001-hero-1-0.md) | C1 | Hero 1.0: AI Loop in Go, SQLite ops store, dual UI (chat + TUI), Cursor HarnessAdapter, deferred list D1–D13 |
 | [PRD-C02-001-slash-parity-tui-harness.md](PRD-C02-001-slash-parity-tui-harness.md) | C2 | Slash-first UX parity, TUI imported Cursor commands (md expansion), harness detection warnings, OpenSpec-coupled archive |
 | [PRD-C03-001-cursor-harness-tui-autonomy.md](PRD-C03-001-cursor-harness-tui-autonomy.md) | C3 | Cursor HarnessAdapter via CLI, autonomous TUI, `/hero-<name>` vocabulary, hero-cycles/todos, extended hero-sync |
+| [PRD-C04-001-multi-harness.md](PRD-C04-001-multi-harness.md) | C4 | Hero 2.0.0: TUI multi-harness (Cursor + OpenCode), native model ids, `/hero-harness`, managed `opencode serve` |
 
 ## 1. Overview
 
@@ -47,7 +48,7 @@ Hero's artifacts are split so the user is never locked in:
 
 ### 2.3 V2 Scope (out of scope for V1)
 
-- Compatibility with additional agentic development environments: Open Code, Claude Code, Claude App, Codex CLI, Codex App, VS Code.
+- Compatibility with additional agentic development environments: Open Code, Claude Code, Claude App, Codex CLI, Codex App, VS Code. **C4 / Hero 2.0.0** implements **OpenCode + Cursor** in the TUI only ([PRD-C04-001](PRD-C04-001-multi-harness.md)); other harnesses remain deferred.
 - Optional stages: UX, Observability, Deployment specifications, Security review, Architecture review.
 - **Advanced** synchronization with existing projects (drift detection between code and docs, continuous incremental sync — beyond the basic activation already covered in V1).
 - Workflow for architecture improvements in existing projects.

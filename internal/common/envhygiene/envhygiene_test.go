@@ -95,16 +95,16 @@ func TestEnsureProjectRoot_AppendsWhenMissingEnvIgnore(t *testing.T) {
 
 func TestIsSensitivePath(t *testing.T) {
 	cases := map[string]bool{
-		".env":              true,
-		".env.local":        true,
-		".env.production":   true,
-		".env.example":      false,
-		"config/.env":       true,
-		"credentials.json":  true,
-		"secrets.json":      true,
-		"cert.pem":          true,
-		"README.md":         false,
-		"src/main.go":       false,
+		".env":             true,
+		".env.local":       true,
+		".env.production":  true,
+		".env.example":     false,
+		"config/.env":      true,
+		"credentials.json": true,
+		"secrets.json":     true,
+		"cert.pem":         true,
+		"README.md":        false,
+		"src/main.go":      false,
 	}
 	for path, want := range cases {
 		if got := envhygiene.IsSensitivePath(path); got != want {

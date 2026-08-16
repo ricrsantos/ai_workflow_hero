@@ -13,205 +13,113 @@ import (
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
-func TestBootHarness_PersistsCursorOnFirstLaunch(t *testing.T) {
-	dir := writeHeroJSONForBootTest(t, nil)
-
-	var adapter harness.HarnessAdapter = &bootOKHarness{}
-	deps := defaultHarnessBootDeps()
-	deps.promptTool = func(_ io.Writer, _ string) (string, error) { return "cursor", nil }
-	deps.newAdapter = func(_ string, toolID string) (harness.HarnessAdapter, error) {
-		if toolID != "cursor" {
-			t.Fatalf("tool = %q", toolID)
-		}
-		return adapter, nil
-	}
-	deps.versionLabel = func(_, _ string) string { return "cursor-agent v1.2.3" }
-
-	var stdout bytes.Buffer
-	result, err := bootHarness(context.Background(), &stdout, &bytes.Buffer{}, dir, deps)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Adapter != adapter {
-		t.Fatal("expected injected adapter")
-	}
-	if !strings.Contains(stdout.String(), "Cursor harness ready") {
-		t.Fatalf("stdout = %q", stdout.String())
-	}
-
-	hero, err := readHeroJSON(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(hero.CLI.Tools) != 1 || hero.CLI.Tools[0] != "cursor" {
-		t.Fatalf("cli.tools = %v", hero.CLI.Tools)
-	}
-}
-
-func TestBootHarness_SkipsPromptWhenConfigured(t *testing.T) {
-	dir := writeHeroJSONForBootTest(t, []string{"cursor"})
+func TestBootHarness_EnabledCursorNoPrompt(t *testing.T) {
+	dir := writeHeroJSONForBootTest(t, []string{"cursor"}, true)
 
 	prompted := false
 	deps := defaultHarnessBootDeps()
-	deps.promptTool = func(_ io.Writer, _ string) (string, error) {
+	deps.promptHarness = func(_ io.Writer) ([]string, error) {
 		prompted = true
-		return "", errors.New("should not prompt")
+		return nil, errors.New("should not prompt")
 	}
-	deps.newAdapter = func(_ string, toolID string) (harness.HarnessAdapter, error) {
-		return &bootOKHarness{}, nil
+	deps.newRegistry = func(projectDir string, st *store.Store) harnessmgr.Registry {
+		return &bootRegistry{adapter: &bootOKHarness{}}
 	}
-
-	_, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, deps)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if prompted {
-		t.Fatal("expected no prompt when cli.tools is set")
-	}
-}
-
-func TestBootHarness_ValidationFailureAbortsWithLoginHint(t *testing.T) {
-	dir := writeHeroJSONForBootTest(t, []string{"cursor"})
-
-	deps := defaultHarnessBootDeps()
-	deps.newAdapter = func(_ string, _ string) (harness.HarnessAdapter, error) {
-		return &bootAuthFailHarness{}, nil
-	}
-
-	var stderr bytes.Buffer
-	_, err := bootHarness(context.Background(), &bytes.Buffer{}, &stderr, dir, deps)
-	if err == nil {
-		t.Fatal("expected validation failure")
-	}
-	if _, ok := err.(*harnessBootError); !ok {
-		t.Fatalf("err type %T", err)
-	}
-	out := stderr.String()
-	if !strings.Contains(out, "Cursor harness unavailable") {
-		t.Fatalf("stderr = %q", out)
-	}
-	if !strings.Contains(out, cursoradapter.LoginHint) {
-		t.Fatalf("missing login hint: %q", out)
-	}
-	if !strings.Contains(out, "Then start Hero again: hero") {
-		t.Fatalf("missing restart hint: %q", out)
-	}
-}
-
-func TestBootHarness_CLIUnavailableAborts(t *testing.T) {
-	dir := writeHeroJSONForBootTest(t, []string{"cursor"})
-
-	deps := defaultHarnessBootDeps()
-	deps.newAdapter = func(_ string, _ string) (harness.HarnessAdapter, error) {
-		return &bootUnavailableHarness{}, nil
-	}
-
-	var stderr bytes.Buffer
-	_, err := bootHarness(context.Background(), &bytes.Buffer{}, &stderr, dir, deps)
-	if err == nil {
-		t.Fatal("expected failure")
-	}
-	if strings.Contains(stderr.String(), cursoradapter.LoginHint) {
-		t.Fatalf("should not suggest login for missing CLI: %q", stderr.String())
-	}
-}
-
-func TestBootHarness_ListsModelsAndWarnsWhenMissing(t *testing.T) {
-	dir := writeHeroJSONForBootTest(t, []string{"cursor"})
-	// Seed harnesses.cursor.model to something not in the catalog.
-	hero, err := readHeroJSON(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	hero.Harnesses = map[string]install.HarnessConfig{
-		"cursor": {Model: "missing-model", EnableFastModel: false},
-	}
-	encoded, _ := json.MarshalIndent(hero, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, cursoradapter.HeroJSONPath), append(encoded, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	deps := defaultHarnessBootDeps()
-	deps.newAdapter = func(_ string, _ string) (harness.HarnessAdapter, error) {
-		return &bootOKHarness{}, nil
-	}
-	deps.listModels = func(_ context.Context, _ harness.HarnessAdapter) ([]string, error) {
-		return []string{"composer-2.5", "auto"}, nil
+	deps.openStore = func(projectDir string) (*store.Store, error) {
+		return store.OpenProject(projectDir)
 	}
 
 	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Models) != 2 {
-		t.Fatalf("models=%v", result.Models)
+	if prompted {
+		t.Fatal("expected no prompt when harness enabled")
 	}
-	if result.ModelSlug != "missing-model" {
-		t.Fatalf("slug=%q", result.ModelSlug)
-	}
-	if result.ModelWarn == "" {
-		t.Fatal("expected model warn")
+	if result.HarnessID == "" || result.ModelSlug == "" {
+		t.Fatalf("result=%+v", result)
 	}
 }
 
-func TestCursorSelectLabel_DetectsCursorDir(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, ".cursor"), 0o755); err != nil {
+func TestBootHarness_PromptsWhenNoneEnabled(t *testing.T) {
+	dir := writeHeroJSONForBootTest(t, nil, false)
+
+	deps := defaultHarnessBootDeps()
+	deps.promptHarness = func(_ io.Writer) ([]string, error) { return []string{"cursor"}, nil }
+	deps.newRegistry = func(projectDir string, st *store.Store) harnessmgr.Registry {
+		return &bootRegistry{adapter: &bootOKHarness{}}
+	}
+	deps.openStore = func(projectDir string) (*store.Store, error) {
+		return store.OpenProject(projectDir)
+	}
+
+	_, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, deps)
+	if err != nil {
 		t.Fatal(err)
 	}
-	got := cursorSelectLabel(dir)
-	if got != "cursor (detected: .cursor/)" {
-		t.Fatalf("label = %q", got)
+	hero, _ := install.LoadHeroJSON(dir)
+	if !install.IsHarnessEnabled(hero, "cursor") {
+		t.Fatal("expected cursor enabled after prompt")
 	}
 }
 
-func TestNonEmptyTools_FiltersBlanks(t *testing.T) {
-	got := nonEmptyTools([]string{"", "cursor", "  "})
-	if len(got) != 1 || got[0] != "cursor" {
-		t.Fatalf("got %v", got)
+func TestBootHarness_WarnsWhenUnavailable(t *testing.T) {
+	dir := writeHeroJSONForBootTest(t, []string{"cursor"}, true)
+
+	deps := defaultHarnessBootDeps()
+	deps.newRegistry = func(projectDir string, st *store.Store) harnessmgr.Registry {
+		return &bootRegistry{adapter: &bootUnavailableHarness{}}
 	}
+	deps.openStore = func(projectDir string) (*store.Store, error) {
+		return store.OpenProject(projectDir)
+	}
+
+	var stderr bytes.Buffer
+	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &stderr, dir, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.AvailWarnings) == 0 {
+		t.Fatal("expected availability warning")
+	}
+}
+
+type bootRegistry struct {
+	adapter harness.HarnessAdapter
+}
+
+func (r *bootRegistry) Adapter(id string) (harness.HarnessAdapter, error) {
+	if r.adapter != nil {
+		return r.adapter, nil
+	}
+	return nil, errors.New("no adapter")
+}
+func (r *bootRegistry) SupportedIDs() []string { return []string{"cursor", "opencode"} }
+func (r *bootRegistry) EnabledIDs(install.HeroJSON) []string {
+	return []string{"cursor"}
 }
 
 type bootOKHarness struct{}
 
-func (bootOKHarness) Name() string { return "cursor" }
+func (bootOKHarness) Name() string                      { return "cursor" }
 func (bootOKHarness) IsAvailable(context.Context) error { return nil }
 func (bootOKHarness) CreateSession(context.Context, harness.SessionRequest) (*harness.Session, error) {
-	return nil, errors.New("not implemented")
+	return &harness.Session{ID: "s1"}, nil
 }
 func (bootOKHarness) ResumeSession(context.Context, string) error { return nil }
 func (bootOKHarness) Execute(context.Context, harness.ExecuteRequest) (*harness.ExecutionResult, error) {
-	return nil, nil
+	return &harness.ExecutionResult{}, nil
 }
 func (bootOKHarness) Cancel(context.Context, string) error { return nil }
 func (bootOKHarness) Status(context.Context, string) (*harness.ExecutionStatus, error) {
-	return nil, nil
+	return &harness.ExecutionStatus{}, nil
 }
 func (bootOKHarness) Dispatch(context.Context, harness.DispatchRequest) (harness.DispatchResult, error) {
-	return harness.DispatchResult{}, nil
-}
-
-type bootAuthFailHarness struct{}
-
-func (bootAuthFailHarness) Name() string { return "cursor" }
-func (bootAuthFailHarness) IsAvailable(context.Context) error {
-	return &cursoradapter.AuthError{Detail: "authentication required"}
-}
-func (bootAuthFailHarness) CreateSession(context.Context, harness.SessionRequest) (*harness.Session, error) {
-	return nil, nil
-}
-func (bootAuthFailHarness) ResumeSession(context.Context, string) error { return nil }
-func (bootAuthFailHarness) Execute(context.Context, harness.ExecuteRequest) (*harness.ExecutionResult, error) {
-	return nil, nil
-}
-func (bootAuthFailHarness) Cancel(context.Context, string) error { return nil }
-func (bootAuthFailHarness) Status(context.Context, string) (*harness.ExecutionStatus, error) {
-	return nil, nil
-}
-func (bootAuthFailHarness) Dispatch(context.Context, harness.DispatchRequest) (harness.DispatchResult, error) {
 	return harness.DispatchResult{}, nil
 }
 
@@ -236,7 +144,7 @@ func (bootUnavailableHarness) Dispatch(context.Context, harness.DispatchRequest)
 	return harness.DispatchResult{}, nil
 }
 
-func writeHeroJSONForBootTest(t *testing.T, tools []string) string {
+func writeHeroJSONForBootTest(t *testing.T, tools []string, withEnabled bool) string {
 	t.Helper()
 	dir := t.TempDir()
 	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
@@ -245,10 +153,14 @@ func writeHeroJSONForBootTest(t *testing.T, tools []string) string {
 	}
 	hero := install.HeroJSON{
 		CLI: install.CLIInfo{
-			Version: "1.0.0",
+			Version: "2.0.0",
 			Tools:   tools,
 		},
-		Assets: install.AssetsInfo{Version: "1.0.0"},
+		Assets: install.AssetsInfo{Version: "2.0.0"},
+	}
+	if withEnabled && len(tools) > 0 {
+		hero.Harnesses = install.HarnessesFromSelection(tools)
+		hero.FreechatDefault = install.DefaultFreechatDefault(hero.Harnesses)
 	}
 	data, err := json.MarshalIndent(hero, "", "  ")
 	if err != nil {
@@ -256,6 +168,9 @@ func writeHeroJSONForBootTest(t *testing.T, tools []string) string {
 	}
 	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), append(data, '\n'), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(dir, "") {
+		_ = cursoradapter.HeroJSONPath
 	}
 	return dir
 }

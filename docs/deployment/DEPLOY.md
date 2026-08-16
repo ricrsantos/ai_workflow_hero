@@ -1,6 +1,6 @@
 # DEPLOY.md — Build, Release, and Distribution
 
-> Living document for the Hero CLI's build and release process. Edited in place as the process evolves; history of changes lives in `context/context-log.md` and git, not in this file. Source: grilling session decisions, 2026-07-20. **Hero 1.0:** breaking major from 0.9.x — see §3.1 and [ADR-018](../architecture/ADR-C01-001-hero-1-0.md#adr-018-breaking-major-upgrade-from-09x).
+> Living document for the Hero CLI's build and release process. Edited in place as the process evolves; history of changes lives in `context/context-log.md` and git, not in this file. Source: grilling session decisions, 2026-07-20. **Hero 1.0:** breaking major from 0.9.x — see §3.1 and [ADR-018](../architecture/ADR-C01-001-hero-1-0.md#adr-018-breaking-major-upgrade-from-09x). **Hero 2.0.0:** breaking major for multi-harness — see §3.2 and [ADR-034](../architecture/ADR-C04-001-multi-harness.md#adr-034-hero-200-interactive-harness-install-tools-removed).
 
 ## 1. Distribution Model
 
@@ -21,6 +21,7 @@ Windows is **out of scope for V1** (see [PRD.md §2.3](../product/PRD.md#23-v2-s
 
 - Hero follows **Semantic Versioning** (`vMAJOR.MINOR.PATCH`, e.g. `v1.2.0`).
 - **Hero 1.0.0** is a **breaking major** relative to 0.9.x: SQLite becomes the sole Hero operational store; cycle markdown (`workflow.md` / `metrics.md`) ceases to be canonical; Runtime assets must call the CLI API for state transitions ([PRD-C01-001](../product/PRD-C01-001-hero-1-0.md), ADR-013/014/018).
+- **Hero 2.0.0** is a **breaking major** relative to 1.x: `hero install --tools` is removed; agents require `harness` in `workflow-config.yml`; OpenCode is an opt-in TUI harness ([PRD-C04-001](../product/PRD-C04-001-multi-harness.md), ADR-034).
 
 ### 3.1 Upgrade from 0.9.x (1.0)
 
@@ -28,7 +29,14 @@ Windows is **out of scope for V1** (see [PRD.md §2.3](../product/PRD.md#23-v2-s
 - Soft dual-mode (running forever on 0.9.x markdown cycles) is **out of scope** for 1.0.
 - Platforms remain Linux/macOS amd64/arm64; release script and checksum flow unchanged (§4).
 
-- The version is not hardcoded in source; it is injected at build time from the current git tag via linker flags:
+### 3.2 Upgrade from 1.x (2.0.0)
+
+- `hero upgrade` marks **Cursor enabled**; does **not** auto-enable OpenCode or write `.opencode/` until `/hero-harness` or a new install selects it.
+- Passing `--tools` is an error (no deprecation). Direct users to `hero install` / `/hero-harness`.
+- SQLite schema migrates as needed for OpenCode serve registry (project `hero.db`).
+- Platforms remain Linux/macOS amd64/arm64; release script and checksum flow unchanged (§4).
+
+The version is not hardcoded in source; it is injected at build time from the current git tag via linker flags:
 
 ```bash
 go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o hero ./cmd/hero
@@ -89,12 +97,12 @@ sha256sum -c checksums.txt --ignore-missing
 1. Download the binary matching the user's OS/architecture from the repository's GitHub Releases page.
 2. (Optional but recommended) Verify its checksum against `checksums.txt`.
 3. Place the binary in a directory on the system `PATH`.
-4. Run `hero install --tools cursor` inside the target project.
+4. Run `hero install` inside the target project and select at least one harness (Cursor and/or OpenCode). `--tools` is not supported in 2.0.
 
 `hero install` performs these deterministic checks before writing any files:
 
 - Confirms the target directory is a git repository; if not, interactively offers to run `git init` (declining aborts installation — see [ADR-004](../architecture/ADR.md#adr-004-git-as-a-mandatory-prerequisite)).
-- Copies commands, agents, skills, and templates from the embedded assets into `.cursor/` and `.workflow-hero/`.
+- Copies commands, agents, skills, and templates from the embedded assets into harness projections (`.cursor/` and/or `.opencode/`) and `.workflow-hero/`.
 
 ## 7. Update & Removal
 
@@ -104,7 +112,7 @@ sha256sum -c checksums.txt --ignore-missing
 
 ## 8. Pricing Data Updates
 
-`hero update-models` fetches a pre-structured pricing data file (JSON/YAML) published in the official Hero GitHub repository — maintained manually by Hero's maintainers whenever Cursor's pricing changes — and rewrites the local `models/*.yml` files. It never scrapes or parses HTML pricing pages.
+`hero update-models` fetches a pre-structured pricing data file (JSON/YAML) published in the official Hero GitHub repository — maintained manually by Hero's maintainers whenever Cursor or OpenCode pricing changes — and rewrites the local `models/*.yml` files. It never scrapes or parses HTML pricing pages. Catalog keys include Cursor slugs and OpenCode-native ids (`provider/model`) so TUI metrics resolve ([PRD-C04-001 §4.10](../product/PRD-C04-001-multi-harness.md#410-pricing-catalog--mandatory-implementation-task)).
 
 ## 9. References
 

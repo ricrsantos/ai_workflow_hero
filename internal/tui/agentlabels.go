@@ -77,11 +77,15 @@ func agentShortLabel(name string) string {
 	return agentLabelHARN
 }
 
-func formatAgentHeader(name, model string) string {
+func formatAgentHeader(name, model, harnessID string) string {
 	display := agentShortLabel(name)
 	model = strings.TrimSpace(model)
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
 	if model == "not set" {
 		model = ""
+	}
+	if model != "" && harnessID != "" {
+		return fmt.Sprintf("[%s - %s · %s]", display, model, harnessID)
 	}
 	if model != "" {
 		return fmt.Sprintf("[%s - %s]", display, model)

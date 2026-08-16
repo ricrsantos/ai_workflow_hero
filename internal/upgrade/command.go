@@ -6,12 +6,16 @@ import (
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
+	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/spf13/cobra"
 )
 
 // NewCommand creates the `hero upgrade` cobra command.
 func NewCommand(version string, assetsFS fs.FS) *cobra.Command {
-	var yes bool
+	var (
+		yes   bool
+		tools string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "upgrade",
@@ -30,6 +34,12 @@ Hero warns and leaves the file unchanged for manual merge.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			stdout := cmd.OutOrStdout()
 			stderr := cmd.ErrOrStderr()
+
+			if cmd.Flags().Changed("tools") {
+				e := clierr.NewWithSuggestion(install.ToolsFlagRemovedMsg, install.ToolsFlagRemovedSuggestion)
+				clierr.Format(stderr, e)
+				return e
+			}
 
 			projectDir, err := os.Getwd()
 			if err != nil {
@@ -74,5 +84,6 @@ Hero warns and leaves the file unchanged for manual merge.`,
 	}
 
 	cmd.Flags().BoolVar(&yes, "yes", false, "Skip confirmation prompt")
+	cmd.Flags().StringVar(&tools, "tools", "", "deprecated in Hero 2.0 — use interactive harness selection")
 	return cmd
 }

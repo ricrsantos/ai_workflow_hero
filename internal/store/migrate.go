@@ -6,7 +6,7 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 3
+const currentSchemaVersion = 4
 
 func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`
@@ -120,6 +120,21 @@ func (s *Store) applyMigration(version int) error {
 	case 3:
 		// ADR-C03 / D6: Cursor CLI --resume continuity within an etapa.
 		if _, err := tx.Exec(`ALTER TABLE stages ADD COLUMN harness_session_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+	case 4:
+		// ADR-C04 / D13: OpenCode serve registry + per-stage harness binding.
+		if _, err := tx.Exec(`CREATE TABLE harness_serve_registry (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  harness TEXT NOT NULL,
+  pid INTEGER NOT NULL,
+  port INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  created_at TEXT NOT NULL
+)`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+		if _, err := tx.Exec(`ALTER TABLE stages ADD COLUMN harness_id TEXT NOT NULL DEFAULT ''`); err != nil {
 			return fmt.Errorf("migration %d: %w", version, err)
 		}
 	default:

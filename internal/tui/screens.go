@@ -196,11 +196,16 @@ func emptyCycleScreenMessage(kind string, cycleNumber int) string {
 
 func (m model) renderPalette() string {
 	var b strings.Builder
-	if m.pickingModel {
-		b.WriteString(headerStyle.Render("Models"))
+	switch {
+	case m.pickingModel:
+		b.WriteString(headerStyle.Render("Default model for freechat / /hero-new"))
 		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("Type to filter · ↑↓ navigate · enter select · esc close"))
-	} else {
+		b.WriteString(mutedStyle.Render("Model · Harness · ↑↓ navigate · enter select · esc close"))
+	case m.pickingHarness:
+		b.WriteString(headerStyle.Render("Harnesses"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("Enabled · Available · ↑↓ navigate · enter toggle · esc close"))
+	default:
 		b.WriteString(headerStyle.Render("Commands"))
 		b.WriteByte('\n')
 		b.WriteString(mutedStyle.Render("Type to filter · ↑↓ navigate · PgUp/PgDn · enter run · esc close"))
@@ -239,7 +244,12 @@ func (m model) renderPalette() string {
 	}
 	for i := start; i < end; i++ {
 		item := items[i]
-		line := fmt.Sprintf(" %s — %s", item.label, item.hint)
+		var line string
+		if m.pickingModel && item.modelSlug != "" {
+			line = formatModelHarnessColumns(item.modelSlug, item.hint)
+		} else {
+			line = fmt.Sprintf(" %s — %s", item.label, item.hint)
+		}
 		if i == m.paletteIndex {
 			list.WriteString(selectedStyle.Render("▸ " + line))
 		} else {
@@ -269,8 +279,14 @@ func (m model) renderPalette() string {
 	return b.String()
 }
 
-// paletteListHeight is how many command rows fit in the scrollable panel
-// (scroll cues ▲/▼ are reserved via chrome, not counted here).
+const modelPickerModelColWidth = 28
+
+func formatModelHarnessColumns(modelSlug, harnessLabel string) string {
+	modelSlug = strings.TrimSpace(modelSlug)
+	harnessLabel = strings.TrimSpace(harnessLabel)
+	return fmt.Sprintf(" %-*s  %s", modelPickerModelColWidth, modelSlug, harnessLabel)
+}
+
 func (m model) paletteListHeight() int {
 	// title+tabs, rules (3), Commands header, hint, prompt, blank, range line,
 	// border (2), optional ▲/▼ (2), status bar, footer.

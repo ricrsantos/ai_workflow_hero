@@ -32,6 +32,8 @@ const (
 	actionQuit
 	actionModel
 	actionSelectModel
+	actionHarness
+	actionToggleHarness
 )
 
 type paletteItem struct {
@@ -41,6 +43,8 @@ type paletteItem struct {
 	screen       screen
 	commandPath  string
 	commandLabel string
+	modelSlug    string
+	harnessID    string
 }
 
 func defaultHeroPaletteItems() []paletteItem {
@@ -66,6 +70,7 @@ func defaultHeroPaletteItems() []paletteItem {
 		{label: "/hero-cycles", hint: "list cycles", action: actionCycles},
 		{label: "/hero-todos", hint: "pending items", action: actionTodos},
 		{label: "/hero-model", hint: "select default model", action: actionModel},
+		{label: "/hero-harness", hint: "manage harnesses", action: actionHarness},
 		{label: "/hero-help", hint: "workflow guide", action: actionHelp},
 		{label: "Refresh", hint: "reload from store", action: actionRefresh},
 		{label: "Quit", hint: "exit TUI", action: actionQuit},

@@ -1,6 +1,6 @@
 # UI Spec — Hero CLI Terminal UX
 
-> "UI" for Hero means the terminal user experience of the `hero` CLI, plus the shared visual conventions also used by agents in the Runtime (chat). Baseline (0.9.x): grilling 2026-07-20. **Hero 1.0 TUI + CLI query UX:** [UI-C01-001-hero-tui.md](UI-C01-001-hero-tui.md). **C2 slash/TUI command parity:** [UI-C02-001-tui-slash-command-parity.md](UI-C02-001-tui-slash-command-parity.md).
+> "UI" for Hero means the terminal user experience of the `hero` CLI, plus the shared visual conventions also used by agents in the Runtime (chat). Baseline (0.9.x): grilling 2026-07-20. **Hero 1.0 TUI + CLI query UX:** [UI-C01-001-hero-tui.md](UI-C01-001-hero-tui.md). **C2 slash/TUI command parity:** [UI-C02-001-tui-slash-command-parity.md](UI-C02-001-tui-slash-command-parity.md). **C3 TUI harness autonomy:** [UI-C03-001-tui-harness-autonomy.md](UI-C03-001-tui-harness-autonomy.md). **C4 multi-harness:** [UI-C04-001-tui-multi-harness.md](UI-C04-001-tui-multi-harness.md).
 
 ## Cycle UI specs
 
@@ -8,6 +8,8 @@
 |---|---|---|
 | [UI-C01-001-hero-tui.md](UI-C01-001-hero-tui.md) | C1 | TUI screens, dual entry parity, CLI status/metrics/events replacing cycle markdown |
 | [UI-C02-001-tui-slash-command-parity.md](UI-C02-001-tui-slash-command-parity.md) | C2 | `/hero:*` TUI labels, imported Cursor commands, archive force UX, harness doctor warnings |
+| [UI-C03-001-tui-harness-autonomy.md](UI-C03-001-tui-harness-autonomy.md) | C3 | Autonomous TUI Chat, hyphen slashes, `/hero-model`, speaker labels |
+| [UI-C04-001-tui-multi-harness.md](UI-C04-001-tui-multi-harness.md) | C4 | Install harness picker, `/hero-harness`, `/hero-model` pair, Chat shows harness |
 
 ## 1. Scope
 
@@ -75,7 +77,7 @@ hero status --json
 Example (interactive):
 
 ```text
-hero install --tools cursor
+hero install
 
 🚀 Hero Project Setup
 
@@ -90,9 +92,11 @@ Project summary (Opcional):
 ```
 
 ```bash
-# Fully scripted (CI-friendly), no prompts at all
-hero install --tools cursor --name "Indoor Location" --summary "BLE indoor positioning platform" --yes
+# Project fields may be flagged; harness selection is interactive (Hero 2.0 — no --tools)
+hero install --name "Indoor Location" --summary "BLE indoor positioning platform" --yes
 ```
+
+Harness picker UX: [UI-C04-001](UI-C04-001-tui-multi-harness.md).
 
 ## 5. Error Messages
 
@@ -114,7 +118,7 @@ Example:
 ```text
 ✗ This directory is not a git repository.
 
-  Suggestion: run `hero install --tools cursor --git-init` to let Hero initialize
+  Suggestion: run `hero install --git-init` to let Hero initialize
   git automatically, or run `git init` manually and retry.
 
 (exit code: 1)

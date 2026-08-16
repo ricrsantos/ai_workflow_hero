@@ -94,22 +94,25 @@ sudo mv hero /usr/local/bin/hero
 Run inside the target project directory:
 
 ```bash
-# Interactive
-hero install --tools cursor
+# Interactive (select Cursor and/or OpenCode)
+hero install
 
-# Fully scripted (CI)
-hero install --tools cursor --name "My Project" --summary "Short summary" --yes --git-init
+# Scripted project fields (harness selection stays interactive in Hero 2.0)
+hero install --name "My Project" --summary "Short summary" --yes --git-init
 ```
+
+Manage harnesses later in the TUI with `/hero-harness`. Pick the default freechat model **pair** with `/hero-model` (columns: model, harness). OpenCode TUI Execute uses Hero-managed `opencode serve` (lazy start; orphan processes are reaped on TUI boot).
 
 Flags:
 
 | Flag | Purpose |
 |------|---------|
-| `--tools cursor` | Required in V1 (only Cursor) |
 | `--name` | Project name (required with `--yes`) |
 | `--summary` | Optional project summary |
-| `--yes` | Skip interactive prompts |
+| `--yes` | Skip name/summary prompts (harness picker still runs) |
 | `--git-init` | Initialize git if the directory is not a repo |
+
+**Note:** `--tools` was removed in Hero 2.0. Passing it on `install` or `upgrade` exits with an error — use interactive install or `/hero-harness`.
 
 What install creates (overview):
 
@@ -230,7 +233,7 @@ Use **Cursor/Task model ids** in `agents.*.model` (e.g. `cursor-grok-4.5`, not t
 
 | Command | Purpose |
 |---------|---------|
-| `hero install --tools cursor` | Bootstrap Hero into the project |
+| `hero install` | Bootstrap Hero (interactive harness selection: Cursor and/or OpenCode) |
 | `hero upgrade` | Update Hero assets (checksum-safe) |
 | `hero uninstall` | Remove Hero-owned paths only |
 | `hero doctor` | Health checks (table; `--json` for CI). Secrets issues are **warnings** only |
@@ -270,7 +273,8 @@ hero update-models
 | `/hero-status` | Show cycle status in chat |
 | `/hero-cycles` | List all cycles with per-etapa metrics (SQLite + archive folders) |
 | `/hero-todos` | Show pending items from `context/current-state.md` (run `/hero-sync` first when docs changed) |
-| `/hero-model` | Select TUI default model (persists to `hero.json`; Chat screen + non-agent dispatches) |
+| `/hero-harness` | Enable/disable harnesses (OpenCode provisions `.opencode/` on enable) |
+| `/hero-model` | Select TUI default model **pair** (model · harness; persists to `hero.json` freechat_default) |
 | `/hero-help` | List Runtime commands |
 
 **TUI Chat** (`hero tui`): the line under the green response pane shows a context bar (last harness turn `usage` vs the model's `context_window` in `.workflow-hero/models/*.yml`) when the running slug is in the catalog. Hidden when the model has no window.
@@ -343,7 +347,7 @@ Token/cost estimates use character count ÷ ~4 × prices from `.workflow-hero/mo
 ## 14. Recommended first session
 
 ```text
-hero install --tools cursor
+hero install
 # → read .workflow-hero/docs/workflow-help.md
 
 # In Cursor:
@@ -450,9 +454,9 @@ sudo mv hero /usr/local/bin/hero
 ## 5. Instalar o Hero em um projeto
 
 ```bash
-hero install --tools cursor
+hero install
 # ou
-hero install --tools cursor --name "Meu Projeto" --summary "Resumo" --yes --git-init
+hero install --name "Meu Projeto" --summary "Resumo" --yes --git-init
 ```
 
 Após o sucesso:
@@ -527,7 +531,7 @@ Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`
 ## 12. Sessão inicial recomendada
 
 ```text
-hero install --tools cursor
+hero install
 # leia .workflow-hero/docs/workflow-help.md
 
 /hero-sync

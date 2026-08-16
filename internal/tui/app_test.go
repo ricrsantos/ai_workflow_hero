@@ -858,7 +858,7 @@ stages:
 		t.Fatal("expected model picker open")
 	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "Models") || !strings.Contains(view, "cursor-grok-4.5-high") {
+	if !strings.Contains(view, "Default model for freechat") || !strings.Contains(view, "cursor-grok-4.5-high") {
 		t.Fatalf("picker view=%q", view)
 	}
 	next = SetPaletteFilter(next, "grok")

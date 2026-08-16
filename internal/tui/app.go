@@ -12,6 +12,7 @@ import (
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 )
 
@@ -62,18 +63,19 @@ type model struct {
 	outputErr    bool
 
 	// Conversation screen (design D4 / UI-C03-001 §3).
-	conversationStage string
-	harnessSessionID  string
-	transcript        []convMessage
-	input             string
-	inputCursor       int // rune offset into input
-	streaming         bool
-	streamInterrupted bool
-	convError         string
-	agentMsgIndex     int
-	thinkingMsgIndex  int
-	convStreamCh      chan tea.Msg
-	chatInputFocused  bool
+	conversationStage       string
+	harnessSessionID        string
+	harnessSessionHarnessID string // harness that owns harnessSessionID (session binding)
+	transcript              []convMessage
+	input                   string
+	inputCursor             int // rune offset into input
+	streaming               bool
+	streamInterrupted       bool
+	convError               string
+	agentMsgIndex           int
+	thinkingMsgIndex        int
+	convStreamCh            chan tea.Msg
+	chatInputFocused        bool
 
 	// OpenCode-style chat panes: scroll offsets + wait animation.
 	inputScrollOffset int
@@ -84,8 +86,11 @@ type model struct {
 	// Chat OpenCode-style controls.
 	chatMode               string // harness.ModeBuild | harness.ModePlan
 	chatModelSlug          string
+	chatHarnessID          string
+	modelOptions           []harnessmgr.ModelOption
 	availableModels        []string
 	pickingModel           bool
+	pickingHarness         bool
 	runtimeCommandName     string // hero runtime slash body name (e.g. "new") for Chat output normalization
 	runtimeModelSlug       string // YAML orch/discover slug or /hero-model default for the active runtime slash
 	runtimeAgentName       string // harness agent name for active runtime slash (e.g. orchestration_agent)
@@ -139,16 +144,28 @@ func newModel(svc *cycle.Service) model {
 	projectDir := ""
 	if svc != nil {
 		projectDir = svc.ProjectDir
-		m.chatModelSlug = install.HarnessModelSlugForProject(projectDir, "cursor")
+		if hero, err := install.LoadHeroJSON(projectDir); err == nil {
+			h, slug := install.GetFreechatDefault(hero)
+			m.chatHarnessID = h
+			if slug != "" {
+				m.chatModelSlug = slug
+			} else {
+				m.chatModelSlug = install.HarnessModelSlugForProject(projectDir, h)
+			}
+		}
 	}
 	m.contextWindows = loadContextWindowCatalog(projectDir)
 	m = m.reloadPaletteItems()
 	return m.syncConversationContext()
 }
 
-func newModelWithChat(svc *cycle.Service, models []string, modelSlug, modelWarn string) model {
+func newModelWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn string) model {
 	m := newModel(svc)
-	m.availableModels = append([]string(nil), models...)
+	m.modelOptions = append([]harnessmgr.ModelOption(nil), models...)
+	m.availableModels = flattenModelOptions(models)
+	if strings.TrimSpace(harnessID) != "" {
+		m.chatHarnessID = strings.TrimSpace(harnessID)
+	}
 	if strings.TrimSpace(modelSlug) != "" {
 		m.chatModelSlug = strings.TrimSpace(modelSlug)
 	}
@@ -156,6 +173,14 @@ func newModelWithChat(svc *cycle.Service, models []string, modelSlug, modelWarn 
 		m = m.setStatusResult(false, "model", modelWarn)
 	}
 	return m
+}
+
+func flattenModelOptions(opts []harnessmgr.ModelOption) []string {
+	out := make([]string, 0, len(opts))
+	for _, o := range opts {
+		out = append(out, o.Model)
+	}
+	return out
 }
 
 func (m model) reloadPaletteItems() model {
@@ -298,6 +323,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.paletteIndex = 0
 		m.paletteOffset = 0
 		m.pickingModel = false
+		m.pickingHarness = false
 		m = m.reloadPaletteItems()
 		return m, nil
 	case "ctrl+r", "f5":
@@ -354,6 +380,7 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		"ctrl+r", "f5":
 		// Leave palette chrome before global navigation / refresh / quit.
 		m.pickingModel = false
+		m.pickingHarness = false
 		m.paletteFilter = ""
 		m.paletteIndex = 0
 		m.paletteOffset = 0
@@ -433,7 +460,13 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		}
 		return m.goListScreen(item.screen)
 	case actionSelectModel:
-		return m.selectChatModel(item.label)
+		if item.modelSlug != "" && item.harnessID != "" {
+			return m.selectChatModelPair(item.modelSlug, item.harnessID)
+		}
+		modelPart, harnessPart := splitModelPairLabel(item.label)
+		return m.selectChatModelPair(modelPart, harnessPart)
+	case actionToggleHarness:
+		return m.toggleHarness(item.harnessID)
 	case actionQuit:
 		return m, tea.Quit
 	case actionRefresh:
@@ -487,6 +520,8 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		return m.beginAction("/hero-todos", m.todosCmd())
 	case actionModel:
 		return m.openModelPicker()
+	case actionHarness:
+		return m.openHarnessPicker()
 	case actionHelp:
 		return m.beginAction("/hero-help", m.helpCmd())
 	case actionImportCommand:

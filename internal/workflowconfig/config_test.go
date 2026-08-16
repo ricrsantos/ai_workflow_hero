@@ -62,11 +62,13 @@ func TestOrchestratorModelSlug_FromCurrent(t *testing.T) {
 	}
 	cfg := []byte(`agents:
   orchestration_agent:
+    harness: cursor
     model: gpt-5.3-codex
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
 fallback_model:
+  harness: cursor
   model: cursor-grok-4.5
   reasoning_effort: high
   enable_fast_model: false
@@ -92,11 +94,13 @@ func TestAgentModelSlug_NamedAgent(t *testing.T) {
 	}
 	cfg := []byte(`agents:
   discover_agent:
+    harness: cursor
     model: gpt-5.3-codex
     reasoning_effort: medium
     enable_fast_model: false
     thinking: na
 fallback_model:
+  harness: cursor
   model: cursor-grok-4.5
   reasoning_effort: high
   enable_fast_model: false
@@ -124,6 +128,7 @@ func TestAgentModelSlug_FallbackWhenAgentMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := []byte(`fallback_model:
+  harness: cursor
   model: composer-2.5
   reasoning_effort: na
   enable_fast_model: false
@@ -151,6 +156,7 @@ func TestOrchestratorModelSlug_FallbackWhenOrchestratorMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := []byte(`fallback_model:
+  harness: cursor
   model: composer-2.5
   reasoning_effort: na
   enable_fast_model: false

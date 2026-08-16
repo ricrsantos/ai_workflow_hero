@@ -13,9 +13,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// ToolsFlagRemovedMsg is the primary error line when --tools is passed (UI-C04-001 §2).
+const ToolsFlagRemovedMsg = "Flag --tools is not supported in Hero 2.0."
+
+// ToolsFlagRemovedSuggestion is the follow-up hint for --tools removal.
+const ToolsFlagRemovedSuggestion = "run `hero install` and select harnesses interactively,\nor enable them later in the TUI with /hero-harness."
+
 // NewCommand creates the `hero install` cobra command.
-// version is the CLI version injected at build time.
-// assetsFS is the embedded asset filesystem.
 func NewCommand(version string, assetsFS fs.FS) *cobra.Command {
 	var (
 		tools   string
@@ -33,7 +37,7 @@ func NewCommand(version string, assetsFS fs.FS) *cobra.Command {
 Hero requires the project to be a git repository. If it is not, Hero will
 offer to run 'git init' on your behalf (or you can pass --git-init).
 
-Only --tools cursor is supported in V1.`,
+Select at least one harness (Cursor and/or OpenCode) during the interactive install.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -41,13 +45,11 @@ Only --tools cursor is supported in V1.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&tools, "tools", "", "IDE tool to install for (required; only 'cursor' supported)")
+	cmd.Flags().StringVar(&tools, "tools", "", "deprecated in Hero 2.0 — use interactive harness selection")
 	cmd.Flags().StringVar(&name, "name", "", "Project name")
 	cmd.Flags().StringVar(&summary, "summary", "", "Project summary (optional)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Skip interactive prompts (--name required; --summary optional)")
 	cmd.Flags().BoolVar(&gitInit, "git-init", false, "Initialize a git repository if none exists")
-
-	_ = cmd.MarkFlagRequired("tools")
 
 	return cmd
 }
@@ -56,12 +58,8 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 	stdout := cmd.OutOrStdout()
 	stderr := cmd.ErrOrStderr()
 
-	// Validate --tools flag.
-	if strings.ToLower(tools) != "cursor" {
-		e := clierr.NewWithSuggestion(
-			fmt.Sprintf("unsupported tool: %q", tools),
-			"Only --tools cursor is supported in V1.",
-		)
+	if cmd.Flags().Changed("tools") {
+		e := clierr.NewWithSuggestion(ToolsFlagRemovedMsg, ToolsFlagRemovedSuggestion)
 		clierr.Format(stderr, e)
 		return e
 	}
@@ -73,20 +71,17 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 		return e
 	}
 
-	// Check git and optionally offer to init.
 	if !isGitRepo(projectDir) {
 		if gitInit {
-			// Will be handled in Run.
+			// handled in Run
 		} else if yes {
-			// --yes without --git-init still aborts if no git repo.
 			e := clierr.NewWithSuggestion(
 				"this directory is not a git repository",
-				"run `hero install --tools cursor --git-init` to let Hero initialize\ngit automatically, or run `git init` manually and retry.",
+				"run `hero install --git-init` to let Hero initialize\ngit automatically, or run `git init` manually and retry.",
 			)
 			clierr.Format(stderr, e)
 			return e
 		} else {
-			// Interactive: ask user.
 			var doGitInit bool
 			form := huh.NewForm(
 				huh.NewGroup(
@@ -116,15 +111,6 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 	needName := strings.TrimSpace(name) == ""
 	needSummaryPrompt := !summaryFlagSet && !yes
 
-	if yes && needName {
-		e := clierr.NewWithSuggestion(
-			"project name is required",
-			"pass --name \"Your Project\" (and optionally --summary \"...\") with --yes.",
-		)
-		clierr.Format(stderr, e)
-		return e
-	}
-
 	printSetupHeader(stdout)
 
 	if needName || needSummaryPrompt {
@@ -151,7 +137,6 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 					Value(&summary),
 			))
 		}
-
 		form := huh.NewForm(groups...).WithTheme(heroInstallTheme())
 		if err := form.Run(); err != nil {
 			e := clierr.New("prompt error: " + err.Error())
@@ -160,9 +145,15 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 		}
 	}
 
+	selected, err := promptHarnessMultiSelect(stdout)
+	if err != nil {
+		e := clierr.New(err.Error())
+		clierr.Format(stderr, e)
+		return e
+	}
+
 	name = strings.TrimSpace(name)
 	summary = strings.TrimSpace(summary)
-
 	if name == "" {
 		e := clierr.NewWithSuggestion(
 			"project name is required",
@@ -176,7 +167,7 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 		ProjectDir: projectDir,
 		Name:       name,
 		Summary:    summary,
-		Tools:      []string{tools},
+		Tools:      selected,
 		Version:    version,
 		GitInit:    gitInit,
 		AssetsFS:   assetsFS,
@@ -186,7 +177,7 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 		if strings.Contains(err.Error(), "not a git repository") {
 			e := clierr.NewWithSuggestion(
 				"this directory is not a git repository",
-				"run `hero install --tools cursor --git-init` to let Hero initialize\ngit automatically, or run `git init` manually and retry.",
+				"run `hero install --git-init` to let Hero initialize\ngit automatically, or run `git init` manually and retry.",
 			)
 			clierr.Format(stderr, e)
 			return e
@@ -197,7 +188,37 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 	}
 
 	fmt.Fprintln(stdout)
-	output.Successf(stdout, "Hero installed successfully.")
+	output.Successf(stdout, "Hero installed successfully (%s enabled).", EnabledHarnessSummary(selected))
 	output.Progressf(stdout, "Full user guide: %s", cursoradapter.WorkflowHelpPath)
 	return nil
+}
+
+func promptHarnessMultiSelect(stdout interface{ Write([]byte) (int, error) }) ([]string, error) {
+	var selected []string
+	options := []huh.Option[string]{
+		huh.NewOption("Cursor", "cursor"),
+		huh.NewOption("OpenCode", "opencode"),
+	}
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Select the AI Harnesses you want to use (at least one):").
+				Description("Supported harnesses for Hero 2.0").
+				Options(options...).
+				Value(&selected).
+				Validate(func(v []string) error {
+					if len(v) == 0 {
+						return fmt.Errorf("select at least one harness")
+					}
+					return nil
+				}),
+		),
+	).WithTheme(heroInstallTheme())
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("harness selection cancelled: %w", err)
+	}
+	if len(selected) == 0 {
+		return nil, fmt.Errorf("select at least one harness")
+	}
+	return selected, nil
 }

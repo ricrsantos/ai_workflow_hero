@@ -48,8 +48,9 @@ type streamDeltaMsg struct {
 }
 
 type executeDoneMsg struct {
-	result *harness.ExecutionResult
-	err    error
+	result    *harness.ExecutionResult
+	err       error
+	harnessID string // harness used for this execute (session binding)
 }
 
 type streamCancelDoneMsg struct {
@@ -68,10 +69,36 @@ func (m model) harnessAdapter() harness.HarnessAdapter {
 	if m.svc != nil && m.svc.Harness != nil {
 		return m.svc.Harness
 	}
+	id := m.conversationHarnessTool()
+	if m.svc != nil && m.svc.Registry != nil {
+		if a, err := m.svc.Registry.Adapter(id); err == nil {
+			return a
+		}
+	}
 	if m.svc != nil {
 		return cursoradapter.NewAdapter(m.svc.ProjectDir)
 	}
 	return nil
+}
+
+func (m model) conversationHarnessTool() string {
+	if h := strings.TrimSpace(m.chatHarnessID); h != "" {
+		return h
+	}
+	if m.svc != nil && strings.TrimSpace(m.conversationStage) != "" {
+		if h, err := m.svc.StageHarnessID(m.conversationStage); err == nil && strings.TrimSpace(h) != "" {
+			return h
+		}
+	}
+	if m.svc != nil {
+		if hero, err := install.LoadHeroJSON(m.svc.ProjectDir); err == nil {
+			h, _ := install.GetFreechatDefault(hero)
+			if strings.TrimSpace(h) != "" {
+				return h
+			}
+		}
+	}
+	return "cursor"
 }
 
 func (m model) syncConversationContext() model {
@@ -104,13 +131,46 @@ func (m model) syncConversationContext() model {
 		return m
 	}
 	m.harnessSessionID = stored
+	if m.svc != nil && stage != "" {
+		if h, err := m.svc.StageHarnessID(stage); err == nil {
+			m.harnessSessionHarnessID = strings.TrimSpace(h)
+		}
+	}
 	return m
 }
 
-// persistHarnessSession stores the Cursor session on the in-memory model and on
+// harnessSessionIDForPair returns sessionID only when it belongs to pairHarness (PRD §4.11).
+func (m model) harnessSessionIDForPair(stageName, pairHarness string) string {
+	sid := strings.TrimSpace(m.harnessSessionID)
+	pairHarness = strings.TrimSpace(strings.ToLower(pairHarness))
+	if sid == "" || pairHarness == "" {
+		return sid
+	}
+	if m.svc != nil {
+		stage := strings.TrimSpace(stageName)
+		if stage != "" {
+			if h, err := m.svc.StageHarnessID(stage); err == nil {
+				h = strings.TrimSpace(strings.ToLower(h))
+				if h != "" && h != pairHarness {
+					return ""
+				}
+			}
+		}
+	}
+	if h := strings.TrimSpace(strings.ToLower(m.harnessSessionHarnessID)); h != "" && h != pairHarness {
+		return ""
+	}
+	return sid
+}
+
+// persistHarnessSession stores the harness session on the in-memory model and on
 // the active SQLite stage (even when /hero-start cleared conversationStage).
-func (m model) persistHarnessSession(sessionID string) model {
+func (m model) persistHarnessSession(sessionID, harnessID string) model {
 	sessionID = strings.TrimSpace(sessionID)
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	if harnessID == "" {
+		harnessID = strings.TrimSpace(strings.ToLower(m.conversationHarnessTool()))
+	}
 	if sessionID == "" {
 		return m
 	}
@@ -134,6 +194,7 @@ func (m model) persistHarnessSession(sessionID string) model {
 		return m
 	}
 	m.harnessSessionID = sessionID
+	m.harnessSessionHarnessID = harnessID
 	if m.svc == nil {
 		return m
 	}
@@ -150,15 +211,6 @@ func (m model) persistHarnessSession(sessionID string) model {
 		}
 	}
 	return m
-}
-
-func (m model) conversationHarnessTool() string {
-	if m.svc != nil && m.svc.Harness != nil {
-		if name := strings.TrimSpace(m.svc.Harness.Name()); name != "" {
-			return name
-		}
-	}
-	return "cursor"
 }
 
 func (m model) defaultHarnessModelSlug() string {
@@ -200,7 +252,7 @@ func (m model) responseSpeakerHeader() string {
 		if slug := strings.TrimSpace(a.Model); slug != "" {
 			model = slug
 		}
-		return formatAgentHeader(name, model)
+		return formatAgentHeader(name, model, m.conversationHarnessTool())
 	}
 	turn := m.latestAgentTurn()
 	for i := len(turn) - 1; i >= 0; i-- {
@@ -216,7 +268,7 @@ func (m model) responseSpeakerHeader() string {
 		}
 		break
 	}
-	return formatAgentHeader(name, model)
+	return formatAgentHeader(name, model, m.conversationHarnessTool())
 }
 
 func (m model) enterConversation() (model, tea.Cmd) {
@@ -230,6 +282,7 @@ func (m model) enterConversation() (model, tea.Cmd) {
 func (m model) resetChatSession() model {
 	m.transcript = nil
 	m.harnessSessionID = ""
+	m.harnessSessionHarnessID = ""
 	m.conversationStage = ""
 	m.orchestrationLive = false
 	m.researchLive = false
@@ -318,6 +371,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	m, _ = m.enterConversation()
 	m.conversationStage = ""
 	m.harnessSessionID = ""
+	m.harnessSessionHarnessID = ""
 	m.runtimeCommandName = cmdName
 	m.runtimeModelSlug = strings.TrimSpace(modelSlug)
 	m.runtimeAgentName = ""
@@ -828,10 +882,7 @@ func parseHeroResumeInline(text string) (int, bool) {
 
 func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 	svc := m.svc
-	adapter := m.harnessAdapter()
 	stageName := m.conversationStage
-	sessionID := m.harnessSessionID
-	modelSlug := m.runtimeExecuteModelSlug()
 	agentName := m.runtimeAgentName
 	projectDir := ""
 	if svc != nil {
@@ -842,11 +893,26 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 		mode = harness.ModeBuild
 	}
 	go func() {
-		if adapter == nil {
+		ctx := context.Background()
+		resolved, err := m.resolveExecuteResolution(ctx)
+		if err != nil {
+			ch <- executeDoneMsg{err: err}
+			return
+		}
+		pair := resolved.pair
+		if pair.Adapter == nil {
 			ch <- executeDoneMsg{err: fmt.Errorf("harness adapter unavailable")}
 			return
 		}
-		ctx := context.Background()
+		sessionID := m.harnessSessionIDForPair(stageName, pair.HarnessID)
+		if resolved.warning != "" {
+			ch <- streamDeltaMsg{delta: harness.StreamDelta{Kind: harness.StreamKindText, Text: resolved.warning + "\n\n"}}
+		}
+		if svc != nil && strings.TrimSpace(stageName) != "" {
+			if err := svc.SetStageHarnessID(stageName, pair.HarnessID); err != nil {
+				slog.Debug("tui persist stage harness id failed", "error", err)
+			}
+		}
 		req := harness.ExecuteRequest{
 			ProjectDir: projectDir,
 			Prompt:     prompt,
@@ -854,14 +920,14 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			Stream:     true,
 			StageName:  stageName,
 			AgentName:  agentName,
-			Model:      modelSlug,
+			Model:      pair.Model,
 			Mode:       mode,
 			OnStreamDelta: func(delta harness.StreamDelta) {
 				ch <- streamDeltaMsg{delta: delta}
 			},
 		}
-		res, err := adapter.Execute(ctx, req)
-		ch <- executeDoneMsg{result: res, err: err}
+		res, err := pair.Adapter.Execute(ctx, req)
+		ch <- executeDoneMsg{result: res, err: err, harnessID: pair.HarnessID}
 	}()
 }
 
@@ -932,7 +998,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.result != nil {
 			m.contextUsedTokens = msg.result.Usage.InputTokens + msg.result.Usage.OutputTokens
 			if msg.result.SessionID != "" {
-				m = m.persistHarnessSession(msg.result.SessionID)
+				m = m.persistHarnessSession(msg.result.SessionID, msg.harnessID)
 			}
 			// Prefer canonical result text over accumulated deltas (partial vs final)
 			// unless subagent blocks are in the turn — replacing would wipe labels.
@@ -1403,9 +1469,7 @@ func (m model) renderConversationResponse(responseLines int) string {
 		frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
 		statusContent = chatInText.Render(frame) + chatInMuted.Render(" ")
 	}
-	statusContent += chatInAgent.Render(m.responseSpeakerHeader()) +
-		chatInMuted.Render(" · ") +
-		chatInMuted.Render(m.conversationHarnessTool())
+	statusContent += chatInAgent.Render(m.responseSpeakerHeader())
 	if visible > 0 && len(lines) > visible {
 		statusContent += chatInMuted.Render(fmt.Sprintf(" · %d–%d/%d", offset+1, minInt(offset+visible, len(lines)), len(lines)))
 	}
@@ -1444,7 +1508,7 @@ func (m model) responseContentLines(contentW int) []string {
 			if isSub {
 				out = append(out, "")
 			}
-			header := formatAgentHeader(msg.agentName, msg.modelSlug)
+			header := formatAgentHeader(msg.agentName, msg.modelSlug, m.conversationHarnessTool())
 			out = append(out, chatInAgent.Render(header))
 			prevKey = key
 			prevWasSub = isSub

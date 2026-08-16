@@ -1,16 +1,16 @@
 {
   "name": "AI Workflow Hero",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "summary": "Open-source framework for AI-augmented software development: deterministic Go CLI bootstraps Cursor Runtime assets; coordinates specialized subagents through reproducible development cycles.",
   "repository": "github.com/ricrsantos/ai_workflow_hero",
   "license": "BSD-2-Clause",
   "createdAt": "2026-08-04T19:30:24Z",
   "workflow": {
     "name": "Feature Development",
-    "phase": "Maintenance / Release",
-    "cycle": 3,
+    "phase": "Hero 2.0.0 / C4 complete",
+    "cycle": 4,
     "activeCycle": null,
-    "lastSyncAt": "2026-08-10T11:46:00Z"
+    "lastSyncAt": "2026-08-15T21:17:15Z"
   },
   "technology": {
     "stack": "Go CLI (Cobra) + SQLite + Bubble Tea TUI + embedded Cursor Runtime assets",

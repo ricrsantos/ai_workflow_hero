@@ -13,16 +13,16 @@ var (
 )
 
 var (
-	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
-	headerStyle  = lipgloss.NewStyle().Bold(true).Underline(true)
-	footerStyle  = lipgloss.NewStyle().Foreground(colorMuted)
-	successStyle = lipgloss.NewStyle().Foreground(colorGreen)
-	warnStyle    = lipgloss.NewStyle().Foreground(colorYellow)
-	errorStyle   = lipgloss.NewStyle().Foreground(colorRed)
-	infoStyle    = lipgloss.NewStyle().Foreground(colorBlue)
+	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
+	headerStyle   = lipgloss.NewStyle().Bold(true).Underline(true)
+	footerStyle   = lipgloss.NewStyle().Foreground(colorMuted)
+	successStyle  = lipgloss.NewStyle().Foreground(colorGreen)
+	warnStyle     = lipgloss.NewStyle().Foreground(colorYellow)
+	errorStyle    = lipgloss.NewStyle().Foreground(colorRed)
+	infoStyle     = lipgloss.NewStyle().Foreground(colorBlue)
 	thinkingStyle = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
 	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue).Background(lipgloss.Color("236"))
-	mutedStyle   = lipgloss.NewStyle().Foreground(colorMuted)
+	mutedStyle    = lipgloss.NewStyle().Foreground(colorMuted)
 	// Filled caret when chat input has focus (white — distinct from accent bar).
 	caretFilledStyle = lipgloss.NewStyle().
 				Foreground(chatBg).

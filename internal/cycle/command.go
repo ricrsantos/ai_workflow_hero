@@ -60,9 +60,9 @@ func mapCLIError(err error) *clierr.HeroError {
 func newMetricsCommand() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "metrics",
-		Short: "Show cycle metrics from the operational store",
-		Long:  `Show per-stage token/cost estimates from SQLite. Table by default; --json for machine output.`,
+		Use:           "metrics",
+		Short:         "Show cycle metrics from the operational store",
+		Long:          `Show per-stage token/cost estimates from SQLite. Table by default; --json for machine output.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -86,8 +86,8 @@ func newEventsCommand() *cobra.Command {
 	var limit int
 	var eventType string
 	cmd := &cobra.Command{
-		Use:   "events",
-		Short: "Show recent cycle events from the operational store",
+		Use:           "events",
+		Short:         "Show recent cycle events from the operational store",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -111,8 +111,8 @@ func newEventsCommand() *cobra.Command {
 func newApproveCommand() *cobra.Command {
 	var summary, metricsJSON string
 	cmd := &cobra.Command{
-		Use:   "approve",
-		Short: "Approve the pending stage",
+		Use:           "approve",
+		Short:         "Approve the pending stage",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -131,8 +131,8 @@ func newApproveCommand() *cobra.Command {
 func newRejectCommand() *cobra.Command {
 	var reason string
 	cmd := &cobra.Command{
-		Use:   "reject",
-		Short: "Reject the pending stage",
+		Use:           "reject",
+		Short:         "Reject the pending stage",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -150,8 +150,8 @@ func newRejectCommand() *cobra.Command {
 func newCancelCommand() *cobra.Command {
 	var reason string
 	cmd := &cobra.Command{
-		Use:   "cancel",
-		Short: "Cancel the active cycle",
+		Use:           "cancel",
+		Short:         "Cancel the active cycle",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -169,8 +169,8 @@ func newCancelCommand() *cobra.Command {
 func newFinishCommand() *cobra.Command {
 	var metricsJSON string
 	cmd := &cobra.Command{
-		Use:   "finish",
-		Short: "Finish the active cycle",
+		Use:           "finish",
+		Short:         "Finish the active cycle",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -188,8 +188,8 @@ func newFinishCommand() *cobra.Command {
 func newContinueCommand() *cobra.Command {
 	var extra int
 	cmd := &cobra.Command{
-		Use:   "continue",
-		Short: "Grant extra iterations to an escalated stage",
+		Use:           "continue",
+		Short:         "Grant extra iterations to an escalated stage",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -206,8 +206,8 @@ func newContinueCommand() *cobra.Command {
 
 func newStageCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "stage",
-		Short: "Start or close a cycle stage",
+		Use:           "stage",
+		Short:         "Start or close a cycle stage",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -221,8 +221,8 @@ func newStageCommand() *cobra.Command {
 func newStageStartCommand() *cobra.Command {
 	var name string
 	cmd := &cobra.Command{
-		Use:   "start",
-		Short: "Mark a stage as Running (increments iteration)",
+		Use:           "start",
+		Short:         "Mark a stage as Running (increments iteration)",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -245,9 +245,9 @@ func newStageCloseCommand() *cobra.Command {
 	var name, summary, metricsJSON string
 	var failed bool
 	cmd := &cobra.Command{
-		Use:   "close",
-		Short: "Close a running stage (PendingApproval or Completed)",
-		Long:  `Close the running stage. When require_human_approval is false, completes and advances. When true, moves to PendingApproval for hero approve.`,
+		Use:           "close",
+		Short:         "Close a running stage (PendingApproval or Completed)",
+		Long:          `Close the running stage. When require_human_approval is false, completes and advances. When true, moves to PendingApproval for hero approve.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -271,8 +271,8 @@ func newStageCloseCommand() *cobra.Command {
 
 func newCycleCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "cycle",
-		Short: "Cycle lifecycle commands",
+		Use:           "cycle",
+		Short:         "Cycle lifecycle commands",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -353,9 +353,9 @@ Stages are imported from the current workflow-config.yml.`,
 
 func newCycleSyncConfigCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "sync-config",
-		Short: "Sync active cycle title/objective from workflow-config.yml",
-		Long:  `Updates the active cycle's title, objective, and config snapshot from .workflow-hero/cycles/current/workflow-config.yml. /hero-start runs this before orchestration.`,
+		Use:           "sync-config",
+		Short:         "Sync active cycle title/objective from workflow-config.yml",
+		Long:          `Updates the active cycle's title, objective, and config snapshot from .workflow-hero/cycles/current/workflow-config.yml. /hero-start runs this before orchestration.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -412,8 +412,8 @@ cycle folder. On OpenSpec failure, Hero archive is blocked unless --force or
 func newCycleResumeCommand() *cobra.Command {
 	var number int
 	cmd := &cobra.Command{
-		Use:   "resume",
-		Short: "Resume a paused/cancelled cycle",
+		Use:           "resume",
+		Short:         "Resume a paused/cancelled cycle",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
@@ -431,9 +431,9 @@ func newCycleResumeCommand() *cobra.Command {
 func newRunCommand() *cobra.Command {
 	var stage string
 	cmd := &cobra.Command{
-		Use:   "run",
-		Short: "Dispatch stage execution via the harness adapter",
-		Long:  `Best-effort Cursor dispatch. Falls back to chat guidance when push is unavailable.`,
+		Use:           "run",
+		Short:         "Dispatch stage execution via the harness adapter",
+		Long:          `Best-effort Cursor dispatch. Falls back to chat guidance when push is unavailable.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: withService(func(cmd *cobra.Command, svc *Service) error {

@@ -2,7 +2,7 @@
   ".cursor/agents/backend_agent.md": "5a874f72063c5621b21b91f0b396db7564b76dc2552865ba47d69180d6efa1e0",
   ".cursor/agents/browser_ui_agent.md": "6052857e3e5bbc3d28e187d8e169087045f6c7e9d34821acc38282ddbaa7397f",
   ".cursor/agents/context_agent.md": "13983cacc8d5975749d23b1748dc81a3b3f4b80399af25154ba8bebd2f0cbe8e",
-  ".cursor/agents/discover_agent.md": "aa4c6c97025f98d6d37caada6dd4fdb2f896d36e6262f734271994708a4f75f9",
+  ".cursor/agents/discover_agent.md": "1f5b95cd590c64fdf1f7b83845be7de4eeef53f25600499bc0668c2f448f1ada",
   ".cursor/agents/end2end_qa_agent.md": "0b3ceb5020a6e9ecd81d4548f5e435a4f4be8d3aa5d7f1528d127fe0273e4baf",
   ".cursor/agents/frontend_agent.md": "d327f48fce3cae8a7141b6ada1cc5df62111c453fd6bd91553b55202cbaa3219",
   ".cursor/agents/generic_agent.md": "a4798587da92509e87aec6c1bc0e274b55f07338eab81b2b154375a35af8bcff",
@@ -42,6 +42,6 @@
   ".workflow-hero/templates/env.example": "bc3bb496598c8d1071e4f42063335e09f2e02ff83f067458abb183d1c4765a20",
   ".workflow-hero/templates/gitignore-secrets": "330908c6fbc5a9290882df31749b63917aa13638390a2bb66587fc18ce6f00c0",
   ".workflow-hero/templates/metrics.md": "744d7d9d21eb4249b3c88954728d71b884844e3871102d7383cc8efc347d6f01",
-  ".workflow-hero/templates/workflow-config.yml": "676f740f068c8de90d8ff6b7706c5b0fc89aac0e488d510f6d4b16d3c965e94c",
+  ".workflow-hero/templates/workflow-config.yml": "5cbfa7d262bdc905594fbfcf9afbbd6e67426c082cd727afbe458abaf68f9e76",
   ".workflow-hero/templates/workflow.md": "6f0692b83d4811133ba7342d8003aedf0dab33ae82e06ff7c64ab692087b889b"
 }

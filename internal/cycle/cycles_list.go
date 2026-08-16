@@ -27,16 +27,16 @@ type CyclesView struct {
 
 // CycleEntry is one cycle with per-etapa metrics.
 type CycleEntry struct {
-	Number       int              `json:"number"`
-	Title        string           `json:"title"`
-	Status       string           `json:"status"`
-	ArchivedDate string           `json:"archivedDate,omitempty"`
-	Source       string           `json:"source"` // sqlite | archive
-	Stages       []CycleStageRow  `json:"stages"`
-	TotalIn      int64            `json:"totalInputTokens"`
-	TotalOut     int64            `json:"totalOutputTokens"`
-	TotalCost    float64          `json:"totalCostUSD"`
-	TotalTokens  int64            `json:"totalTokens"`
+	Number       int             `json:"number"`
+	Title        string          `json:"title"`
+	Status       string          `json:"status"`
+	ArchivedDate string          `json:"archivedDate,omitempty"`
+	Source       string          `json:"source"` // sqlite | archive
+	Stages       []CycleStageRow `json:"stages"`
+	TotalIn      int64           `json:"totalInputTokens"`
+	TotalOut     int64           `json:"totalOutputTokens"`
+	TotalCost    float64         `json:"totalCostUSD"`
+	TotalTokens  int64           `json:"totalTokens"`
 }
 
 // CycleStageRow is one etapa row in the cycles listing.
