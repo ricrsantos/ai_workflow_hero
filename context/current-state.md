@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **2.0.0**; **C4 completed** 2026-08-15 (`hero-2-0-multi-harness`, not archived). **C3 archived** (2026-08-09). No active cycle. |
+| **Phase** | Hero **2.0.0**; **C4 completed** 2026-08-15 (`hero-2-0-multi-harness`, not archived). **C5 Planning completed** 2026-08-17 (`model-properties-tui`; Implementation pending). **C3 archived** (2026-08-09). |
 
 ## Technology Stack
 
@@ -67,6 +67,7 @@
 - Template renderer + inventory / Runtime-semantics asset tests.
 - **`/hero-harness`** checkbox picker (space toggle, enter apply) with `(available)`/`(unavailable)` per harness and OpenCode projection on enable; **`/hero-model`** two-step picker (harness submenu, then live models for that harness; no invented `composer-2.5` default); Chat labels **`[LABEL - model · harness]`**; OpenCode HTTP adapter tests; `assets/opencode/` embedded in binary.
 - Embedded Runtime assets: Cursor + **OpenCode projection** (`assets/opencode/`); `models/*.yml` includes OpenCode-native `provider/model` ids for context bar lookup.
+- C5 Research complete: `/hero-model` model-property requirements are approved for TUI/native scope. The planned first keys are `fs` (fast), `th` (thinking), and `ef` (reasoning effort), with dynamic harness values, API-first discovery, project SQLite cache, local catalog fallback, per-harness/model persistence, adapter-owned execution mapping, and Chat status labels.
 - `scripts/release.sh` + contract test for artifact naming / platforms / checksums.
 - `scripts/build_dev.sh` for local cross-compiles without a release tag (version `<latest-tag>_<short-commit>`).
 - Integration tests for install/upgrade/uninstall/doctor against `t.TempDir()`.
@@ -78,11 +79,14 @@
 - **Windows CLI** — out of scope for Hero 2.0; planned for a future major (PRD §7; DEPLOY.md).
 - **CI/CD release automation and GPG-signed artifacts** — no GitHub Actions / GoReleaser pipeline in 2.0; manual `scripts/release.sh` only (ADR-010; PRD §7).
 - **Additional harness adapters** — Claude Code, Codex, VS Code, and other IDEs remain deferred; C4 ships **Cursor + OpenCode** in the TUI only (PRD §2.3; PRD-C04-001).
+- **C5 model properties** — implementation pending: dynamic capability discovery/cache, `hero.json` per-pair selections, property picker, execution transport, and active-property status line (PRD-C05-001; ADR-038–042; UI-C05-001).
 - **Post-1.0 deferred D2–D13** not covered by C4 — e.g. external integrations (D2), notification manager (D3), daemon/RPC `hero serve` (D7), full event bus (D8), rich TUI roadmap (D10) (PRD-C01-001 §4).
 
 ## Recent Decisions
 
 - **C4 closed (2026-08-15)**: Hero 2.0.0 multi-harness shipped in-tree (TUI Cursor+OpenCode, `--tools` gone, native model ids, OpenCode serve + HTTP API). Research→Judge complete; Browser UI / E2E skipped. Archive via `/hero-archive`.
+- **C5 Research (2026-08-17)**: Requirements confirmed for dynamic model properties in `/hero-model`. API metadata is preferred; persistent `hero.db` cache and `assets/models/*.yml` are fallbacks. `/hero-model` refreshes enabled harnesses in background without starting OpenCode at boot; choices persist per harness/model in `hero.json`; stage YAML remains authoritative for workflow agents.
+- **C5 Planning (2026-08-17)**: OpenSpec SDD `model-properties-tui` created with 19 delta requirements and 22 native `generic_agent` tasks. The hard spine is normalized contract → API/cache/catalog resolution → TUI picker/status → execution routing → integration; independent catalog, cache, JSON, adapter, picker, status, and regression tracks are marked parallel.
 - TUI Chat context bar: right side of the `↑↓ scroll response` line shows used/max tokens for the speaking model. Max from `context_window` in `assets/models/*.yml`; used from Cursor `result.usage` (input+output) at end of Execute. Bar omitted when the slug has no window. (2026-08-15).
 - TUI Chat: header `iter x/x` matches display stage names to slugs; `/hero-start` `SyncCycleConfig` updates still-open stage `max_iterations`/timeout/approval/enabled from YAML. Orchestrator Execute + input box use `agents.orchestration_agent` (then fallback_model, then `/hero-model`); `/hero-new` and freechat stay on `/hero-model`. Agents box `HARN` only for parent with no Hero agent; Task parse prefers named Hero agents over generic `subagent_type`. Amends ADR-030 §4 for orchestrator Execute. (2026-08-14).
 - TUI Research uses `agents.discover_agent` in workflow-config.yml (dedicated session + YAML `--model`). Cursor IDE chat still grills in the orchestrator session and ignores that block (comment on the YAML). Control slashes during Research still go to the orchestrator. (2026-08-14).
@@ -110,6 +114,7 @@
 ## Next Steps
 
 1. Archive C4 with `/hero-archive` when ready (OpenSpec `hero-2-0-multi-harness` first; folder date from store `completed_at`).
+2. Implement the approved C5 SDD `openspec/changes/model-properties-tui/` using the marked parallel groups, then run QA/Judge.
 
 ---
 

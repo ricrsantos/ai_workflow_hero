@@ -127,6 +127,30 @@
       "slug": "tui-multi-harness",
       "path": "docs/product/UI-C04-001-tui-multi-harness.md",
       "title": "TUI Multi-Harness (Cursor + OpenCode)"
+    },
+    {
+      "category": "PRD",
+      "cycle": "C05",
+      "seq": 1,
+      "slug": "model-properties-tui",
+      "path": "docs/product/PRD-C05-001-model-properties-tui.md",
+      "title": "Dynamic Model Properties in the Hero TUI"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C05",
+      "seq": 1,
+      "slug": "model-properties-tui",
+      "path": "docs/architecture/ADR-C05-001-model-properties-tui.md",
+      "title": "Dynamic Model Properties, Capability Discovery, and Cache"
+    },
+    {
+      "category": "UI",
+      "cycle": "C05",
+      "seq": 1,
+      "slug": "tui-model-properties",
+      "path": "docs/product/UI-C05-001-tui-model-properties.md",
+      "title": "TUI Model Property Selection and Status"
     }
   ]
 }

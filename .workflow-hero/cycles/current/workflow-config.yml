@@ -1,5 +1,5 @@
-title: V2 do Hero - Implementação de multi-harness
-objective: Implementar no Hero a capacidade de orquestrar multiplos Harnesses, inclusive alternando entre eles em um mesmo cliclo. As funcionalidades atuais devem ser mantidas, inclusive a funcionalidade através do Cursor IDE, sendo o Hero TUI a única forma de utilizar o Hero com Multi-Harness. Nesta primeira implementação, devem ser suportados os Harnesses Cursor e OpenCode.
+title: Implementação da seleção das propriedades dos modelos na TUI (fast, thinking, reasoning, etc.)
+objective: Implementar uma forma de selecionar as propriedades dos modelos na TUI do Hero. Por exemplo. quando seleciono o modelo opencode-go/deepseek-v4-pro, eu quero escolher as opções disponíveis para ele como reasoning, fast model, thinking, etc. Quando o usuário selecionar o modelo através do /hero-model, após selecionar o harness / modelo, deve abrir um submenu para selecionar as propriedades dos modelos quando elas existirem. As opções configuradas devem aparecer logo abaixo da caixa verde (resposta da LLM), ao lado das informações de scroll, etc. Devem ser exibidas de forma simples algo assim:[fast] [th-max] [ef-high], etc. Onde a primeira representa modo fast, a segunda thinking e a terceira efort. Quando a opção não estiver disponível no modelo, o label deve ficar cinza. Caso exista, deve ficar verde e dentro dos colchetes aparece o prefixo-valor selecionado, exemplo [ef-high], Com excessão do fast onde o label deve ficar cinza caso não exista o modo fast ou estiver desligado e deve ficar verde caso esteja ligado.Siga os padrões de cor do Hero.
 
 # Workflow-level preferences (chat language, etc.). Cycle artifacts stay English.
 workflow_config:
@@ -74,19 +74,20 @@ stages:
     use_playwright: false
 
 agents:
-  # Cursor IDE chat uses the session model you pick in the IDE (this block is
-  # ignored there). Hero TUI Execute for the orchestrator (/hero-start,
-  # /hero-approve, follow-ups, …) uses this model as the Cursor Agent CLI
-  # --model. Freechat and /hero-new still use /hero-model
-  # (hero.json → harnesses.<tool>.model). Named stage agents remain Runtime
-  # Task model resolution via the Task tool `model` parameter.
+  # Hero 2.0: every agent and fallback_model require `harness` (cursor | opencode)
+  # and a native `model` id for that harness:
+  #   Cursor IDE / Agent CLI: kebab slugs (composer-2.5, cursor-grok-4.6-high)
+  #   OpenCode: provider/model ids (anthropic/claude-sonnet-4, openai/gpt-5.3-codex)
+  # TUI freechat and /hero-new use /hero-model (freechat_default pair), not these blocks.
+  # Cursor IDE chat ignores orchestration_agent / discover_agent model blocks.
   orchestration_agent:
-    model: cursor-grok-4.6
-    reasoning_effort: high
+    harness: opencode
+    model: opencode-go/deepseek-v4-pro
+    reasoning_effort: max
     enable_fast_model: false
     thinking: na
     subagent:
-      same_of_agent: false
+      same_of_agent: true
       model: composer-2.5
       reasoning_effort: na
       enable_fast_model: false
@@ -96,20 +97,22 @@ agents:
   # model is ignored (the IDE session model is used). Hero TUI honors this block:
   # Research runs as a dedicated discover_agent session with this model.
   discover_agent:
-    model: cursor-grok-4.6
-    reasoning_effort: high
+    harness: opencode
+    model: opencode-go/gpt-5.6-luna
+    reasoning_effort: max
     enable_fast_model: false
     thinking: na
     subagent:
       same_of_agent: false
-      model: composer-2.5
-      reasoning_effort: na
+      model: opencode-go/deepseek-v4-pro
+      reasoning_effort: max
       enable_fast_model: false
       thinking: na
 
   planning_agent:
-    model: composer-2.5
-    reasoning_effort: na
+    harness: opencode
+    model: opencode-go/gpt-5.6-luna
+    reasoning_effort: max
     enable_fast_model: false
     thinking: na
     # Nested Task fan-out from this agent (not named Hero agents like context_agent).
@@ -122,7 +125,8 @@ agents:
       thinking: na
 
   context_agent:
-    model: composer-2.5
+    harness: opencode
+    model: opencode-go/kimi-k2.7-code
     reasoning_effort: na
     enable_fast_model: false
     thinking: na
@@ -134,32 +138,48 @@ agents:
       thinking: na
 
   backend_agent:
-    model: cursor-grok-4.6
-    reasoning_effort: high
+    harness: opencode
+    model: opencode-go/gpt-5.6-luna
+    reasoning_effort: max
     enable_fast_model: false
     thinking: na
     subagent:
       same_of_agent: false
-      model: composer-2.5
-      reasoning_effort: na
+      model: opencode-go/deepseek-v4-pro
+      reasoning_effort: max
       enable_fast_model: false
       thinking: na
 
   frontend_agent:
-    model: cursor-grok-4.6
-    reasoning_effort: high
+    harness: opencode
+    model: opencode-go/gpt-5.6-luna
+    reasoning_effort: max
     enable_fast_model: false
-    thinking: na
+    thinking: false
     subagent:
       same_of_agent: false
-      model: composer-2.5
-      reasoning_effort: na
+      model: opencode-go/deepseek-v4-pro
+      reasoning_effort: max
       enable_fast_model: false
       thinking: na
 
   generic_agent:
-    model: composer-2.5
-    reasoning_effort: high
+    harness: opencode
+    model: opencode-go/gpt-5.6-luna
+    reasoning_effort: max
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: false
+      model: opencode-go/deepseek-v4-pro
+      reasoning_effort: max
+      enable_fast_model: false
+      thinking: na
+
+  qa_agent:
+    harness: opencode
+    model: opencode-go/kimi-k2.7-code
+    reasoning_effort: na
     enable_fast_model: false
     thinking: na
     subagent:
@@ -169,21 +189,10 @@ agents:
       enable_fast_model: false
       thinking: na
 
-  qa_agent:
-    model: cursor-grok-4.6
-    reasoning_effort: high
-    enable_fast_model: false
-    thinking: na
-    subagent:
-      same_of_agent: false
-      model: composer-2.5
-      reasoning_effort: na
-      enable_fast_model: false
-      thinking: na
-
   judge_agent:
-    model: composer-2.5
-    reasoning_effort: na
+    harness: opencode
+    model:  opencode-go/deepseek-v4-pro
+    reasoning_effort: max
     enable_fast_model: false
     thinking: false
     subagent:
@@ -194,24 +203,26 @@ agents:
       thinking: na
 
   browser_ui_agent:
-    model: cursor-grok-4.6
-    reasoning_effort: high
+    harness: opencode
+    model:  opencode-go/deepseek-v4-pro
+    reasoning_effort: max
     enable_fast_model: false
-    thinking: na
+    thinking: false
     subagent:
-      same_of_agent: false
+      same_of_agent: true
       model: composer-2.5
       reasoning_effort: na
       enable_fast_model: false
       thinking: na
 
   end2end_qa_agent:
-    model: cursor-grok-4.6
-    reasoning_effort: high
+    harness: opencode
+    model: opencode-go/kimi-k2.7-code
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: na
+    thinking: false
     subagent:
-      same_of_agent: false
+      same_of_agent: true
       model: composer-2.5
       reasoning_effort: na
       enable_fast_model: false
@@ -220,8 +231,9 @@ agents:
 # Fallback model used when an agent's configured model is unavailable.
 # The user is always warned explicitly when this fallback is used.
 fallback_model:
-  model: composer-2.5
-  reasoning_effort: na
+  harness: opencode
+  model:  opencode-go/deepseek-v4-pro
+  reasoning_effort: max
   enable_fast_model: false
   thinking: na
 

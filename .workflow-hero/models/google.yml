@@ -17,3 +17,10 @@ models:
     cache_read: 0.01875
     output: 0.30
     context_window: 1000000
+  # OpenCode-native provider/model ids (PRD-C04-001 §4.10)
+  google/gemini-3.1-pro:
+    input: 1.25
+    cache_write: 0.00
+    cache_read: 0.3125
+    output: 5.00
+    context_window: 1000000

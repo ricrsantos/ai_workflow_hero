@@ -77,3 +77,17 @@ _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+E
 **Exceptions**:
 - `hero stage start --name configuration` → "not found": the SQLite store tracks only Research→E2E, no Configuration row. Configuration metrics will be folded into the Research close as a multi-entry metrics-json array (entry 1: configuration/orchestration_agent, entry 2: research/discover_agent).
 - No pricing entry for `opencode-go/deepseek-v4-pro` (or any opencode-go id) in `.workflow-hero/models/`; `hero update-models` upstream ships no `opencode.yml`. Cost for orchestration-stage models is recorded as 0.00 pending catalog availability (tokens/duration still recorded).
+
+---
+
+## 2026-08-17 — C5 Research completed (dynamic model properties)
+
+**Problem**: The TUI `/hero-model` flow selected only a harness/model pair, leaving model-specific fast, thinking, and reasoning-effort properties implicit and invisible in Chat.
+
+**Decision / Outcome**: Requirements confirmed and documented in PRD-C05-001, ADR-C05-001 (ADR-038–042), and UI-C05-001. C5 will support `fs`, `th`, and `ef` with dynamic values obtained from an optional harness capability API, a project-scoped `hero.db` cache, or `assets/models/*.yml`. `/hero-model` refreshes enabled harnesses in background without OpenCode boot preloading; choices persist by harness/model in `hero.json`; adapters own API mapping and rejected properties fail explicitly; workflow agent YAML remains authoritative during stages. Planning is pending.
+
+---
+
+## 2026-08-17 — C5 Planning completed (model properties TUI)
+
+**Decision / Outcome**: Created OpenSpec change `model-properties-tui` under `openspec/changes/model-properties-tui/`. The SDD defines 19 normalized/cache/persistence/TUI/adapter/workflow requirements and 22 independently testable native tasks. Catalog, SQLite, hero.json, adapter, and workflow-contract tracks can run in parallel after the shared contract; TUI picker/status tracks can run in parallel after state integration. The active cycle stores the OpenSpec slug for archive coupling.

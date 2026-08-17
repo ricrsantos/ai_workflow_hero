@@ -1,6 +1,6 @@
 # PRD — AI Workflow Hero (Hero) CLI & Runtime
 
-> Product Requirements Document index. Baseline (0.9.x / pre-1.0 chat Runtime): design notes and grilling 2026-07-20. **Hero 1.0** requirements: [PRD-C01-001-hero-1-0.md](PRD-C01-001-hero-1-0.md) (cycle C1). **C2** slash/TUI/archive delta: [PRD-C02-001-slash-parity-tui-harness.md](PRD-C02-001-slash-parity-tui-harness.md). **C3** Cursor harness autonomy: [PRD-C03-001-cursor-harness-tui-autonomy.md](PRD-C03-001-cursor-harness-tui-autonomy.md). **C4** multi-harness (Hero 2.0.0): [PRD-C04-001-multi-harness.md](PRD-C04-001-multi-harness.md).
+> Product Requirements Document index. Baseline (0.9.x / pre-1.0 chat Runtime): design notes and grilling 2026-07-20. **Hero 1.0** requirements: [PRD-C01-001-hero-1-0.md](PRD-C01-001-hero-1-0.md) (cycle C1). **C2** slash/TUI/archive delta: [PRD-C02-001-slash-parity-tui-harness.md](PRD-C02-001-slash-parity-tui-harness.md). **C3** Cursor harness autonomy: [PRD-C03-001-cursor-harness-tui-autonomy.md](PRD-C03-001-cursor-harness-tui-autonomy.md). **C4** multi-harness (Hero 2.0.0): [PRD-C04-001-multi-harness.md](PRD-C04-001-multi-harness.md). **C5** dynamic model properties: [PRD-C05-001-model-properties-tui.md](PRD-C05-001-model-properties-tui.md).
 
 ## Cycle PRDs
 
@@ -10,6 +10,7 @@
 | [PRD-C02-001-slash-parity-tui-harness.md](PRD-C02-001-slash-parity-tui-harness.md) | C2 | Slash-first UX parity, TUI imported Cursor commands (md expansion), harness detection warnings, OpenSpec-coupled archive |
 | [PRD-C03-001-cursor-harness-tui-autonomy.md](PRD-C03-001-cursor-harness-tui-autonomy.md) | C3 | Cursor HarnessAdapter via CLI, autonomous TUI, `/hero-<name>` vocabulary, hero-cycles/todos, extended hero-sync |
 | [PRD-C04-001-multi-harness.md](PRD-C04-001-multi-harness.md) | C4 | Hero 2.0.0: TUI multi-harness (Cursor + OpenCode), native model ids, `/hero-harness`, managed `opencode serve` |
+| [PRD-C05-001-model-properties-tui.md](PRD-C05-001-model-properties-tui.md) | C5 | Dynamic model properties, API-first capabilities, project cache, per-model persistence, and TUI status |
 
 ## 1. Overview
 

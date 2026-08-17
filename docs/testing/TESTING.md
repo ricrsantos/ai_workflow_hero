@@ -15,6 +15,8 @@ Run from the repository root after any code change. All tests must pass before m
 - **Unit tests**: colocated `*_test.go` in each `internal/<feature>/` package; same package; test behavior, not implementation details.
 - **Golden tests**: template rendering and asset output fixtures.
 - **Integration tests**: compiled `hero` binary against `t.TempDir()` for `install`, `upgrade`, `uninstall`, and `doctor`. Cover install without `--tools`, `--tools` error, 1.x-style upgrade leaving OpenCode disabled, and OpenCode projection on enable.
+- **Model capability tests**: API-first model/capability discovery, adapter normalization, SQLite cache persistence, stale-cache fallback, local catalog fallback, dynamic value replacement, per-harness/model property persistence, and explicit harness rejection.
+- **TUI property tests**: `/hero-model` background refresh, immediate cache/catalog rendering, boolean and multi-value property pickers, `ENTER to save`, Escape cancellation, gray unavailable labels, green configured labels, warning clearing, and responsive property-line rendering.
 - **Dependencies**: prefer real filesystem and `embed.FS` over mocks; keep tests deterministic and fast.
 
 ## Coverage areas
@@ -25,6 +27,7 @@ Run from the repository root after any code change. All tests must pass before m
 | Doctor / status | `internal/doctor`, `internal/status` |
 | Cycle / store / engine | `internal/cycle`, `internal/store`, `internal/engine` |
 | TUI / harness | `internal/tui`, `internal/harness`, `internal/adapters/cursor`, `internal/adapters/opencode` |
+| Model properties / metadata cache | `internal/tui`, `internal/harness`, `internal/harnessmgr`, `internal/store`, `internal/adapters/cursor`, `internal/adapters/opencode`, `assets/models/` |
 | Templates / assets | `internal/common/template`, `assets/` |
 | Release contract | `scripts/release_test.go` |
 

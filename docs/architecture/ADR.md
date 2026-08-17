@@ -1,6 +1,6 @@
 # Architecture Decision Records — AI Workflow Hero
 
-> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md). **C3 ADRs (024–030):** [ADR-C03-001-cursor-harness-tui-autonomy.md](ADR-C03-001-cursor-harness-tui-autonomy.md). **C4 ADRs (031–037):** [ADR-C04-001-multi-harness.md](ADR-C04-001-multi-harness.md).
+> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md). **C3 ADRs (024–030):** [ADR-C03-001-cursor-harness-tui-autonomy.md](ADR-C03-001-cursor-harness-tui-autonomy.md). **C4 ADRs (031–037):** [ADR-C04-001-multi-harness.md](ADR-C04-001-multi-harness.md). **C5 ADRs (038–042):** [ADR-C05-001-model-properties-tui.md](ADR-C05-001-model-properties-tui.md).
 >
 > **Architecture overview** (high-level diagrams and package map; non-normative): [architecture-overview.md](architecture-overview.md).
 
@@ -43,6 +43,11 @@
 | [ADR-035](ADR-C04-001-multi-harness.md#adr-035-opencode-via-hero-managed-serve--http-api-project-sqlite-registry) | OpenCode via Hero-managed serve + HTTP API; project SQLite registry | Accepted |
 | [ADR-036](ADR-C04-001-multi-harness.md#adr-036-single-asset-source-projections-enable-provisions-disable-keeps-files) | Single asset source; projections; enable provisions; disable keeps files | Accepted |
 | [ADR-037](ADR-C04-001-multi-harness.md#adr-037-hero-harness-and-hero-model-pair-chat-shows-harness) | `/hero-harness` and `/hero-model` pair; Chat shows harness | Accepted |
+| [ADR-038](ADR-C05-001-model-properties-tui.md#adr-038-optional-capability-discovery-and-normalization) | Optional capability discovery and normalization | Accepted |
+| [ADR-039](ADR-C05-001-model-properties-tui.md#adr-039-api-first-metadata-with-project-cache-and-local-fallback) | API-first metadata with project cache and local fallback | Accepted |
+| [ADR-040](ADR-C05-001-model-properties-tui.md#adr-040-per-harnessmodel-property-persistence-in-herojson) | Per-harness/model property persistence in `hero.json` | Accepted |
+| [ADR-041](ADR-C05-001-model-properties-tui.md#adr-041-adapter-owned-property-transport-and-explicit-rejection) | Adapter-owned property transport and explicit rejection | Accepted |
+| [ADR-042](ADR-C05-001-model-properties-tui.md#adr-042-tui-picker-and-effective-property-projection) | TUI picker and effective-property projection | Accepted |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 

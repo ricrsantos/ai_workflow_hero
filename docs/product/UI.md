@@ -1,6 +1,6 @@
 # UI Spec — Hero CLI Terminal UX
 
-> "UI" for Hero means the terminal user experience of the `hero` CLI, plus the shared visual conventions also used by agents in the Runtime (chat). Baseline (0.9.x): grilling 2026-07-20. **Hero 1.0 TUI + CLI query UX:** [UI-C01-001-hero-tui.md](UI-C01-001-hero-tui.md). **C2 slash/TUI command parity:** [UI-C02-001-tui-slash-command-parity.md](UI-C02-001-tui-slash-command-parity.md). **C3 TUI harness autonomy:** [UI-C03-001-tui-harness-autonomy.md](UI-C03-001-tui-harness-autonomy.md). **C4 multi-harness:** [UI-C04-001-tui-multi-harness.md](UI-C04-001-tui-multi-harness.md).
+> "UI" for Hero means the terminal user experience of the `hero` CLI, plus the shared visual conventions also used by agents in the Runtime (chat). Baseline (0.9.x): grilling 2026-07-20. **Hero 1.0 TUI + CLI query UX:** [UI-C01-001-hero-tui.md](UI-C01-001-hero-tui.md). **C2 slash/TUI command parity:** [UI-C02-001-tui-slash-command-parity.md](UI-C02-001-tui-slash-command-parity.md). **C3 TUI harness autonomy:** [UI-C03-001-tui-harness-autonomy.md](UI-C03-001-tui-harness-autonomy.md). **C4 multi-harness:** [UI-C04-001-tui-multi-harness.md](UI-C04-001-tui-multi-harness.md). **C5 model properties:** [UI-C05-001-tui-model-properties.md](UI-C05-001-tui-model-properties.md).
 
 ## Cycle UI specs
 
@@ -10,6 +10,7 @@
 | [UI-C02-001-tui-slash-command-parity.md](UI-C02-001-tui-slash-command-parity.md) | C2 | `/hero:*` TUI labels, imported Cursor commands, archive force UX, harness doctor warnings |
 | [UI-C03-001-tui-harness-autonomy.md](UI-C03-001-tui-harness-autonomy.md) | C3 | Autonomous TUI Chat, hyphen slashes, `/hero-model`, speaker labels |
 | [UI-C04-001-tui-multi-harness.md](UI-C04-001-tui-multi-harness.md) | C4 | Install harness picker, `/hero-harness`, `/hero-model` pair, Chat shows harness |
+| [UI-C05-001-tui-model-properties.md](UI-C05-001-tui-model-properties.md) | C5 | Dynamic property picker, save/cancel flow, warnings, and active-property line |
 
 ## 1. Scope
 

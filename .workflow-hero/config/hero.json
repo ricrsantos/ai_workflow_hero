@@ -12,8 +12,18 @@
   },
   "harnesses": {
     "cursor": {
+      "enabled": true,
       "model": "composer-2.5",
       "enable_fast_model": false
+    },
+    "opencode": {
+      "enabled": true,
+      "model": "opencode-go/deepseek-v4-pro",
+      "enable_fast_model": false
     }
+  },
+  "freechat_default": {
+    "harness": "opencode",
+    "model": "opencode-go/deepseek-v4-pro"
   }
 }
