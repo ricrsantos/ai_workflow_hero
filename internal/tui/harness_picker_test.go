@@ -27,6 +27,45 @@ func writeHeroJSON(t *testing.T, dir string, body []byte) {
 	}
 }
 
+func paletteIndexByLabel(items []tui.PaletteItemView, label string) int {
+	for i, item := range items {
+		if strings.EqualFold(item.Label, label) {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestHarnessPickerCheckboxesShowAvailability(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}}
+}
+`))
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	if !tui.PickingHarnessForTest(next) {
+		t.Fatal("expected harness picker")
+	}
+	view := tui.ViewForTest(next)
+	if !strings.Contains(view, "[x] Cursor") || !strings.Contains(view, "[ ] OpenCode") {
+		t.Fatalf("missing checkboxes: %q", view)
+	}
+	if !strings.Contains(view, "Cursor (") || !strings.Contains(view, "OpenCode (") {
+		t.Fatalf("missing availability parens: %q", view)
+	}
+	if !strings.Contains(view, "available") && !strings.Contains(view, "unavailable") {
+		t.Fatalf("missing availability label: %q", view)
+	}
+	if !strings.Contains(view, "space toggle") {
+		t.Fatalf("missing checkbox hint: %q", view)
+	}
+}
+
 func TestHarnessPickerEnableOpenCodeSuccessLine(t *testing.T) {
 	dir := t.TempDir()
 	writeHeroJSON(t, dir, []byte(`{
@@ -39,23 +78,21 @@ func TestHarnessPickerEnableOpenCodeSuccessLine(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 
-	m := tui.NewTestModel(svc)
-	next, _ := tui.RunPaletteItemForTest(m, "/hero-harness")
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
 	if !tui.PickingHarnessForTest(next) {
 		t.Fatal("expected harness picker")
 	}
 	items := tui.FilteredPalette(next)
-	var idx int = -1
-	for i, item := range items {
-		if strings.EqualFold(item.Label, "OpenCode") {
-			idx = i
-			break
-		}
-	}
+	idx := paletteIndexByLabel(items, "OpenCode")
 	if idx < 0 {
 		t.Fatalf("items=%v", items)
 	}
 	next = tui.SetPaletteIndexForTest(next, idx)
+	next, _ = tui.HandleTestKey(next, " ")
+	view := tui.ViewForTest(next)
+	if !strings.Contains(view, "[x] OpenCode") {
+		t.Fatalf("space should check OpenCode: %q", view)
+	}
 	next, _ = tui.HandleTestKey(next, "enter")
 	if tui.StatusKindForTest(next) != "ok" {
 		t.Fatalf("status=%s text=%q", tui.StatusKindForTest(next), tui.StatusTextForTest(next))
@@ -95,17 +132,11 @@ func TestHarnessPickerDisableSuccessLine(t *testing.T) {
 	})
 	t.Cleanup(func() { tui.SetStopOpenCodeServeFnForTest(prev) })
 
-	m := tui.NewTestModel(svc)
-	next, _ := tui.RunPaletteItemForTest(m, "/hero-harness")
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
 	items := tui.FilteredPalette(next)
-	idx := -1
-	for i, item := range items {
-		if strings.EqualFold(item.Label, "OpenCode") {
-			idx = i
-			break
-		}
-	}
+	idx := paletteIndexByLabel(items, "OpenCode")
 	next = tui.SetPaletteIndexForTest(next, idx)
+	next, _ = tui.HandleTestKey(next, " ")
 	next, _ = tui.HandleTestKey(next, "enter")
 	if !strings.Contains(tui.StatusTextForTest(next), "OpenCode disabled (files kept)") {
 		t.Fatalf("text=%q", tui.StatusTextForTest(next))
@@ -127,22 +158,19 @@ func TestHarnessPickerLastHarnessError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 
-	m := tui.NewTestModel(svc)
-	next, _ := tui.RunPaletteItemForTest(m, "/hero-harness")
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
 	items := tui.FilteredPalette(next)
-	idx := -1
-	for i, item := range items {
-		if strings.EqualFold(item.Label, "Cursor") {
-			idx = i
-			break
-		}
-	}
+	idx := paletteIndexByLabel(items, "Cursor")
 	next = tui.SetPaletteIndexForTest(next, idx)
+	next, _ = tui.HandleTestKey(next, " ")
 	next, _ = tui.HandleTestKey(next, "enter")
 	if tui.StatusKindForTest(next) != "err" {
 		t.Fatalf("status=%s", tui.StatusKindForTest(next))
 	}
-	if !strings.Contains(tui.StatusTextForTest(next), "Cannot disable the last enabled harness") {
+	if !strings.Contains(tui.StatusTextForTest(next), "Select at least one harness") {
 		t.Fatalf("text=%q", tui.StatusTextForTest(next))
+	}
+	if !tui.PickingHarnessForTest(next) {
+		t.Fatal("picker should stay open after empty selection")
 	}
 }

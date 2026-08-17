@@ -116,10 +116,11 @@ func TestExecuteStreamAndCancelHTTP(t *testing.T) {
 		case "/session/sess-2/prompt_async":
 			w.WriteHeader(http.StatusAccepted)
 		case "/event":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"part":{"type":"text","text":"chunk"}}
-{"type":"message.done","sessionID":"sess-2"}
-`)
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"type\":\"message.part.updated\",\"properties\":{\"sessionID\":\"sess-2\",\"part\":{\"id\":\"prt-user\",\"type\":\"text\",\"text\":\"user question\",\"messageID\":\"msg-user\"}}}\n\n")
+			_, _ = io.WriteString(w, "data: {\"type\":\"message.updated\",\"properties\":{\"sessionID\":\"sess-2\",\"info\":{\"id\":\"msg-asst\",\"role\":\"assistant\"}}}\n\n")
+			_, _ = io.WriteString(w, "data: {\"type\":\"message.part.updated\",\"properties\":{\"sessionID\":\"sess-2\",\"part\":{\"id\":\"prt-1\",\"type\":\"text\",\"text\":\"chunk\",\"messageID\":\"msg-asst\"}}}\n\n")
+			_, _ = io.WriteString(w, "data: {\"type\":\"session.idle\",\"properties\":{\"sessionID\":\"sess-2\"}}\n\n")
 		case "/session/sess-2/abort":
 			w.WriteHeader(http.StatusOK)
 		default:
@@ -149,8 +150,63 @@ func TestExecuteStreamAndCancelHTTP(t *testing.T) {
 	if !strings.Contains(res.Output, "chunk") {
 		t.Fatalf("output=%q deltas=%v", res.Output, deltas)
 	}
+	if strings.Contains(res.Output, "user question") {
+		t.Fatalf("user prompt leaked into output: %q", res.Output)
+	}
 	if err := a.Cancel(context.Background(), "sess-2"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestListModelsHTTP_ObjectShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/config/providers" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`{
+  "providers": [
+    {
+      "id": "anthropic",
+      "models": {
+        "claude-sonnet-4": { "name": "Claude Sonnet 4" },
+        "claude-opus-4": { "name": "Claude Opus 4" }
+      }
+    },
+    {
+      "id": "xai",
+      "models": {
+        "grok-4": { "name": "Grok 4" }
+      }
+    }
+  ],
+  "default": { "anthropic": "claude-sonnet-4" }
+}`))
+	}))
+	defer srv.Close()
+
+	a := NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "opencode", nil }
+	a.Runner = &stubRunner{}
+	a.HTTP = srv.Client()
+	a.ResolveServeURL = func(ProcessHandle) (string, int, error) { return srv.URL, 1, nil }
+
+	models, err := a.ListModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"anthropic/claude-sonnet-4": true,
+		"anthropic/claude-opus-4":   true,
+		"xai/grok-4":                true,
+	}
+	if len(models) != len(want) {
+		t.Fatalf("models=%v", models)
+	}
+	for _, m := range models {
+		if !want[m] {
+			t.Fatalf("unexpected model %q in %v", m, models)
+		}
 	}
 }
 
@@ -161,7 +217,7 @@ func TestListModelsHTTP(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(providersResponse{Providers: []providerEntry{
-			{ID: "anthropic", Models: []modelEntry{{ID: "claude-sonnet-4"}}},
+			{ID: "anthropic", Models: map[string]modelMeta{"claude-sonnet-4": {}}},
 		}})
 	}))
 	defer srv.Close()

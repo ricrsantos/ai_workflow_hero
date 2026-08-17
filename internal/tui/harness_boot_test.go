@@ -41,7 +41,7 @@ func TestBootHarness_EnabledCursorNoPrompt(t *testing.T) {
 	if prompted {
 		t.Fatal("expected no prompt when harness enabled")
 	}
-	if result.HarnessID == "" || result.ModelSlug == "" {
+	if result.HarnessID == "" {
 		t.Fatalf("result=%+v", result)
 	}
 }
@@ -86,6 +86,65 @@ func TestBootHarness_WarnsWhenUnavailable(t *testing.T) {
 	}
 	if len(result.AvailWarnings) == 0 {
 		t.Fatal("expected availability warning")
+	}
+}
+
+func TestBootHarness_OpenCodeDefaultNotFalseCatalogWarn(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hero := install.HeroJSON{
+		CLI:       install.CLIInfo{Version: "2.0.0", Tools: []string{"cursor", "opencode"}},
+		Assets:    install.AssetsInfo{Version: "2.0.0"},
+		Harnesses: install.HarnessesFromSelection([]string{"cursor", "opencode"}),
+		FreechatDefault: install.FreechatDefault{
+			Harness: "opencode",
+			Model:   "opencode-go/glm-5.3",
+		},
+	}
+	data, err := json.MarshalIndent(hero, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	deps := defaultHarnessBootDeps()
+	deps.newRegistry = func(projectDir string, st *store.Store) harnessmgr.Registry {
+		return &bootRegistry{adapter: &bootOKHarness{}}
+	}
+	deps.listModels = func(ctx context.Context, reg harnessmgr.Registry, hero install.HeroJSON) ([]harnessmgr.ModelOption, error) {
+		return []harnessmgr.ModelOption{{Model: "composer-2.5", Harness: "cursor"}}, nil
+	}
+	deps.openStore = func(projectDir string) (*store.Store, error) {
+		return store.OpenProject(projectDir)
+	}
+
+	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ModelWarn != "" {
+		t.Fatalf("unexpected model warn for opencode default: %q", result.ModelWarn)
+	}
+	if result.ModelSlug != "opencode-go/glm-5.3" || result.HarnessID != "opencode" {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestValidateBootDefaultModel(t *testing.T) {
+	catalog := []harnessmgr.ModelOption{{Model: "composer-2.5", Harness: "cursor"}}
+	if got := validateBootDefaultModel("cursor", "composer-2.5", catalog); got != "" {
+		t.Fatalf("valid cursor pair: %q", got)
+	}
+	if got := validateBootDefaultModel("cursor", "missing", catalog); got == "" {
+		t.Fatal("expected warn for missing cursor model")
+	}
+	if got := validateBootDefaultModel("opencode", "opencode-go/glm-5.3", catalog); got != "" {
+		t.Fatalf("opencode default must not validate against cursor-only catalog: %q", got)
 	}
 }
 

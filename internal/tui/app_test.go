@@ -14,6 +14,7 @@ import (
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 )
 
 func TestCanLaunch_RefusesNO_COLOR(t *testing.T) {
@@ -89,10 +90,11 @@ func TestPaletteFilter(t *testing.T) {
 func TestHeroPaletteSlashLabels(t *testing.T) {
 	m := NewTestModel(nil)
 	want := []string{
+		"/new-chat",
 		"/hero-new", "/hero-start", "/hero-sync", "/hero-status",
 		"/hero-approve", "/hero-reject", "/hero-continue", "/hero-back",
 		"/hero-cancel", "/hero-finish", "/hero-archive", "/hero-resume",
-		"/hero-cycles", "/hero-todos", "/hero-model", "/hero-help",
+		"/hero-cycles", "/hero-todos", "/hero-model", "/hero-harness", "/hero-help",
 	}
 	labels := map[string]bool{}
 	for _, item := range PaletteItemsForTest(m) {
@@ -824,7 +826,10 @@ func TestHeroModelPickerSelectsAndPersists(t *testing.T) {
 	hero := []byte(`{
   "cli": {"version": "1.0.0", "installedAt": "2026-01-01T00:00:00Z", "tools": ["cursor"]},
   "assets": {"version": "1.0.0", "installedAt": "2026-01-01T00:00:00Z"},
-  "harnesses": {"cursor": {"model": "composer-2.5", "enable_fast_model": false}}
+  "harnesses": {
+    "cursor": {"enabled": true, "model": "", "enable_fast_model": false},
+    "opencode": {"enabled": true}
+  }
 }
 `)
 	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), hero, 0o644); err != nil {
@@ -851,15 +856,32 @@ stages:
 	t.Cleanup(func() { _ = svc.Close() })
 
 	m := NewTestModel(svc)
+	if ChatModelSlugForTest(m) != "" {
+		t.Fatalf("must not auto-select a default model, got %q", ChatModelSlugForTest(m))
+	}
 	m = SetAvailableModelsForTest(m, []string{"composer-2.5", "cursor-grok-4.5-high"})
-	m = SetChatModelSlugForTest(m, "composer-2.5")
 	next, _ := RunPaletteItemForTest(m, "/hero-model")
 	if !PickingModelForTest(next) {
 		t.Fatal("expected model picker open")
 	}
+	if ModelPickerHarnessForTest(next) != "" {
+		t.Fatal("expected harness submenu first")
+	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "Default model for freechat") || !strings.Contains(view, "cursor-grok-4.5-high") {
-		t.Fatalf("picker view=%q", view)
+	if !strings.Contains(view, "/hero-model · select harness") || !strings.Contains(view, "Cursor") || !strings.Contains(view, "OpenCode") {
+		t.Fatalf("harness submenu view=%q", view)
+	}
+	if strings.Contains(view, "cursor-grok-4.5-high") {
+		t.Fatalf("models must not appear before harness select: %q", view)
+	}
+	next = SetPaletteIndexForTest(next, 0)
+	next, _ = HandleTestKey(next, "enter")
+	if ModelPickerHarnessForTest(next) != "cursor" {
+		t.Fatalf("harness=%q", ModelPickerHarnessForTest(next))
+	}
+	view = ViewForTest(next)
+	if !strings.Contains(view, "/hero-model · Cursor") || !strings.Contains(view, "cursor-grok-4.5-high") {
+		t.Fatalf("model list view=%q", view)
 	}
 	next = SetPaletteFilter(next, "grok")
 	items := FilteredPalette(next)
@@ -871,6 +893,9 @@ stages:
 	if PickingModelForTest(next) {
 		t.Fatal("picker should close after select")
 	}
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation after model select", CurrentScreen(next))
+	}
 	data, err := os.ReadFile(filepath.Join(cfgDir, "hero.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -880,5 +905,149 @@ stages:
 	}
 	if StatusKindForTest(next) != "ok" {
 		t.Fatalf("status=%s", StatusKindForTest(next))
+	}
+}
+
+func TestHeroModelPickerFromSlashMenuReturnsToChat(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hero := []byte(`{
+  "harnesses": {
+    "cursor": {"enabled": true, "model": "", "enable_fast_model": false},
+    "opencode": {"enabled": true}
+  }
+}
+`)
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), hero, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".workflow-hero", "cycles", "current"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".workflow-hero", "cycles", "current", "workflow-config.yml"), []byte("title: t\nobjective: t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	m := NewTestModel(svc)
+	m = SetAvailableModelsForTest(m, []string{"composer-2.5", "cursor-grok-4.5-high"})
+	m = OpenPalette(m)
+	if CurrentScreen(m) != ScreenPalette {
+		t.Fatalf("screen=%v", CurrentScreen(m))
+	}
+	next, _ := RunPaletteItemForTest(m, "/hero-model")
+	next = SetPaletteIndexForTest(next, 0)
+	next, _ = HandleTestKey(next, "enter")
+	next = SetPaletteIndexForTest(next, 0)
+	next, _ = HandleTestKey(next, "enter")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatalf("screen=%v want chat after selecting model from slash menu", CurrentScreen(next))
+	}
+	if PickingModelForTest(next) {
+		t.Fatal("model picker should be closed")
+	}
+}
+
+func TestHeroModelPickerSkipsHarnessWhenOnlyOneEnabled(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hero := []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}}
+}
+`)
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), hero, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".workflow-hero", "cycles", "current"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".workflow-hero", "cycles", "current", "workflow-config.yml"), []byte("title: t\nobjective: t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	m := NewTestModel(svc)
+	m = SetAvailableModelsForTest(m, []string{"composer-2.5"})
+	next, _ := RunPaletteItemForTest(m, "/hero-model")
+	if ModelPickerHarnessForTest(next) != "cursor" {
+		t.Fatalf("harness=%q want cursor (skip submenu)", ModelPickerHarnessForTest(next))
+	}
+	view := ViewForTest(next)
+	if strings.Contains(view, "OpenCode") {
+		t.Fatalf("disabled harness should not appear: %q", view)
+	}
+}
+
+func TestHeroModelPickerListsOpenCodeModels(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hero := []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": true}}
+}
+`)
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), hero, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".workflow-hero", "cycles", "current"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".workflow-hero", "cycles", "current", "workflow-config.yml"), []byte("title: t\nobjective: t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	m := NewTestModel(svc)
+	m = SetModelOptionsForTest(m, []harnessmgr.ModelOption{
+		{Model: "composer-2.5", Harness: "cursor"},
+		{Model: "anthropic/claude-sonnet-4", Harness: "opencode"},
+		{Model: "xai/grok-4", Harness: "opencode"},
+	})
+	next, _ := RunPaletteItemForTest(m, "/hero-model")
+	items := FilteredPalette(next)
+	idx := -1
+	for i, item := range items {
+		if item.Label == "OpenCode" {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("items=%v", items)
+	}
+	next = SetPaletteIndexForTest(next, idx)
+	next, _ = HandleTestKey(next, "enter")
+	if ModelPickerHarnessForTest(next) != "opencode" {
+		t.Fatalf("harness=%q", ModelPickerHarnessForTest(next))
+	}
+	view := ViewForTest(next)
+	if !strings.Contains(view, "/hero-model · OpenCode") {
+		t.Fatalf("title=%q", view)
+	}
+	if !strings.Contains(view, "anthropic/claude-sonnet-4") || !strings.Contains(view, "xai/grok-4") {
+		t.Fatalf("missing OpenCode models: %q", view)
+	}
+	if strings.Contains(view, "composer-2.5") {
+		t.Fatalf("cursor models leaked into OpenCode list: %q", view)
 	}
 }

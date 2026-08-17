@@ -116,19 +116,7 @@ func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir strin
 	if listErr != nil {
 		slog.Warn("harness boot list models failed", "error", listErr)
 	}
-	modelWarn := ""
-	if m != "" && len(models) > 0 {
-		found := false
-		for _, opt := range models {
-			if opt.Model == m && opt.Harness == h {
-				found = true
-				break
-			}
-		}
-		if !found {
-			modelWarn = fmt.Sprintf("configured model %q not in harness catalog", m)
-		}
-	}
+	modelWarn := validateBootDefaultModel(h, m, models)
 
 	slog.Info("harness boot ready", "enabled", enabled, "default_harness", h, "models", len(models))
 	return harnessBootResult{
@@ -288,6 +276,29 @@ func harnessDisplayName(toolID string) string {
 
 func readHeroJSON(projectDir string) (install.HeroJSON, error) {
 	return install.LoadHeroJSON(projectDir)
+}
+
+// validateBootDefaultModel checks the persisted freechat pair against the boot-time catalog.
+// Aggregate ListModels skips OpenCode so boot does not start opencode serve (UI-C04-001 §7);
+// OpenCode defaults are validated on demand via /hero-model and first Execute.
+func validateBootDefaultModel(harnessID, model string, catalog []harnessmgr.ModelOption) string {
+	model = strings.TrimSpace(model)
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	if model == "" || harnessID == "" {
+		return ""
+	}
+	if harnessID == "opencode" {
+		return ""
+	}
+	if len(catalog) == 0 {
+		return ""
+	}
+	for _, opt := range catalog {
+		if opt.Model == model && strings.EqualFold(opt.Harness, harnessID) {
+			return ""
+		}
+	}
+	return fmt.Sprintf("configured model %q not in harness catalog", model)
 }
 
 func newHarnessAdapter(projectDir, toolID string) (harness.HarnessAdapter, error) {

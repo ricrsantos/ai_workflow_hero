@@ -35,11 +35,11 @@ func TestChatSlashDoesNotOpenPalette(t *testing.T) {
 		t.Fatal("expected slash overlay after /")
 	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "Go to - Status") {
-		t.Fatalf("overlay missing Go to - Status: %q", view)
+	if !strings.Contains(view, "/new-chat") {
+		t.Fatalf("overlay missing /new-chat: %q", view)
 	}
-	if !strings.Contains(view, "Go to - Chat") {
-		t.Fatalf("overlay missing Go to - Chat: %q", view)
+	if !strings.Contains(view, "/hero-model") {
+		t.Fatalf("overlay missing /hero-model: %q", view)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestChatSlashTabInsertsControlNotModeToggle(t *testing.T) {
 func TestChatSlashTabOnGoToDoesNotToggleMode(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
-	next, _ := HandleTestKey(m, "/")
+	next := typeChat(t, m, "/go")
 	if ChatModeForTest(next) != harness.ModeBuild {
 		t.Fatalf("mode=%q", ChatModeForTest(next))
 	}
@@ -123,7 +123,7 @@ func TestChatSlashTabOnGoToDoesNotToggleMode(t *testing.T) {
 		t.Fatalf("tab on Go to should execute, not insert, input=%q", ConversationInputForTest(next))
 	}
 	if CurrentScreen(next) != ScreenConversation {
-		t.Fatalf("first overlay item is Go to - Chat, screen=%v", CurrentScreen(next))
+		t.Fatalf("Go to - Chat should stay on conversation, screen=%v", CurrentScreen(next))
 	}
 }
 

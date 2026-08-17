@@ -96,18 +96,15 @@ func FormatHardStop(agentName, harnessID, model string, attempts []FallbackAttem
 }
 
 // ListModels aggregates model ids from enabled harness adapters.
+// OpenCode is skipped so boot does not start `opencode serve` (UI-C04-001 §7).
+// Use ListModelsFor when the user selects a harness in /hero-model.
 func ListModels(ctx context.Context, reg Registry, hero install.HeroJSON) ([]ModelOption, error) {
 	var out []ModelOption
 	for _, id := range reg.EnabledIDs(hero) {
-		adapter, err := reg.Adapter(id)
-		if err != nil {
+		if id == "opencode" {
 			continue
 		}
-		lister, ok := adapter.(harness.ModelLister)
-		if !ok {
-			continue
-		}
-		models, err := lister.ListModels(ctx)
+		models, err := ListModelsFor(ctx, reg, id)
 		if err != nil {
 			slogWarnListModels(id, err)
 			continue
@@ -117,6 +114,23 @@ func ListModels(ctx context.Context, reg Registry, hero install.HeroJSON) ([]Mod
 		}
 	}
 	return out, nil
+}
+
+// ListModelsFor lists native model ids for one harness (may start OpenCode serve).
+func ListModelsFor(ctx context.Context, reg Registry, harnessID string) ([]string, error) {
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	if reg == nil {
+		return nil, fmt.Errorf("harness registry unavailable")
+	}
+	adapter, err := reg.Adapter(harnessID)
+	if err != nil {
+		return nil, err
+	}
+	lister, ok := adapter.(harness.ModelLister)
+	if !ok {
+		return nil, fmt.Errorf("harness %q does not support model listing", harnessID)
+	}
+	return lister.ListModels(ctx)
 }
 
 // ModelOption is one row in the /hero-model pair picker.

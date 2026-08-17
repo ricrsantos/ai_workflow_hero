@@ -91,14 +91,16 @@ type model struct {
 	availableModels        []string
 	pickingModel           bool
 	pickingHarness         bool
-	runtimeCommandName     string // hero runtime slash body name (e.g. "new") for Chat output normalization
-	runtimeModelSlug       string // YAML orch/discover slug or /hero-model default for the active runtime slash
-	runtimeAgentName       string // harness agent name for active runtime slash (e.g. orchestration_agent)
-	orchestrationLive      bool   // /hero-start session: follow-ups resume orchestrator model + session
-	researchLive           bool   // TUI Research: free-text follow-ups resume discover_agent
-	orchestrationSessionID string // saved orchestrator harness session while Research is live
-	researchSessionID      string // discover_agent harness session
-	awaitingRejectReason   bool   // Chat is collecting rejection feedback before Runtime Execute
+	modelPickerHarness     string          // non-empty = /hero-model step 2 (models for this harness)
+	harnessDraft           map[string]bool // checkbox state while /hero-harness is open
+	runtimeCommandName     string          // hero runtime slash body name (e.g. "new") for Chat output normalization
+	runtimeModelSlug       string          // YAML orch/discover slug or /hero-model default for the active runtime slash
+	runtimeAgentName       string          // harness agent name for active runtime slash (e.g. orchestration_agent)
+	orchestrationLive      bool            // /hero-start session: follow-ups resume orchestrator model + session
+	researchLive           bool            // TUI Research: free-text follow-ups resume discover_agent
+	orchestrationSessionID string          // saved orchestrator harness session while Research is live
+	researchSessionID      string          // discover_agent harness session
+	awaitingRejectReason   bool            // Chat is collecting rejection feedback before Runtime Execute
 
 	slashOverlayIndex     int  // selected row in Chat `/` autocomplete
 	slashOverlayDismissed bool // Esc or insert closed the overlay until the token changes
@@ -147,11 +149,7 @@ func newModel(svc *cycle.Service) model {
 		if hero, err := install.LoadHeroJSON(projectDir); err == nil {
 			h, slug := install.GetFreechatDefault(hero)
 			m.chatHarnessID = h
-			if slug != "" {
-				m.chatModelSlug = slug
-			} else {
-				m.chatModelSlug = install.HarnessModelSlugForProject(projectDir, h)
-			}
+			m.chatModelSlug = slug
 		}
 	}
 	m.contextWindows = loadContextWindowCatalog(projectDir)
@@ -278,6 +276,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case confirmResumeMsg:
 		return m.dispatchConfirmedAction(msg.action, msg.actionN)
 
+	case listModelsMsg:
+		return m.handleListModelsMsg(msg)
+
 	case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
@@ -324,6 +325,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.paletteOffset = 0
 		m.pickingModel = false
 		m.pickingHarness = false
+		m.modelPickerHarness = ""
+		m.harnessDraft = nil
 		m = m.reloadPaletteItems()
 		return m, nil
 	case "ctrl+r", "f5":
@@ -371,6 +374,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
+		if m.pickingModel && m.modelPickerHarness != "" {
+			return m.openModelPicker()
+		}
 		m = m.closePalette()
 		return m, nil
 	case "ctrl+c":
@@ -381,6 +387,8 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Leave palette chrome before global navigation / refresh / quit.
 		m.pickingModel = false
 		m.pickingHarness = false
+		m.modelPickerHarness = ""
+		m.harnessDraft = nil
 		m.paletteFilter = ""
 		m.paletteIndex = 0
 		m.paletteOffset = 0
@@ -416,7 +424,20 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m = m.ensurePaletteVisible()
 		return m, nil
+	case " ", "space":
+		if m.pickingHarness {
+			return m.toggleHarnessDraft()
+		}
+		if len(msg.Runes) > 0 && !msg.Alt {
+			m.paletteFilter += string(msg.Runes)
+			m.paletteIndex = 0
+			m.paletteOffset = 0
+		}
+		return m, nil
 	case "enter":
+		if m.pickingHarness {
+			return m.applyHarnessDraft()
+		}
 		items := m.filteredPaletteItems()
 		if len(items) == 0 {
 			return m, nil
@@ -465,8 +486,12 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		}
 		modelPart, harnessPart := splitModelPairLabel(item.label)
 		return m.selectChatModelPair(modelPart, harnessPart)
+	case actionPickModelHarness:
+		return m.pickModelHarness(item.harnessID)
 	case actionToggleHarness:
-		return m.toggleHarness(item.harnessID)
+		return m.toggleHarnessDraft()
+	case actionApplyHarness:
+		return m.applyHarnessDraft()
 	case actionQuit:
 		return m, tea.Quit
 	case actionRefresh:

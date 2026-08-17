@@ -214,14 +214,7 @@ func (m model) persistHarnessSession(sessionID, harnessID string) model {
 }
 
 func (m model) defaultHarnessModelSlug() string {
-	if slug := strings.TrimSpace(m.chatModelSlug); slug != "" {
-		return slug
-	}
-	projectDir := ""
-	if m.svc != nil {
-		projectDir = m.svc.ProjectDir
-	}
-	return install.HarnessModelSlugForProject(projectDir, m.conversationHarnessTool())
+	return strings.TrimSpace(m.chatModelSlug)
 }
 
 func (m model) conversationModelSlug() string {

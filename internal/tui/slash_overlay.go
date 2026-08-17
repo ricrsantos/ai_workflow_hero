@@ -77,7 +77,12 @@ func (m model) filteredChatSlashItems() []paletteItem {
 }
 
 func chatSlashOverlayItem(item paletteItem) bool {
-	return item.action != actionSelectModel
+	switch item.action {
+	case actionSelectModel, actionPickModelHarness, actionToggleHarness, actionApplyHarness:
+		return false
+	default:
+		return true
+	}
 }
 
 // chatComposerControlSlash is true for agent-reply slashes that stay in the

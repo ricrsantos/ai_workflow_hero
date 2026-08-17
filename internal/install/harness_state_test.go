@@ -29,6 +29,22 @@ func TestMigrateHarnessStateFromLegacyTools(t *testing.T) {
 	if install.IsHarnessEnabled(hero, "opencode") {
 		t.Fatal("opencode should stay disabled on 1.x upgrade")
 	}
+	if hero.FreechatDefault.Model != "" {
+		t.Fatalf("migration must not invent a default model, got %q", hero.FreechatDefault.Model)
+	}
+}
+
+func TestGetFreechatDefaultDoesNotInventModel(t *testing.T) {
+	hero := install.HeroJSON{
+		Harnesses: install.HarnessesFromSelection([]string{"cursor"}),
+	}
+	h, m := install.GetFreechatDefault(hero)
+	if h != "cursor" {
+		t.Fatalf("harness=%q", h)
+	}
+	if m != "" {
+		t.Fatalf("model=%q want empty until /hero-model", m)
+	}
 }
 
 func TestListEnabledHarnesses(t *testing.T) {

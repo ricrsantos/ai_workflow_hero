@@ -28,4 +28,4 @@ Each supported harness (`cursor`, `opencode`) SHALL have a `harnesses.<id>` entr
 
 #### Scenario: Default pair after install
 - **WHEN** install completes with Cursor enabled
-- **THEN** a valid freechat default pair exists for an enabled harness
+- **THEN** `freechat_default.harness` is an enabled harness and `freechat_default.model` is empty until `/hero-model`

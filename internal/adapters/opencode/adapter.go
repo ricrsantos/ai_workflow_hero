@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,7 +9,10 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,17 +46,62 @@ type HTTPDoer interface {
 // ExecRunner is the default ProcessRunner using os/exec.
 type ExecRunner struct{}
 
+var serveListenLine = regexp.MustCompile(`listening on (https?://[^\s]+)`)
+
 type execHandle struct {
-	cmd *exec.Cmd
+	cmd      *exec.Cmd
+	baseURL  string
+	port     int
+	urlErr   error
+	urlReady chan struct{}
 }
 
 func (ExecRunner) Start(ctx context.Context, dir, name string, args ...string) (ProcessHandle, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+	h := &execHandle{cmd: cmd, urlReady: make(chan struct{})}
+	go h.scanServeOutput(io.MultiReader(stdout, stderr))
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	return &execHandle{cmd: cmd}, nil
+	return h, nil
+}
+
+func (h *execHandle) scanServeOutput(r io.Reader) {
+	defer close(h.urlReady)
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		m := serveListenLine.FindStringSubmatch(line)
+		if len(m) < 2 {
+			continue
+		}
+		u, err := url.Parse(m[1])
+		if err != nil {
+			h.urlErr = fmt.Errorf("parse opencode serve url: %w", err)
+			return
+		}
+		port, _ := strconv.Atoi(u.Port())
+		h.baseURL = strings.TrimRight(u.String(), "/")
+		h.port = port
+		return
+	}
+	if err := scanner.Err(); err != nil && h.urlErr == nil {
+		h.urlErr = err
+	}
+	if h.baseURL == "" && h.urlErr == nil {
+		h.urlErr = fmt.Errorf("opencode serve exited without listening URL")
+	}
 }
 
 func (h *execHandle) PID() int    { return h.cmd.Process.Pid }
@@ -136,6 +185,9 @@ func (a *Adapter) CreateSession(ctx context.Context, req harness.SessionRequest)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if err := httpOK(resp); err != nil {
+		return nil, err
+	}
 	var sess opencodeSession
 	if err := json.NewDecoder(resp.Body).Decode(&sess); err != nil {
 		return nil, err
@@ -206,8 +258,8 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	payload := map[string]any{
 		"parts": parts,
 	}
-	if model != "" {
-		payload["model"] = model
+	if modelObj := modelPayload(model); modelObj != nil {
+		payload["model"] = modelObj
 	}
 	if req.AgentName != "" {
 		payload["agent"] = req.AgentName
@@ -222,6 +274,9 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if err := httpOK(resp); err != nil {
+		return nil, err
+	}
 	var msgResp messageResponse
 	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
 		return nil, err
@@ -241,37 +296,35 @@ func (a *Adapter) executeStream(ctx context.Context, sessionID string, body []by
 	if err != nil {
 		return nil, err
 	}
+	if err := httpOK(resp); err != nil {
+		return nil, err
+	}
 	resp.Body.Close()
 
 	var buf strings.Builder
+	partTexts := make(map[string]string)
+	assistantMsgID := ""
 	events, err := a.subscribeEvents(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer events.Close()
-	dec := json.NewDecoder(events)
-	for dec.More() {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-		var evt map[string]any
-		if err := dec.Decode(&evt); err != nil {
-			if err == io.EOF {
-				break
-			}
-			a.log().Debug("opencode event decode", "error", err)
-			continue
-		}
-		text, done := parseEventDelta(evt, sessionID)
+
+	err = readSSEEvents(ctx, events, func(evt map[string]any) error {
+		var text string
+		var done bool
+		text, done, assistantMsgID = parseEventDelta(evt, sessionID, partTexts, assistantMsgID)
 		if text != "" && req.OnStreamDelta != nil {
 			req.OnStreamDelta(harness.StreamDelta{Kind: harness.StreamKindText, Text: text})
 			buf.WriteString(text)
 		}
 		if done {
-			break
+			return io.EOF
 		}
+		return nil
+	})
+	if err != nil && err != io.EOF {
+		return nil, err
 	}
 	out := buf.String()
 	return &harness.ExecutionResult{
@@ -341,14 +394,20 @@ func (a *Adapter) ListModels(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if err := httpOK(resp); err != nil {
+		return nil, err
+	}
 	var data providersResponse
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, err
 	}
 	var models []string
 	for _, p := range data.Providers {
-		for _, m := range p.Models {
-			id := strings.TrimSpace(m.ID)
+		for modelID, meta := range p.Models {
+			id := strings.TrimSpace(modelID)
+			if mid := strings.TrimSpace(meta.ID); mid != "" {
+				id = mid
+			}
 			if id == "" {
 				continue
 			}
@@ -425,8 +484,22 @@ func (a *Adapter) ensureServe(ctx context.Context) error {
 }
 
 func defaultServeURLResolver(handle ProcessHandle) (string, int, error) {
-	_ = handle
-	return "http://127.0.0.1:4096", 4096, nil
+	eh, ok := handle.(*execHandle)
+	if !ok {
+		return "", 0, fmt.Errorf("resolve opencode serve url: unexpected process handle")
+	}
+	select {
+	case <-eh.urlReady:
+	case <-time.After(30 * time.Second):
+		return "", 0, fmt.Errorf("timeout waiting for opencode serve to listen")
+	}
+	if eh.urlErr != nil {
+		return "", 0, eh.urlErr
+	}
+	if eh.baseURL == "" {
+		return "", 0, fmt.Errorf("opencode serve did not publish a listen URL")
+	}
+	return eh.baseURL, eh.port, nil
 }
 
 func (a *Adapter) get(ctx context.Context, path string) (*http.Response, error) {
@@ -478,6 +551,9 @@ func (a *Adapter) subscribeEvents(ctx context.Context) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := httpOK(resp); err != nil {
+		return nil, err
+	}
 	return resp.Body, nil
 }
 
@@ -499,12 +575,13 @@ type providersResponse struct {
 }
 
 type providerEntry struct {
-	ID     string       `json:"id"`
-	Models []modelEntry `json:"models"`
+	ID     string               `json:"id"`
+	Models map[string]modelMeta `json:"models"`
 }
 
-type modelEntry struct {
-	ID string `json:"id"`
+type modelMeta struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 func extractText(parts []part) string {
@@ -517,20 +594,117 @@ func extractText(parts []part) string {
 	return b.String()
 }
 
-func parseEventDelta(evt map[string]any, sessionID string) (text string, done bool) {
-	if t, _ := evt["type"].(string); t == "session.idle" || t == "message.done" {
-		if sid, _ := evt["sessionID"].(string); sid == "" || sid == sessionID {
-			return "", true
-		}
+func parseEventDelta(evt map[string]any, sessionID string, partTexts map[string]string, assistantMsgID string) (text string, done bool, nextAssistantMsgID string) {
+	nextAssistantMsgID = assistantMsgID
+	evtType, _ := evt["type"].(string)
+	props, _ := evt["properties"].(map[string]any)
+	if sid, _ := props["sessionID"].(string); sid != "" && sid != sessionID {
+		return "", false, nextAssistantMsgID
 	}
-	if p, ok := evt["part"].(map[string]any); ok {
-		if pt, _ := p["type"].(string); pt == "text" {
-			if s, _ := p["text"].(string); s != "" {
-				return s, false
+
+	switch evtType {
+	case "session.idle":
+		return "", true, nextAssistantMsgID
+	case "session.status":
+		if st, ok := props["status"].(map[string]any); ok {
+			if t, _ := st["type"].(string); t == "idle" {
+				return "", true, nextAssistantMsgID
 			}
 		}
+	case "message.updated":
+		if info, ok := props["info"].(map[string]any); ok {
+			if role, _ := info["role"].(string); role == "assistant" {
+				if id, _ := info["id"].(string); id != "" {
+					nextAssistantMsgID = id
+				}
+			}
+		}
+	case "message.part.updated":
+		part, ok := props["part"].(map[string]any)
+		if !ok {
+			return "", false, nextAssistantMsgID
+		}
+		if pt, _ := part["type"].(string); pt != "text" {
+			return "", false, nextAssistantMsgID
+		}
+		msgID, _ := part["messageID"].(string)
+		// User parts arrive before message.updated(assistant); never stream until bound.
+		if nextAssistantMsgID == "" {
+			return "", false, nextAssistantMsgID
+		}
+		if msgID != "" && msgID != nextAssistantMsgID {
+			return "", false, nextAssistantMsgID
+		}
+		full, _ := part["text"].(string)
+		partID, _ := part["id"].(string)
+		prev := partTexts[partID]
+		if len(full) <= len(prev) {
+			return "", false, nextAssistantMsgID
+		}
+		delta := full[len(prev):]
+		partTexts[partID] = full
+		return delta, false, nextAssistantMsgID
+	case "message.done":
+		if sid, _ := evt["sessionID"].(string); sid == "" || sid == sessionID {
+			return "", true, nextAssistantMsgID
+		}
 	}
-	return "", false
+	return "", false, nextAssistantMsgID
+}
+
+func modelPayload(slug string) map[string]string {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return nil
+	}
+	if i := strings.Index(slug, "/"); i > 0 {
+		return map[string]string{
+			"providerID": slug[:i],
+			"modelID":    slug[i+1:],
+		}
+	}
+	return map[string]string{"modelID": slug}
+}
+
+func readSSEEvents(ctx context.Context, body io.Reader, handler func(map[string]any) error) error {
+	scanner := bufio.NewScanner(body)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue
+		}
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		payload := strings.TrimPrefix(line, "data: ")
+		var evt map[string]any
+		if err := json.Unmarshal([]byte(payload), &evt); err != nil {
+			continue
+		}
+		if err := handler(evt); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
+}
+
+func httpOK(resp *http.Response) error {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	msg := strings.TrimSpace(string(body))
+	if msg == "" {
+		return fmt.Errorf("opencode api %s: %s", resp.Request.URL.Path, resp.Status)
+	}
+	return fmt.Errorf("opencode api %s: %s — %s", resp.Request.URL.Path, resp.Status, msg)
 }
 
 func truncate(s string, n int) string {

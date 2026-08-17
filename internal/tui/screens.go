@@ -197,14 +197,18 @@ func emptyCycleScreenMessage(kind string, cycleNumber int) string {
 func (m model) renderPalette() string {
 	var b strings.Builder
 	switch {
-	case m.pickingModel:
-		b.WriteString(headerStyle.Render("Default model for freechat / /hero-new"))
+	case m.pickingModel && m.modelPickerHarness != "":
+		b.WriteString(headerStyle.Render("/hero-model · " + harnessDisplayName(m.modelPickerHarness)))
 		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("Model · Harness · ↑↓ navigate · enter select · esc close"))
+		b.WriteString(mutedStyle.Render("↑↓ navigate · enter select · esc back"))
+	case m.pickingModel:
+		b.WriteString(headerStyle.Render("/hero-model · select harness"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("↑↓ navigate · enter · esc close"))
 	case m.pickingHarness:
 		b.WriteString(headerStyle.Render("Harnesses"))
 		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("Enabled · Available · ↑↓ navigate · enter toggle · esc close"))
+		b.WriteString(mutedStyle.Render("space toggle · enter apply · esc cancel"))
 	default:
 		b.WriteString(headerStyle.Render("Commands"))
 		b.WriteByte('\n')
@@ -245,9 +249,17 @@ func (m model) renderPalette() string {
 	for i := start; i < end; i++ {
 		item := items[i]
 		var line string
-		if m.pickingModel && item.modelSlug != "" {
-			line = formatModelHarnessColumns(item.modelSlug, item.hint)
-		} else {
+		switch {
+		case m.pickingHarness:
+			line = formatHarnessCheckboxLine(item.label, item.hint, m.harnessDraft[item.harnessID])
+		case m.pickingModel && item.modelSlug != "":
+			line = " " + item.label
+			if item.hint != "" {
+				line += "  " + item.hint
+			}
+		case m.pickingModel:
+			line = " " + item.label
+		default:
 			line = fmt.Sprintf(" %s — %s", item.label, item.hint)
 		}
 		if i == m.paletteIndex {
@@ -279,12 +291,12 @@ func (m model) renderPalette() string {
 	return b.String()
 }
 
-const modelPickerModelColWidth = 28
-
-func formatModelHarnessColumns(modelSlug, harnessLabel string) string {
-	modelSlug = strings.TrimSpace(modelSlug)
-	harnessLabel = strings.TrimSpace(harnessLabel)
-	return fmt.Sprintf(" %-*s  %s", modelPickerModelColWidth, modelSlug, harnessLabel)
+func formatHarnessCheckboxLine(name, availHint string, checked bool) string {
+	box := "[ ]"
+	if checked {
+		box = "[x]"
+	}
+	return fmt.Sprintf(" %s %s %s", box, strings.TrimSpace(name), strings.TrimSpace(availHint))
 }
 
 func (m model) paletteListHeight() int {

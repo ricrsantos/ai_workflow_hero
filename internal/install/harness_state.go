@@ -40,21 +40,18 @@ func HarnessesFromSelection(selected []string) map[string]HarnessConfig {
 	return out
 }
 
-// DefaultFreechatDefault picks the initial freechat pair after install (design D3).
+// DefaultFreechatDefault picks the initial freechat harness after install.
+// Model stays empty until the user chooses via /hero-model.
 func DefaultFreechatDefault(harnesses map[string]HarnessConfig) FreechatDefault {
 	enabled := ListEnabledHarnesses(HeroJSON{Harnesses: harnesses})
 	if len(enabled) == 0 {
-		return FreechatDefault{Harness: "cursor", Model: DefaultCursorModel}
+		return FreechatDefault{}
 	}
 	h := enabled[0]
 	if len(enabled) > 1 && slices.Contains(enabled, "cursor") {
 		h = "cursor"
 	}
-	model := DefaultCursorModel
-	if h == "opencode" {
-		model = "anthropic/claude-sonnet-4"
-	}
-	return FreechatDefault{Harness: h, Model: model}
+	return FreechatDefault{Harness: h, Model: ""}
 }
 
 // MigrateHarnessState upgrades legacy hero.json (cli.tools only) to harnesses.*.enabled (ADR-034).
@@ -103,14 +100,6 @@ func MigrateHarnessState(hero *HeroJSON) bool {
 			modified = true
 		}
 	}
-	if strings.TrimSpace(hero.FreechatDefault.Harness) == "" {
-		hero.FreechatDefault = DefaultFreechatDefault(hero.Harnesses)
-		modified = true
-	} else if strings.TrimSpace(hero.FreechatDefault.Model) == "" {
-		def := DefaultFreechatDefault(hero.Harnesses)
-		hero.FreechatDefault.Model = def.Model
-		modified = true
-	}
 	return modified
 }
 
@@ -140,15 +129,16 @@ func IsHarnessEnabled(hero HeroJSON, harnessID string) bool {
 	return slices.Contains(nonEmptyStrings(hero.CLI.Tools), harnessID)
 }
 
-// GetFreechatDefault returns the persisted freechat pair, or defaults when unset.
+// GetFreechatDefault returns the persisted freechat pair.
+// Model is empty until the user selects one with /hero-model (never invented).
 func GetFreechatDefault(hero HeroJSON) (harness, model string) {
 	h := strings.TrimSpace(strings.ToLower(hero.FreechatDefault.Harness))
 	m := strings.TrimSpace(hero.FreechatDefault.Model)
-	if h != "" && m != "" {
-		return h, m
+	if h == "" {
+		def := DefaultFreechatDefault(hero.Harnesses)
+		h = def.Harness
 	}
-	def := DefaultFreechatDefault(hero.Harnesses)
-	return def.Harness, def.Model
+	return h, m
 }
 
 // SetHarnessEnabled toggles harnesses.<id>.enabled in hero.json.

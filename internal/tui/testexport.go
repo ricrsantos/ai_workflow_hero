@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -376,16 +377,43 @@ func SetChatModelSlugForTest(m model, slug string) model {
 	return m
 }
 
+// ChatModelSlugForTest returns the active chat model slug.
+func ChatModelSlugForTest(m model) string {
+	return m.chatModelSlug
+}
+
 // SetChatHarnessIDForTest sets the active chat harness id.
 func SetChatHarnessIDForTest(m model, harnessID string) model {
 	m.chatHarnessID = harnessID
 	return m
 }
 
-// SetAvailableModelsForTest sets the harness model catalog.
+// SetAvailableModelsForTest sets Cursor model ids for the picker cache.
 func SetAvailableModelsForTest(m model, models []string) model {
 	m.availableModels = append([]string(nil), models...)
+	m.modelOptions = nil
+	for _, slug := range models {
+		m.modelOptions = append(m.modelOptions, harnessmgr.ModelOption{Model: slug, Harness: "cursor"})
+	}
 	return m
+}
+
+// SetModelOptionsForTest sets the mixed-harness model catalog.
+func SetModelOptionsForTest(m model, opts []harnessmgr.ModelOption) model {
+	m.modelOptions = append([]harnessmgr.ModelOption(nil), opts...)
+	m.availableModels = flattenModelOptions(m.modelOptions)
+	return m
+}
+
+// ModelPickerHarnessForTest returns the selected harness in /hero-model step 2.
+func ModelPickerHarnessForTest(m model) string {
+	return m.modelPickerHarness
+}
+
+// HandleTestMsg applies an arbitrary tea.Msg to the model.
+func HandleTestMsg(m model, msg tea.Msg) (model, tea.Cmd) {
+	next, cmd := m.Update(msg)
+	return next.(model), cmd
 }
 
 // StatusTextForTest returns the footer status text.

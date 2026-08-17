@@ -5,12 +5,19 @@
 
 ## ADDED Requirements
 
-### Requirement: hero-model picker SHALL show Model and Harness columns
-The picker SHALL list models with an associated harness column — never model-only rows (UI-C04-001 §4; design D10).
+### Requirement: hero-model SHALL pick harness then models
+`/hero-model` SHALL show a harness submenu first, then the models of the selected harness — never a mixed model-only list (UI-C04-001 §4; design D10).
 
-#### Scenario: Mixed harness list
-- **WHEN** both Cursor and OpenCode are enabled
-- **THEN** the picker shows Cursor slugs and OpenCode provider/model ids with harness labels
+#### Scenario: Harness submenu then OpenCode models
+- **WHEN** the user opens `/hero-model` with both harnesses enabled
+- **THEN** the first screen lists Cursor and OpenCode, and choosing OpenCode lists only OpenCode native model ids
+
+### Requirement: hero-model SHALL NOT invent a default model
+The TUI SHALL leave the freechat default empty until the user selects a pair. Install and migration SHALL NOT write `composer-2.5` (or any other slug) as `freechat_default.model`.
+
+#### Scenario: Fresh TUI session
+- **WHEN** `freechat_default.model` is empty
+- **THEN** Chat and `/hero-new` require `/hero-model` before Execute
 
 ### Requirement: Selection SHALL persist pair to hero.json
 Choosing a row SHALL write `freechat_default` and `harnesses.<harness>.model` (ADR-037).

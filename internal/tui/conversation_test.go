@@ -726,7 +726,7 @@ func TestConversationSubmitWithoutStage(t *testing.T) {
 	h := &streamingHarness{deltas: []string{"pong"}, sessionID: "free-sess"}
 	svc.Harness = h
 
-	m := NewTestModel(svc)
+	m := withDefaultChatModel(NewTestModel(svc))
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "ping")
 	next, cmd := SubmitConversationForTest(m)

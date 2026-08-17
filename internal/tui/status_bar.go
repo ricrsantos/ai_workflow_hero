@@ -32,10 +32,22 @@ func (m model) closePalette() model {
 	if wasPicking {
 		m.pickingModel = false
 		m.pickingHarness = false
+		m.modelPickerHarness = ""
+		m.harnessDraft = nil
 		m = m.reloadPaletteItems()
 	}
 	if m.screen == screenConversation {
 		m.chatInputFocused = true
+	}
+	return m
+}
+
+// openPaletteOverlay shows the palette without losing the screen underneath when
+// already on a palette layer (e.g. /hero-model opened from the slash menu).
+func (m model) openPaletteOverlay() model {
+	if m.screen != screenPalette {
+		m.prevScreen = m.screen
+		m.screen = screenPalette
 	}
 	return m
 }

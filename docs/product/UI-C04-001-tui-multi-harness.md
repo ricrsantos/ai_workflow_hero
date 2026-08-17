@@ -44,40 +44,46 @@ Non-interactive name/summary/`--yes` flags remain for **project** fields. Harnes
 
 Palette + Chat `/` overlay item **`/hero-harness`** (execute immediately, like other non-approval slashes).
 
-Show each supported harness with **Enabled** and **Available** (PATH/CLI). Actions: enable, disable.
+Show each supported harness as a **checkbox**. Enabled = checked. Availability is in parentheses (PATH/CLI), independent of the checkbox.
 
 ```text
 Harnesses
-  Cursor     enabled    available
-  OpenCode   disabled   unavailable  (opencode CLI not on PATH)
+  space toggle · enter apply · esc cancel
 
-Enable OpenCode?  [y/N]
+  [x] Cursor (available)
+  [ ] OpenCode (unavailable)
 ```
 
-- Enable → provision projection then ✓ `OpenCode enabled (projected .opencode/)`.
+- Space toggles the highlighted checkbox (does not save yet).
+- Enter applies the selection: enable newly checked (provision projection), disable newly unchecked (files kept).
+- Esc cancels without saving.
+- Zero checked → inline validation, picker stays open: `Select at least one harness.`
+- Enable OpenCode → ✓ `OpenCode enabled (projected .opencode/)`.
 - Disable → ✓ `OpenCode disabled (files kept)`.
-- Disable last remaining:
-
-```text
-✗ Cannot disable the last enabled harness (Cursor).
-
-  Suggestion: enable another harness first, then disable Cursor.
-```
 
 Unavailable + enabled is allowed; failure happens at Execute (then fallback copy in §6).
 
 ## 4. `/hero-model`
 
-Picker columns **Model** and **Harness** (never model-only):
+Two-step picker. Do **not** pre-select a default model (including `composer-2.5`). The user must choose.
+
+**Step 1 — harness** (only when more than one harness is enabled; instant, no CLI availability checks):
 
 ```text
-? Default model for freechat / /hero-new
-  composer-2.5                 Cursor
-  cursor-grok-4.6              Cursor
-  anthropic/claude-sonnet-4    OpenCode
+/hero-model · select harness
+  Cursor
+  OpenCode
 ```
 
-On select: persist pair; Chat input status shows `Build · {model} · {harness}`. Stage agents are not modified.
+**Step 2 — models** (live list from the adapter; OpenCode may start serve here):
+
+```text
+/hero-model · OpenCode
+  anthropic/claude-sonnet-4
+  xai/grok-4
+```
+
+Esc returns to the harness list. On select: persist pair; Chat input status shows `Build · {model} · {harness}`. Stage agents are not modified.
 
 ## 5. Chat green pane (speaker)
 

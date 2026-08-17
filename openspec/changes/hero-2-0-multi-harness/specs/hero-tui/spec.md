@@ -12,12 +12,19 @@ The command palette and Chat `/` overlay SHALL include `/hero-harness` executing
 - **WHEN** the user filters the palette for `harness`
 - **THEN** `/hero-harness` appears with label "Manage harnesses"
 
-### Requirement: hero-model SHALL use harness+model pair picker
-`/hero-model` SHALL show Model and Harness columns and persist the pair — superseding model-only selection from C3 (ADR-037; UI-C04-001 §4).
+### Requirement: hero-harness SHALL use checkboxes with availability
+`/hero-harness` SHALL show each supported harness as a checkbox with `(available)` or `(unavailable)` in parentheses. Space toggles; Enter applies; Esc cancels.
 
-#### Scenario: Pair columns
+#### Scenario: Checkbox list
+- **WHEN** Cursor is enabled and OpenCode is disabled
+- **THEN** the picker shows `[x] Cursor (…)` and `[ ] OpenCode (…)`
+
+### Requirement: hero-model SHALL use harness then model submenu
+`/hero-model` SHALL show a harness list first, then models for the selected harness, and persist the pair — superseding model-only selection from C3 (ADR-037; UI-C04-001 §4).
+
+#### Scenario: Two-step picker
 - **WHEN** the user opens `/hero-model` with both harnesses enabled
-- **THEN** each row shows a model id and harness name
+- **THEN** the first screen lists harness names and the second screen lists that harness's models
 
 ### Requirement: Chat speaker labels SHALL include harness
 Green pane and status lines SHALL use `[LABEL - model · harness]` format (UI-C04-001 §5).
