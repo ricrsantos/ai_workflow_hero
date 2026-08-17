@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
@@ -23,6 +24,10 @@ type Registry interface {
 type DefaultRegistry struct {
 	ProjectDir string
 	Store      *store.Store
+
+	mu       sync.Mutex
+	cursor   harness.HarnessAdapter
+	opencode harness.HarnessAdapter
 }
 
 // NewRegistry returns a registry for projectDir with optional operational store.
@@ -35,9 +40,19 @@ func (r *DefaultRegistry) Adapter(id string) (harness.HarnessAdapter, error) {
 	id = strings.TrimSpace(strings.ToLower(id))
 	switch id {
 	case "cursor", "":
-		return cursoradapter.NewAdapter(r.ProjectDir), nil
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.cursor == nil {
+			r.cursor = cursoradapter.NewAdapter(r.ProjectDir)
+		}
+		return r.cursor, nil
 	case "opencode":
-		return opencodeadapter.NewAdapter(r.ProjectDir, r.Store), nil
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.opencode == nil {
+			r.opencode = opencodeadapter.NewAdapter(r.ProjectDir, r.Store)
+		}
+		return r.opencode, nil
 	default:
 		return nil, fmt.Errorf("unsupported harness %q", id)
 	}

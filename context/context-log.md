@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-08-17 — OpenCode serve process leak (TUI)
+
+**Problem**: Each TUI interaction with OpenCode spawned a new `opencode serve` child; dozens of processes accumulated and exhausted RAM/swap.
+
+**Root cause**: `DefaultRegistry.Adapter()` returned a **new** `opencode.Adapter` on every call, so in-memory `baseURL`/`servePID` were always empty and `ensureServe` started another serve. `StopServe` on TUI quit used a fresh adapter (`servePID=0`), only cleared SQLite registry, and used Unix `kill` — processes survived (especially on Windows).
+
+**Decision / Outcome**: Cache singleton adapters in `DefaultRegistry`; `ensureServe` adopts a live serve from `harness_serve_registry` via HTTP health check before spawning; `StopServe` kills all registry PIDs with `os.FindProcess` + `Kill()`; orphan reap uses URL liveness + cross-platform kill. Cursor adapter unchanged — one short-lived CLI process per Execute is by design (`--resume` for continuity).
+
+---
+
 ## 2026-08-15 — OpenCode TUI chat hang ("Waiting for harness")
 
 **Problem**: Chat with OpenCode harness stuck on "Waiting for harness…" — no stream deltas, no error.
@@ -55,3 +65,15 @@
 ---
 
 _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+Enter, streaming nav) are in git history._
+
+---
+
+## 2026-08-17 — C5 started (model properties selection in TUI)
+
+**Problem**: `/hero-start` for C5 ("seleção das propriedades dos modelos na TUI") in the Hero TUI.
+
+**Decision / Outcome**: Configuration validated: scope `native` only (→ generic_agent on Implementation); Browser UI Validation and QA End-to-End disabled (gates N/A); research auto-advances (no human approval), planning requires approval. Chat language PT-BR.
+
+**Exceptions**:
+- `hero stage start --name configuration` → "not found": the SQLite store tracks only Research→E2E, no Configuration row. Configuration metrics will be folded into the Research close as a multi-entry metrics-json array (entry 1: configuration/orchestration_agent, entry 2: research/discover_agent).
+- No pricing entry for `opencode-go/deepseek-v4-pro` (or any opencode-go id) in `.workflow-hero/models/`; `hero update-models` upstream ships no `opencode.yml`. Cost for orchestration-stage models is recorded as 0.00 pending catalog availability (tokens/duration still recorded).

@@ -236,3 +236,29 @@ func TestListModelsHTTP(t *testing.T) {
 		t.Fatalf("models=%v", models)
 	}
 }
+
+func TestEnsureServeStartsOncePerAdapter(t *testing.T) {
+	own := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer own.Close()
+
+	runner := &stubRunner{}
+	a := NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "opencode", nil }
+	a.Runner = runner
+	a.HTTP = own.Client()
+	a.ResolveServeURL = func(ProcessHandle) (string, int, error) {
+		return own.URL, 1, nil
+	}
+
+	if err := a.ensureServe(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.ensureServe(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if atomic.LoadInt32(&runner.started) != 1 {
+		t.Fatalf("started=%d want 1", runner.started)
+	}
+}

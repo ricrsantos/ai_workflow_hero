@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -121,12 +122,13 @@ type Adapter struct {
 	HTTP            HTTPDoer
 	ResolveServeURL ServeURLResolver
 
-	mu        sync.Mutex
-	baseURL   string
-	servePID  int
-	servePort int
-	sessions  map[string]*sessionState
-	cancels   map[string]context.CancelFunc
+	mu           sync.Mutex
+	serveStartMu sync.Mutex
+	baseURL      string
+	servePID     int
+	servePort    int
+	sessions     map[string]*sessionState
+	cancels      map[string]context.CancelFunc
 }
 
 type sessionState struct {
@@ -420,7 +422,7 @@ func (a *Adapter) ListModels(ctx context.Context) ([]string, error) {
 	return models, nil
 }
 
-// StopServe stops the managed serve child and clears registry rows.
+// StopServe stops managed serve children and clears registry rows.
 func (a *Adapter) StopServe(ctx context.Context) error {
 	a.mu.Lock()
 	pid := a.servePID
@@ -428,14 +430,69 @@ func (a *Adapter) StopServe(ctx context.Context) error {
 	a.servePID = 0
 	a.servePort = 0
 	a.mu.Unlock()
+
 	if pid > 0 {
-		proc, _ := exec.Command("kill", fmt.Sprintf("%d", pid)).Output()
-		_ = proc
+		killProcess(pid)
 	}
+
 	if a.Store != nil {
+		entries, err := a.Store.ListServeRegistry()
+		if err == nil {
+			for _, e := range entries {
+				if e.Harness != adapterName || e.PID <= 0 {
+					continue
+				}
+				if e.PID != pid {
+					killProcess(e.PID)
+				}
+			}
+		}
 		_ = a.Store.ClearServeRegistry()
 	}
 	return nil
+}
+
+// KillProcess terminates a child process by PID (cross-platform).
+func KillProcess(pid int) {
+	killProcess(pid)
+}
+
+func killProcess(pid int) {
+	if pid <= 0 {
+		return
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return
+	}
+	_ = proc.Kill()
+}
+
+// ServeURLAlive reports whether an opencode serve base URL responds.
+func ServeURLAlive(ctx context.Context, baseURL string) bool {
+	return serveURLAlive(ctx, baseURL, http.DefaultClient)
+}
+
+func serveURLAlive(ctx context.Context, baseURL string, client HTTPDoer) bool {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return false
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, baseURL+"/config/providers", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode >= 200 && resp.StatusCode < 500
 }
 
 func (a *Adapter) ensureServe(ctx context.Context) error {
@@ -445,6 +502,20 @@ func (a *Adapter) ensureServe(ctx context.Context) error {
 		return nil
 	}
 	a.mu.Unlock()
+
+	a.serveStartMu.Lock()
+	defer a.serveStartMu.Unlock()
+
+	a.mu.Lock()
+	if a.baseURL != "" {
+		a.mu.Unlock()
+		return nil
+	}
+	a.mu.Unlock()
+
+	if a.adoptFromRegistry(ctx) {
+		return nil
+	}
 
 	cli, err := a.cliPath()
 	if err != nil {
@@ -481,6 +552,38 @@ func (a *Adapter) ensureServe(ctx context.Context) error {
 	}
 	a.log().Info("opencode serve started", "pid", handle.PID(), "url", url)
 	return nil
+}
+
+func (a *Adapter) adoptFromRegistry(ctx context.Context) bool {
+	if a.Store == nil {
+		return false
+	}
+	entries, err := a.Store.ListServeRegistry()
+	if err != nil {
+		return false
+	}
+	var latest *store.ServeRegistryEntry
+	for i := range entries {
+		e := &entries[i]
+		if e.Harness == adapterName && strings.TrimSpace(e.URL) != "" {
+			latest = e
+		}
+	}
+	if latest == nil {
+		return false
+	}
+	if !serveURLAlive(ctx, latest.URL, a.HTTP) {
+		_ = a.Store.DeleteServeRegistry(latest.ID)
+		return false
+	}
+
+	a.mu.Lock()
+	a.baseURL = latest.URL
+	a.servePID = latest.PID
+	a.servePort = latest.Port
+	a.mu.Unlock()
+	a.log().Info("adopted existing opencode serve", "pid", latest.PID, "url", latest.URL)
+	return true
 }
 
 func defaultServeURLResolver(handle ProcessHandle) (string, int, error) {

@@ -142,28 +142,13 @@ func reapOpenCodeOrphans(ctx context.Context, projectDir string, st *store.Store
 		if e.Harness != "opencode" {
 			continue
 		}
-		if !processIsOpenCodeServe(e.PID) {
-			_ = st.DeleteServeRegistry(e.ID)
-			continue
+		if opencodeadapter.ServeURLAlive(ctx, e.URL) {
+			slog.Info("reaping orphan opencode serve", "pid", e.PID, "url", e.URL)
+			opencodeadapter.KillProcess(e.PID)
 		}
-		slog.Info("reaping orphan opencode serve", "pid", e.PID)
-		adapter := opencodeadapter.NewAdapter(projectDir, st)
-		_ = adapter.StopServe(ctx)
 		_ = st.DeleteServeRegistry(e.ID)
 	}
 	return nil
-}
-
-func processIsOpenCodeServe(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	if err != nil {
-		return false
-	}
-	cmd := strings.ReplaceAll(string(data), "\x00", " ")
-	return strings.Contains(cmd, "opencode") && strings.Contains(cmd, "serve")
 }
 
 func writeHeroJSONFile(projectDir string, hero install.HeroJSON) error {
