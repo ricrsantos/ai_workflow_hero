@@ -165,7 +165,7 @@ agents:
 
   generic_agent:
     harness: opencode
-    model: opencode-go/gpt-5.6-luna
+    model: opencode-go/deepseek-v4-pro
     reasoning_effort: max
     enable_fast_model: false
     thinking: na
