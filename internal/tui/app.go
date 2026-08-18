@@ -118,6 +118,8 @@ type model struct {
 	propsValueKey     string // key whose secondary list is open
 	propsValueIndex   int    // cursor inside the secondary value list
 	propsRefreshBusy  bool   // background refresh in flight (never blocks the picker)
+	propsAwaitingRefresh bool // waiting for refresh before applying model selection
+	propsPendingSelect   *pendingModelSelect
 	propsWarningText  string // yellow C5 warning (missing catalog / stale / invalidated)
 
 	slashOverlayIndex     int  // selected row in Chat `/` autocomplete
@@ -290,11 +292,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, statusTickCmd()
 
 	case convWaitTickMsg:
-		if !m.streaming {
-			return m, nil
+		if m.streaming {
+			m.waitAnimFrame++
+			return m, convWaitTickCmd()
 		}
-		m.waitAnimFrame++
-		return m, convWaitTickCmd()
+		if m.propsAwaitingRefresh {
+			m.waitAnimFrame++
+			return m, convWaitTickCmd()
+		}
+		return m, nil
 
 	case confirmResumeMsg:
 		return m.dispatchConfirmedAction(msg.action, msg.actionN)
@@ -309,8 +315,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				slog.Debug("tui model props refresh failed", "harness", summary.HarnessID, "error", summary.Err)
 			}
 		}
-		// Completed refreshes never reorder an open model/property selector:
-		// the refreshed snapshot is applied only on the next /hero-model opening.
+		if m.propsPendingSelect != nil {
+			pending := *m.propsPendingSelect
+			m.propsPendingSelect = nil
+			m.propsAwaitingRefresh = false
+			return m.applyModelSelection(pending.modelSlug, pending.harnessID, true, msg.summaries)
+		}
 		slog.Debug("tui model props refresh done", "harnesses", len(msg.summaries))
 		return m, nil
 
@@ -415,6 +425,12 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "esc":
+		if m.propsAwaitingRefresh {
+			m = m.clearPropsPendingSelect()
+			m = m.closePalette()
+			m = m.setStatusResult(true, "/hero-model", "Selection cancelled — no changes saved.")
+			return m, nil
+		}
 		if m.pickingModel && m.modelPickerHarness != "" {
 			return m.openModelPicker()
 		}
@@ -476,6 +492,9 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
+		if m.propsAwaitingRefresh {
+			return m, nil
+		}
 		if m.pickingHarness {
 			return m.applyHarnessDraft()
 		}

@@ -101,7 +101,7 @@ fallback_model:
 
 func TestPropertyPickerOpensWhenSelectable(t *testing.T) {
 	m, _ := newPickerTestModel(t)
-	m, _ = RunPaletteItemForTest(m, "/hero-model") // cursor is the default pair harness
+	m = OpenHeroModelForTest(m) // cursor is the default pair harness
 	m = SetPaletteIndexForTest(m, 0)
 	m, _ = HandleTestKey(m, "enter") // select cursor harness
 	m = SetPaletteIndexForTest(m, 0)
@@ -113,10 +113,10 @@ func TestPropertyPickerOpensWhenSelectable(t *testing.T) {
 	view := ViewForTest(m)
 	for _, want := range []string{
 		"/hero-model · Cursor · properties",
-		"Fast model:",
+		"Fast Mode:",
 		"Thinking:",
 		"Reasoning effort:",
-		"ENTER to save",
+		"enter save",
 		"esc cancel",
 	} {
 		if !strings.Contains(view, want) {
@@ -127,7 +127,7 @@ func TestPropertyPickerOpensWhenSelectable(t *testing.T) {
 
 func TestPropertyPickerSkipsAndCommitsWithoutMetadata(t *testing.T) {
 	m, dir := newPickerTestModel(t)
-	m, _ = RunPaletteItemForTest(m, "/hero-model")
+	m = OpenHeroModelForTest(m)
 	m = SetPaletteIndexForTest(m, 0)
 	m, _ = HandleTestKey(m, "enter")
 	// Select the model with no property metadata (pricing-only).
@@ -162,7 +162,7 @@ func TestPropertyPickerSkipsAndCommitsWithoutMetadata(t *testing.T) {
 
 func TestPropertyPickerSpaceTogglesFastWithoutPersisting(t *testing.T) {
 	m, dir := newPickerTestModel(t)
-	m, _ = RunPaletteItemForTest(m, "/hero-model")
+	m = OpenHeroModelForTest(m)
 	m = SetPaletteIndexForTest(m, 0)
 	m, _ = HandleTestKey(m, "enter")
 	m = SetPaletteIndexForTest(m, 0)
@@ -195,9 +195,9 @@ func TestPropertyPickerSpaceTogglesFastWithoutPersisting(t *testing.T) {
 	}
 }
 
-func TestPropertyPickerValueListAndEnterCommit(t *testing.T) {
+func TestPropertyPickerSpaceCyclesAndEnterSaves(t *testing.T) {
 	m, dir := newPickerTestModel(t)
-	m, _ = RunPaletteItemForTest(m, "/hero-model")
+	m = OpenHeroModelForTest(m)
 	m = SetPaletteIndexForTest(m, 0)
 	m, _ = HandleTestKey(m, "enter")
 	m = SetPaletteIndexForTest(m, 0)
@@ -205,28 +205,19 @@ func TestPropertyPickerValueListAndEnterCommit(t *testing.T) {
 
 	// Toggle fs on.
 	m, _ = HandleTestKey(m, "space")
-	// Row 1 = th: enter opens the value list; choose "max".
+	// Row 1 = th: space cycles off → max.
 	m = SetPaletteIndexForTest(m, 1)
-	m, _ = HandleTestKey(m, "enter")
-	if !m.propsValueList || m.propsValueKey != "th" {
-		t.Fatalf("value list must open for th: list=%v key=%s", m.propsValueList, m.propsValueKey)
-	}
-	m, _ = HandleTestKey(m, "down")
-	m, _ = HandleTestKey(m, "enter")
+	m, _ = HandleTestKey(m, "space")
 	if m.propsDraft["th"] != "max" {
 		t.Fatalf("th draft=%q", m.propsDraft["th"])
 	}
-	// Row 2 = ef: value list, choose high.
+	// Row 2 = ef: space cycles medium → high.
 	m = SetPaletteIndexForTest(m, 2)
-	m, _ = HandleTestKey(m, "enter")
-	m, _ = HandleTestKey(m, "down")
-	m, _ = HandleTestKey(m, "down")
-	m, _ = HandleTestKey(m, "enter")
+	m, _ = HandleTestKey(m, "space")
 	if m.propsDraft["ef"] != "high" {
 		t.Fatalf("ef draft=%q", m.propsDraft["ef"])
 	}
 
-	// Main Enter commits everything atomically.
 	m, _ = HandleTestKey(m, "enter")
 	if m.pickingProps || PickingModelForTest(m) {
 		t.Fatal("picker must close after save")
@@ -249,7 +240,7 @@ func TestPropertyPickerValueListAndEnterCommit(t *testing.T) {
 
 func TestPropertyPickerEscapeCancelsCompleteSelection(t *testing.T) {
 	m, dir := newPickerTestModel(t)
-	m, _ = RunPaletteItemForTest(m, "/hero-model")
+	m = OpenHeroModelForTest(m)
 	m = SetPaletteIndexForTest(m, 0)
 	m, _ = HandleTestKey(m, "enter")
 	m = SetPaletteIndexForTest(m, 0)
@@ -279,7 +270,7 @@ func TestPropertyPickerEscapeCancelsCompleteSelection(t *testing.T) {
 func TestPropertyPickerRestoresPerModelChoices(t *testing.T) {
 	m, dir := newPickerTestModel(t)
 	openPicker := func(m model, modelID string) model {
-		m, _ = RunPaletteItemForTest(m, "/hero-model")
+		m = OpenHeroModelForTest(m)
 		m = SetPaletteIndexForTest(m, 0)
 		m, _ = HandleTestKey(m, "enter") // cursor harness
 		m = SetPaletteFilter(m, modelID)
@@ -297,9 +288,7 @@ func TestPropertyPickerRestoresPerModelChoices(t *testing.T) {
 		t.Fatalf("partial model fs must be na, got %q", m.propsDraft["fs"])
 	}
 	m = SetPaletteIndexForTest(m, 1)
-	m, _ = HandleTestKey(m, "enter")
-	m, _ = HandleTestKey(m, "down")
-	m, _ = HandleTestKey(m, "enter")
+	m, _ = HandleTestKey(m, "space")
 	m, _ = HandleTestKey(m, "enter")
 
 	// Reopen full/model: fs=true must be restored independently.
@@ -318,7 +307,7 @@ func TestPropertyPickerRestoresPerModelChoices(t *testing.T) {
 
 func TestPropertyPickerDisabledRowIsInert(t *testing.T) {
 	m, _ := newPickerTestModel(t)
-	m, _ = RunPaletteItemForTest(m, "/hero-model")
+	m = OpenHeroModelForTest(m)
 	m = SetPaletteIndexForTest(m, 0)
 	m, _ = HandleTestKey(m, "enter")
 	m = SetPaletteFilter(m, "partial")
@@ -331,12 +320,8 @@ func TestPropertyPickerDisabledRowIsInert(t *testing.T) {
 		t.Fatalf("unavailable ef must stay na: %q", m.propsDraft["ef"])
 	}
 	m, _ = HandleTestKey(m, "enter")
-	if m.propsValueList {
-		t.Fatal("unavailable row must not open a value list")
-	}
-	view := ViewForTest(m)
-	if !strings.Contains(view, "Reasoning effort: na") {
-		t.Fatalf("unavailable row must stay visible with na:\n%s", view)
+	if m.pickingProps {
+		t.Fatal("enter must save and close the picker")
 	}
 }
 
@@ -583,5 +568,36 @@ func TestWorkflowExecutionSendsYAMLProjection(t *testing.T) {
 	// thinking: na is an effective sentinel and must not reach the adapter.
 	if _, ok := h.lastProps["th"]; ok {
 		t.Fatalf("YAML thinking na must be omitted from transport: %v", h.lastProps)
+	}
+}
+
+func TestPropertyPickerEscapeRestoresChatSlashOverlay(t *testing.T) {
+	m, _ := newPickerTestModel(t)
+	m = EnterConversationForTest(m)
+	m = typeChat(t, m, "/hero-model")
+	m, _ = HandleTestKey(m, "enter")
+	if CurrentScreen(m) != ScreenPalette {
+		t.Fatalf("screen=%v want palette", CurrentScreen(m))
+	}
+	m, _ = DeliverRefreshDoneForTest(m, nil)
+	m = SetPaletteIndexForTest(m, 0)
+	m, _ = HandleTestKey(m, "enter")
+	m = SetPaletteIndexForTest(m, 0)
+	m, _ = HandleTestKey(m, "enter")
+	if !m.pickingProps {
+		t.Fatal("property picker must be open")
+	}
+	m, _ = HandleTestKey(m, "esc")
+	if CurrentScreen(m) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(m))
+	}
+	m = typeChat(t, m, "/")
+	if !ChatSlashOverlayActiveForTest(m) {
+		t.Fatalf("chat slash overlay must work after esc from property picker, items=%d",
+			len(FilteredChatSlashForTest(m)))
+	}
+	view := ViewForTest(m)
+	if !strings.Contains(view, "/hero-model") {
+		t.Fatalf("overlay missing /hero-model: %q", view)
 	}
 }

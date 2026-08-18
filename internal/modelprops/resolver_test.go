@@ -111,6 +111,24 @@ func TestResolveCatalogFallback(t *testing.T) {
 	}
 }
 
+func TestResolveCatalogVariantSlugFallback(t *testing.T) {
+	cat := Catalog{
+		"cursor-grok-4.6": CatalogModel{Properties: map[string]CatalogProperty{
+			"ef": {Available: true, Values: []string{"low", "medium", "high"}, Default: "medium", HasProperty: true},
+		}},
+	}
+	snap := Resolve("cursor", "cursor-grok-4.6-low", nil, nil, nil, false, cat)
+	if snap.Source != SourceCatalog {
+		t.Fatalf("source=%s want catalog", snap.Source)
+	}
+	if !snap.HasSelectableProperty() {
+		t.Fatal("variant slug must inherit selectable ef from base catalog row")
+	}
+	if !snap.Property("ef").Available {
+		t.Fatalf("ef: %+v", snap.Property("ef"))
+	}
+}
+
 func TestResolveUnknownSnapshotWarns(t *testing.T) {
 	snap := Resolve("cursor", "mystery-model", nil, nil, nil, false, nil)
 	if snap.Source != SourceUnknown {
@@ -193,5 +211,24 @@ func TestEncodeDecodeCapabilitiesRoundTrip(t *testing.T) {
 	}
 	if decodeCacheProperties("{not json") != nil && len(decodeCacheProperties("{not json")) != 0 {
 		t.Fatal("malformed cache json must decode empty")
+	}
+}
+
+func TestResolveMergesIncompleteCacheWithCatalog(t *testing.T) {
+	cat := Catalog{
+		"opencode-go/gpt-5.6-luna": CatalogModel{Properties: map[string]CatalogProperty{
+			"fs": {Available: false, HasProperty: true},
+			"ef": {Available: true, Values: []string{"none", "low", "medium", "high", "xhigh", "max"}, Default: "medium", HasProperty: true},
+		}},
+	}
+	cached := `{"fs":{"available":true,"values":["true","false"],"default":"false"},"ef":{"available":true,"values":["medium"],"default":"medium"}}`
+	snap := Resolve("opencode", "opencode-go/gpt-5.6-luna", nil, nil,
+		cacheRow(cached, "2026-08-18T00:00:00Z"), true, cat)
+	if snap.Property("fs").Available {
+		t.Fatalf("catalog must disable fast mode: %+v", snap.Property("fs"))
+	}
+	ef := snap.Property("ef")
+	if !ef.Available || len(ef.AcceptedValues) != 6 {
+		t.Fatalf("catalog must expand effort values: %+v", ef)
 	}
 }

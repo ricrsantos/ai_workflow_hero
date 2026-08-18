@@ -198,6 +198,16 @@ func (m model) renderPalette() string {
 	if m.pickingProps {
 		return m.renderPropertyPicker()
 	}
+	if m.propsAwaitingRefresh {
+		var b strings.Builder
+		frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
+		b.WriteString(headerStyle.Render("/hero-model · loading model properties"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render(frame + " Waiting for harness refresh…"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("esc cancel"))
+		return b.String()
+	}
 	var b strings.Builder
 	switch {
 	case m.pickingModel && m.modelPickerHarness != "":
@@ -409,6 +419,9 @@ func screenTabBar(active screen) string {
 
 func (m model) footerHints() string {
 	if m.screen == screenPalette {
+		if m.pickingProps || m.propsAwaitingRefresh {
+			return ""
+		}
 		return "esc close · enter select · ↑↓ scroll"
 	}
 	if m.screen == screenOutput {

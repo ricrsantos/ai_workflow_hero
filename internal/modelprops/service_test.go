@@ -70,6 +70,35 @@ func (f *fakeHarnessAdapter) DiscoverModelProperties(ctx context.Context, modelI
 	return harness.ModelCapabilities{}, errors.New("no capability api")
 }
 
+// fakeListOnlyAdapter implements lister without ModelPropertyDiscoverer (Cursor).
+type fakeListOnlyAdapter struct {
+	name    string
+	models  []string
+	listErr error
+}
+
+func (f *fakeListOnlyAdapter) Name() string { return f.name }
+func (f *fakeListOnlyAdapter) IsAvailable(context.Context) error {
+	return nil
+}
+func (f *fakeListOnlyAdapter) CreateSession(context.Context, harness.SessionRequest) (*harness.Session, error) {
+	return nil, nil
+}
+func (f *fakeListOnlyAdapter) ResumeSession(context.Context, string) error { return nil }
+func (f *fakeListOnlyAdapter) Execute(context.Context, harness.ExecuteRequest) (*harness.ExecutionResult, error) {
+	return nil, nil
+}
+func (f *fakeListOnlyAdapter) Cancel(context.Context, string) error { return nil }
+func (f *fakeListOnlyAdapter) Status(context.Context, string) (*harness.ExecutionStatus, error) {
+	return nil, nil
+}
+func (f *fakeListOnlyAdapter) Dispatch(context.Context, harness.DispatchRequest) (harness.DispatchResult, error) {
+	return harness.DispatchResult{}, nil
+}
+func (f *fakeListOnlyAdapter) ListModels(context.Context) ([]string, error) {
+	return f.models, f.listErr
+}
+
 func newTestService(t *testing.T, dir string) (*Service, *store.Store) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(dir, store.DBFileName))
@@ -125,6 +154,32 @@ func TestSnapshotUnknownWarns(t *testing.T) {
 	snap := svc.Snapshot("cursor", "mystery")
 	if snap.Source != SourceUnknown || snap.Warning != WarningMissingCatalog {
 		t.Fatalf("snapshot=%+v", snap)
+	}
+}
+
+func TestSnapshotCacheOnlySkipsCatalog(t *testing.T) {
+	dir := t.TempDir()
+	svc, st := newTestService(t, dir)
+	svc.Catalog = Catalog{
+		"mystery": CatalogModel{Properties: map[string]CatalogProperty{
+			"ef": {Available: true, Values: []string{"high"}, Default: "high", HasProperty: true},
+		}},
+	}
+	if err := st.UpsertCapabilities(store.CapabilityCacheRow{
+		Harness:        "opencode",
+		Model:          "mystery",
+		PropertiesJSON: `{"ef":{"available":true,"values":["low"],"default":"low"}}`,
+		RetrievedAt:    "2026-08-18T00:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snap := svc.SnapshotCacheOnly("opencode", "mystery")
+	if snap.Source != SourceCache || snap.Property("ef").DefaultValue != "low" {
+		t.Fatalf("cache-only snap=%+v ef=%+v", snap.Source, snap.Property("ef"))
+	}
+	miss := svc.SnapshotCacheOnly("opencode", "missing")
+	if miss.Source != SourceUnknown || miss.Warning != WarningMissingCatalog {
+		t.Fatalf("missing cache-only=%+v", miss)
 	}
 }
 
@@ -186,10 +241,9 @@ func TestRefreshFansOutAndPersistsWithGeneration(t *testing.T) {
 			}, nil
 		},
 	}
-	cursor := &fakeHarnessAdapter{
+	cursor := &fakeListOnlyAdapter{
 		name:   "cursor",
-		models: []string{"composer-2.5"},
-		// No discovery support: capability calls fail → normal fallback.
+		models: []string{"composer-2.5", "composer-2.5-fast"},
 	}
 	reg := &fakeRegistry{adapters: map[string]harness.HarnessAdapter{
 		"opencode": oc,
@@ -208,11 +262,19 @@ func TestRefreshFansOutAndPersistsWithGeneration(t *testing.T) {
 	if summaries[0].Models != 1 || summaries[0].Capabilities != 1 {
 		t.Fatalf("opencode summary: %+v", summaries[0])
 	}
-	if summaries[1].Models != 1 || summaries[1].Capabilities != 0 {
+	if summaries[1].Models != 2 || summaries[1].Capabilities < 1 {
 		t.Fatalf("cursor summary: %+v", summaries[1])
 	}
 
-	row, ok, err := st.Capabilities("opencode", "opencode-go/deepseek-v4-pro")
+	row, ok, err := st.Capabilities("cursor", "composer-2.5")
+	if err != nil || !ok {
+		t.Fatalf("cursor capabilities must persist: %v %v", err, ok)
+	}
+	if row.PropertiesJSON == "" {
+		t.Fatal("cursor capability json empty")
+	}
+
+	row, ok, err = st.Capabilities("opencode", "opencode-go/deepseek-v4-pro")
 	if err != nil || !ok {
 		t.Fatalf("capabilities must persist: %v %v", err, ok)
 	}
@@ -220,7 +282,7 @@ func TestRefreshFansOutAndPersistsWithGeneration(t *testing.T) {
 		t.Fatal("properties json empty")
 	}
 	models, _, err := st.ModelList("cursor")
-	if err != nil || len(models) != 1 {
+	if err != nil || len(models) != 2 {
 		t.Fatalf("cursor model list must persist: %v %v", models, err)
 	}
 	// The generation marker completes after the refresh.

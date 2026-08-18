@@ -4,6 +4,26 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Keep this document under 1,000 words by removing or consolidating outdated entries. Permanent facts (architecture, stack, features) belong in `context/current-state.md`, not here.
 
+**Decision / Outcome**: Catalog YAML for `gpt-5.6-luna` and `glm-5.3`: `fs`/`th` unavailable; `ef` lists `none` through `max`. `deepseek-v4-pro` unchanged. TUI label `Fast Mode`; property picker footer hidden. **Follow-up**: OpenCode `model_options` cache merge (incomplete effort lists). Property picker UX: **Space** cycles values, **Enter** saves only (removed secondary value list). **Bugfix**: Esc from property picker left model-picker rows in `paletteItems`, so Chat `/` overlay was empty — `cancelPropertyDraft` no longer clears `pickingProps` before `closePalette()`.
+
+---
+
+## 2026-08-18 — Chat slash overlay after property-picker Esc
+
+**Problem**: Esc from `/hero-model` property picker broke Chat `/` autocomplete; Esc before properties or Enter (save) did not.
+
+**Root cause**: `cancelPropertyDraft` set `pickingProps=false` before `closePalette()`, so `wasPicking` was false and `reloadPaletteItems()` was skipped — stale model-picker palette rows filtered out by `chatSlashOverlayItem`.
+
+**Decision / Outcome**: Defer `pickingProps` reset to `closePalette()`; regression test `TestPropertyPickerEscapeRestoresChatSlashOverlay`.
+
+---
+
+## 2026-08-18 — C5 model-properties refresh + slug locks (TUI)
+
+**Problem**: After selecting a model during `/hero-model` background refresh, the TUI showed `No catalog is available` because Cursor refresh persisted only model lists (no capabilities) and OpenCode cache applied only on the next picker open. Variant slugs (`cursor-grok-4.6-low`) did not lock fixed properties.
+
+**Decision / Outcome**: `internal/adapters/cursor/capabilities.go` infers `fs`/`th`/`ef` from `ListModels` and applies slug locks; `modelprops.Service` persists inferred caps and adds `SnapshotCacheOnly`. TUI waits with braille animation when selection happens during refresh, then applies cache-only snapshot (catalog fallback only when refresh fails). Cursor snapshots apply slug locks in the picker (gray locked rows). Catalog YAML + base-slug lookup already landed earlier. `go test ./...` green.
+
 ---
 
 ## 2026-08-17 — OpenCode serve process leak (TUI)
@@ -113,6 +133,14 @@ _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+E
 ## 2026-08-18 — C5 Implementation completed (model properties TUI)
 
 **Decision / Outcome**: Completed all 22 native `generic_agent` tasks in `openspec/changes/model-properties-tui/`. The implementation adds normalized `fs`/`th`/`ef` contracts, optional OpenCode discovery and Cursor-safe composition, schema-v5 project cache, embedded/installed catalog fallback, atomic per-pair `hero.json` persistence, background refresh at `/hero-model` open, the Bubble Tea property picker, responsive status labels/warnings, workflow-YAML projection, explicit rejection errors, and Runtime help/inventory assertions. Existing C4 Cursor/OpenCode/session/lazy-serve behavior remains green. `go test ./...`, `go vet ./...`, and targeted race checks passed; no browser or web work was introduced. The active cycle remains native-only with OpenSpec slug `model-properties-tui`.
+
+---
+
+## 2026-08-18 — C5 catalog metadata for Cursor and OpenCode Go
+
+**Problem**: `/hero-model` showed `No catalog is available` and skipped the property submenu for common pairs (`cursor-grok-4.6-low`, `opencode-go/gpt-5.6-luna`) because embedded/installed YAML had pricing only (Cursor) or a single OpenCode fixture.
+
+**Decision / Outcome**: Added C5 `properties` blocks to `assets/models/cursor.yml` and `assets/models/opencode.yml` (mirrored in `.workflow-hero/models/`). Cursor base rows (`composer-2.5`, `cursor-grok-4.5`, `cursor-grok-4.6`) define `fs`/`ef`; variant slugs inherit via new `CatalogValues` base-suffix stripping. OpenCode Go catalog covers `deepseek-v4-pro`, `gpt-5.6-luna`, and `glm-5.3`. Plan todos updated; `go test ./...` green.
 
 ---
 

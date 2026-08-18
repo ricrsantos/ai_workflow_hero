@@ -859,8 +859,8 @@ stages:
 	if ChatModelSlugForTest(m) != "" {
 		t.Fatalf("must not auto-select a default model, got %q", ChatModelSlugForTest(m))
 	}
-	m = SetAvailableModelsForTest(m, []string{"composer-2.5", "cursor-grok-4.5-high"})
-	next, _ := RunPaletteItemForTest(m, "/hero-model")
+	m = SetAvailableModelsForTest(m, []string{"composer-2.5", "auto"})
+	next := OpenHeroModelForTest(m)
 	if !PickingModelForTest(next) {
 		t.Fatal("expected model picker open")
 	}
@@ -871,7 +871,7 @@ stages:
 	if !strings.Contains(view, "/hero-model · select harness") || !strings.Contains(view, "Cursor") || !strings.Contains(view, "OpenCode") {
 		t.Fatalf("harness submenu view=%q", view)
 	}
-	if strings.Contains(view, "cursor-grok-4.5-high") {
+	if strings.Contains(view, "auto") && strings.Contains(view, "/hero-model · select harness") {
 		t.Fatalf("models must not appear before harness select: %q", view)
 	}
 	next = SetPaletteIndexForTest(next, 0)
@@ -880,12 +880,12 @@ stages:
 		t.Fatalf("harness=%q", ModelPickerHarnessForTest(next))
 	}
 	view = ViewForTest(next)
-	if !strings.Contains(view, "/hero-model · Cursor") || !strings.Contains(view, "cursor-grok-4.5-high") {
+	if !strings.Contains(view, "/hero-model · Cursor") || !strings.Contains(view, "auto") {
 		t.Fatalf("model list view=%q", view)
 	}
-	next = SetPaletteFilter(next, "grok")
+	next = SetPaletteFilter(next, "auto")
 	items := FilteredPalette(next)
-	if len(items) != 1 || items[0].Label != "cursor-grok-4.5-high" {
+	if len(items) != 1 || items[0].Label != "auto" {
 		t.Fatalf("filtered=%v", items)
 	}
 	next = SetPaletteIndexForTest(next, 0)
@@ -900,7 +900,7 @@ stages:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"model": "cursor-grok-4.5-high"`) {
+	if !strings.Contains(string(data), `"model": "auto"`) {
 		t.Fatalf("hero.json not updated: %s", data)
 	}
 	// C5: the model has no property metadata, so the pair commits immediately
@@ -939,16 +939,17 @@ func TestHeroModelPickerFromSlashMenuReturnsToChat(t *testing.T) {
 	t.Cleanup(func() { _ = svc.Close() })
 
 	m := NewTestModel(svc)
-	m = SetAvailableModelsForTest(m, []string{"composer-2.5", "cursor-grok-4.5-high"})
+	m = SetAvailableModelsForTest(m, []string{"composer-2.5", "auto"})
 	m = OpenPalette(m)
 	if CurrentScreen(m) != ScreenPalette {
 		t.Fatalf("screen=%v", CurrentScreen(m))
 	}
-	next, _ := RunPaletteItemForTest(m, "/hero-model")
+	next := OpenHeroModelForTest(m)
 	next = SetPaletteIndexForTest(next, 0)
-	next, _ = HandleTestKey(next, "enter")
+	next, _ = HandleTestKey(next, "enter") // cursor harness
+	next = SetPaletteFilter(next, "auto")
 	next = SetPaletteIndexForTest(next, 0)
-	next, _ = HandleTestKey(next, "enter")
+	next, _ = HandleTestKey(next, "enter") // model without catalog metadata
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want chat after selecting model from slash menu", CurrentScreen(next))
 	}
@@ -984,7 +985,7 @@ func TestHeroModelPickerSkipsHarnessWhenOnlyOneEnabled(t *testing.T) {
 
 	m := NewTestModel(svc)
 	m = SetAvailableModelsForTest(m, []string{"composer-2.5"})
-	next, _ := RunPaletteItemForTest(m, "/hero-model")
+	next := OpenHeroModelForTest(m)
 	if ModelPickerHarnessForTest(next) != "cursor" {
 		t.Fatalf("harness=%q want cursor (skip submenu)", ModelPickerHarnessForTest(next))
 	}
@@ -1025,7 +1026,7 @@ func TestHeroModelPickerListsOpenCodeModels(t *testing.T) {
 		{Model: "anthropic/claude-sonnet-4", Harness: "opencode"},
 		{Model: "xai/grok-4", Harness: "opencode"},
 	})
-	next, _ := RunPaletteItemForTest(m, "/hero-model")
+	next := OpenHeroModelForTest(m)
 	items := FilteredPalette(next)
 	idx := -1
 	for i, item := range items {

@@ -8,6 +8,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
+	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -421,6 +422,38 @@ func HandleTestMsg(m model, msg tea.Msg) (model, tea.Cmd) {
 // StatusTextForTest returns the footer status text.
 func StatusTextForTest(m model) string {
 	return m.statusText
+}
+
+func SetPropsRefreshBusyForTest(m model, busy bool) model {
+	m.propsRefreshBusy = busy
+	return m
+}
+
+func PropsAwaitingRefreshForTest(m model) bool {
+	return m.propsAwaitingRefresh
+}
+
+func PropsPendingSelectForTest(m model) (harnessID, modelSlug string, ok bool) {
+	if m.propsPendingSelect == nil {
+		return "", "", false
+	}
+	return m.propsPendingSelect.harnessID, m.propsPendingSelect.modelSlug, true
+}
+
+func DeliverRefreshDoneForTest(m model, summaries []modelprops.RefreshSummary) (model, tea.Cmd) {
+	return HandleTestMsg(m, modelRefreshDoneMsg{summaries: summaries})
+}
+
+// OpenHeroModelForTest opens /hero-model and completes the background refresh
+// that tests do not run through the tea runtime.
+func OpenHeroModelForTest(m model) model {
+	m, _ = RunPaletteItemForTest(m, "/hero-model")
+	m, _ = DeliverRefreshDoneForTest(m, nil)
+	return m
+}
+
+func SelectChatModelPairForTest(m model, modelSlug, harnessID string) (model, tea.Cmd) {
+	return m.selectChatModelPair(modelSlug, harnessID)
 }
 
 // ReapOpenCodeOrphansForTest runs orphan serve cleanup (integration tests).

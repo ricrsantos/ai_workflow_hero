@@ -1,8 +1,12 @@
 provider: cursor
 version: 1
-last_updated: 2026-08-15
+last_updated: 2026-08-18
 currency: usd
 unit: per_1m_tokens
+
+# C5 property metadata is defined on base model rows. Variant slugs such as
+# cursor-grok-4.6-low or composer-2.5-fast inherit properties via catalog
+# base-slug lookup (ADR-039).
 
 models:
   composer-2.5:
@@ -11,6 +15,11 @@ models:
     cache_read: 0.20
     output: 2.50
     context_window: 200000
+    properties:
+      fs:
+        available: true
+        values: ["true", "false"]
+        default: "false"
   composer-2.5-fast:
     input: 3.00
     cache_write: 0.00
@@ -24,8 +33,22 @@ models:
     cache_read: 0.50
     output: 6.00
     context_window: 256000
-  # Task often exposes the high-effort variant as a distinct slug.
+    properties:
+      fs:
+        available: true
+        values: ["true", "false"]
+        default: "false"
+      ef:
+        available: true
+        values: ["high"]
+        default: "high"
   cursor-grok-4.5-high:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 256000
+  cursor-grok-4.5-high-fast:
     input: 2.00
     cache_write: 0.00
     cache_read: 0.50
@@ -37,8 +60,59 @@ models:
     cache_read: 0.50
     output: 6.00
     context_window: 256000
+    properties:
+      fs:
+        available: true
+        values: ["true", "false"]
+        default: "false"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh"]
+        default: "medium"
+  cursor-grok-4.6-low:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 256000
+  cursor-grok-4.6-low-fast:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 256000
+  cursor-grok-4.6-medium:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 256000
+  cursor-grok-4.6-medium-fast:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 256000
   # Task often exposes the high-effort variant as a distinct slug.
   cursor-grok-4.6-high:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 256000
+  cursor-grok-4.6-high-fast:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 256000
+  cursor-grok-4.6-xhigh:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 256000
+  cursor-grok-4.6-xhigh-fast:
     input: 2.00
     cache_write: 0.00
     cache_read: 0.50

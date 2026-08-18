@@ -30,6 +30,7 @@ func (m model) openModelPicker() (model, tea.Cmd) {
 		m.propsSvc.Registry = m.svc.Registry
 	}
 	m = m.loadFreechatProps()
+	m = m.clearPropsPendingSelect()
 	// C5: opening /hero-model starts the background refresh for every enabled
 	// harness (PRD-C05-001 §4.2.5). It never blocks the picker and never runs
 	// at TUI boot, so OpenCode stays lazy until this explicit user action.

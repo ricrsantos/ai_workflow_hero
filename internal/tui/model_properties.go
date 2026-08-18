@@ -20,6 +20,11 @@ type modelRefreshDoneMsg struct {
 	summaries []modelprops.RefreshSummary
 }
 
+type pendingModelSelect struct {
+	harnessID string
+	modelSlug string
+}
+
 // initModelProps builds the C5 model-property service and the effective freechat
 // property map. Only local sources (hero.json, project cache, catalog) are read —
 // no harness API is touched at boot, so OpenCode stays lazy.
@@ -167,7 +172,7 @@ func propertyPickerHeader(harnessID string) string {
 func friendlyPropertyName(key string) string {
 	switch key {
 	case harness.PropertyFast:
-		return "Fast model"
+		return "Fast Mode"
 	case harness.PropertyThink:
 		return "Thinking"
 	case harness.PropertyEffort:
@@ -208,7 +213,45 @@ func (m model) selectChatModelPair(modelSlug, harnessID string) (model, tea.Cmd)
 		}
 	}
 
+	if m.propsRefreshBusy {
+		m.propsPendingSelect = &pendingModelSelect{harnessID: harnessID, modelSlug: modelSlug}
+		m.propsAwaitingRefresh = true
+		m.waitAnimFrame = 0
+		return m, convWaitTickCmd()
+	}
+	return m.applyModelSelection(modelSlug, harnessID, false, nil)
+}
+
+func (m model) applyModelSelection(modelSlug, harnessID string, fromRefreshWait bool, summaries []modelprops.RefreshSummary) (model, tea.Cmd) {
 	snap := m.propsSvc.Snapshot(harnessID, modelSlug)
+	if fromRefreshWait {
+		snap = m.propsSvc.SnapshotCacheOnly(harnessID, modelSlug)
+		if !snap.HasSelectableProperty() && refreshFailedForHarness(summaries, harnessID) {
+			fallback := m.propsSvc.Snapshot(harnessID, modelSlug)
+			if fallback.HasSelectableProperty() {
+				if fallback.Warning == "" {
+					fallback.Warning = modelprops.WarningStaleCache
+				}
+				snap = fallback
+			} else if snap.Warning == "" {
+				snap.Warning = modelprops.WarningMissingCatalog
+			}
+		}
+	}
+	return m.finishModelSelection(modelSlug, harnessID, snap)
+}
+
+func refreshFailedForHarness(summaries []modelprops.RefreshSummary, harnessID string) bool {
+	for _, summary := range summaries {
+		if strings.EqualFold(strings.TrimSpace(summary.HarnessID), harnessID) && summary.Err != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (m model) finishModelSelection(modelSlug, harnessID string, snap modelprops.Snapshot) (model, tea.Cmd) {
+	projectDir := m.svc.ProjectDir
 	if !snap.HasSelectableProperty() {
 		// Skip the submenu: save the pair immediately through the complete-save path.
 		saved := map[string]string{}
@@ -242,6 +285,8 @@ func (m model) selectChatModelPair(modelSlug, harnessID string) (model, tea.Cmd)
 	}
 	saved := install.EffectivePairProperties(hero, harnessID, modelSlug)
 	values, invalidated := modelprops.EffectiveValues(snap, saved)
+	values = mergeLockedPropertyDraft(snap, values)
+	m = m.openPaletteOverlay()
 	m.pickingProps = true
 	m.pickingModel = false
 	m.pickingHarness = false
@@ -264,6 +309,28 @@ func (m model) selectChatModelPair(modelSlug, harnessID string) (model, tea.Cmd)
 	}
 	slog.Info("tui model property picker opened", "harness", harnessID, "model", modelSlug)
 	return m, nil
+}
+
+func mergeLockedPropertyDraft(snap modelprops.Snapshot, values map[string]string) map[string]string {
+	if values == nil {
+		values = map[string]string{}
+	}
+	for _, key := range harness.PropertyKeys() {
+		cap, ok := snap.Properties[key]
+		if !ok || cap.Available {
+			continue
+		}
+		if v := strings.TrimSpace(cap.DefaultValue); v != "" {
+			values[key] = v
+		}
+	}
+	return values
+}
+
+func (m model) clearPropsPendingSelect() model {
+	m.propsPendingSelect = nil
+	m.propsAwaitingRefresh = false
+	return m
 }
 
 // commitPropertyDraft atomically saves the pair and the complete property draft
@@ -294,13 +361,15 @@ func (m model) commitPropertyDraft() (model, tea.Cmd) {
 
 // cancelPropertyDraft discards the complete model/property selection (Escape).
 func (m model) cancelPropertyDraft() (model, tea.Cmd) {
-	m.pickingProps = false
+	// Leave pickingProps true until closePalette() runs so wasPicking triggers
+	// reloadPaletteItems() and the Chat `/` overlay keeps working.
 	m.propsValueList = false
 	m.propsValueKey = ""
 	m.propsDraft = nil
 	m.propsEdited = nil
 	m.propsDraftModel = ""
 	m.propsDraftHarness = ""
+	m = m.clearPropsPendingSelect()
 	m = m.closePalette()
 	m = m.setStatusResult(true, "/hero-model", "Selection cancelled — no changes saved.")
 	return m, nil

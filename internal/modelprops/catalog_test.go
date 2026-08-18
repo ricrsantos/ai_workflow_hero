@@ -125,6 +125,26 @@ func TestCatalogPartialAndAbsentFixtures(t *testing.T) {
 	}
 }
 
+func TestCatalogValuesVariantSlugFallback(t *testing.T) {
+	cat := Catalog{
+		"cursor-grok-4.6": CatalogModel{Properties: map[string]CatalogProperty{
+			"fs": {Available: true, Values: []string{"true", "false"}, Default: "false", HasProperty: true},
+			"ef": {Available: true, Values: []string{"low", "medium", "high", "xhigh"}, Default: "medium", HasProperty: true},
+		}},
+	}
+	ef, ok := cat.CatalogValues("cursor-grok-4.6-low", "ef")
+	if !ok || !ef.Available || len(ef.Values) != 4 {
+		t.Fatalf("variant slug must inherit base ef: %+v", ef)
+	}
+	fs, ok := cat.CatalogValues("cursor-grok-4.6-low-fast", "fs")
+	if !ok || !fs.Available {
+		t.Fatalf("double-suffixed slug must inherit base fs: %+v", fs)
+	}
+	if _, ok := cat.CatalogValues("cursor-grok-4.6-low", "th"); ok {
+		t.Fatal("absent property must not be invented")
+	}
+}
+
 func TestCatalogUnknownKeysIgnoredWithoutPanic(t *testing.T) {
 	yaml := `models:
   acme/weird:

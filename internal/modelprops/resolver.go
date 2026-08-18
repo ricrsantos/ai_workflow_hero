@@ -94,11 +94,21 @@ func Resolve(harnessID, modelID string, api *harness.ModelCapabilities, apiErr e
 	usedCache := false
 	for _, key := range harness.PropertyKeys() {
 		if cap, ok := apiProps[key]; ok {
+			if cat != nil {
+				if p, ok := cat.CatalogValues(modelID, key); ok && p.HasProperty {
+					cap = mergePropertyCapability(cap, p)
+				}
+			}
 			snap.Properties[key] = cap
 			usedAny = true
 			continue
 		}
 		if cap, ok := cacheProps[key]; ok {
+			if cat != nil {
+				if p, ok := cat.CatalogValues(modelID, key); ok && p.HasProperty {
+					cap = mergePropertyCapability(cap, p)
+				}
+			}
 			snap.Properties[key] = cap
 			usedAny = true
 			usedCache = true
@@ -137,6 +147,41 @@ func Resolve(harnessID, modelID string, api *harness.ModelCapabilities, apiErr e
 		snap.Warning = WarningStaleCache
 	}
 	return snap
+}
+
+// mergePropertyCapability reconciles a live/cache capability row with catalog
+// metadata. Catalog wins when it marks a property unavailable or advertises a
+// richer accepted-value list than the harness response (common for OpenCode
+// model_options responses that only echo the current default).
+func mergePropertyCapability(cap harness.PropertyCapability, cat CatalogProperty) harness.PropertyCapability {
+	cap.Key = strings.TrimSpace(cap.Key)
+	if !cat.HasProperty {
+		return cap
+	}
+	if !cat.Available {
+		out := harness.PropertyCapability{Key: cap.Key, Available: false}
+		if def := strings.TrimSpace(cat.Default); def != "" {
+			out.DefaultValue = def
+		} else if def := strings.TrimSpace(cap.DefaultValue); def != "" {
+			out.DefaultValue = def
+		}
+		return out
+	}
+	out := cap
+	out.Available = true
+	// Expand only when the harness response is obviously incomplete (a single
+	// echoed default is common for OpenCode model_options).
+	if len(cat.Values) > 1 && len(out.AcceptedValues) <= 1 {
+		out.AcceptedValues = append([]string(nil), cat.Values...)
+	}
+	if def := strings.TrimSpace(out.DefaultValue); def == "" || !containsValue(out.AcceptedValues, def) {
+		if catDef := strings.TrimSpace(cat.Default); catDef != "" && containsValue(out.AcceptedValues, catDef) {
+			out.DefaultValue = catDef
+		} else if len(out.AcceptedValues) > 0 {
+			out.DefaultValue = out.AcceptedValues[0]
+		}
+	}
+	return out
 }
 
 func decodeCacheProperties(raw string) map[string]harness.PropertyCapability {

@@ -32,6 +32,14 @@ func TestEmbeddedOpenCodeFixtureLoadsCapabilities(t *testing.T) {
 	if !ok || !ef.Available || len(ef.Values) != 3 || ef.Default != "medium" {
 		t.Fatalf("ef fixture: %+v", ef)
 	}
+	lunaFS, ok := cat.CatalogValues("opencode-go/gpt-5.6-luna", "fs")
+	if !ok || lunaFS.Available {
+		t.Fatalf("luna must not expose fast mode: %+v", lunaFS)
+	}
+	lunaEF, ok := cat.CatalogValues("opencode-go/gpt-5.6-luna", "ef")
+	if !ok || !lunaEF.Available || len(lunaEF.Values) != 6 || lunaEF.Values[0] != "none" || lunaEF.Values[5] != "max" {
+		t.Fatalf("luna ef fixture: %+v", lunaEF)
+	}
 }
 
 // TestEmbeddedCatalogPropertyMetadataSurvivesInstallProjection proves the
@@ -55,12 +63,12 @@ func TestEmbeddedCatalogPropertyMetadataSurvivesInstallProjection(t *testing.T) 
 	if p, ok := installed.CatalogValues("opencode-go/deepseek-v4-pro", "ef"); !ok || !p.Available {
 		t.Fatalf("projected fixture lost property metadata: %+v", p)
 	}
-	// Existing pricing/context-window entries remain valid (no properties block).
-	if !installed.HasModel("composer-2.5") {
-		t.Fatal("projected cursor pricing model missing")
+	// C5 base rows may carry property metadata; variant pricing rows stay block-free.
+	if p, ok := installed.CatalogValues("composer-2.5", "fs"); !ok || !p.Available {
+		t.Fatalf("composer-2.5 must expose fs catalog metadata: %+v", p)
 	}
-	if p, ok := installed.CatalogValues("composer-2.5", "fs"); ok && p.HasProperty {
-		t.Fatal("pricing-only entry must not gain property metadata")
+	if m, ok := installed["cursor-grok-4.6-high"]; ok && len(m.Properties) > 0 {
+		t.Fatal("pricing-only variant entry must not embed property blocks in YAML")
 	}
 }
 

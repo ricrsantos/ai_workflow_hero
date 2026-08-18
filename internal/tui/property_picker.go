@@ -10,12 +10,9 @@ import (
 )
 
 // handlePropertyPickerKey processes keys while the C5 property screen is open
-// (UI-C05-001 §3): Space toggles booleans, Enter opens/confirms multi-value
-// lists, main Enter saves the complete draft, Escape cancels everything.
+// (UI-C05-001 §3): Space changes the focused row; Enter saves the complete draft;
+// Escape cancels everything.
 func (m model) handlePropertyPickerKey(msg tea.KeyMsg) (model, tea.Cmd) {
-	if m.propsValueList {
-		return m.handlePropertyValueListKey(msg)
-	}
 	switch msg.String() {
 	case "esc":
 		return m.cancelPropertyDraft()
@@ -38,40 +35,19 @@ func (m model) handlePropertyPickerKey(msg tea.KeyMsg) (model, tea.Cmd) {
 			return m, nil // disabled rows stay inert
 		}
 		if key == harness.PropertyFast {
-			// Boolean toggle for fast mode (UI-C05-001 §3: space toggle).
 			if next, ok := toggleBooleanValue(cap.AcceptedValues, m.propsDraft[key]); ok {
 				m.propsDraft[key] = next
 				m.propsEdited[key] = true
 			}
+			return m, nil
+		}
+		if next, ok := cyclePropertyValue(cap.AcceptedValues, m.propsDraft[key]); ok {
+			m.propsDraft[key] = next
+			m.propsEdited[key] = true
 		}
 		return m, nil
 	case "enter":
-		key := harness.PropertyKeys()[m.propsRowIndex()]
-		cap, ok := m.propsSnapshot.Properties[key]
-		if !ok || !cap.Available {
-			return m, nil // disabled rows stay inert
-		}
-		if key == harness.PropertyFast || len(cap.AcceptedValues) <= 1 {
-			// Booleans and single-value properties have nothing to list, so the
-			// main Enter saves the complete draft (ENTER to save; ADR-042).
-			return m.commitPropertyDraft()
-		}
-		if m.propsEdited[key] {
-			// A multi-value row whose value was already chosen this session:
-			// Enter commits the complete draft instead of re-opening its list.
-			return m.commitPropertyDraft()
-		}
-		// Open the secondary multi-value list.
-		m.propsValueList = true
-		m.propsValueKey = key
-		m.propsValueIndex = 0
-		for i, v := range cap.AcceptedValues {
-			if v == m.propsDraft[key] {
-				m.propsValueIndex = i
-				break
-			}
-		}
-		return m, nil
+		return m.commitPropertyDraft()
 	}
 	return m, nil
 }
@@ -96,44 +72,30 @@ func toggleBooleanValue(accepted []string, current string) (string, bool) {
 			}
 		}
 	}
-	// An unset boolean starts at the first advertised choice.  Standard C5
-	// catalogs advertise true/false and therefore retain the expected true
-	// first-toggle behavior.
 	return values[0], true
 }
 
-// handlePropertyValueListKey processes the secondary multi-value list.
-func (m model) handlePropertyValueListKey(msg tea.KeyMsg) (model, tea.Cmd) {
-	cap, ok := m.propsSnapshot.Properties[m.propsValueKey]
-	if !ok {
-		m.propsValueList = false
-		return m, nil
+func cyclePropertyValue(accepted []string, current string) (string, bool) {
+	values := make([]string, 0, len(accepted))
+	for _, value := range accepted {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			values = append(values, value)
+		}
 	}
-	switch msg.String() {
-	case "esc":
-		// Escape from the secondary list cancels the complete selection.
-		return m.cancelPropertyDraft()
-	case "up", "ctrl+p":
-		if m.propsValueIndex > 0 {
-			m.propsValueIndex--
-		}
-		return m, nil
-	case "down", "ctrl+n":
-		if m.propsValueIndex < len(cap.AcceptedValues)-1 {
-			m.propsValueIndex++
-		}
-		return m, nil
-	case "enter":
-		if m.propsValueIndex >= 0 && m.propsValueIndex < len(cap.AcceptedValues) {
-			m.propsDraft[m.propsValueKey] = cap.AcceptedValues[m.propsValueIndex]
-			m.propsEdited[m.propsValueKey] = true
-		}
-		m.propsValueList = false
-		m.propsValueKey = ""
-		m.propsValueIndex = 0
-		return m, nil
+	if len(values) == 0 {
+		return "", false
 	}
-	return m, nil
+	if len(values) == 1 {
+		return values[0], true
+	}
+	current = strings.TrimSpace(current)
+	for i, value := range values {
+		if value == current {
+			return values[(i+1)%len(values)], true
+		}
+	}
+	return values[0], true
 }
 
 // propsRowIndex clamps the palette cursor to the three fixed property rows.
@@ -154,7 +116,7 @@ func (m model) renderPropertyPicker() string {
 	var b strings.Builder
 	b.WriteString(headerStyle.Render(propertyPickerHeader(m.propsDraftHarness)))
 	b.WriteByte('\n')
-	b.WriteString(mutedStyle.Render("↑↓ navigate · space toggle · enter select · ENTER to save · esc cancel"))
+	b.WriteString(mutedStyle.Render("↑↓ navigate · space change · enter save · esc cancel"))
 	b.WriteByte('\n')
 	b.WriteByte('\n')
 
@@ -170,6 +132,12 @@ func (m model) renderPropertyPicker() string {
 			line = fmt.Sprintf("%s: %s", friendlyPropertyName(key), value)
 		case ok && cap.Available:
 			line = fmt.Sprintf("%s: %s", friendlyPropertyName(key), value)
+		case !ok || !cap.Available:
+			if value != "" && value != "na" {
+				line = fmt.Sprintf("%s: %s", friendlyPropertyName(key), value)
+			} else {
+				line = fmt.Sprintf("%s: %s", friendlyPropertyName(key), "na")
+			}
 		default:
 			line = fmt.Sprintf("%s: %s", friendlyPropertyName(key), "na")
 		}
@@ -180,7 +148,7 @@ func (m model) renderPropertyPicker() string {
 			hasStyle = true
 		}
 		prefix := "  "
-		if i == m.propsRowIndex() && !m.propsValueList {
+		if i == m.propsRowIndex() {
 			prefix = "▸ "
 			if !hasStyle {
 				style = selectedStyle
@@ -191,24 +159,6 @@ func (m model) renderPropertyPicker() string {
 		} else {
 			b.WriteString(prefix + line)
 		}
-		b.WriteByte('\n')
-	}
-
-	// Secondary multi-value list (th/ef and future multi-value keys).
-	if m.propsValueList {
-		b.WriteByte('\n')
-		cap := m.propsSnapshot.Properties[m.propsValueKey]
-		b.WriteString(infoStyle.Render(fmt.Sprintf("  %s values:", friendlyPropertyName(m.propsValueKey))))
-		b.WriteByte('\n')
-		for i, v := range cap.AcceptedValues {
-			prefix := "    "
-			if i == m.propsValueIndex {
-				prefix = "  ▸ "
-			}
-			b.WriteString(prefix + v)
-			b.WriteByte('\n')
-		}
-		b.WriteString(mutedStyle.Render("    ↑↓ choose · enter confirm · esc cancel"))
 		b.WriteByte('\n')
 	}
 	return b.String()

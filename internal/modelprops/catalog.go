@@ -205,14 +205,34 @@ func mergeCatalogYAML(cat Catalog, data []byte) {
 	}
 }
 
-// CatalogValues returns the property block for a model/key, preserving order.
-func (c Catalog) CatalogValues(modelID, key string) (CatalogProperty, bool) {
-	m, ok := c[strings.TrimSpace(modelID)]
+func catalogPropertyForModel(cat Catalog, modelID, key string) (CatalogProperty, bool) {
+	m, ok := cat[strings.TrimSpace(modelID)]
 	if !ok {
 		return CatalogProperty{}, false
 	}
 	p, ok := m.Properties[key]
-	return p, ok
+	if !ok || !p.HasProperty {
+		return CatalogProperty{}, false
+	}
+	return p, true
+}
+
+// catalogBaseModelCandidates returns modelID followed by progressively shorter
+// base slugs after stripping known variant suffixes (UI context bar parity).
+func catalogBaseModelCandidates(modelID string) []string {
+	return cursor.BaseModelCandidates(modelID)
+}
+
+// CatalogValues returns the property block for a model/key, preserving order.
+// When the exact model ID has no property row, known variant suffixes are
+// stripped so cursor-grok-4.6-low inherits metadata from cursor-grok-4.6.
+func (c Catalog) CatalogValues(modelID, key string) (CatalogProperty, bool) {
+	for _, candidate := range catalogBaseModelCandidates(modelID) {
+		if p, ok := catalogPropertyForModel(c, candidate, key); ok {
+			return p, true
+		}
+	}
+	return CatalogProperty{}, false
 }
 
 // HasModel reports whether the catalog supplies a row for the model ID.

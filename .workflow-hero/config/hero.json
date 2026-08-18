@@ -13,17 +13,35 @@
   "harnesses": {
     "cursor": {
       "enabled": true,
-      "model": "composer-2.5",
+      "model": "cursor-grok-4.6-high-fast",
       "enable_fast_model": false
     },
     "opencode": {
       "enabled": true,
-      "model": "opencode/deepseek-v4-flash-free",
+      "model": "opencode-go/deepseek-v4-pro",
       "enable_fast_model": false
     }
   },
   "freechat_default": {
     "harness": "opencode",
-    "model": "opencode/deepseek-v4-flash-free"
+    "model": "opencode-go/deepseek-v4-pro"
+  },
+  "model_properties": {
+    "cursor": {
+      "cursor-grok-4.6-low": {
+        "ef": "high",
+        "fs": "false"
+      }
+    },
+    "opencode": {
+      "opencode-go/deepseek-v4-pro": {
+        "ef": "high",
+        "fs": "false",
+        "th": "off"
+      },
+      "opencode-go/gpt-5.6-luna": {
+        "ef": "max"
+      }
+    }
   }
 }

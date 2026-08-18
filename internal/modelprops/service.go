@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
@@ -51,12 +52,88 @@ func (s *Service) Snapshot(harnessID, modelID string) Snapshot {
 	s.mu.Lock()
 	refreshErr := s.refreshErrors[harnessID]
 	s.mu.Unlock()
+	var snap Snapshot
 	if s.Store != nil {
 		if row, ok, err := s.Store.Capabilities(harnessID, modelID); err == nil && ok {
-			return Resolve(harnessID, modelID, nil, refreshErr, &row, true, s.Catalog)
+			snap = Resolve(harnessID, modelID, nil, refreshErr, &row, true, s.Catalog)
+			return applyCursorSlugLocks(snap)
 		}
 	}
-	return Resolve(harnessID, modelID, nil, refreshErr, nil, false, s.Catalog)
+	snap = Resolve(harnessID, modelID, nil, refreshErr, nil, false, s.Catalog)
+	return applyCursorSlugLocks(snap)
+}
+
+// SnapshotCacheOnly returns capabilities from the project SQLite cache, enriched
+// with installed/embedded catalog metadata when the cached harness response is
+// incomplete (PRD-C05-001 §4.2.5).
+func (s *Service) SnapshotCacheOnly(harnessID, modelID string) Snapshot {
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	modelID = strings.TrimSpace(modelID)
+	s.mu.Lock()
+	refreshErr := s.refreshErrors[harnessID]
+	s.mu.Unlock()
+	if s.Store != nil {
+		if row, ok, err := s.Store.Capabilities(harnessID, modelID); err == nil && ok {
+			snap := Resolve(harnessID, modelID, nil, refreshErr, &row, true, s.Catalog)
+			return applyCursorSlugLocks(snap)
+		}
+	}
+	snap := Resolve(harnessID, modelID, nil, refreshErr, nil, false, s.Catalog)
+	return applyCursorSlugLocks(snap)
+}
+
+func enrichCapabilitiesFromCatalog(cat Catalog, modelID string, caps harness.ModelCapabilities) harness.ModelCapabilities {
+	if cat == nil {
+		return caps
+	}
+	byKey := map[string]harness.PropertyCapability{}
+	for _, p := range caps.Properties {
+		byKey[p.Key] = p
+	}
+	for _, key := range harness.PropertyKeys() {
+		catProp, ok := cat.CatalogValues(modelID, key)
+		if !ok || !catProp.HasProperty {
+			continue
+		}
+		cur, ok := byKey[key]
+		if !ok {
+			cur = harness.PropertyCapability{Key: key}
+		}
+		byKey[key] = mergePropertyCapability(cur, catProp)
+	}
+	caps.Properties = caps.Properties[:0]
+	for _, key := range harness.PropertyKeys() {
+		if p, ok := byKey[key]; ok && (p.Available || p.DefaultValue != "" || len(p.AcceptedValues) > 0) {
+			caps.Properties = append(caps.Properties, p)
+		}
+	}
+	return caps
+}
+
+func applyCursorSlugLocks(snap Snapshot) Snapshot {
+	if snap.HarnessID != "cursor" {
+		return snap
+	}
+	if len(cursor.SlugLockedProperties(snap.ModelID)) == 0 {
+		return snap
+	}
+	caps := harness.ModelCapabilities{HarnessID: snap.HarnessID, ModelID: snap.ModelID}
+	for _, key := range harness.PropertyKeys() {
+		if p, ok := snap.Properties[key]; ok {
+			caps.Properties = append(caps.Properties, p)
+		}
+	}
+	caps = cursor.ApplySlugLocks(caps, snap.ModelID)
+	snap.Properties = map[string]harness.PropertyCapability{}
+	for _, p := range caps.Properties {
+		snap.Properties[p.Key] = p
+	}
+	for _, key := range harness.PropertyKeys() {
+		if _, ok := snap.Properties[key]; !ok {
+			snap.Properties[key] = harness.PropertyCapability{Key: key, Available: false}
+		}
+	}
+	return snap
 }
 
 // Models returns the best immediately available model rows for a harness.
@@ -224,27 +301,29 @@ func (s *Service) refreshHarness(ctx context.Context, harnessID string) RefreshS
 					if strings.TrimSpace(caps.ModelID) == "" {
 						caps.ModelID = model
 					}
-					summary.Capabilities++
-					if s.Store != nil {
-						if cached, ok, readErr := s.Store.Capabilities(harnessID, model); readErr == nil && ok {
-							// A live response may be partial. Replace the keys it
-							// covered while retaining unaffected cached keys for the
-							// deterministic next-opening fallback.
-							caps.Properties = mergeCapabilityProperties(decodeCacheProperties(cached.PropertiesJSON), caps.Properties)
-						}
-						ts := caps.RetrievedAt
-						if ts.IsZero() {
-							ts = time.Now().UTC()
-						}
-						if err := s.Store.UpsertCapabilities(store.CapabilityCacheRow{
-							Harness:        harnessID,
-							Model:          strings.TrimSpace(caps.ModelID),
-							PropertiesJSON: EncodeCapabilities(caps),
-							RetrievedAt:    ts.Format(time.RFC3339),
-						}); err != nil {
-							summary.Err = firstRefreshError(summary.Err, err)
-							slog.Error("modelprops refresh persist capabilities failed", "harness", harnessID, "model", model, "error", err)
-						}
+					if err := s.persistCapabilities(harnessID, model, caps); err != nil {
+						summary.Err = firstRefreshError(summary.Err, err)
+						slog.Error("modelprops refresh persist capabilities failed", "harness", harnessID, "model", model, "error", err)
+						continue
+					}
+					if len(caps.Properties) > 0 {
+						summary.Capabilities++
+					}
+				}
+			} else if harnessID == "cursor" {
+				for _, model := range models {
+					if ctx.Err() != nil {
+						break
+					}
+					caps := cursor.InferCapabilitiesFromModelList(models, model)
+					caps = harness.NormalizeModelCapabilities(caps)
+					if err := s.persistCapabilities(harnessID, model, caps); err != nil {
+						summary.Err = firstRefreshError(summary.Err, err)
+						slog.Error("modelprops refresh persist cursor capabilities failed", "harness", harnessID, "model", model, "error", err)
+						continue
+					}
+					if cursor.HasSelectableCapability(caps) {
+						summary.Capabilities++
 					}
 				}
 			}
@@ -259,6 +338,26 @@ func firstRefreshError(current, next error) error {
 		return current
 	}
 	return next
+}
+
+func (s *Service) persistCapabilities(harnessID, model string, caps harness.ModelCapabilities) error {
+	caps = enrichCapabilitiesFromCatalog(s.Catalog, model, caps)
+	if s.Store == nil {
+		return nil
+	}
+	if cached, ok, readErr := s.Store.Capabilities(harnessID, model); readErr == nil && ok {
+		caps.Properties = mergeCapabilityProperties(decodeCacheProperties(cached.PropertiesJSON), caps.Properties)
+	}
+	ts := caps.RetrievedAt
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
+	return s.Store.UpsertCapabilities(store.CapabilityCacheRow{
+		Harness:        harnessID,
+		Model:          strings.TrimSpace(caps.ModelID),
+		PropertiesJSON: EncodeCapabilities(caps),
+		RetrievedAt:    ts.Format(time.RFC3339),
+	})
 }
 
 func uniqueModelIDs(models []string) []string {
