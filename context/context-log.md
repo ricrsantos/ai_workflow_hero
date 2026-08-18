@@ -113,3 +113,25 @@ _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+E
 ## 2026-08-18 — C5 Implementation completed (model properties TUI)
 
 **Decision / Outcome**: Completed all 22 native `generic_agent` tasks in `openspec/changes/model-properties-tui/`. The implementation adds normalized `fs`/`th`/`ef` contracts, optional OpenCode discovery and Cursor-safe composition, schema-v5 project cache, embedded/installed catalog fallback, atomic per-pair `hero.json` persistence, background refresh at `/hero-model` open, the Bubble Tea property picker, responsive status labels/warnings, workflow-YAML projection, explicit rejection errors, and Runtime help/inventory assertions. Existing C4 Cursor/OpenCode/session/lazy-serve behavior remains green. `go test ./...`, `go vet ./...`, and targeted race checks passed; no browser or web work was introduced. The active cycle remains native-only with OpenSpec slug `model-properties-tui`.
+
+---
+
+## 2026-08-18 — C5 Judge escalation: judge_agent returns empty in opencode harness
+
+**Problem**: During /hero-start resume, Judge was dispatched to judge_agent via Task. Six attempts all returned `completed` with an EMPTY task_result: (1) full SDD-coverage prompt, (2) resume of that session, (3) fresh full prompt, (4) fallback frontmatter without `thinking: false`, (5) minimal frontmatter (model only, same shape as working qa_agent), (6) one-word smoke test.
+
+**Decision / Outcome**: The agent itself fails to emit any output in this harness — not the prompt, not the model config (qa_agent with identical `opencode/deepseek-v4-flash-free` config returns fine; agent registry healthy). Per iteration-exhaustion rules, Judge closed as Failed (Human Approval = Escalated) and the cycle waits for `/hero-continue` (after fixing judge_agent) or user decision (/hero-approve, /hero-reject, /hero-cancel, /hero-finish). Fallback per ADR-008 was applied to judge_agent.md frontmatter (now `model: opencode/deepseek-v4-flash-free` only) — no effect, re-sync may be needed. QA minor findings (t.Skip condicional em model_properties_test.go:393; branch duplicado em property_picker.go:169) permanecem não tratados (não bloqueantes).
+
+---
+
+## 2026-08-18 — C5 Judge iteration 2 still empty; waiting for user direction
+
+**Problem**: /hero-continue 1 granted an extra iteration (engine events: escalated reason=timeout → continued extra=1 → stage_started judge iteration=2/4). The engine's un-fail path was `hero run --stage judge` (escalate→continue→start; the Cursor push itself hung and was killed by shell timeout). Fresh judge_agent dispatch on iteration 2 returned EMPTY again — 7th consecutive empty return (full prompt x3, resume x1, fallback configs x2, smoke test x1). judge_agent cannot emit output in the opencode harness; qa_agent with identical model config works.
+
+**Decision / Outcome**: Stage left Running (2/4) while waiting for user direction. Options presented: (a) authorize substitute agent (qa_agent or general) for SDD coverage verification, (b) /hero-approve without formal Judge (QA passed; indirect coverage evidence exists), (c) fix judge_agent/harness (restart TUI, re-sync .opencode/agents) then /hero-continue, (d) /hero-reject, /hero-cancel, /hero-finish. No substitute dispatched without explicit authorization.
+
+---
+
+## 2026-08-18 — C5 Judge approved by user without formal verification
+
+**Decision / Outcome**: User ran /hero-approve, accepting the current state without formal Judge SDD-coverage verification (judge_agent broken in the opencode harness — 7 empty returns). QA verdict was PASS with coverage evidence for all 22 SDD tasks; architecture validated against ADR-038–042. Judge closed as Completed on user approval. Remaining known items: 2 minor QA findings (t.Skip condicional em internal/tui/model_properties_test.go:393; branch duplicado em internal/tui/property_picker.go:169) and judge_agent.md frontmatter left in fallback state (model only — diverges from workflow-config reasoning_effort/thinking; re-sync via /hero-sync for next cycle).

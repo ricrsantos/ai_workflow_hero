@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **2.0.0**; **C4 completed** 2026-08-15 (`hero-2-0-multi-harness`, not archived). **C5 Implementation completed** 2026-08-18 (`model-properties-tui`; QA/Judge pending). **C3 archived** (2026-08-09). |
+| **Phase** | Hero **2.0.0**; **C4 completed** 2026-08-15 (`hero-2-0-multi-harness`, not archived). **C5 completed** 2026-08-18 (`model-properties-tui`; QA PASS; Judge approved by user without formal verification — judge_agent broken in opencode harness). **C3 archived** (2026-08-09). |
 
 ## Technology Stack
 
@@ -80,7 +80,7 @@
 - **Windows CLI** — out of scope for Hero 2.0; planned for a future major (PRD §7; DEPLOY.md).
 - **CI/CD release automation and GPG-signed artifacts** — no GitHub Actions / GoReleaser pipeline in 2.0; manual `scripts/release.sh` only (ADR-010; PRD §7).
 - **Additional harness adapters** — Claude Code, Codex, VS Code, and other IDEs remain deferred; C4 ships **Cursor + OpenCode** in the TUI only (PRD §2.3; PRD-C04-001).
-- **C5 QA/Judge** — implementation is complete and awaits requirement-quality review: dynamic capability discovery/cache, `hero.json` per-pair selections, property picker, execution transport, and active-property status line (PRD-C05-001; ADR-038–042; UI-C05-001).
+- **C5 QA/Judge** — QA PASS 2026-08-18 (build/vet/tests green, race clean, ADR-038–042 + C4 constraints honored); 2 minor findings open (`t.Skip` condicional em `internal/tui/model_properties_test.go:393`; branch duplicado em `internal/tui/property_picker.go:169`). Judge completed by user `/hero-approve` without formal SDD coverage verification because `judge_agent` cannot emit output in the opencode harness (7 empty Task returns; re-sync/fix agent for next cycles).
 - **Post-1.0 deferred D2–D13** not covered by C4 — e.g. external integrations (D2), notification manager (D3), daemon/RPC `hero serve` (D7), full event bus (D8), rich TUI roadmap (D10) (PRD-C01-001 §4).
 
 ## Recent Decisions
@@ -116,7 +116,7 @@
 ## Next Steps
 
 1. Archive C4 with `/hero-archive` when ready (OpenSpec `hero-2-0-multi-harness` first; folder date from store `completed_at`).
-2. Run QA/Judge for the implemented C5 SDD `openspec/changes/model-properties-tui/`, then archive C5 when approved.
+2. Archive C5 with `/hero-archive` when ready (OpenSpec `model-properties-tui` first; folder date from store `completed_at`).
 3. Keep `.opencode/agents/*.md` frontmatter models/reasoningEffort/thinking in sync with `workflow-config.yml` `agents.*` blocks (last synced 2026-08-18 before C5 Implementation restart).
 
 ---
