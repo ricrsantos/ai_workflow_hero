@@ -22,8 +22,23 @@ func (m model) openModelPicker() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-model", "Enable a harness with /hero-harness first.")
 		return m, nil
 	}
+	// C5: opening /hero-model starts the background refresh for every enabled
+	// harness (PRD-C05-001 §4.2.5). It never blocks the picker and never runs
+	// at TUI boot, so OpenCode stays lazy until this explicit user action.
+	var refresh tea.Cmd
+	if m.propsSvc != nil && !m.propsRefreshBusy {
+		m.propsRefreshBusy = true
+		refresh = m.startModelPropsRefresh(enabled)
+	}
 	if len(enabled) == 1 {
-		return m.beginModelPickerForHarness(enabled[0])
+		m, cmd := m.beginModelPickerForHarness(enabled[0])
+		if refresh != nil && cmd != nil {
+			return m, tea.Batch(refresh, cmd)
+		}
+		if refresh != nil {
+			return m, refresh
+		}
+		return m, cmd
 	}
 
 	m = m.openPaletteOverlay()
@@ -52,7 +67,7 @@ func (m model) openModelPicker() (model, tea.Cmd) {
 		}
 	}
 	m = m.ensurePaletteVisible()
-	return m, nil
+	return m, refresh
 }
 
 func (m model) beginModelPickerForHarness(harnessID string) (model, tea.Cmd) {
@@ -188,32 +203,6 @@ func (m model) modelsForHarness(harnessID string) []string {
 		return append([]string(nil), m.availableModels...)
 	}
 	return nil
-}
-
-func (m model) selectChatModelPair(modelSlug, harnessID string) (model, tea.Cmd) {
-	modelSlug = strings.TrimSpace(modelSlug)
-	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
-	if modelSlug == "" || harnessID == "" {
-		m = m.closePalette()
-		m = m.setStatusResult(false, "/hero-model", "model and harness required")
-		return m, nil
-	}
-	projectDir := ""
-	if m.svc != nil {
-		projectDir = m.svc.ProjectDir
-	}
-	if projectDir != "" {
-		if err := install.SetFreechatDefault(projectDir, harnessID, modelSlug); err != nil {
-			m = m.closePalette()
-			m = m.setStatusResult(false, "/hero-model", err.Error())
-			return m, nil
-		}
-	}
-	m.chatModelSlug = modelSlug
-	m.chatHarnessID = harnessID
-	m = m.closePalette()
-	m = m.setStatusResult(true, "/hero-model", fmt.Sprintf("Model set to %s · %s", modelSlug, harnessID))
-	return m, nil
 }
 
 func (m model) selectChatModel(slug string) (model, tea.Cmd) {

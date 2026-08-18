@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
@@ -13,16 +14,42 @@ import (
 type executeResolution struct {
 	pair    harnessmgr.ExecutePair
 	warning string
+	// props is the normalized C5 property map attached to the execution request.
+	// propsValidated is false for workflow YAML projections (gray/unvalidated).
+	props          map[string]string
+	propsValidated bool
+}
+
+// resolveExecutionProperties projects the normalized C5 property map for an
+// execution (PRD-C05-001 §4.5.6; ADR-042): workflow/runtime commands (a non-empty
+// C4 runtimeAgentName) carry the active agent's YAML-derived values, marked
+// unvalidated; ordinary Chat and /hero-new carry the freechat selection.
+func (m model) resolveExecutionProperties(projectDir string) (map[string]string, bool) {
+	if m.workflowAgentActive() {
+		props := m.workflowPropertyProjection()
+		if props == nil && strings.TrimSpace(projectDir) != "" {
+			if p, _, err := workflowconfig.AgentProperties(projectDir, m.runtimeAgentName); err == nil {
+				props = p
+			}
+		}
+		return harness.NormalizeProperties(props), false
+	}
+	return harness.NormalizeProperties(m.freechatProps), true
 }
 
 func (m model) resolveExecuteResolution(ctx context.Context) (executeResolution, error) {
 	if m.svc != nil && m.svc.Harness != nil {
+		// Injected single-harness service (tests/hero run).
+		projectDir := m.svc.ProjectDir
+		props, validated := m.resolveExecutionProperties(projectDir)
 		return executeResolution{
 			pair: harnessmgr.ExecutePair{
 				HarnessID: m.conversationHarnessTool(),
 				Model:     m.runtimeExecuteModelSlug(),
 				Adapter:   m.svc.Harness,
 			},
+			props:          props,
+			propsValidated: validated,
 		}, nil
 	}
 
@@ -33,12 +60,15 @@ func (m model) resolveExecuteResolution(ctx context.Context) (executeResolution,
 		reg = m.svc.Registry
 	}
 	if reg == nil {
+		props, validated := m.resolveExecutionProperties(projectDir)
 		return executeResolution{
 			pair: harnessmgr.ExecutePair{
 				HarnessID: m.conversationHarnessTool(),
 				Model:     m.runtimeExecuteModelSlug(),
 				Adapter:   m.harnessAdapter(),
 			},
+			props:          props,
+			propsValidated: validated,
 		}, nil
 	}
 
@@ -98,5 +128,7 @@ func (m model) resolveExecuteResolution(ctx context.Context) (executeResolution,
 		}
 		warning = harnessmgr.FormatFallbackWarning(fromAgent, first.HarnessID, first.Model, pair.HarnessID, pair.Model)
 	}
-	return executeResolution{pair: pair, warning: warning}, nil
+
+	props, propsValidated := m.resolveExecutionProperties(projectDir)
+	return executeResolution{pair: pair, warning: warning, props: props, propsValidated: propsValidated}, nil
 }

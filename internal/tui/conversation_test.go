@@ -27,6 +27,7 @@ type streamingHarness struct {
 	lastMode      string
 	lastStageName string
 	lastAgentName string
+	lastProps     map[string]string
 	err           error
 }
 
@@ -43,6 +44,7 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 	h.lastMode = req.Mode
 	h.lastStageName = req.StageName
 	h.lastAgentName = req.AgentName
+	h.lastProps = harness.CloneProperties(req.Properties)
 	h.executeCount++
 	resultSession := h.sessionID
 	if n := len(h.sessionIDs); n > 0 {

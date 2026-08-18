@@ -1,7 +1,7 @@
 ---
 name: judge_agent
 description: Validates SDD requirement coverage during the Judge stage. Does not assess code style.
-model: opencode-go/deepseek-v4-pro
+model: opencode/deepseek-v4-flash-free
 reasoningEffort: max
 thinking: false
 ---

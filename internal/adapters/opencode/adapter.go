@@ -263,6 +263,11 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	if modelObj := modelPayload(model); modelObj != nil {
 		payload["model"] = modelObj
 	}
+	// C5: normalized fs/th/ef values map to native OpenCode option keys here,
+	// inside the adapter (ADR-041); the TUI never builds provider payloads.
+	if opts := nativePropertyOptions(req.Properties); opts != nil {
+		payload["options"] = opts
+	}
 	if req.AgentName != "" {
 		payload["agent"] = req.AgentName
 	}
@@ -276,8 +281,8 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if err := httpOK(resp); err != nil {
-		return nil, err
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, rejectionFromBody(resp, model, req.Properties)
 	}
 	var msgResp messageResponse
 	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
@@ -298,8 +303,9 @@ func (a *Adapter) executeStream(ctx context.Context, sessionID string, body []by
 	if err != nil {
 		return nil, err
 	}
-	if err := httpOK(resp); err != nil {
-		return nil, err
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		defer resp.Body.Close()
+		return nil, rejectionFromBody(resp, strings.TrimSpace(req.Model), req.Properties)
 	}
 	resp.Body.Close()
 

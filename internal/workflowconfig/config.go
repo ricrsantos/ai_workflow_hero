@@ -125,30 +125,18 @@ func ResolvePair(cfg AgentModelConfig) AgentPair {
 
 // AgentPair resolves agents.<agentName> with fallback_model when missing.
 func AgentPairFor(projectDir, agentName string) (pair AgentPair, usedFallback bool, err error) {
-	cfg, _, err := LoadCurrent(projectDir)
+	cfg, usedFallback, err := AgentConfigFor(projectDir, agentName)
 	if err != nil {
 		return AgentPair{}, false, err
 	}
-	if err := ValidateAgents(cfg); err != nil {
-		return AgentPair{}, false, err
+	return ResolvePair(cfg), usedFallback, nil
+}
+
+func errNoAgent(name string) error {
+	if name == "" {
+		return fmt.Errorf("set agents.<name> in workflow-config.yml")
 	}
-	name := strings.TrimSpace(agentName)
-	if name != "" && cfg.Agents != nil {
-		if agent, ok := cfg.Agents[name]; ok {
-			p := ResolvePair(agent)
-			if p.Harness != "" && p.Model != "" {
-				return p, false, nil
-			}
-		}
-	}
-	p := ResolvePair(cfg.FallbackModel)
-	if p.Harness == "" || p.Model == "" {
-		if name == "" {
-			return AgentPair{}, false, fmt.Errorf("set agents.<name> in workflow-config.yml")
-		}
-		return AgentPair{}, false, fmt.Errorf("set agents.%s in workflow-config.yml", name)
-	}
-	return p, true, nil
+	return fmt.Errorf("set agents.%s in workflow-config.yml", name)
 }
 
 // OrchestratorPair resolves agents.orchestration_agent for TUI Execute.

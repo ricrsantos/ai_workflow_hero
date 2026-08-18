@@ -18,12 +18,12 @@
     },
     "opencode": {
       "enabled": true,
-      "model": "opencode-go/deepseek-v4-pro",
+      "model": "opencode/deepseek-v4-flash-free",
       "enable_fast_model": false
     }
   },
   "freechat_default": {
     "harness": "opencode",
-    "model": "opencode-go/deepseek-v4-pro"
+    "model": "opencode/deepseek-v4-flash-free"
   }
 }

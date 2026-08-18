@@ -6,9 +6,17 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 4
+const currentSchemaVersion = 5
 
 func (s *Store) migrate() error {
+	return s.migrateTo(currentSchemaVersion)
+}
+
+// migrateTo applies migrations up to maxVersion (test hook for v4→v5 coverage).
+func (s *Store) migrateTo(maxVersion int) error {
+	if maxVersion > currentSchemaVersion {
+		maxVersion = currentSchemaVersion
+	}
 	if _, err := s.db.Exec(`
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
@@ -23,7 +31,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 		return fmt.Errorf("read schema version: %w", err)
 	}
 
-	for v := version + 1; v <= currentSchemaVersion; v++ {
+	for v := version + 1; v <= maxVersion; v++ {
 		s.log.Info("applying schema migration", "version", v)
 		if err := s.applyMigration(v); err != nil {
 			return err
@@ -135,6 +143,33 @@ func (s *Store) applyMigration(version int) error {
 			return fmt.Errorf("migration %d: %w", version, err)
 		}
 		if _, err := tx.Exec(`ALTER TABLE stages ADD COLUMN harness_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+	case 5:
+		// ADR-C05 / ADR-039: project-scoped model/capability cache (not global).
+		if _, err := tx.Exec(`CREATE TABLE model_list_cache (
+  harness TEXT NOT NULL,
+  models_json TEXT NOT NULL,
+  refreshed_at TEXT NOT NULL,
+  PRIMARY KEY (harness)
+)`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+		if _, err := tx.Exec(`CREATE TABLE model_capability_cache (
+  harness TEXT NOT NULL,
+  model TEXT NOT NULL,
+  properties_json TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL,
+  PRIMARY KEY (harness, model)
+)`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+		if _, err := tx.Exec(`CREATE TABLE model_refresh_state (
+  harness TEXT PRIMARY KEY,
+  generation INTEGER NOT NULL DEFAULT 0,
+  pending INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT ''
+)`); err != nil {
 			return fmt.Errorf("migration %d: %w", version, err)
 		}
 	default:

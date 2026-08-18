@@ -903,7 +903,9 @@ stages:
 	if !strings.Contains(string(data), `"model": "cursor-grok-4.5-high"`) {
 		t.Fatalf("hero.json not updated: %s", data)
 	}
-	if StatusKindForTest(next) != "ok" {
+	// C5: the model has no property metadata, so the pair commits immediately
+	// and a yellow missing-catalog warning is shown (UI-C05-001 §5).
+	if StatusKindForTest(next) != "warn" {
 		t.Fatalf("status=%s", StatusKindForTest(next))
 	}
 }

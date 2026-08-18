@@ -417,8 +417,8 @@ VALUES(1, 'C2', 'obj', ?, '{}', '')`, CycleStatusActive); err != nil {
 	}
 	defer s2.Close()
 	v, err := s2.SchemaVersion()
-	if err != nil || v != 4 {
-		t.Fatalf("schema version = %d %v, want 4", v, err)
+	if err != nil || v != currentSchemaVersion {
+		t.Fatalf("schema version = %d %v, want %d", v, err, currentSchemaVersion)
 	}
 	st, err := s2.GetStage(cycleID, "research")
 	if err != nil || st.HarnessSessionID != "" {

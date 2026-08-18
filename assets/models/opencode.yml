@@ -1,0 +1,23 @@
+# OpenCode-native model catalog (capability-only; no pricing invented for C5).
+# Primary OpenCode adapter fixture: opencode-go/deepseek-v4-pro (PRD-C05-001 §7).
+provider: opencode-go
+version: 1
+last_updated: 2026-08-17
+currency: usd
+unit: per_1m_tokens
+
+models:
+  opencode-go/deepseek-v4-pro:
+    properties:
+      fs:
+        available: true
+        values: ["true", "false"]
+        default: "false"
+      th:
+        available: true
+        values: ["off", "max"]
+        default: "off"
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "medium"

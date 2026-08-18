@@ -51,6 +51,10 @@ type ExecuteRequest struct {
 	Model string
 	// Mode is the agent mode: "build" (default/agent) or "plan". Empty means build.
 	Mode string
+	// Properties carries normalized model-property values keyed by C5 keys
+	// (fs, th, ef). Adapters own the native mapping; the map is copied at the
+	// request boundary so adapters cannot mutate TUI state (ADR-038/041).
+	Properties map[string]string
 	// OnStreamDelta receives live stream events when Stream is true (optional).
 	OnStreamDelta func(delta StreamDelta)
 }

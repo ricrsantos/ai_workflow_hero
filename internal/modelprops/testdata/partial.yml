@@ -1,0 +1,14 @@
+# Synthetic partial-capability fixture (one editable property, one unavailable).
+models:
+  fixture/partial:
+    input: 1.0
+    output: 2.0
+    context_window: 128000
+    properties:
+      th:
+        available: true
+        values: ["off", "max"]
+        default: "off"
+      ef:
+        available: false
+        values: []

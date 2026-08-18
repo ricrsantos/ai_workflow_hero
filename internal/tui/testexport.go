@@ -287,6 +287,8 @@ func StatusKindForTest(m model) string {
 		return "ok"
 	case statusErr:
 		return "err"
+	case statusWarn:
+		return "warn"
 	default:
 		return "idle"
 	}

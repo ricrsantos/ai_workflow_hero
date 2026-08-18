@@ -195,6 +195,9 @@ func emptyCycleScreenMessage(kind string, cycleNumber int) string {
 }
 
 func (m model) renderPalette() string {
+	if m.pickingProps {
+		return m.renderPropertyPicker()
+	}
 	var b strings.Builder
 	switch {
 	case m.pickingModel && m.modelPickerHarness != "":
@@ -312,6 +315,12 @@ func (m model) paletteListHeight() int {
 
 // ensurePaletteVisible keeps paletteIndex inside the scrolled window.
 func (m model) ensurePaletteVisible() model {
+	if m.pickingProps {
+		// The C5 property picker keeps its own three-row cursor; paletteItems is
+		// empty while it is open, so clamping against the list would reset the
+		// property row selection to 0 on every render/refresh.
+		return m
+	}
 	items := m.filteredPaletteItems()
 	n := len(items)
 	if n == 0 {

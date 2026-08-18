@@ -51,6 +51,25 @@ func OpenProject(projectDir string) (*Store, error) {
 	return Open(filepath.Join(projectDir, RelativeDBPath))
 }
 
+// openCapped opens a store but only applies migrations up to maxVersion.
+// Test hook for schema v4→v5 migration coverage.
+func openCapped(path string, maxVersion int) (*Store, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("create store directory: %w", err)
+	}
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	s := &Store{db: db, log: slog.Default()}
+	if err := s.migrateTo(maxVersion); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
 // Close closes the underlying database.
 func (s *Store) Close() error {
 	if s == nil || s.db == nil {

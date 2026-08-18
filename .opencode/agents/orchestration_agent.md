@@ -1,7 +1,7 @@
 ---
 name: orchestration_agent
 description: Hero workflow orchestrator — coordinates stages, dispatches subagents via Task, maintains cycle state.
-model: opencode-go/deepseek-v4-pro
+model: opencode/deepseek-v4-flash-free
 reasoningEffort: max
 ---
 

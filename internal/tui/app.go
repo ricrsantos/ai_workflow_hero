@@ -14,6 +14,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
 )
 
 type screen int
@@ -102,6 +103,23 @@ type model struct {
 	researchSessionID      string          // discover_agent harness session
 	awaitingRejectReason   bool            // Chat is collecting rejection feedback before Runtime Execute
 
+	// C5 model properties (ADR-042).
+	propsSvc           *modelprops.Service
+	freechatProps      map[string]string // selected freechat property values (status line + execution)
+	freechatSnapshot   modelprops.Snapshot
+	workflowProps      map[string]string // YAML-derived projection during workflow/runtime commands
+	pickingProps       bool              // /hero-model step 3 (property picker open)
+	propsDraftHarness  string
+	propsDraftModel    string
+	propsDraft         map[string]string // in-memory property draft (fs/th/ef)
+	propsEdited        map[string]bool   // rows edited this draft session (Enter commit guard)
+	propsSnapshot      modelprops.Snapshot
+	propsValueList     bool   // secondary multi-value list open (th/ef)
+	propsValueKey      string // key whose secondary list is open
+	propsValueIndex    int    // cursor inside the secondary value list
+	propsRefreshBusy   bool   // background refresh in flight (never blocks the picker)
+	propsWarningText   string // yellow C5 warning (missing catalog / stale / invalidated)
+
 	slashOverlayIndex     int  // selected row in Chat `/` autocomplete
 	slashOverlayDismissed bool // Esc or insert closed the overlay until the token changes
 
@@ -154,6 +172,7 @@ func newModel(svc *cycle.Service) model {
 	}
 	m.contextWindows = loadContextWindowCatalog(projectDir)
 	m = m.reloadPaletteItems()
+	m = m.initModelProps(projectDir)
 	return m.syncConversationContext()
 }
 
@@ -279,6 +298,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case listModelsMsg:
 		return m.handleListModelsMsg(msg)
 
+	case modelRefreshDoneMsg:
+		m.propsRefreshBusy = false
+		for _, summary := range msg.summaries {
+			if summary.Err != nil {
+				slog.Debug("tui model props refresh failed", "harness", summary.HarnessID, "error", summary.Err)
+			}
+		}
+		// Completed refreshes never reorder an open model/property selector:
+		// the refreshed snapshot is applied only on the next /hero-model opening.
+		slog.Debug("tui model props refresh done", "harnesses", len(msg.summaries))
+		return m, nil
+
 	case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
@@ -288,6 +319,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.confirmPending {
 			return m.handleConfirmKey(msg)
 		}
+		// C5: warnings clear on the next user action (UI-C05-001 §5). The action
+		// itself may set a new warning later in this same processing pass.
+		m = m.clearPropsWarning()
 		if m.screen == screenOutput {
 			return m.handleOutputKey(msg)
 		}
@@ -372,6 +406,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.pickingProps {
+		return m.handlePropertyPickerKey(msg)
+	}
 	switch msg.String() {
 	case "esc":
 		if m.pickingModel && m.modelPickerHarness != "" {

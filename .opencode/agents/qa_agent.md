@@ -1,7 +1,7 @@
 ---
 name: qa_agent
 description: Validates technical quality during the QA stage — tests, coverage, lint, build.
-model: opencode-go/kimi-k2.7-code
+model: opencode/deepseek-v4-flash-free
 ---
 
 # qa_agent — Quality Assurance Agent

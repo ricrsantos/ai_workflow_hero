@@ -180,6 +180,10 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	// Only resume when the caller passes SessionID explicitly (conversation).
 	// Do not inject adapter.resumeID — that leaked chat/sync sessions into palette Dispatch.
 
+	// C5: compose normalized properties into the native model slug (ADR-041).
+	// Workflow-composed slugs that already carry the suffix are not double-suffixed.
+	model := ComposeModelSlug(req.Model, req.Properties)
+
 	format := "json"
 	if req.Stream {
 		format = "stream-json"
@@ -199,7 +203,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		// Character-level assistant deltas while the process runs.
 		args = append(args, "--stream-partial-output")
 	}
-	if model := strings.TrimSpace(req.Model); model != "" {
+	if model != "" {
 		args = append(args, "--model", model)
 	}
 	if mode := strings.TrimSpace(strings.ToLower(req.Mode)); mode == harness.ModePlan || mode == "plan" {
@@ -259,6 +263,12 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 				a.log().Warn("cursor agent execute retriable failure", "attempt", attempt, "error", err, "stderr", firstLine(stderr, stdout))
 				a.sleep(executeRetryBackoff(attempt))
 				continue
+			}
+			// C5: a property-composed slug rejected by the CLI must fail
+			// explicitly instead of stripping the property or retrying silently.
+			if rejection := propertyRejectionForOutput(model, req.Properties, stdout, stderr, err); rejection != nil {
+				a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: rejection.Error()})
+				return nil, rejection
 			}
 			a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: firstLine(stderr, err.Error())})
 			a.log().Error("cursor agent execute failed", "error", err, "stderr", firstLine(stderr, ""))

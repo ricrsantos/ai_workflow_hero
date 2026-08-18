@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"gopkg.in/yaml.v3"
 )
 
@@ -181,25 +182,119 @@ func (m model) contextWindowMax() int64 {
 	return m.contextWindows.lookup(m.conversationContextSlug())
 }
 
+// renderScrollHintLine renders the status row below the green response pane:
+// scroll hint on the left, C5 property labels in the middle, context bar on the
+// right (UI-C05-001 §4). Narrow terminals wrap at rune-safe boundaries instead
+// of hiding any component.
 func (m model) renderScrollHintLine() string {
+	return strings.Join(m.renderChatStatusLines(m.width), "\n")
+}
+
+// renderChatStatusLines returns the status row as one or more rune-safe lines.
+func (m model) renderChatStatusLines(width int) []string {
+	if width < 20 {
+		width = 20
+	}
 	leftText := "↑↓ scroll response"
 	if m.streaming {
 		leftText = "↑↓ scroll · ctrl+c interrupt"
 	}
-	left := mutedStyle.Render(leftText)
-	right := renderContextBar(m.contextUsedTokens, m.contextWindowMax())
-	w := m.width
-	if w < 20 {
-		w = 20
+	segments := []statusSegment{
+		{text: leftText, style: mutedStyle},
 	}
-	leftW := lipgloss.Width(left)
-	rightW := lipgloss.Width(right)
-	if right == "" {
-		return left
+	labels := m.renderPropertyLabels()
+	if labels != "" {
+		segments = append(segments, statusSegment{text: labels, plain: true})
 	}
-	gap := w - leftW - rightW
-	if gap < 1 {
-		return left
+	if bar := renderContextBar(m.contextUsedTokens, m.contextWindowMax()); bar != "" {
+		segments = append(segments, statusSegment{text: bar, plain: true})
 	}
-	return left + strings.Repeat(" ", gap) + right
+	return packStatusSegments(segments, width)
+}
+
+// renderPropertyLabels renders the stable [fs-…] [th-…] [ef-…] labels with the
+// C5 color semantics: green for validated configured values (fs only when
+// validated "true"), gray for na/unavailable/unvalidated (UI-C05-001 §4).
+func (m model) renderPropertyLabels() string {
+	values, validated := m.effectiveDisplayProperties()
+	labels := make([]string, 0, len(harness.PropertyKeys()))
+	for _, key := range harness.PropertyKeys() {
+		value := values[key]
+		if value == "" {
+			value = "na"
+		}
+		label := "[" + key + "-" + value + "]"
+		style := mutedStyle
+		if validated[key] && value != "na" {
+			if key == harness.PropertyFast {
+				if value == "true" {
+					style = successStyle
+				}
+			} else {
+				style = successStyle
+			}
+		}
+		labels = append(labels, style.Render(label))
+	}
+	return strings.Join(labels, " ")
+}
+
+// statusSegment is one independently styled, rune-safe status-line segment.
+type statusSegment struct {
+	text  string
+	style lipgloss.Style
+	plain bool // true when no style is applied
+}
+
+// packStatusSegments lays segments out left-to-right, wrapping at rune-safe
+// boundaries when the line is too narrow. Components are never dropped.
+func packStatusSegments(segments []statusSegment, width int) []string {
+	rendered := make([]string, 0, len(segments))
+	for _, seg := range segments {
+		if seg.plain {
+			rendered = append(rendered, seg.text)
+			continue
+		}
+		rendered = append(rendered, seg.style.Render(seg.text))
+	}
+	if len(rendered) == 0 {
+		return []string{""}
+	}
+
+	var lines []string
+	var current []string
+	currentWidth := 0
+	flush := func() {
+		if len(current) > 0 {
+			lines = append(lines, strings.Join(current, "  "))
+			current = nil
+			currentWidth = 0
+		}
+	}
+	for _, seg := range rendered {
+		w := lipgloss.Width(seg)
+		gap := 2
+		if len(current) == 0 {
+			gap = 0
+		}
+		if len(current) > 0 && currentWidth+gap+w > width {
+			flush()
+			gap = 0
+		}
+		if w > width {
+			// A single oversized segment wraps hard at rune-safe boundaries.
+			flush()
+			for _, line := range wrapOutputLine(seg, width) {
+				lines = append(lines, line)
+			}
+			continue
+		}
+		current = append(current, seg)
+		currentWidth += gap + w
+	}
+	flush()
+	if len(lines) == 0 {
+		lines = append(lines, "")
+	}
+	return lines
 }

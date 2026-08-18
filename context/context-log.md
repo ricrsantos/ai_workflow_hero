@@ -91,3 +91,19 @@ _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+E
 ## 2026-08-17 — C5 Planning completed (model properties TUI)
 
 **Decision / Outcome**: Created OpenSpec change `model-properties-tui` under `openspec/changes/model-properties-tui/`. The SDD defines 19 normalized/cache/persistence/TUI/adapter/workflow requirements and 22 independently testable native tasks. Catalog, SQLite, hero.json, adapter, and workflow-contract tracks can run in parallel after the shared contract; TUI picker/status tracks can run in parallel after state integration. The active cycle stores the OpenSpec slug for archive coupling.
+
+---
+
+## 2026-08-17 — C5 generic_agent model probe (pre-Implementation diagnostic)
+
+**Problem**: User asked to probe the generic_agent identity before `/hero-start`. The TUI appeared frozen ("solicitou alguma permissão que não chegou").
+
+**Decision / Outcome**: Task dispatch to generic_agent returned `completed` with answer `deepseek-v4-pro` (matches `agents.generic_agent.model`). On resume-interrogation the subagent confirmed it never executed any tool and had no pending permission request — the freeze was a TUI/harness rendering artifact, not a subagent permission stall. Probe passed: model routing resolves the configured `opencode-go/deepseek-v4-pro`.
+
+---
+
+## 2026-08-18 — C5 resume: sync .opencode/agents models with workflow-config.yml
+
+**Problem**: Before restarting Implementation after `/hero-resume`, the `.opencode/agents/*.md` frontmatter models drifted from `workflow-config.yml` `agents.*` blocks (context_agent/qa_agent/end2end_qa_agent still pointed at `kimi-k2.7-code`; orchestration/generic/judge/browser at `deepseek-v4-pro`).
+
+**Decision / Outcome**: Synced every agent frontmatter to the opencode harness IDs + reasoningEffort/thinking in the C5 workflow-config (orchestration/context/qa/judge/browser/end2end → `opencode/deepseek-v4-flash-free`; generic → `opencode-go/gpt-5.6-luna`; discover/planning/backend/frontend already matched). `reasoning_effort: na` → omit `reasoningEffort`; `thinking: na` → omit `thinking`. opencode.json untouched. Ready for `/hero-start`.

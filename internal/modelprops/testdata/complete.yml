@@ -1,0 +1,16 @@
+# Synthetic complete-capability fixture (capability-only; no provider pricing).
+models:
+  fixture/complete:
+    properties:
+      fs:
+        available: true
+        values: ["true", "false"]
+        default: "false"
+      th:
+        available: true
+        values: ["off", "max", "vendor-custom"]
+        default: "max"
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "medium"

@@ -384,7 +384,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 			return m, nil
 		}
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite, opts)
-		m.runtimeAgentName = agentOrchestration
+		m = m.withRuntimeAgent(agentOrchestration)
 	} else {
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody, opts)
 	}
@@ -915,6 +915,9 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			AgentName:  agentName,
 			Model:      pair.Model,
 			Mode:       mode,
+			// C5: attach the normalized property projection (freechat for
+			// Chat//hero-new, YAML-derived for workflow commands; ADR-041/042).
+			Properties: resolved.props,
 			OnStreamDelta: func(delta harness.StreamDelta) {
 				ch <- streamDeltaMsg{delta: delta}
 			},
@@ -971,6 +974,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.orchestrationLive {
 			m.runtimeModelSlug = ""
 			m.runtimeAgentName = ""
+			m.workflowProps = nil
 		}
 		if msg.err != nil {
 			errText := msg.err.Error()

@@ -45,6 +45,10 @@ type HeroJSON struct {
 	Assets          AssetsInfo               `json:"assets"`
 	Harnesses       map[string]HarnessConfig `json:"harnesses,omitempty"`
 	FreechatDefault FreechatDefault          `json:"freechat_default,omitempty"`
+	// ModelProperties persists string-valued model properties per harness/native
+	// model pair (C5; ADR-040). Missing maps unmarshal as empty and never cause
+	// a migration failure.
+	ModelProperties map[string]map[string]map[string]string `json:"model_properties,omitempty"`
 }
 
 // CLIInfo holds CLI installation metadata.

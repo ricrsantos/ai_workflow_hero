@@ -16,6 +16,9 @@ const (
 	statusRunning
 	statusOK
 	statusErr
+	// statusWarn is the C5 yellow warning state (missing catalog, stale cache,
+	// invalidated values) — distinct from red execution errors (UI-C05-001 §5).
+	statusWarn
 )
 
 // Fixed chrome for the footer status area.
@@ -24,7 +27,7 @@ const statusBarMaxLines = 2
 type statusTickMsg struct{}
 
 func (m model) closePalette() model {
-	wasPicking := m.pickingModel || m.pickingHarness
+	wasPicking := m.pickingModel || m.pickingHarness || m.pickingProps
 	m.screen = m.prevScreen
 	m.paletteFilter = ""
 	m.paletteIndex = 0
@@ -34,6 +37,9 @@ func (m model) closePalette() model {
 		m.pickingHarness = false
 		m.modelPickerHarness = ""
 		m.harnessDraft = nil
+		m.pickingProps = false
+		m.propsValueList = false
+		m.propsValueKey = ""
 		m = m.reloadPaletteItems()
 	}
 	if m.screen == screenConversation {
@@ -135,6 +141,8 @@ func (m model) statusBarDisplayLines(width int) []string {
 		return wrapStatusMessage("✓", m.statusLabel, m.statusText, successStyle, width)
 	case statusErr:
 		return wrapStatusMessage("✗", m.statusLabel, m.statusText, errorStyle, width)
+	case statusWarn:
+		return wrapStatusMessage("⚠", m.statusLabel, m.statusText, warnStyle, width)
 	default:
 		lines := []string{mutedStyle.Render("ready")}
 		if hint := m.conversationStatusHint(); hint != "" {

@@ -115,6 +115,7 @@
 
 1. Archive C4 with `/hero-archive` when ready (OpenSpec `hero-2-0-multi-harness` first; folder date from store `completed_at`).
 2. Implement the approved C5 SDD `openspec/changes/model-properties-tui/` using the marked parallel groups, then run QA/Judge.
+3. Keep `.opencode/agents/*.md` frontmatter models/reasoningEffort/thinking in sync with `workflow-config.yml` `agents.*` blocks (last synced 2026-08-18 before C5 Implementation restart).
 
 ---
 

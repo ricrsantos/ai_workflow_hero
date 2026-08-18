@@ -82,7 +82,7 @@ agents:
   # Cursor IDE chat ignores orchestration_agent / discover_agent model blocks.
   orchestration_agent:
     harness: opencode
-    model: opencode-go/deepseek-v4-pro
+    model: opencode/deepseek-v4-flash-free
     reasoning_effort: max
     enable_fast_model: false
     thinking: na
@@ -126,8 +126,8 @@ agents:
 
   context_agent:
     harness: opencode
-    model: opencode-go/kimi-k2.7-code
-    reasoning_effort: na
+    model: opencode/deepseek-v4-flash-free
+    reasoning_effort: max
     enable_fast_model: false
     thinking: na
     subagent:
@@ -165,12 +165,12 @@ agents:
 
   generic_agent:
     harness: opencode
-    model: opencode-go/deepseek-v4-pro
+    model: opencode-go/gpt-5.6-luna
     reasoning_effort: max
     enable_fast_model: false
     thinking: na
     subagent:
-      same_of_agent: false
+      same_of_agent: true
       model: opencode-go/deepseek-v4-pro
       reasoning_effort: max
       enable_fast_model: false
@@ -178,7 +178,7 @@ agents:
 
   qa_agent:
     harness: opencode
-    model: opencode-go/kimi-k2.7-code
+    model: opencode/deepseek-v4-flash-free
     reasoning_effort: na
     enable_fast_model: false
     thinking: na
@@ -191,7 +191,7 @@ agents:
 
   judge_agent:
     harness: opencode
-    model:  opencode-go/deepseek-v4-pro
+    model:  opencode/deepseek-v4-flash-free
     reasoning_effort: max
     enable_fast_model: false
     thinking: false
@@ -204,7 +204,7 @@ agents:
 
   browser_ui_agent:
     harness: opencode
-    model:  opencode-go/deepseek-v4-pro
+    model:  opencode/deepseek-v4-flash-free
     reasoning_effort: max
     enable_fast_model: false
     thinking: false
@@ -217,7 +217,7 @@ agents:
 
   end2end_qa_agent:
     harness: opencode
-    model: opencode-go/kimi-k2.7-code
+    model: opencode/deepseek-v4-flash-free
     reasoning_effort: na
     enable_fast_model: false
     thinking: false
@@ -232,7 +232,7 @@ agents:
 # The user is always warned explicitly when this fallback is used.
 fallback_model:
   harness: opencode
-  model:  opencode-go/deepseek-v4-pro
+  model: opencode/deepseek-v4-flash-free
   reasoning_effort: max
   enable_fast_model: false
   thinking: na
