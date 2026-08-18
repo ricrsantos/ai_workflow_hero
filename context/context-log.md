@@ -8,6 +8,14 @@
 
 ---
 
+## 2026-08-18 — Release v2.1.0 (C5 model properties)
+
+**Problem**: Ship C5 model-property TUI (dynamic `fs`/`th`/`ef`, API/cache/catalog resolution, adapter transport) as a minor release after v2.0.2.
+
+**Decision / Outcome**: Tagged `v2.1.0` on `main` after `go test ./...` green. Artifacts via `scripts/release.sh`; GitHub Release published with binaries + `checksums.txt`.
+
+---
+
 ## 2026-08-18 — Chat slash overlay after property-picker Esc
 
 **Problem**: Esc from `/hero-model` property picker broke Chat `/` autocomplete; Esc before properties or Enter (save) did not.
