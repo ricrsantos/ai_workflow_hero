@@ -4,7 +4,7 @@
 
 Extend the C4 adapter boundary with normalized model-property transport while keeping provider protocol details inside Cursor/OpenCode adapters (PRD-C05-001 §4.2/§4.5; ADR-038/041).
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Harness execution SHALL accept normalized model properties without changing model listing compatibility
 

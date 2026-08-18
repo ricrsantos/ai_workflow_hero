@@ -4,7 +4,7 @@
 
 Extend the project operational store with normalized model-list/capability cache data for C5 while preserving SQLite as the sole Hero operational store (PRD-C05-001 §4.2/§5; ADR-039).
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Schema v5 SHALL persist project-scoped model metadata and refresh timestamps
 

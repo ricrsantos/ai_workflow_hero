@@ -26,7 +26,7 @@ Display a summary of all available Hero Runtime commands.
 | /hero-back | Reopen Planning (SDD ambiguity; orchestrator-driven, no dedicated CLI verb) |
 | /hero-cycles | List cycles with per-etapa metrics (SQLite + archive folders) |
 | /hero-todos | Show pending items from `context/current-state.md` (run `/hero-sync` first when docs changed) |
-| /hero-model | Select TUI default model (Hero TUI palette; persists to `hero.json`; Chat + non-agent dispatches) |
+| /hero-model | Select TUI model pair and dynamic `fs`/`th`/`ef` properties (atomic `hero.json` save; Chat + `/hero-new`) |
 | /hero-help | Show this help |
 
 ## CLI query helpers
@@ -42,6 +42,8 @@ Display a summary of all available Hero Runtime commands.
 For philosophy, install/uninstall, configuration, CLI commands, agents, architecture docs, and logging standards, open:
 
 `.workflow-hero/docs/workflow-help.md`
+
+`/hero-model` is a TUI-only picker. It uses cache/catalog rows immediately, refreshes enabled harnesses when opened, and shows `[fs-…] [th-…] [ef-…]` in Chat. Choices are stored under `hero.json.model_properties`. Workflow execution remains authoritative to `workflow-config.yml`; missing/stale catalog data is shown as a yellow warning.
 
 ## Stage Flow
 

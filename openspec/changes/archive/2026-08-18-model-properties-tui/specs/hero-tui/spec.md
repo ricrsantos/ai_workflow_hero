@@ -4,7 +4,7 @@
 
 Extend the C4 harness/model picker with C5 property selection and project the effective properties into Chat (PRD-C05-001 §4.1/§4.4/§4.6; UI-C05-001 §§2–7; ADR-042).
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: `/hero-model` SHALL open a property submenu after model selection when editable metadata exists
 

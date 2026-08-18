@@ -4,7 +4,7 @@
 
 Keep workflow agent configuration authoritative while projecting its effective properties into TUI execution/status, without extending the Cursor IDE Runtime with freechat state (PRD-C05-001 §§4.5–5; ADR-040/042).
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Workflow execution SHALL use agent YAML properties, not freechat selections
 

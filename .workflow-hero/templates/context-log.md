@@ -20,6 +20,6 @@
 
 **Problem**: New project setup.
 **Investigation**: N/A — initial setup.
-**Decision**: Initialize Hero with `hero install --tools cursor`.
+**Decision**: Initialize Hero with `hero install`.
 **Outcome**: Hero installed successfully. Workflow structure created.
 **Rationale**: Using AI Workflow Hero for structured development cycles.

@@ -171,3 +171,11 @@ _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+E
 ## 2026-08-18 — C5 Judge approved by user without formal verification
 
 **Decision / Outcome**: User ran /hero-approve, accepting the current state without formal Judge SDD-coverage verification (judge_agent broken in the opencode harness — 7 empty returns). QA verdict was PASS with coverage evidence for all 22 SDD tasks; architecture validated against ADR-038–042. Judge closed as Completed on user approval. Remaining known items: 2 minor QA findings (t.Skip condicional em internal/tui/model_properties_test.go:393; branch duplicado em internal/tui/property_picker.go:169) and judge_agent.md frontmatter left in fallback state (model only — diverges from workflow-config reasoning_effort/thinking; re-sync via /hero-sync for next cycle).
+
+---
+
+## 2026-08-18 — C5 archived (model-properties-tui)
+
+**Problem**: Initial `hero cycle archive` failed — OpenSpec `MODIFIED` deltas referenced requirement headers absent from base specs (`harness-adapter` first failure).
+
+**Decision / Outcome**: Changed C5 delta sections from `## MODIFIED Requirements` to `## ADDED Requirements` in `openspec/changes/model-properties-tui/specs/{harness-adapter,hero-tui,runtime-workflow-execution,sqlite-operational-store}/spec.md`. Retry succeeded: `openspec archive model-properties-tui -y` merged 19 requirements; Hero archived to `.workflow-hero/cycles/archive/C5-2026-08-18-implementa-o-da-sele-o-das-propriedades/`. Resume with `/hero-resume C5`. No active cycle remains.
