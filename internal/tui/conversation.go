@@ -718,18 +718,29 @@ func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
 		m = m.prepareOrchestratorFollowUp()
 	} else if m.researchLive {
 		m = m.prepareDiscoverFollowUp()
-	} else if m.orchestrationLive {
+	} else if m.orchestrationLive || m.workflowAgentActive() {
 		if strings.TrimSpace(m.runtimeModelSlug) == "" {
-			var cmd tea.Cmd
-			var slug string
-			var ok bool
-			m, cmd, slug, ok = m.orchestratorExecuteModel("chat")
-			if !ok {
-				return m, cmd
+			// Runtime command paths normally set runtimeModelSlug before the
+			// first turn.  An injected single-harness service is also used by
+			// the C4 conversation tests and deliberately has no registry-side
+			// YAML model resolution; keep its selected chat slug intact.
+			if m.svc != nil && m.svc.Harness != nil {
+				m.runtimeModelSlug = m.defaultHarnessModelSlug()
 			}
-			m.runtimeModelSlug = slug
+			if strings.TrimSpace(m.runtimeModelSlug) == "" {
+				var cmd tea.Cmd
+				var slug string
+				var ok bool
+				m, cmd, slug, ok = m.orchestratorExecuteModel("chat")
+				if !ok {
+					return m, cmd
+				}
+				m.runtimeModelSlug = slug
+			}
 		}
-		m.runtimeAgentName = agentOrchestration
+		if m.runtimeAgentName == "" {
+			m.runtimeAgentName = agentOrchestration
+		}
 	} else {
 		var cmd tea.Cmd
 		var ok bool
@@ -922,6 +933,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 				ch <- streamDeltaMsg{delta: delta}
 			},
 		}
+		req = harness.NormalizeExecuteRequest(req)
 		res, err := pair.Adapter.Execute(ctx, req)
 		ch <- executeDoneMsg{result: res, err: err, harnessID: pair.HarnessID}
 	}()

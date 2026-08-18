@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -23,9 +24,11 @@ const (
 	contextLabelMinWidth = 11
 )
 
-var contextEffortSuffixes = []string{"-high", "-fast", "-medium", "-low", "-max"}
+var contextEffortSuffixes = []string{"-thinking", "-high", "-fast", "-medium", "-low", "-max"}
 
 type contextWindowCatalog map[string]int64
+
+var ansiStatusEscapeRE = regexp.MustCompile(`\x1b\[[0-9;]*[[:alpha:]]`)
 
 type modelPricingFile struct {
 	Models map[string]modelPricingEntry `yaml:"models"`
@@ -100,13 +103,22 @@ func (c contextWindowCatalog) lookup(slug string) int64 {
 	if max, ok := c[slug]; ok && max > 0 {
 		return max
 	}
-	for _, suffix := range contextEffortSuffixes {
-		if strings.HasSuffix(slug, suffix) {
-			base := strings.TrimSuffix(slug, suffix)
+	base := slug
+	for range contextEffortSuffixes {
+		removed := false
+		for _, suffix := range contextEffortSuffixes {
+			if !strings.HasSuffix(base, suffix) {
+				continue
+			}
+			base = strings.TrimSuffix(base, suffix)
 			if max, ok := c[base]; ok && max > 0 {
 				return max
 			}
-			return 0
+			removed = true
+			break
+		}
+		if !removed {
+			break
 		}
 	}
 	return 0
@@ -192,8 +204,8 @@ func (m model) renderScrollHintLine() string {
 
 // renderChatStatusLines returns the status row as one or more rune-safe lines.
 func (m model) renderChatStatusLines(width int) []string {
-	if width < 20 {
-		width = 20
+	if width < 1 {
+		width = 1
 	}
 	leftText := "↑↓ scroll response"
 	if m.streaming {
@@ -202,9 +214,8 @@ func (m model) renderChatStatusLines(width int) []string {
 	segments := []statusSegment{
 		{text: leftText, style: mutedStyle},
 	}
-	labels := m.renderPropertyLabels()
-	if labels != "" {
-		segments = append(segments, statusSegment{text: labels, plain: true})
+	if labels := m.renderPropertyStatusSegments(); len(labels) > 0 {
+		segments = append(segments, labels...)
 	}
 	if bar := renderContextBar(m.contextUsedTokens, m.contextWindowMax()); bar != "" {
 		segments = append(segments, statusSegment{text: bar, plain: true})
@@ -216,8 +227,23 @@ func (m model) renderChatStatusLines(width int) []string {
 // C5 color semantics: green for validated configured values (fs only when
 // validated "true"), gray for na/unavailable/unvalidated (UI-C05-001 §4).
 func (m model) renderPropertyLabels() string {
+	segments := m.renderPropertyStatusSegments()
+	labels := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		labels = append(labels, segment.text)
+	}
+	return strings.Join(labels, " ")
+}
+
+// renderPropertyStatusSegments returns one independently styled segment per
+// property. Keeping labels separate lets the responsive packer wrap between
+// labels rather than slicing ANSI escape sequences in a colored label group.
+func (m model) renderPropertyStatusSegments() []statusSegment {
+	if !m.hasPropertyStatusModel() {
+		return nil
+	}
 	values, validated := m.effectiveDisplayProperties()
-	labels := make([]string, 0, len(harness.PropertyKeys()))
+	segments := make([]statusSegment, 0, len(harness.PropertyKeys()))
 	for _, key := range harness.PropertyKeys() {
 		value := values[key]
 		if value == "" {
@@ -226,17 +252,20 @@ func (m model) renderPropertyLabels() string {
 		label := "[" + key + "-" + value + "]"
 		style := mutedStyle
 		if validated[key] && value != "na" {
-			if key == harness.PropertyFast {
-				if value == "true" {
-					style = successStyle
-				}
-			} else {
+			if key != harness.PropertyFast || value == "true" {
 				style = successStyle
 			}
 		}
-		labels = append(labels, style.Render(label))
+		segments = append(segments, statusSegment{text: style.Render(label), plain: true})
 	}
-	return strings.Join(labels, " ")
+	return segments
+}
+
+func (m model) hasPropertyStatusModel() bool {
+	return strings.TrimSpace(m.chatModelSlug) != "" ||
+		strings.TrimSpace(m.runtimeModelSlug) != "" ||
+		strings.TrimSpace(m.freechatSnapshot.ModelID) != "" ||
+		len(m.freechatProps) > 0 || m.workflowAgentActive()
 }
 
 // statusSegment is one independently styled, rune-safe status-line segment.
@@ -284,7 +313,10 @@ func packStatusSegments(segments []statusSegment, width int) []string {
 		if w > width {
 			// A single oversized segment wraps hard at rune-safe boundaries.
 			flush()
-			for _, line := range wrapOutputLine(seg, width) {
+			// lipgloss styles can add SGR bytes. Strip only for the hard-wrap
+			// fallback so the rune index never counts escape bytes as content;
+			// normal-width segments retain their original styling.
+			for _, line := range wrapOutputLine(stripStatusANSI(seg), width) {
 				lines = append(lines, line)
 			}
 			continue
@@ -297,4 +329,8 @@ func packStatusSegments(segments []statusSegment, width int) []string {
 		lines = append(lines, "")
 	}
 	return lines
+}
+
+func stripStatusANSI(s string) string {
+	return ansiStatusEscapeRE.ReplaceAllString(s, "")
 }

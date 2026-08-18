@@ -73,10 +73,11 @@ func Resolve(harnessID, modelID string, api *harness.ModelCapabilities, apiErr e
 
 	apiProps := map[string]harness.PropertyCapability{}
 	if api != nil {
-		for _, p := range api.Properties {
+		normalizedAPI := harness.NormalizeModelCapabilities(*api)
+		for _, p := range normalizedAPI.Properties {
 			apiProps[p.Key] = p
 		}
-		snap.RetrievedAt = api.RetrievedAt
+		snap.RetrievedAt = normalizedAPI.RetrievedAt
 	}
 
 	cacheProps := map[string]harness.PropertyCapability{}
@@ -161,6 +162,7 @@ func decodeCacheProperties(raw string) map[string]harness.PropertyCapability {
 
 // EncodeCapabilities serializes capabilities into the normalized cache JSON shape.
 func EncodeCapabilities(caps harness.ModelCapabilities) string {
+	caps = harness.NormalizeModelCapabilities(caps)
 	data := map[string]any{}
 	for _, p := range caps.Properties {
 		data[p.Key] = map[string]any{
@@ -185,6 +187,12 @@ func EffectiveValues(snap Snapshot, saved map[string]string) (values map[string]
 	for _, key := range harness.PropertyKeys() {
 		cap, ok := snap.Properties[key]
 		if !ok || !cap.Available {
+			if chosen := strings.TrimSpace(saved[key]); chosen != "" && chosen != "na" {
+				if invalidated == nil {
+					invalidated = map[string]string{}
+				}
+				invalidated[key] = chosen
+			}
 			values[key] = "na"
 			continue
 		}
@@ -202,7 +210,7 @@ func EffectiveValues(snap Snapshot, saved map[string]string) (values map[string]
 			values[key] = "na"
 			continue
 		}
-		if def := strings.TrimSpace(cap.DefaultValue); def != "" {
+		if def := strings.TrimSpace(cap.DefaultValue); def != "" && containsValue(cap.AcceptedValues, def) {
 			values[key] = def
 		} else {
 			values[key] = "na"

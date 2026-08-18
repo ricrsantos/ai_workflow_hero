@@ -73,6 +73,26 @@ func TestModelCapabilitiesPropertyLookup(t *testing.T) {
 	}
 }
 
+func TestNormalizeModelCapabilitiesPreservesDynamicOrderAndUnknownKeys(t *testing.T) {
+	in := ModelCapabilities{
+		HarnessID: " OpenCode ", ModelID: " m1 ",
+		Properties: []PropertyCapability{{
+			Key: " future ", AcceptedValues: []string{" first ", "", "second "}, DefaultValue: " first ",
+		}},
+	}
+	out := NormalizeModelCapabilities(in)
+	if out.HarnessID != "opencode" || out.ModelID != "m1" || out.Properties[0].Key != "future" {
+		t.Fatalf("normalized capabilities=%+v", out)
+	}
+	if len(out.Properties[0].AcceptedValues) != 2 || out.Properties[0].AcceptedValues[1] != "second" {
+		t.Fatalf("dynamic values=%v", out.Properties[0].AcceptedValues)
+	}
+	out.Properties[0].AcceptedValues[0] = "changed"
+	if in.Properties[0].AcceptedValues[0] != " first " {
+		t.Fatal("normalization must not share accepted-value backing arrays")
+	}
+}
+
 // discoverStub exercises the optional discovery contract without a live harness.
 type discoverStub struct{ caps ModelCapabilities }
 
@@ -144,5 +164,17 @@ func TestExecuteRequestCarriesNormalizedProperties(t *testing.T) {
 	req := ExecuteRequest{Model: "composer-2.5", Properties: map[string]string{"fs": "true", "ef": "high"}}
 	if req.Properties["fs"] != "true" {
 		t.Fatal("ExecuteRequest must expose Properties")
+	}
+}
+
+func TestNormalizeExecuteRequestCopiesAndFiltersProperties(t *testing.T) {
+	props := map[string]string{"fs": " true ", "th": "na", "future": "opaque"}
+	req := NormalizeExecuteRequest(ExecuteRequest{Properties: props})
+	if req.Properties[PropertyFast] != "true" || len(req.Properties) != 1 {
+		t.Fatalf("normalized request=%v", req.Properties)
+	}
+	req.Properties[PropertyFast] = "false"
+	if props[PropertyFast] != " true " {
+		t.Fatalf("request mutation leaked into caller map: %v", props)
 	}
 }

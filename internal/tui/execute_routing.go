@@ -130,5 +130,27 @@ func (m model) resolveExecuteResolution(ctx context.Context) (executeResolution,
 	}
 
 	props, propsValidated := m.resolveExecutionProperties(projectDir)
+	if agentName != "" && len(attempts) > 0 {
+		if fallbackProps, ok := fallbackPropertiesForPair(projectDir, pair); ok {
+			// The two-level C4 fallback selected fallback_model, so its
+			// workflow property block—not the unavailable agent block—is the
+			// authoritative projection for this request.
+			props = harness.NormalizeProperties(fallbackProps)
+			propsValidated = false
+		}
+	}
 	return executeResolution{pair: pair, warning: warning, props: props, propsValidated: propsValidated}, nil
+}
+
+func fallbackPropertiesForPair(projectDir string, pair harnessmgr.ExecutePair) (map[string]string, bool) {
+	cfg, _, err := workflowconfig.LoadCurrent(projectDir)
+	if err != nil {
+		return nil, false
+	}
+	fallback := workflowconfig.ResolvePair(cfg.FallbackModel)
+	if !strings.EqualFold(strings.TrimSpace(fallback.Harness), strings.TrimSpace(pair.HarnessID)) ||
+		strings.TrimSpace(fallback.Model) != strings.TrimSpace(pair.Model) {
+		return nil, false
+	}
+	return workflowconfig.EffectiveProperties(cfg.FallbackModel), true
 }

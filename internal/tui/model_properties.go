@@ -38,14 +38,26 @@ func (m model) initModelProps(projectDir string) model {
 		return m
 	}
 	h, model := install.GetFreechatDefault(hero)
+	if strings.TrimSpace(model) == "" {
+		// C4 projects may have only harnesses.<harness>.model populated;
+		// boot already supplied that pair to the TUI, so still restore its
+		// per-pair C5 properties without inventing a model.
+		h = strings.TrimSpace(m.chatHarnessID)
+		model = strings.TrimSpace(m.chatModelSlug)
+	}
 	if strings.TrimSpace(h) == "" || strings.TrimSpace(model) == "" {
 		return m
 	}
 	snap := m.propsSvc.Snapshot(h, model)
 	saved := install.EffectivePairProperties(hero, h, model)
-	values, _ := modelprops.EffectiveValues(snap, saved)
+	values, invalidated := modelprops.EffectiveValues(snap, saved)
 	m.freechatSnapshot = snap
 	m.freechatProps = values
+	if len(invalidated) > 0 {
+		m = m.setPropsWarning(modelprops.WarningInvalidated)
+	} else if snap.Warning != "" {
+		m = m.setPropsWarning(snap.Warning)
+	}
 	return m
 }
 
@@ -72,14 +84,23 @@ func (m model) loadFreechatProps() model {
 		return m
 	}
 	h, model := install.GetFreechatDefault(hero)
+	if strings.TrimSpace(model) == "" {
+		h = strings.TrimSpace(m.chatHarnessID)
+		model = strings.TrimSpace(m.chatModelSlug)
+	}
 	if strings.TrimSpace(h) == "" || strings.TrimSpace(model) == "" {
 		return m
 	}
 	snap := m.propsSvc.Snapshot(h, model)
 	saved := install.EffectivePairProperties(hero, h, model)
-	values, _ := modelprops.EffectiveValues(snap, saved)
+	values, invalidated := modelprops.EffectiveValues(snap, saved)
 	m.freechatSnapshot = snap
 	m.freechatProps = values
+	if len(invalidated) > 0 {
+		m = m.setPropsWarning(modelprops.WarningInvalidated)
+	} else if snap.Warning != "" {
+		m = m.setPropsWarning(snap.Warning)
+	}
 	return m
 }
 
@@ -179,10 +200,22 @@ func (m model) selectChatModelPair(modelSlug, harnessID string) (model, tea.Cmd)
 		m = m.setStatusResult(true, "/hero-model", fmt.Sprintf("Model set to %s · %s", modelSlug, harnessID))
 		return m, nil
 	}
+	if m.propsSvc == nil {
+		m.propsSvc = modelprops.NewService(projectDir, nil, nil, assets.FS)
+		if m.svc != nil {
+			m.propsSvc.Store = m.svc.Store
+			m.propsSvc.Registry = m.svc.Registry
+		}
+	}
 
 	snap := m.propsSvc.Snapshot(harnessID, modelSlug)
 	if !snap.HasSelectableProperty() {
 		// Skip the submenu: save the pair immediately through the complete-save path.
+		saved := map[string]string{}
+		if hero, err := install.LoadHeroJSON(projectDir); err == nil {
+			saved = install.EffectivePairProperties(hero, harnessID, modelSlug)
+		}
+		_, invalidated := modelprops.EffectiveValues(snap, saved)
 		if err := install.CommitModelSelection(projectDir, harnessID, modelSlug, nil); err != nil {
 			m = m.closePalette()
 			m = m.setStatusResult(false, "/hero-model", err.Error())
@@ -192,7 +225,9 @@ func (m model) selectChatModelPair(modelSlug, harnessID string) (model, tea.Cmd)
 		m.chatHarnessID = harnessID
 		m = m.loadFreechatProps()
 		m = m.closePalette()
-		if snap.Warning != "" {
+		if len(invalidated) > 0 {
+			m = m.setPropsWarning(modelprops.WarningInvalidated)
+		} else if snap.Warning != "" {
 			m = m.setPropsWarning(snap.Warning)
 		} else {
 			m = m.setStatusResult(true, "/hero-model", fmt.Sprintf("Model set to %s · %s", modelSlug, harnessID))

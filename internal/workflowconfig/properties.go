@@ -14,12 +14,19 @@ import (
 // adapters still receive them when configured.
 func EffectiveProperties(cfg AgentModelConfig) map[string]string {
 	out := map[string]string{}
-	if cfg.EnableFastModel {
-		out[harness.PropertyFast] = "true"
-	} else if strings.TrimSpace(cfg.Model) != "" {
-		// Fast is explicitly off when the block exists and the flag is false,
-		// so the projection never falls back to a freechat fs value.
-		out[harness.PropertyFast] = "false"
+	configured := cfg.EnableFastModel ||
+		strings.TrimSpace(cfg.Harness) != "" ||
+		strings.TrimSpace(cfg.Model) != "" ||
+		strings.TrimSpace(cfg.Thinking) != "" ||
+		strings.TrimSpace(cfg.ReasoningEffort) != ""
+	if configured {
+		if cfg.EnableFastModel {
+			out[harness.PropertyFast] = "true"
+		} else {
+			// Fast is explicitly off when the block exists and the flag is false,
+			// so the projection never falls back to a freechat fs value.
+			out[harness.PropertyFast] = "false"
+		}
 	}
 	if th := strings.TrimSpace(cfg.Thinking); th != "" {
 		out[harness.PropertyThink] = th

@@ -128,6 +128,48 @@ func TestSnapshotUnknownWarns(t *testing.T) {
 	}
 }
 
+func TestModelsUsePersistedListBeforeCatalog(t *testing.T) {
+	dir := t.TempDir()
+	svc, st := newTestService(t, dir)
+	svc.Catalog = Catalog{
+		"catalog/model": CatalogModel{Provider: "cursor"},
+	}
+	if got := svc.Models("cursor"); len(got) != 1 || got[0] != "catalog/model" {
+		t.Fatalf("catalog models=%v", got)
+	}
+	if err := st.UpsertModelList("cursor", []string{"api/model", "api/model", ""}, "2026-08-17T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	got := svc.Models("cursor")
+	if len(got) != 1 || got[0] != "api/model" {
+		t.Fatalf("cached models=%v", got)
+	}
+}
+
+func TestSnapshotUsesStaleCacheAfterRefreshFailure(t *testing.T) {
+	dir := t.TempDir()
+	svc, st := newTestService(t, dir)
+	if err := st.UpsertCapabilities(store.CapabilityCacheRow{
+		Harness: "opencode", Model: "m1",
+		PropertiesJSON: `{"ef":{"available":true,"values":["high"],"default":"high"}}`,
+		RetrievedAt:    "2026-08-15T00:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	adapter := &fakeHarnessAdapter{name: "opencode", listErr: errors.New("serve unavailable")}
+	svc.Registry = &fakeRegistry{
+		adapters: map[string]harness.HarnessAdapter{"opencode": adapter},
+		calls:    map[string]int{},
+	}
+	if summaries := svc.Refresh(context.Background(), []string{"opencode"}); len(summaries) != 1 || summaries[0].Err == nil {
+		t.Fatalf("refresh summaries=%+v", summaries)
+	}
+	snap := svc.Snapshot("opencode", "m1")
+	if !snap.Stale || snap.Warning != WarningStaleCache || !snap.Property("ef").Available {
+		t.Fatalf("stale snapshot=%+v", snap)
+	}
+}
+
 func TestRefreshFansOutAndPersistsWithGeneration(t *testing.T) {
 	dir := t.TempDir()
 	svc, st := newTestService(t, dir)
@@ -253,6 +295,36 @@ func TestRefreshPreservesOpenSnapshots(t *testing.T) {
 	}
 	if _, ok, _ := st.Capabilities("opencode", "m1"); !ok {
 		t.Fatal("refreshed capabilities must be persisted")
+	}
+}
+
+func TestRefreshPartialAPIReplacesCoveredKeyAndRetainsOtherCacheKeys(t *testing.T) {
+	dir := t.TempDir()
+	svc, st := newTestService(t, dir)
+	if err := st.UpsertCapabilities(store.CapabilityCacheRow{
+		Harness: "opencode", Model: "m1",
+		PropertiesJSON: `{"fs":{"available":true,"values":["true","false"],"default":"false"},"ef":{"available":true,"values":["low","high"],"default":"low"}}`,
+		RetrievedAt:    "2026-08-15T00:00:00Z",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	adapter := &fakeHarnessAdapter{
+		name:   "opencode",
+		models: []string{"m1"},
+		discoverFn: func(context.Context, string) (harness.ModelCapabilities, error) {
+			return harness.ModelCapabilities{Properties: []harness.PropertyCapability{
+				{Key: "ef", Available: true, AcceptedValues: []string{"medium"}, DefaultValue: "medium"},
+			}}, nil
+		},
+	}
+	svc.Registry = &fakeRegistry{
+		adapters: map[string]harness.HarnessAdapter{"opencode": adapter},
+		calls:    map[string]int{},
+	}
+	svc.Refresh(context.Background(), []string{"opencode"})
+	snap := svc.Snapshot("opencode", "m1")
+	if !snap.Property("fs").Available || snap.Property("ef").DefaultValue != "medium" {
+		t.Fatalf("partial API merge=%+v", snap.Properties)
 	}
 }
 

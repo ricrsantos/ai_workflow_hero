@@ -1,8 +1,10 @@
 package common
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ricrsantos/ai_workflow_hero/assets"
@@ -59,5 +61,38 @@ func TestEmbeddedCatalogPropertyMetadataSurvivesInstallProjection(t *testing.T) 
 	}
 	if p, ok := installed.CatalogValues("composer-2.5", "fs"); ok && p.HasProperty {
 		t.Fatal("pricing-only entry must not gain property metadata")
+	}
+}
+
+// TestModelPropertyHelpAssetContract keeps the installed Runtime guidance in
+// sync with the native picker contract.  The same help is embedded for Cursor
+// and OpenCode, while workflow YAML remains explicitly separate from freechat
+// model_properties.
+func TestModelPropertyHelpAssetContract(t *testing.T) {
+	for _, path := range []string{
+		"cursor/commands/hero-model.md",
+		"opencode/commands/hero-model.md",
+		"cursor/commands/hero-help.md",
+		"opencode/commands/hero-help.md",
+	} {
+		data, err := fs.ReadFile(assets.FS, path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		body := string(data)
+		for _, want := range []string{"fs", "th", "ef", "model_properties", "workflow-config.yml", "yellow"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s missing model-property help keyword %q", path, want)
+			}
+		}
+	}
+	help, err := fs.ReadFile(assets.FS, "docs/workflow-help.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"model_properties", "[fs-<value>]", "[fs-<valor>]", "stale cache", "cache antigo"} {
+		if !strings.Contains(string(help), want) {
+			t.Errorf("workflow-help.md missing C5 keyword %q", want)
+		}
 	}
 }

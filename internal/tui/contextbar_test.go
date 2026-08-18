@@ -21,6 +21,9 @@ func TestContextWindowLookup(t *testing.T) {
 	if cat.lookup("gpt-5.3-codex-medium") != 400000 {
 		t.Fatalf("suffix strip window=%d", cat.lookup("gpt-5.3-codex-medium"))
 	}
+	if cat.lookup("composer-2.5-thinking-max") != 200000 {
+		t.Fatalf("combined property suffix strip window=%d", cat.lookup("composer-2.5-thinking-max"))
+	}
 	if cat.lookup("unknown-model") != 0 {
 		t.Fatalf("unknown slug should be 0, got %d", cat.lookup("unknown-model"))
 	}

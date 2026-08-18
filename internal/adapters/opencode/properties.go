@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
@@ -18,8 +20,8 @@ const capabilityEndpoint = "/config/model_options"
 
 // capabilityResponse is the native discovery response shape (adapter-owned).
 type capabilityResponse struct {
-	Model   string                    `json:"model"`
-	Options map[string]capabilityOpt  `json:"options"`
+	Model   string                   `json:"model"`
+	Options map[string]capabilityOpt `json:"options"`
 }
 
 type capabilityOpt struct {
@@ -36,7 +38,7 @@ func (a *Adapter) DiscoverModelProperties(ctx context.Context, modelID string) (
 		return harness.ModelCapabilities{}, err
 	}
 	modelID = strings.TrimSpace(modelID)
-	resp, err := a.get(ctx, capabilityEndpoint+"?model="+modelID)
+	resp, err := a.get(ctx, capabilityEndpoint+"?model="+url.QueryEscape(modelID))
 	if err != nil {
 		return harness.ModelCapabilities{}, err
 	}
@@ -56,8 +58,14 @@ func (a *Adapter) DiscoverModelProperties(ctx context.Context, modelID string) (
 		ModelID:     modelID,
 		RetrievedAt: time.Now().UTC(),
 	}
+	options := make(map[string]capabilityOpt, len(data.Options))
+	for nativeKey, opt := range data.Options {
+		if key := normalizedCapabilityKey(nativeKey); key != "" {
+			options[key] = opt
+		}
+	}
 	for _, key := range harness.PropertyKeys() {
-		opt, ok := data.Options[key]
+		opt, ok := options[key]
 		if !ok {
 			continue
 		}
@@ -73,6 +81,19 @@ func (a *Adapter) DiscoverModelProperties(ctx context.Context, modelID string) (
 	return caps, nil
 }
 
+func normalizedCapabilityKey(nativeKey string) string {
+	switch strings.ToLower(strings.ReplaceAll(strings.TrimSpace(nativeKey), "-", "_")) {
+	case harness.PropertyFast, "fast", "fast_mode":
+		return harness.PropertyFast
+	case harness.PropertyThink, "thinking":
+		return harness.PropertyThink
+	case harness.PropertyEffort, "reasoning_effort", "reasoningeffort", "effort":
+		return harness.PropertyEffort
+	default:
+		return ""
+	}
+}
+
 // nativePropertyOptions maps normalized C5 values to the OpenCode HTTP request
 // payload (adapter-owned mapping; the TUI never builds provider payloads).
 func nativePropertyOptions(props map[string]string) map[string]any {
@@ -82,7 +103,7 @@ func nativePropertyOptions(props map[string]string) map[string]any {
 	}
 	out := make(map[string]any, len(props))
 	if fs, ok := props[harness.PropertyFast]; ok {
-		out["fast"] = fs == "true"
+		out["fast"] = strings.EqualFold(strings.TrimSpace(fs), "true")
 	}
 	if th := strings.TrimSpace(props[harness.PropertyThink]); th != "" {
 		out["thinking"] = th
@@ -117,6 +138,16 @@ func propertyRejection(status int, body string, model string, props map[string]s
 	}
 	blame := func(nativeNames ...string) bool {
 		for _, name := range nativeNames {
+			if len(name) <= 2 {
+				for _, token := range strings.FieldsFunc(lower, func(r rune) bool {
+					return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+				}) {
+					if token == name {
+						return true
+					}
+				}
+				continue
+			}
 			if strings.Contains(lower, name) {
 				return true
 			}
@@ -124,15 +155,15 @@ func propertyRejection(status int, body string, model string, props map[string]s
 		return false
 	}
 	switch {
-	case blame("reasoning_effort", "effort"):
+	case blame("reasoning_effort", "reasoning effort", "effort", "ef"):
 		if props[harness.PropertyEffort] != "" {
 			return &harness.PropertyRejectionError{Property: harness.PropertyEffort, Harness: adapterName, Model: model, Err: cause}
 		}
-	case blame("thinking"):
+	case blame("thinking", "th"):
 		if props[harness.PropertyThink] != "" {
 			return &harness.PropertyRejectionError{Property: harness.PropertyThink, Harness: adapterName, Model: model, Err: cause}
 		}
-	case blame("fast"):
+	case blame("fast", "fs"):
 		if props[harness.PropertyFast] != "" {
 			return &harness.PropertyRejectionError{Property: harness.PropertyFast, Harness: adapterName, Model: model, Err: cause}
 		}
@@ -153,12 +184,20 @@ func propertyRejection(status int, body string, model string, props map[string]s
 func rejectionFromBody(resp *http.Response, model string, props map[string]string) error {
 	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	body := strings.TrimSpace(string(bodyBytes))
-	cause := fmt.Errorf("opencode api %s: %s", resp.Request.URL.Path, resp.Status)
+	path := responsePath(resp)
+	cause := fmt.Errorf("opencode api %s: %s", path, resp.Status)
 	if body != "" {
-		cause = fmt.Errorf("opencode api %s: %s — %s", resp.Request.URL.Path, resp.Status, body)
+		cause = fmt.Errorf("opencode api %s: %s — %s", path, resp.Status, body)
 	}
 	if rej := propertyRejection(resp.StatusCode, body, model, props, cause); rej != nil {
 		return rej
 	}
 	return cause
+}
+
+func responsePath(resp *http.Response) string {
+	if resp != nil && resp.Request != nil && resp.Request.URL != nil && resp.Request.URL.Path != "" {
+		return resp.Request.URL.Path
+	}
+	return capabilityEndpoint
 }

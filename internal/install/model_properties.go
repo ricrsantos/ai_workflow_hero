@@ -71,6 +71,9 @@ func SetPairProperties(hero *HeroJSON, harnessID, modelID string, props map[stri
 	}
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
 	modelID = strings.TrimSpace(modelID)
+	if harnessID == "" || modelID == "" {
+		return
+	}
 	clean := make(map[string]string, len(props))
 	for k, v := range props {
 		v = strings.TrimSpace(v)

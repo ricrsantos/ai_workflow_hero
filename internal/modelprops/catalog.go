@@ -63,6 +63,10 @@ func nodeHasKey(node *yaml.Node, key string) bool {
 // CatalogModel is one model row from a catalog file. Pricing fields are ignored
 // by this parser so pricing-only entries keep loading unchanged.
 type CatalogModel struct {
+	// Provider is the catalog file's native provider marker.  It is used only
+	// to keep catalog model rows scoped to the harness that owns them; the
+	// native model ID remains the map key and is never rewritten.
+	Provider   string
 	Properties map[string]CatalogProperty
 }
 
@@ -70,7 +74,8 @@ type CatalogModel struct {
 type Catalog map[string]CatalogModel
 
 type catalogFile struct {
-	Models map[string]catalogEntry `yaml:"models"`
+	Provider string                  `yaml:"provider"`
+	Models   map[string]catalogEntry `yaml:"models"`
 }
 
 type catalogEntry struct {
@@ -177,13 +182,24 @@ func mergeCatalogYAML(cat Catalog, data []byte) {
 		if id == "" {
 			continue
 		}
-		model := CatalogModel{Properties: map[string]CatalogProperty{}}
+		model := CatalogModel{
+			Provider:   strings.TrimSpace(file.Provider),
+			Properties: map[string]CatalogProperty{},
+		}
 		for key, prop := range entry.Properties {
 			key = strings.TrimSpace(key)
 			if key == "" {
 				continue
 			}
 			model.Properties[key] = prop
+		}
+		// Installed overlays commonly contain only capability metadata. Keep
+		// the embedded provider marker when the overlay omits it so model-row
+		// fallback remains harness-scoped.
+		if model.Provider == "" {
+			if previous, ok := cat[id]; ok {
+				model.Provider = previous.Provider
+			}
 		}
 		cat[id] = model
 	}
@@ -203,4 +219,37 @@ func (c Catalog) CatalogValues(modelID, key string) (CatalogProperty, bool) {
 func (c Catalog) HasModel(modelID string) bool {
 	_, ok := c[strings.TrimSpace(modelID)]
 	return ok
+}
+
+// ModelsForHarness returns native model IDs that can be offered for a
+// harness when live listing is unavailable.  Provider markers are preferred;
+// the ID-shape fallback keeps older pricing catalogs (which predate provider
+// metadata in this package) useful for Cursor/OpenCode selection.
+func (c Catalog) ModelsForHarness(harnessID string) []string {
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	if harnessID == "" {
+		return nil
+	}
+	ids := make([]string, 0, len(c))
+	for id, model := range c {
+		provider := strings.TrimSpace(strings.ToLower(model.Provider))
+		matches := false
+		switch harnessID {
+		case "cursor":
+			matches = provider == "cursor" || provider == ""
+		case "opencode":
+			// OpenCode native IDs are provider/model pairs.  A catalog may
+			// explicitly mark a provider as opencode or opencode-go, but
+			// provider pricing files also contain native slash IDs.
+			matches = provider == "opencode" || provider == "opencode-go" ||
+				(provider != "cursor" && strings.Contains(id, "/"))
+		default:
+			matches = provider == harnessID
+		}
+		if matches {
+			ids = append(ids, strings.TrimSpace(id))
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }

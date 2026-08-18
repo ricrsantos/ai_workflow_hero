@@ -217,3 +217,20 @@ func TestCatalogPropertyKeysDeterministicOrder(t *testing.T) {
 		t.Fatalf("keys=%v want %v", keys, want)
 	}
 }
+
+func TestCatalogModelsForHarnessUsesProviderAndNativeIDFallback(t *testing.T) {
+	cat := testCatalogFromFS(t, map[string]string{
+		"models/cursor.yml":    "provider: cursor\nmodels:\n  composer-2.5: {}\n",
+		"models/open-code.yml": "provider: opencode-go\nmodels:\n  opencode-go/deepseek-v4-pro: {}\n",
+		"models/openai.yml":    "provider: openai\nmodels:\n  gpt-5-mini: {}\n  openai/gpt-5-mini: {}\n",
+	})
+	cursor := cat.ModelsForHarness("cursor")
+	if strings.Join(cursor, ",") != "composer-2.5" {
+		t.Fatalf("cursor catalog rows=%v", cursor)
+	}
+	opencode := cat.ModelsForHarness("opencode")
+	want := "openai/gpt-5-mini,opencode-go/deepseek-v4-pro"
+	if strings.Join(opencode, ",") != want {
+		t.Fatalf("opencode catalog rows=%v want %s", opencode, want)
+	}
+}

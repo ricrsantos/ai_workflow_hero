@@ -39,12 +39,10 @@ func (m model) handlePropertyPickerKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		}
 		if key == harness.PropertyFast {
 			// Boolean toggle for fast mode (UI-C05-001 §3: space toggle).
-			if m.propsDraft[key] == "true" {
-				m.propsDraft[key] = "false"
-			} else {
-				m.propsDraft[key] = "true"
+			if next, ok := toggleBooleanValue(cap.AcceptedValues, m.propsDraft[key]); ok {
+				m.propsDraft[key] = next
+				m.propsEdited[key] = true
 			}
-			m.propsEdited[key] = true
 		}
 		return m, nil
 	case "enter":
@@ -76,6 +74,32 @@ func (m model) handlePropertyPickerKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func toggleBooleanValue(accepted []string, current string) (string, bool) {
+	values := make([]string, 0, len(accepted))
+	for _, value := range accepted {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	if len(values) != 2 {
+		return "", false
+	}
+	for _, value := range values {
+		if value == current {
+			for _, other := range values {
+				if other != current {
+					return other, true
+				}
+			}
+		}
+	}
+	// An unset boolean starts at the first advertised choice.  Standard C5
+	// catalogs advertise true/false and therefore retain the expected true
+	// first-toggle behavior.
+	return values[0], true
 }
 
 // handlePropertyValueListKey processes the secondary multi-value list.

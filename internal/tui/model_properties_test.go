@@ -501,6 +501,32 @@ func TestExecutionSendsFreechatProperties(t *testing.T) {
 	}
 }
 
+func TestHeroNewExecutionSendsFreechatProperties(t *testing.T) {
+	svc, h := newConversationTestService(t)
+	commandDir := filepath.Join(svc.ProjectDir, ".cursor", "commands")
+	if err := os.MkdirAll(commandDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(commandDir, "hero-new.md"), []byte("prepare a new cycle"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := NewTestModel(svc)
+	m.chatHarnessID = "cursor"
+	m.chatModelSlug = "composer-2.5"
+	m.freechatProps = map[string]string{"fs": "true", "th": "max", "ef": "high"}
+	next, cmd := BeginHeroRuntimeConversationForTest(m, "new")
+	if cmd == nil || !IsConversationStreaming(next) {
+		t.Fatal("/hero-new must start an Execute stream")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if IsConversationStreaming(next) {
+		t.Fatal("/hero-new stream did not finish")
+	}
+	if h.lastProps["fs"] != "true" || h.lastProps["th"] != "max" || h.lastProps["ef"] != "high" {
+		t.Fatalf("/hero-new must use freechat properties: %v", h.lastProps)
+	}
+}
+
 func TestPropertyRejectionSurfacesRedErrorAndKeepsChoices(t *testing.T) {
 	svc, h := newConversationTestService(t)
 	dir := svc.ProjectDir

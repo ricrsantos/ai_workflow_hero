@@ -104,21 +104,21 @@ type model struct {
 	awaitingRejectReason   bool            // Chat is collecting rejection feedback before Runtime Execute
 
 	// C5 model properties (ADR-042).
-	propsSvc           *modelprops.Service
-	freechatProps      map[string]string // selected freechat property values (status line + execution)
-	freechatSnapshot   modelprops.Snapshot
-	workflowProps      map[string]string // YAML-derived projection during workflow/runtime commands
-	pickingProps       bool              // /hero-model step 3 (property picker open)
-	propsDraftHarness  string
-	propsDraftModel    string
-	propsDraft         map[string]string // in-memory property draft (fs/th/ef)
-	propsEdited        map[string]bool   // rows edited this draft session (Enter commit guard)
-	propsSnapshot      modelprops.Snapshot
-	propsValueList     bool   // secondary multi-value list open (th/ef)
-	propsValueKey      string // key whose secondary list is open
-	propsValueIndex    int    // cursor inside the secondary value list
-	propsRefreshBusy   bool   // background refresh in flight (never blocks the picker)
-	propsWarningText   string // yellow C5 warning (missing catalog / stale / invalidated)
+	propsSvc          *modelprops.Service
+	freechatProps     map[string]string // selected freechat property values (status line + execution)
+	freechatSnapshot  modelprops.Snapshot
+	workflowProps     map[string]string // YAML-derived projection during workflow/runtime commands
+	pickingProps      bool              // /hero-model step 3 (property picker open)
+	propsDraftHarness string
+	propsDraftModel   string
+	propsDraft        map[string]string // in-memory property draft (fs/th/ef)
+	propsEdited       map[string]bool   // rows edited this draft session (Enter commit guard)
+	propsSnapshot     modelprops.Snapshot
+	propsValueList    bool   // secondary multi-value list open (th/ef)
+	propsValueKey     string // key whose secondary list is open
+	propsValueIndex   int    // cursor inside the secondary value list
+	propsRefreshBusy  bool   // background refresh in flight (never blocks the picker)
+	propsWarningText  string // yellow C5 warning (missing catalog / stale / invalidated)
 
 	slashOverlayIndex     int  // selected row in Chat `/` autocomplete
 	slashOverlayDismissed bool // Esc or insert closed the overlay until the token changes
@@ -186,6 +186,10 @@ func newModelWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, model
 	if strings.TrimSpace(modelSlug) != "" {
 		m.chatModelSlug = strings.TrimSpace(modelSlug)
 	}
+	// Boot may provide a legacy C4 pair through harnesses.* while
+	// freechat_default.model is still empty.  Re-run the local C5 projection
+	// after applying the boot pair so persisted model_properties are restored.
+	m = m.loadFreechatProps()
 	if modelWarn != "" {
 		m = m.setStatusResult(false, "model", modelWarn)
 	}

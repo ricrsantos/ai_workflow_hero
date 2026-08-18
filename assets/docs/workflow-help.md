@@ -101,7 +101,7 @@ hero install
 hero install --name "My Project" --summary "Short summary" --yes --git-init
 ```
 
-Manage harnesses later in the TUI with `/hero-harness`. Pick the default freechat model **pair** with `/hero-model` (columns: model, harness). OpenCode TUI Execute uses Hero-managed `opencode serve` (lazy start; orphan processes are reaped on TUI boot).
+Manage harnesses later in the TUI with `/hero-harness`. Pick the default freechat model **pair and properties** with `/hero-model` (model, harness, then `fs` fast / `th` thinking / `ef` reasoning effort). The picker uses cache/catalog rows immediately and refreshes every enabled harness only when opened; OpenCode TUI Execute uses Hero-managed `opencode serve` (lazy start; orphan processes are reaped on TUI boot).
 
 Flags:
 
@@ -274,10 +274,10 @@ hero update-models
 | `/hero-cycles` | List all cycles with per-etapa metrics (SQLite + archive folders) |
 | `/hero-todos` | Show pending items from `context/current-state.md` (run `/hero-sync` first when docs changed) |
 | `/hero-harness` | Enable/disable harnesses (OpenCode provisions `.opencode/` on enable) |
-| `/hero-model` | Select TUI default model **pair** (model · harness; persists to `hero.json` freechat_default) |
+| `/hero-model` | Select TUI default model **pair and properties** (model · harness · `fs`/`th`/`ef`; atomically persists `hero.json` `freechat_default` + `model_properties`) |
 | `/hero-help` | List Runtime commands |
 
-**TUI Chat** (`hero tui`): the line under the green response pane shows a context bar (last harness turn `usage` vs the model's `context_window` in `.workflow-hero/models/*.yml`) when the running slug is in the catalog. Hidden when the model has no window.
+**TUI Chat** (`hero tui`): the line under the green response pane shows `[fs-<value>] [th-<value>] [ef-<value>]` beside the scroll hint and context bar, including an empty Chat after model selection. Validated freechat values are green; `false`, `na`, unavailable, and workflow YAML values are gray. Missing catalog, stale cache, and invalidated choices use yellow warnings. The context bar (last harness turn `usage` vs the model's `context_window` in `.workflow-hero/models/*.yml`) remains hidden when the model has no window. `/hero-model` never edits `agents.*` or `fallback_model` in `workflow-config.yml`.
 
 ---
 
@@ -515,7 +515,7 @@ Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`
 
 `/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-continue`, `/hero-back`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-cycles`, `/hero-todos`, `/hero-model`, `/hero-help` — ver tabela da §10 (inglês).
 
-**TUI Chat** (`hero tui`): a linha sob o painel verde de resposta mostra uma barra de contexto (uso do último turno do harness vs `context_window` em `.workflow-hero/models/*.yml`) quando o slug em execução está no catálogo. Oculta se o modelo não tiver janela.
+**TUI Chat** (`hero tui`): a linha sob o painel verde mostra `[fs-<valor>] [th-<valor>] [ef-<valor>]` junto do scroll e da barra de contexto, inclusive no Chat vazio após selecionar o modelo. Valores freechat validados ficam verdes; `false`, `na`, indisponíveis e valores vindos do YAML do workflow ficam cinza. Catálogo ausente, cache antigo e escolhas invalidadas usam aviso amarelo. `/hero-model` não altera `agents.*` nem `fallback_model` em `workflow-config.yml`.
 
 ---
 

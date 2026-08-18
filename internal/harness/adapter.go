@@ -59,6 +59,16 @@ type ExecuteRequest struct {
 	OnStreamDelta func(delta StreamDelta)
 }
 
+// NormalizeExecuteRequest returns a request safe to hand to an adapter.  The
+// properties map is copied and reduced to the normalized C5 transport keys so
+// an adapter cannot mutate the caller's selection map or receive the display
+// sentinel "na".  Keep this helper at the shared boundary rather than making
+// each caller know how provider adapters protect request state.
+func NormalizeExecuteRequest(req ExecuteRequest) ExecuteRequest {
+	req.Properties = NormalizeProperties(req.Properties)
+	return req
+}
+
 // StreamKind classifies a live harness stream event for TUI display.
 type StreamKind string
 

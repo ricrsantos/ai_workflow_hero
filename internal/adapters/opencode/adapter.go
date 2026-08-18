@@ -228,6 +228,7 @@ func (a *Adapter) ResumeSession(ctx context.Context, sessionID string) error {
 
 // Execute implements harness.HarnessAdapter.
 func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*harness.ExecutionResult, error) {
+	req = harness.NormalizeExecuteRequest(req)
 	if err := a.ensureServe(ctx); err != nil {
 		return nil, err
 	}
@@ -810,10 +811,11 @@ func httpOK(resp *http.Response) error {
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	msg := strings.TrimSpace(string(body))
+	path := responsePath(resp)
 	if msg == "" {
-		return fmt.Errorf("opencode api %s: %s", resp.Request.URL.Path, resp.Status)
+		return fmt.Errorf("opencode api %s: %s", path, resp.Status)
 	}
-	return fmt.Errorf("opencode api %s: %s — %s", resp.Request.URL.Path, resp.Status, msg)
+	return fmt.Errorf("opencode api %s: %s — %s", path, resp.Status, msg)
 }
 
 func truncate(s string, n int) string {

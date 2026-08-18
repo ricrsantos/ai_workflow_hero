@@ -107,3 +107,9 @@ _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+E
 **Problem**: Before restarting Implementation after `/hero-resume`, the `.opencode/agents/*.md` frontmatter models drifted from `workflow-config.yml` `agents.*` blocks (context_agent/qa_agent/end2end_qa_agent still pointed at `kimi-k2.7-code`; orchestration/generic/judge/browser at `deepseek-v4-pro`).
 
 **Decision / Outcome**: Synced every agent frontmatter to the opencode harness IDs + reasoningEffort/thinking in the C5 workflow-config (orchestration/context/qa/judge/browser/end2end → `opencode/deepseek-v4-flash-free`; generic → `opencode-go/gpt-5.6-luna`; discover/planning/backend/frontend already matched). `reasoning_effort: na` → omit `reasoningEffort`; `thinking: na` → omit `thinking`. opencode.json untouched. Ready for `/hero-start`.
+
+---
+
+## 2026-08-18 — C5 Implementation completed (model properties TUI)
+
+**Decision / Outcome**: Completed all 22 native `generic_agent` tasks in `openspec/changes/model-properties-tui/`. The implementation adds normalized `fs`/`th`/`ef` contracts, optional OpenCode discovery and Cursor-safe composition, schema-v5 project cache, embedded/installed catalog fallback, atomic per-pair `hero.json` persistence, background refresh at `/hero-model` open, the Bubble Tea property picker, responsive status labels/warnings, workflow-YAML projection, explicit rejection errors, and Runtime help/inventory assertions. Existing C4 Cursor/OpenCode/session/lazy-serve behavior remains green. `go test ./...`, `go vet ./...`, and targeted race checks passed; no browser or web work was introduced. The active cycle remains native-only with OpenSpec slug `model-properties-tui`.

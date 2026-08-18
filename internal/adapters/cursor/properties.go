@@ -25,15 +25,17 @@ func ComposeModelSlug(model string, props map[string]string) string {
 		if suffix == "" {
 			return
 		}
-		// Workflow-composed slugs already carry the variant as a segment
-		// (e.g. "grok-4.6-high-thinking"); never append the same variant twice.
-		if strings.Contains(slug, suffix) {
+		// Workflow-composed slugs already carry the variant as a hyphen-
+		// delimited segment (e.g. "grok-4.6-high-thinking"); never append
+		// the same variant twice.  A segment check avoids treating a model
+		// such as "fastish" as an existing "fast" suffix.
+		if hasSlugVariant(slug, suffix) {
 			return
 		}
 		slug += suffix
 	}
 
-	if props[harness.PropertyFast] == "true" {
+	if strings.EqualFold(strings.TrimSpace(props[harness.PropertyFast]), "true") {
 		appendOnce("-fast")
 	}
 	if th := strings.ToLower(strings.TrimSpace(props[harness.PropertyThink])); th != "" &&
@@ -49,6 +51,14 @@ func ComposeModelSlug(model string, props map[string]string) string {
 		appendOnce("-" + ef)
 	}
 	return slug
+}
+
+func hasSlugVariant(slug, suffix string) bool {
+	variant := strings.Trim(suffix, "-")
+	if variant == "" {
+		return false
+	}
+	return slug == variant || strings.Contains("-"+slug+"-", "-"+variant+"-")
 }
 
 // propertyRejectionForOutput inspects a failed composed execution and, when the

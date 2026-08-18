@@ -3,6 +3,7 @@ package install
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,7 +40,11 @@ func CommitModelSelection(projectDir, harnessID, modelID string, props map[strin
 	hero.Harnesses[harnessID] = cfg
 	hero.FreechatDefault = FreechatDefault{Harness: harnessID, Model: modelID}
 	SetPairProperties(&hero, harnessID, modelID, props)
-	return saveHeroJSONAtomic(projectDir, hero)
+	if err := saveHeroJSONAtomic(projectDir, hero); err != nil {
+		return err
+	}
+	slog.Info("model selection committed", "harness", harnessID, "model", modelID, "properties", len(props))
+	return nil
 }
 
 // saveHeroJSONAtomic writes hero.json via a temporary file plus rename so the

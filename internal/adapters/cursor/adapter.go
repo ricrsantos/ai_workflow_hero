@@ -162,6 +162,7 @@ func (a *Adapter) ResumeSession(_ context.Context, sessionID string) error {
 
 // Execute implements harness.HarnessAdapter.
 func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*harness.ExecutionResult, error) {
+	req = harness.NormalizeExecuteRequest(req)
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("execute prompt is required")

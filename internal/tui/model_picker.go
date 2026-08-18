@@ -22,6 +22,14 @@ func (m model) openModelPicker() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-model", "Enable a harness with /hero-harness first.")
 		return m, nil
 	}
+	// Apply any cache/catalog result completed since the previous opening before
+	// starting the next refresh.  An open selector is never mutated underneath
+	// the user's cursor; this happens only at the explicit opening boundary.
+	if m.propsSvc != nil && m.svc != nil {
+		m.propsSvc.Store = m.svc.Store
+		m.propsSvc.Registry = m.svc.Registry
+	}
+	m = m.loadFreechatProps()
 	// C5: opening /hero-model starts the background refresh for every enabled
 	// harness (PRD-C05-001 §4.2.5). It never blocks the picker and never runs
 	// at TUI boot, so OpenCode stays lazy until this explicit user action.
@@ -182,6 +190,13 @@ func (m model) listModelsForHarnessCmd(harnessID string) tea.Cmd {
 }
 
 func (m model) modelsForHarness(harnessID string) []string {
+	// A completed explicit refresh is authoritative on the next opening.  Read
+	// only the persisted list here so an in-memory boot list does not mask it.
+	if m.propsSvc != nil {
+		if cached := m.propsSvc.CachedModels(harnessID); len(cached) > 0 {
+			return cached
+		}
+	}
 	var out []string
 	seen := map[string]bool{}
 	for _, opt := range m.modelOptions {
@@ -197,6 +212,13 @@ func (m model) modelsForHarness(harnessID string) []string {
 	}
 	if len(out) > 0 {
 		return out
+	}
+	// C5 local-first fallback: a persisted project model-list cache wins over
+	// the embedded/installed catalog, and neither path starts a harness.
+	if m.propsSvc != nil {
+		if cached := m.propsSvc.Models(harnessID); len(cached) > 0 {
+			return cached
+		}
 	}
 	// Test helper path: availableModels without per-harness options.
 	if len(m.modelOptions) == 0 {

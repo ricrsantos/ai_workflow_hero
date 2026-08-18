@@ -44,6 +44,44 @@ type ModelCapabilities struct {
 	RetrievedAt time.Time
 }
 
+// CloneModelCapabilities returns a deep copy of normalized capability data.
+// AcceptedValues is copied because adapters commonly build it from a decoded
+// response and the cache/TUI must not share mutable backing arrays.
+func CloneModelCapabilities(in ModelCapabilities) ModelCapabilities {
+	out := in
+	if len(in.Properties) == 0 {
+		return out
+	}
+	out.Properties = make([]PropertyCapability, len(in.Properties))
+	for i, property := range in.Properties {
+		out.Properties[i] = property
+		out.Properties[i].AcceptedValues = append([]string(nil), property.AcceptedValues...)
+	}
+	return out
+}
+
+// NormalizeModelCapabilities trims identifiers and dynamic string values while
+// preserving property/value order and unknown future keys.  C5 projection
+// filtering happens later at the request/UI boundary, not while caching.
+func NormalizeModelCapabilities(in ModelCapabilities) ModelCapabilities {
+	out := CloneModelCapabilities(in)
+	out.HarnessID = strings.TrimSpace(strings.ToLower(out.HarnessID))
+	out.ModelID = strings.TrimSpace(out.ModelID)
+	for i := range out.Properties {
+		property := &out.Properties[i]
+		property.Key = strings.TrimSpace(property.Key)
+		property.DefaultValue = strings.TrimSpace(property.DefaultValue)
+		values := property.AcceptedValues[:0]
+		for _, value := range property.AcceptedValues {
+			if value = strings.TrimSpace(value); value != "" {
+				values = append(values, value)
+			}
+		}
+		property.AcceptedValues = values
+	}
+	return out
+}
+
 // Property returns the capability for a normalized key, or nil.
 func (c ModelCapabilities) Property(key string) *PropertyCapability {
 	for i := range c.Properties {
