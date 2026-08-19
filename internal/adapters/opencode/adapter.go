@@ -24,6 +24,12 @@ import (
 
 const adapterName = "opencode"
 
+// ServeResetDelay is the pause between stopping and restarting opencode serve
+// so .opencode/agents definition changes are picked up.
+const ServeResetDelay = 2 * time.Second
+
+var serveResetDelay = ServeResetDelay
+
 // LookPathFunc resolves CLI binaries (tests inject).
 type LookPathFunc func(string) (string, error)
 
@@ -428,6 +434,26 @@ func (a *Adapter) ListModels(ctx context.Context) ([]string, error) {
 		}
 	}
 	return models, nil
+}
+
+// ResetServe stops managed opencode serve, waits ServeResetDelay, and starts a
+// fresh serve so .opencode/agents definition changes are loaded.
+func (a *Adapter) ResetServe(ctx context.Context) error {
+	if err := a.StopServe(ctx); err != nil {
+		return err
+	}
+	delay := serveResetDelay
+	if delay <= 0 {
+		delay = ServeResetDelay
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+	}
+	return a.ensureServe(ctx)
 }
 
 // StopServe stops managed serve children and clears registry rows.

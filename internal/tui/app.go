@@ -10,11 +10,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
+	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
 type screen int
@@ -94,6 +96,7 @@ type model struct {
 	pickingHarness         bool
 	pickingHarnessReset    bool
 	harnessResetAwaitingOpen bool // loading harness list before reset picker is interactive
+	heroStartPreparing       bool // syncing opencode agents before /hero-start orchestration
 	modelPickerHarness     string          // non-empty = /hero-model step 2 (models for this harness)
 	harnessDraft           map[string]bool // checkbox state while /hero-harness is open
 	runtimeCommandName     string          // hero runtime slash body name (e.g. "new") for Chat output normalization
@@ -304,7 +307,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.waitAnimFrame++
 			return m, convWaitTickCmd()
 		}
-		if m.propsAwaitingRefresh || m.harnessResetAwaitingOpen {
+		if m.propsAwaitingRefresh || m.harnessResetAwaitingOpen || m.heroStartPreparing {
 			m.waitAnimFrame++
 			return m, convWaitTickCmd()
 		}
@@ -312,6 +315,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case harnessResetOpenMsg:
 		return m.handleHarnessResetOpenMsg(msg)
+
+	case heroStartPrepareDoneMsg:
+		return m.handleHeroStartPrepareDone(msg)
 
 	case confirmResumeMsg:
 		return m.dispatchConfirmedAction(msg.action, msg.actionN)
@@ -744,7 +750,7 @@ func (m model) beginHeroNew() (model, tea.Cmd) {
 }
 
 func (m model) beginHeroStart() (model, tea.Cmd) {
-	if m.streaming {
+	if m.streaming || m.heroStartPreparing {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
@@ -765,7 +771,34 @@ func (m model) beginHeroStart() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-start", err.Error())
 		return m, nil
 	}
-	return m.beginHeroRuntimeConversation("start", slug, heroRuntimeOpts{})
+	if !m.heroStartNeedsOpenCodePrepare() {
+		return m.beginHeroRuntimeConversation("start", slug, heroRuntimeOpts{})
+	}
+	return m.beginHeroStartPrepare(slug)
+}
+
+func (m model) heroStartNeedsOpenCodePrepare() bool {
+	if m.svc == nil {
+		return false
+	}
+	projectDir := m.svc.ProjectDir
+	cfg, _, err := workflowconfig.LoadCurrent(projectDir)
+	if err != nil {
+		return false
+	}
+	if len(opencodeadapter.AgentsUsingHarness(cfg, "opencode")) == 0 {
+		return false
+	}
+	hero, err := install.LoadHeroJSON(projectDir)
+	if err != nil {
+		return false
+	}
+	for _, id := range install.ListEnabledHarnesses(hero) {
+		if strings.EqualFold(id, "opencode") {
+			return true
+		}
+	}
+	return false
 }
 
 func (m model) beginHeroSync() (model, tea.Cmd) {

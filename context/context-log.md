@@ -275,3 +275,11 @@ _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+E
 **Problem**: Model catalogs in `assets/models/` were incomplete or stale after 2.1.1 — OpenCode had only 3 rows; provider pricing/capabilities needed alignment across anthropic, cursor, google, moonshot, openai, xai, zhipu.
 
 **Decision / Outcome**: Tagged `v2.1.2` on `main` after `go test ./...` green. Shipped full OpenCode catalog (27 models), pricing/properties alignment across 8 provider YAML files, xai catalog adjustments. Artifacts via `scripts/release.sh`; GitHub Release with binaries + `checksums.txt`.
+
+---
+
+## 2026-08-19 — TUI /hero-start OpenCode agent sync + serve reset
+
+**Problem**: OpenCode subagents read model/properties from `.opencode/agents/*.md` frontmatter at launch; edits require a serve restart. Manual frontmatter sync before `/hero-start` was error-prone (see 2026-08-18 C5 resume entry).
+
+**Decision / Outcome**: Added `internal/adapters/opencode` **`SyncAgentDefinition`**, **`PrepareHeroStart`**, and adapter **`ResetServe`** (2s delay between stop and restart). TUI `/hero-start` runs prepare asynchronously when OpenCode is enabled and any workflow agent uses `harness: opencode`: sync all matching agent files from `workflow-config.yml`, reset serve, probe the first agent without a request-level model; failure stops start and tells the user to exit the TUI and retry. Cursor-only projects skip prepare synchronously. `go test ./...` green.
