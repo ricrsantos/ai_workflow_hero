@@ -485,6 +485,49 @@ func PickingHarnessForTest(m model) bool {
 	return m.pickingHarness
 }
 
+// PickingHarnessResetForTest reports whether the harness reset picker is open.
+func PickingHarnessResetForTest(m model) bool {
+	return m.pickingHarnessReset
+}
+
+// HarnessResetAwaitingOpenForTest reports whether the harness reset picker is loading.
+func HarnessResetAwaitingOpenForTest(m model) bool {
+	return m.harnessResetAwaitingOpen
+}
+
+// RunHarnessResetPickerForTest opens /harness-reset and waits for the async picker load.
+func RunHarnessResetPickerForTest(m model) model {
+	m, cmd := RunPaletteItemForTest(m, "/harness-reset")
+	return CompleteHarnessResetPickerForTest(m, cmd)
+}
+
+// CompleteHarnessResetPickerForTest runs the async open command and applies the result.
+func CompleteHarnessResetPickerForTest(m model, cmd tea.Cmd) model {
+	if cmd == nil {
+		return m
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		next, _ := HandleTestMsg(m, msg)
+		return next
+	}
+	for _, nested := range batch {
+		if nested == nil {
+			continue
+		}
+		inner := nested()
+		switch inner.(type) {
+		case convWaitTickMsg:
+			continue
+		default:
+			next, _ := HandleTestMsg(m, inner)
+			m = next
+		}
+	}
+	return m
+}
+
 // PickingModelForTest reports whether the model picker is open.
 func PickingModelForTest(m model) bool {
 	return m.pickingModel

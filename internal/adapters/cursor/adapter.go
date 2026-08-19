@@ -372,6 +372,13 @@ func (a *Adapter) Cancel(_ context.Context, sessionID string) error {
 	return nil
 }
 
+// HasInFlight reports whether a Cursor agent CLI process is currently running.
+func (a *Adapter) HasInFlight() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.activeCancels) > 0
+}
+
 func pendingExecKey(stageName string) string {
 	return "pending:" + stageName
 }

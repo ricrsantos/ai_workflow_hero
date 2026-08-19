@@ -78,7 +78,8 @@ func (m model) filteredChatSlashItems() []paletteItem {
 
 func chatSlashOverlayItem(item paletteItem) bool {
 	switch item.action {
-	case actionSelectModel, actionPickModelHarness, actionToggleHarness, actionApplyHarness:
+	case actionSelectModel, actionPickModelHarness, actionToggleHarness, actionApplyHarness,
+		actionSelectHarnessReset:
 		return false
 	default:
 		return true

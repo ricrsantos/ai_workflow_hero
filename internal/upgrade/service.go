@@ -1,8 +1,6 @@
 package upgrade
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +12,7 @@ import (
 	"time"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/assetconflict"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
@@ -31,7 +30,7 @@ type Options struct {
 // Result reports the outcome of an upgrade operation.
 type Result struct {
 	Updated        []string
-	Skipped        []string // skipped due to local customization
+	Replaced       []string // replaced after local customization conflict (backup saved)
 	Migrated       []string // workflow-config.yml files migrated from generic_model
 	LegacyImported bool
 	LegacyCycleNum int
@@ -42,7 +41,7 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 	var result Result
 
 	// Load existing checksums.
-	originalChecksums, err := loadChecksums(filepath.Join(opts.ProjectDir, cursoradapter.ChecksumsJSONPath))
+	originalChecksums, err := install.LoadChecksums(opts.ProjectDir)
 	if err != nil {
 		return result, fmt.Errorf("load checksums: %w", err)
 	}
@@ -81,25 +80,27 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 			}
 
 			relKey, _ := filepath.Rel(opts.ProjectDir, dstPath)
-			newHash := sha256hex(newData)
+			newHash := assetconflict.SHA256Hex(newData)
 
 			// Check if file exists on disk.
 			existingData, readErr := os.ReadFile(dstPath)
 			if readErr == nil {
-				existingHash := sha256hex(existingData)
+				existingHash := assetconflict.SHA256Hex(existingData)
 				originalHash := originalChecksums[relKey]
 
 				// File is customized if its current hash differs from the originally installed hash.
-				if originalHash != "" && existingHash != originalHash {
+				if assetconflict.IsCustomized(existingData, originalHash) {
 					if existingHash == newHash {
 						// Disk already matches the embedded asset; checksums were stale (e.g. git-updated files).
 						newChecksums[relKey] = newHash
 						return nil
 					}
-					output.Warningf(stderr, "%s was customized locally and was not overwritten.", relKey)
-					result.Skipped = append(result.Skipped, relKey)
-					// Keep the new hash for when it is eventually merged.
+					if _, err := assetconflict.Replace(dstPath, existingData, newData, relKey, stderr, time.Now()); err != nil {
+						return err
+					}
 					newChecksums[relKey] = newHash
+					result.Replaced = append(result.Replaced, relKey)
+					result.Updated = append(result.Updated, relKey)
 					return nil
 				}
 			}
@@ -163,26 +164,6 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 	}
 
 	return result, nil
-}
-
-func loadChecksums(path string) (install.Checksums, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return make(install.Checksums), nil
-		}
-		return nil, err
-	}
-	var c install.Checksums
-	if err := json.Unmarshal(data, &c); err != nil {
-		return nil, err
-	}
-	return c, nil
-}
-
-func sha256hex(data []byte) string {
-	h := sha256.Sum256(data)
-	return hex.EncodeToString(h[:])
 }
 
 // ensureStoreAndImportLegacy opens hero.db and, when the store has no cycles yet,

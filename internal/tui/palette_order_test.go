@@ -22,6 +22,7 @@ func TestDefaultHeroPaletteOrder(t *testing.T) {
 		"/hero-todos",
 		"/hero-sync",
 		"/hero-harness",
+		"/harness-reset",
 		"/hero-help",
 		"Go to - Chat",
 		"Go to - Status",

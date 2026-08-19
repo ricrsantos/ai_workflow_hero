@@ -1,14 +1,14 @@
 {
   "cli": {
-    "version": "2.1.2",
+    "version": "2.1.2_ff72805",
     "installedAt": "2026-08-04T19:30:24Z",
     "tools": [
       "cursor"
     ]
   },
   "assets": {
-    "version": "2.1.2",
-    "installedAt": "2026-08-18T19:27:55Z"
+    "version": "2.1.2_ff72805",
+    "installedAt": "2026-08-19T18:47:30Z"
   },
   "harnesses": {
     "cursor": {

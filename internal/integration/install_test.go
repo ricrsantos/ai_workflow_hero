@@ -3,6 +3,8 @@
 package integration_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -153,14 +155,15 @@ func TestIntegration_DoctorMissingCommand(t *testing.T) {
 	}
 }
 
-// TestIntegration_UpgradeProtectsCustomizedFile verifies checksum-based protection.
-func TestIntegration_UpgradeProtectsCustomizedFile(t *testing.T) {
+// TestIntegration_UpgradeReplacesCustomizedFileWithBackup verifies conflict replacement.
+func TestIntegration_UpgradeReplacesCustomizedFileWithBackup(t *testing.T) {
 	dir := makeGitRepo(t)
 	doInstall(t, dir, "1.0.0")
 
 	// Customize an agent file.
 	agentFile := filepath.Join(dir, cursoradapter.AgentsDir, "qa_agent.md")
 	orig, _ := os.ReadFile(agentFile)
+	origHash := sha256Sum(orig)
 	customized := append(orig, []byte("\n# Custom addition\n")...)
 	_ = os.WriteFile(agentFile, customized, 0o644)
 
@@ -176,19 +179,35 @@ func TestIntegration_UpgradeProtectsCustomizedFile(t *testing.T) {
 
 	targetRel := filepath.Join(cursoradapter.AgentsDir, "qa_agent.md")
 	found := false
-	for _, s := range result.Skipped {
+	for _, s := range result.Replaced {
 		if s == targetRel {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected qa_agent.md in skipped list; got: %v", result.Skipped)
+		t.Errorf("expected qa_agent.md in replaced list; got: %v", result.Replaced)
 	}
 
-	// File should still contain the customization.
+	// File should contain the original embedded content.
 	after, _ := os.ReadFile(agentFile)
-	if !strings.Contains(string(after), "Custom addition") {
-		t.Error("customized file was overwritten during upgrade")
+	if sha256Sum(after) != origHash {
+		t.Error("customized file was not replaced with embedded asset content")
 	}
+
+	entries, _ := os.ReadDir(filepath.Dir(agentFile))
+	var backupFound bool
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".conflict") && strings.HasPrefix(e.Name(), "qa_agent.md_") {
+			backupFound = true
+		}
+	}
+	if !backupFound {
+		t.Error("conflict backup file not found")
+	}
+}
+
+func sha256Sum(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
 }

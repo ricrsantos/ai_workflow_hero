@@ -62,8 +62,8 @@ func TestUpgrade_UnmodifiedFilesAreUpdated(t *testing.T) {
 	if len(result.Updated) == 0 {
 		t.Error("expected at least one updated file")
 	}
-	if len(result.Skipped) != 0 {
-		t.Errorf("unexpected skipped files: %v", result.Skipped)
+	if len(result.Replaced) != 0 {
+		t.Errorf("unexpected replaced files: %v", result.Replaced)
 	}
 
 	// hero.json version should be updated.
@@ -180,23 +180,24 @@ func TestUpgrade_StaleChecksumButDiskMatchesNewAssetIsNotSkipped(t *testing.T) {
 		t.Fatalf("upgrade failed: %v", err)
 	}
 
-	for _, s := range result.Skipped {
+	for _, s := range result.Replaced {
 		if s == targetRel {
-			t.Errorf("expected %q not to be skipped when disk matches embedded asset", targetRel)
+			t.Errorf("expected %q not to be replaced when disk matches embedded asset", targetRel)
 		}
 	}
-	if strings.Contains(out.String(), "customized locally") {
-		t.Errorf("unexpected customization warning: %s", out.String())
+	if strings.Contains(out.String(), "replaced with the new file due to conflicts") {
+		t.Errorf("unexpected conflict replacement warning: %s", out.String())
 	}
 }
 
-func TestUpgrade_CustomizedFileIsSkipped(t *testing.T) {
+func TestUpgrade_CustomizedFileIsReplacedWithBackup(t *testing.T) {
 	dir := makeInstalledDir(t)
 
 	// Customize backend_agent.md.
 	targetRel := filepath.Join(cursoradapter.AgentsDir, "backend_agent.md")
 	targetAbs := filepath.Join(dir, targetRel)
 	original, _ := os.ReadFile(targetAbs)
+	originalHash := sha256hex(original)
 	customized := append(original, []byte("\n# User customization\n")...)
 	if err := os.WriteFile(targetAbs, customized, 0o644); err != nil {
 		t.Fatalf("write customized file: %v", err)
@@ -213,22 +214,44 @@ func TestUpgrade_CustomizedFileIsSkipped(t *testing.T) {
 	}
 
 	found := false
-	for _, s := range result.Skipped {
+	for _, s := range result.Replaced {
 		if s == targetRel {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected %q in skipped, got: %v", targetRel, result.Skipped)
+		t.Errorf("expected %q in replaced, got: %v", targetRel, result.Replaced)
 	}
 
-	// The customized file should NOT have been overwritten.
+	// The file should contain the embedded asset content (restored).
 	afterData, _ := os.ReadFile(targetAbs)
 	afterHash := sha256hex(afterData)
-	customizedHash := sha256hex(customized)
-	if afterHash != customizedHash {
-		t.Error("customized file was overwritten by upgrade")
+	if afterHash != originalHash {
+		t.Error("customized file was not replaced with embedded asset content")
+	}
+
+	// A .conflict backup should preserve the customization.
+	entries, err := os.ReadDir(filepath.Dir(targetAbs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backupFound bool
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".conflict") && strings.HasPrefix(e.Name(), "backend_agent.md_") {
+			backupFound = true
+			backupData, _ := os.ReadFile(filepath.Join(filepath.Dir(targetAbs), e.Name()))
+			if !strings.Contains(string(backupData), "User customization") {
+				t.Error("backup should contain user customization")
+			}
+		}
+	}
+	if !backupFound {
+		t.Error("conflict backup file not found")
+	}
+
+	if !strings.Contains(out.String(), "replaced with the new file due to conflicts") {
+		t.Errorf("expected conflict warning in output: %s", out.String())
 	}
 }
 

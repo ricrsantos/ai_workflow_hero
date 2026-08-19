@@ -818,6 +818,10 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 		m = m.clearChatInput()
 		next, cmd := m.beginNewChat()
 		return next, cmd, true
+	case "/harness-reset":
+		m = m.clearChatInput()
+		next, cmd := m.beginHarnessResetPicker()
+		return next, cmd, true
 	default:
 		return m, nil, false
 	}

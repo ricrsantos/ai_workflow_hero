@@ -198,6 +198,16 @@ func (m model) renderPalette() string {
 	if m.pickingProps {
 		return m.renderPropertyPicker()
 	}
+	if m.harnessResetAwaitingOpen {
+		var b strings.Builder
+		frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
+		b.WriteString(headerStyle.Render("/harness-reset · loading harnesses"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render(frame + " Preparing harness list…"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("esc cancel"))
+		return b.String()
+	}
 	if m.propsAwaitingRefresh {
 		var b strings.Builder
 		frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
@@ -222,6 +232,10 @@ func (m model) renderPalette() string {
 		b.WriteString(headerStyle.Render("Harnesses"))
 		b.WriteByte('\n')
 		b.WriteString(mutedStyle.Render("space toggle · enter apply · esc cancel"))
+	case m.pickingHarnessReset:
+		b.WriteString(headerStyle.Render("/harness-reset · select harness"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("↑↓ navigate · enter reset · esc cancel"))
 	default:
 		b.WriteString(headerStyle.Render("Commands"))
 		b.WriteByte('\n')
@@ -265,6 +279,11 @@ func (m model) renderPalette() string {
 		switch {
 		case m.pickingHarness:
 			line = formatHarnessCheckboxLine(item.label, item.hint, m.harnessDraft[item.harnessID])
+		case m.pickingHarnessReset:
+			line = " " + item.label
+			if item.hint != "" {
+				line += "  " + item.hint
+			}
 		case m.pickingModel && item.modelSlug != "":
 			line = " " + item.label
 			if item.hint != "" {

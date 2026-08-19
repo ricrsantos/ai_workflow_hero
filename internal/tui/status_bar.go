@@ -27,7 +27,7 @@ const statusBarMaxLines = 2
 type statusTickMsg struct{}
 
 func (m model) closePalette() model {
-	wasPicking := m.pickingModel || m.pickingHarness || m.pickingProps
+	wasPicking := m.pickingModel || m.pickingHarness || m.pickingHarnessReset || m.harnessResetAwaitingOpen || m.pickingProps
 	m.screen = m.prevScreen
 	m.paletteFilter = ""
 	m.paletteIndex = 0
@@ -35,6 +35,8 @@ func (m model) closePalette() model {
 	if wasPicking {
 		m.pickingModel = false
 		m.pickingHarness = false
+		m.pickingHarnessReset = false
+		m.harnessResetAwaitingOpen = false
 		m.modelPickerHarness = ""
 		m.harnessDraft = nil
 		m.pickingProps = false
@@ -78,6 +80,17 @@ func (m model) setStatusResult(ok bool, label, text string) model {
 	} else {
 		m.statusKind = statusErr
 	}
+	return m
+}
+
+// setStatusWarning shows a yellow warning in the footer status area (UI §2.1).
+func (m model) setStatusWarning(label, text string) model {
+	m.actionBusy = false
+	if label != "" {
+		m.statusLabel = label
+	}
+	m.statusText = strings.TrimSpace(text)
+	m.statusKind = statusWarn
 	return m
 }
 

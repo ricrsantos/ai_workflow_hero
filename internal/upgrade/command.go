@@ -22,8 +22,9 @@ func NewCommand(version string, assetsFS fs.FS) *cobra.Command {
 		Short: "Upgrade Hero assets in the current project",
 		Long: `Re-copy updated Hero assets from this binary version into the current project.
 
-Files you have customized (detected via checksum comparison) will not be
-overwritten — Hero will warn you and list them for manual merging.
+Files you have customized (detected via checksum comparison) are backed up as
+{filename}_{timestamp}.conflict and replaced with the new version; Hero warns
+for each conflict so you can merge from the backup if needed.
 
 Migration: workflow-config.yml files that still use the legacy generic_model
 field are automatically converted to the fallback_model block (model,
@@ -74,8 +75,8 @@ Hero warns and leaves the file unchanged for manual merge.`,
 			for _, f := range result.Migrated {
 				output.Successf(stdout, "Migrated workflow-config: %s (generic_model → fallback_model)", f)
 			}
-			if len(result.Skipped) > 0 {
-				output.Warningf(stdout, "%d file(s) skipped (customized). Review and merge manually.", len(result.Skipped))
+			if len(result.Replaced) > 0 {
+				output.Warningf(stdout, "%d file(s) replaced due to conflicts (backups saved with .conflict suffix).", len(result.Replaced))
 			}
 
 			output.Successf(stdout, "Hero upgraded to version %s.", version)

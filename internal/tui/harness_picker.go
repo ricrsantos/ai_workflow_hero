@@ -175,11 +175,7 @@ func (m model) harnessEnabled(id string) bool {
 
 func (m model) harnessAvailabilityLabel(id string) string {
 	if m.svc != nil && m.svc.Registry != nil {
-		if a, err := m.svc.Registry.Adapter(id); err == nil {
-			if err := a.IsAvailable(context.Background()); err != nil {
-				return "unavailable"
-			}
-		}
+		return harnessAvailabilityLabel(m.svc.Registry, id)
 	}
 	return "available"
 }

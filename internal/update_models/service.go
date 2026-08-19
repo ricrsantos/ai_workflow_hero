@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/assetconflict"
+	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 )
 
 const defaultBaseURL = "https://raw.githubusercontent.com/ricrsantos/ai_workflow_hero/main/assets/models"
@@ -51,7 +54,13 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 		return fmt.Errorf("create models directory: %w", err)
 	}
 
+	checksums, err := install.LoadChecksums(opts.ProjectDir)
+	if err != nil {
+		return fmt.Errorf("load checksums: %w", err)
+	}
+
 	baseURL := strings.TrimRight(opts.BaseURL, "/")
+	now := time.Now()
 
 	var errs []string
 	for _, name := range ModelNames {
@@ -64,11 +73,33 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 		}
 
 		dest := filepath.Join(modelsDir, name)
+		relKey, _ := filepath.Rel(opts.ProjectDir, dest)
+		newHash := assetconflict.SHA256Hex(data)
+
+		existingData, readErr := os.ReadFile(dest)
+		if readErr == nil {
+			originalHash := checksums[relKey]
+			if assetconflict.IsCustomized(existingData, originalHash) && assetconflict.SHA256Hex(existingData) != newHash {
+				if _, err := assetconflict.Replace(dest, existingData, data, relKey, stderr, now); err != nil {
+					errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+					continue
+				}
+				checksums[relKey] = newHash
+				fmt.Fprintf(stdout, "[OK] Updated %s\n", name)
+				continue
+			}
+		}
+
 		if err := os.WriteFile(dest, data, 0o644); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: write error: %v", name, err))
 			continue
 		}
+		checksums[relKey] = newHash
 		fmt.Fprintf(stdout, "[OK] Updated %s\n", name)
+	}
+
+	if err := install.WriteChecksums(opts.ProjectDir, checksums); err != nil {
+		return fmt.Errorf("write checksums: %w", err)
 	}
 
 	if len(errs) > 0 {

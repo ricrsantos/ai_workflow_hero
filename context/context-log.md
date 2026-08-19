@@ -4,6 +4,24 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Keep this document under 1,000 words by removing or consolidating outdated entries. Permanent facts (architecture, stack, features) belong in `context/current-state.md`, not here.
 
+---
+
+## 2026-08-19 — TUI `/harness-reset` slash command
+
+**Problem**: After editing agents/skills, harnesses need a restart (OpenCode serve, Cursor in-flight runs) without leaving the TUI.
+
+**Decision / Outcome**: TUI-only `/harness-reset` opens a picker of enabled harnesses. OpenCode: `StopServe` when Hero-managed (else warns not started). Cursor: cancel in-flight CLI via adapter. Clears session binding when matched. Not-initialized cases use yellow `statusWarn` (not error). Picker loads async with braille wait animation; Enter is ignored until the list is ready. `go test ./...` green.
+
+---
+
+## 2026-08-19 — Upgrade/update-models conflict backup + replace
+
+**Problem**: `hero upgrade` and `hero update-models` skipped locally customized files (checksum mismatch) without applying updates.
+
+**Decision / Outcome**: Added `internal/common/assetconflict` — on conflict, save `{filename}_{timestamp}.conflict` backup, write new content, warn per file. `upgrade.Result.Skipped` → `Replaced`. `update-models` now loads/writes `checksums.json` with the same logic. Exported `install.LoadChecksums` / `WriteChecksums`. `go test ./...` green.
+
+---
+
 **Decision / Outcome**: V2.1.1 harness stream normalization shipped: `StreamDelta` extended, OpenCode SSE full event map + permission flow, Cursor unknown-event warnings, TUI harness permission prompt. Plan: `docs/idea/V2.1.1_fix_adapters_streams/implementation-plan.md`; architecture: `docs/architecture/architecture-overview.md`.
 
 ---

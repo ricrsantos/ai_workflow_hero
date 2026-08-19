@@ -92,6 +92,8 @@ type model struct {
 	availableModels        []string
 	pickingModel           bool
 	pickingHarness         bool
+	pickingHarnessReset    bool
+	harnessResetAwaitingOpen bool // loading harness list before reset picker is interactive
 	modelPickerHarness     string          // non-empty = /hero-model step 2 (models for this harness)
 	harnessDraft           map[string]bool // checkbox state while /hero-harness is open
 	runtimeCommandName     string          // hero runtime slash body name (e.g. "new") for Chat output normalization
@@ -302,11 +304,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.waitAnimFrame++
 			return m, convWaitTickCmd()
 		}
-		if m.propsAwaitingRefresh {
+		if m.propsAwaitingRefresh || m.harnessResetAwaitingOpen {
 			m.waitAnimFrame++
 			return m, convWaitTickCmd()
 		}
 		return m, nil
+
+	case harnessResetOpenMsg:
+		return m.handleHarnessResetOpenMsg(msg)
 
 	case confirmResumeMsg:
 		return m.dispatchConfirmedAction(msg.action, msg.actionN)
@@ -382,6 +387,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.paletteOffset = 0
 		m.pickingModel = false
 		m.pickingHarness = false
+		m.pickingHarnessReset = false
+		m.harnessResetAwaitingOpen = false
 		m.modelPickerHarness = ""
 		m.harnessDraft = nil
 		m = m.reloadPaletteItems()
@@ -429,6 +436,18 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.harnessResetAwaitingOpen {
+		switch msg.String() {
+		case "esc":
+			m.harnessResetAwaitingOpen = false
+			m = m.closePalette()
+			return m, nil
+		case "ctrl+c":
+			return m, tea.Quit
+		default:
+			return m, nil
+		}
+	}
 	if m.pickingProps {
 		return m.handlePropertyPickerKey(msg)
 	}
@@ -453,6 +472,8 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Leave palette chrome before global navigation / refresh / quit.
 		m.pickingModel = false
 		m.pickingHarness = false
+		m.pickingHarnessReset = false
+		m.harnessResetAwaitingOpen = false
 		m.modelPickerHarness = ""
 		m.harnessDraft = nil
 		m.paletteFilter = ""
@@ -561,6 +582,10 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		return m.toggleHarnessDraft()
 	case actionApplyHarness:
 		return m.applyHarnessDraft()
+	case actionHarnessReset:
+		return m.beginHarnessResetPicker()
+	case actionSelectHarnessReset:
+		return m.applyHarnessReset(item.harnessID)
 	case actionQuit:
 		return m, tea.Quit
 	case actionRefresh:

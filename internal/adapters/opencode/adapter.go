@@ -460,6 +460,36 @@ func (a *Adapter) StopServe(ctx context.Context) error {
 	return nil
 }
 
+// HasManagedServe reports whether Hero has started or adopted an OpenCode serve process.
+func (a *Adapter) HasManagedServe(ctx context.Context) bool {
+	a.mu.Lock()
+	pid := a.servePID
+	url := a.baseURL
+	a.mu.Unlock()
+	if pid > 0 {
+		return true
+	}
+	if url != "" && ServeURLAlive(ctx, url) {
+		return true
+	}
+	if a.Store == nil {
+		return false
+	}
+	entries, err := a.Store.ListServeRegistry()
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.Harness != adapterName {
+			continue
+		}
+		if e.PID > 0 || strings.TrimSpace(e.URL) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // KillProcess terminates a child process by PID (cross-platform).
 func KillProcess(pid int) {
 	killProcess(pid)
