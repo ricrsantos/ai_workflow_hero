@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-08-19 — Release v2.2.0 (OpenCode prepare + harness reset)
+
+**Problem**: After v2.1.2, TUI still needed a way to restart harnesses after agent edits, and `/hero-start` could dispatch OpenCode agents with stale `.opencode/agents` frontmatter.
+
+**Decision / Outcome**: Tagged `v2.2.0` on `main` after `go test ./...` green. Ships TUI `/harness-reset`, OpenCode `PrepareHeroStart` (sync agents, reset serve, probe), and upgrade/`update-models` conflict backup+replace. Artifacts via `scripts/release.sh`; GitHub Release with binaries + `checksums.txt`.
+
 ## 2026-08-19 — TUI `/harness-reset` slash command
 
 **Problem**: After editing agents/skills, harnesses need a restart (OpenCode serve, Cursor in-flight runs) without leaving the TUI.
