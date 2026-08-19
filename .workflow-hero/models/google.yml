@@ -1,26 +1,65 @@
 provider: google
 version: 1
-last_updated: 2026-08-15
+last_updated: 2026-08-18
 currency: usd
 unit: per_1m_tokens
 
 models:
   gemini-3.1-pro:
-    input: 1.25
+    input: 2.00
     cache_write: 0.00
-    cache_read: 0.3125
-    output: 5.00
+    cache_read: 0.20
+    output: 12.00
     context_window: 1000000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: false
+        values: ["na"]
+        default: "na"
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "on"
   gemini-3-flash:
-    input: 0.075
+    input: 0.50
     cache_write: 0.00
-    cache_read: 0.01875
-    output: 0.30
+    cache_read: 0.05
+    output: 3.00
     context_window: 1000000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: false
+        values: ["na"]
+        default: "na"
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "on"
   # OpenCode-native provider/model ids (PRD-C04-001 §4.10)
   google/gemini-3.1-pro:
-    input: 1.25
+    input: 2.00
     cache_write: 0.00
-    cache_read: 0.3125
-    output: 5.00
+    cache_read: 0.20
+    output: 12.00
     context_window: 1000000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: false
+        values: ["na"]
+        default: "na"
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "on"

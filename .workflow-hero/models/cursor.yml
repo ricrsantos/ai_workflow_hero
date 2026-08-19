@@ -20,19 +20,27 @@ models:
         available: true
         values: ["true", "false"]
         default: "false"
+      ef:
+        available: false
+        values: ["na"]
+        default: "na"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
   composer-2.5-fast:
     input: 3.00
     cache_write: 0.00
     cache_read: 0.50
     output: 15.00
     context_window: 200000
-  # Cursor IDE / Task slug for Grok 4.5 (same rates as xai.yml → grok-4.5).
+  # Cursor IDE / Task slug for Grok 4.5 (Cursor-published rates).
   cursor-grok-4.5:
     input: 2.00
     cache_write: 0.00
     cache_read: 0.50
     output: 6.00
-    context_window: 256000
+    context_window: 500000
     properties:
       fs:
         available: true
@@ -42,24 +50,28 @@ models:
         available: true
         values: ["high"]
         default: "high"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
   cursor-grok-4.5-high:
     input: 2.00
     cache_write: 0.00
     cache_read: 0.50
     output: 6.00
-    context_window: 256000
+    context_window: 500000
   cursor-grok-4.5-high-fast:
-    input: 2.00
+    input: 4.00
     cache_write: 0.00
-    cache_read: 0.50
-    output: 6.00
-    context_window: 256000
+    cache_read: 1.00
+    output: 12.00
+    context_window: 500000
   cursor-grok-4.6:
     input: 2.00
     cache_write: 0.00
     cache_read: 0.50
     output: 6.00
-    context_window: 256000
+    context_window: 500000
     properties:
       fs:
         available: true
@@ -69,52 +81,56 @@ models:
         available: true
         values: ["low", "medium", "high", "xhigh"]
         default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
   cursor-grok-4.6-low:
     input: 2.00
     cache_write: 0.00
     cache_read: 0.50
     output: 6.00
-    context_window: 256000
+    context_window: 500000
   cursor-grok-4.6-low-fast:
-    input: 2.00
+    input: 4.00
     cache_write: 0.00
-    cache_read: 0.50
-    output: 6.00
-    context_window: 256000
+    cache_read: 1.00
+    output: 12.00
+    context_window: 500000
   cursor-grok-4.6-medium:
     input: 2.00
     cache_write: 0.00
     cache_read: 0.50
     output: 6.00
-    context_window: 256000
+    context_window: 500000
   cursor-grok-4.6-medium-fast:
-    input: 2.00
+    input: 4.00
     cache_write: 0.00
-    cache_read: 0.50
-    output: 6.00
-    context_window: 256000
+    cache_read: 1.00
+    output: 12.00
+    context_window: 500000
   # Task often exposes the high-effort variant as a distinct slug.
   cursor-grok-4.6-high:
     input: 2.00
     cache_write: 0.00
     cache_read: 0.50
     output: 6.00
-    context_window: 256000
+    context_window: 500000
   cursor-grok-4.6-high-fast:
-    input: 2.00
+    input: 4.00
     cache_write: 0.00
-    cache_read: 0.50
-    output: 6.00
-    context_window: 256000
+    cache_read: 1.00
+    output: 12.00
+    context_window: 500000
   cursor-grok-4.6-xhigh:
     input: 2.00
     cache_write: 0.00
     cache_read: 0.50
     output: 6.00
-    context_window: 256000
+    context_window: 500000
   cursor-grok-4.6-xhigh-fast:
-    input: 2.00
+    input: 4.00
     cache_write: 0.00
-    cache_read: 0.50
-    output: 6.00
-    context_window: 256000
+    cache_read: 1.00
+    output: 12.00
+    context_window: 500000

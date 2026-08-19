@@ -217,3 +217,11 @@ _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+E
 **Problem**: Initial `hero cycle archive` failed — OpenSpec `MODIFIED` deltas referenced requirement headers absent from base specs (`harness-adapter` first failure).
 
 **Decision / Outcome**: Changed C5 delta sections from `## MODIFIED Requirements` to `## ADDED Requirements` in `openspec/changes/model-properties-tui/specs/{harness-adapter,hero-tui,runtime-workflow-execution,sqlite-operational-store}/spec.md`. Retry succeeded: `openspec archive model-properties-tui -y` merged 19 requirements; Hero archived to `.workflow-hero/cycles/archive/C5-2026-08-18-implementa-o-da-sele-o-das-propriedades/`. Resume with `/hero-resume C5`. No active cycle remains.
+
+---
+
+## 2026-08-18 — Model catalog pricing/capabilities aligned in assets/models/*.yml
+
+**Problem**: `assets/models/*.yml` diverged from the expected pattern (pricing + `properties` blocks) and carried stale/wrong data (e.g. `grok-4.5` cache_read 0.50, grok context 256000, `glm-5.2` 200000, `kimi-k3` 256000, outdated OpenAI/Google prices); several files had no `properties`.
+
+**Decision / Outcome**: Researched 2026 pricing/capabilities on provider/Cursor/OpenCode docs and rewrote the 8 catalogs (mirrored to `.workflow-hero/models/`). Added `properties` (`fs`/`ef`/`th`) to anthropic/google/moonshot/openai/xai/zhipu/cursor; added `th` to cursor base rows; added pricing to opencode-go rows (properties kept unchanged per test constraints). Unsupported props use `values: ["na"]`/`default: "na"` (scalar `na` breaks yaml.v3 `[]string` unmarshal — must be a list); unfindable data (grok-3-mini, retired) uses `["not found"]`. Fixed values: grok-4.5 cache_read 0.30 + context 500000, grok-4.6 context 500000, cursor fast Grok variants $4/$1/$12, GLM-5.2/Kimi K3 context 1000000 (kimi-k3 1048576), Sonnet 5 $2/$2.50/$0.20/$10/1M, gpt-5.3-codex $1.75/$0.175/$14, gpt-5-mini $0.25/$0.025/$2, gemini-3.1-pro $2/$0.20/$12, deepseek-v4-pro off-peak $0.66/$0.022/$1.98/1M, gpt-5.6-luna $0.20/$0.02/$0.25/$1.20/1.05M. Updated `internal/tui/contextbar_test.go` grok windows 256000→500000. `go test ./...` green.

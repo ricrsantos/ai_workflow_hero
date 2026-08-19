@@ -1,26 +1,65 @@
 provider: openai
 version: 1
-last_updated: 2026-08-15
+last_updated: 2026-08-18
 currency: usd
 unit: per_1m_tokens
 
 models:
   gpt-5.3-codex:
-    input: 3.00
+    input: 1.75
     cache_write: 0.00
-    cache_read: 1.50
-    output: 12.00
+    cache_read: 0.175
+    output: 14.00
     context_window: 400000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh"]
+        default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
   gpt-5-mini:
-    input: 0.15
+    input: 0.25
     cache_write: 0.00
-    cache_read: 0.075
-    output: 0.60
+    cache_read: 0.025
+    output: 2.00
     context_window: 400000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["minimal", "low", "medium", "high"]
+        default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
   # OpenCode-native provider/model ids (PRD-C04-001 §4.10)
   openai/gpt-5.3-codex:
-    input: 3.00
+    input: 1.75
     cache_write: 0.00
-    cache_read: 1.50
-    output: 12.00
+    cache_read: 0.175
+    output: 14.00
     context_window: 400000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh"]
+        default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"

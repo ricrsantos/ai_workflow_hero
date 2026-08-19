@@ -15,7 +15,7 @@ func TestContextWindowLookup(t *testing.T) {
 	if cat.lookup("composer-2.5") != 200000 {
 		t.Fatalf("composer-2.5 window=%d", cat.lookup("composer-2.5"))
 	}
-	if cat.lookup("cursor-grok-4.6-high") != 256000 {
+	if cat.lookup("cursor-grok-4.6-high") != 500000 {
 		t.Fatalf("exact high slug window=%d", cat.lookup("cursor-grok-4.6-high"))
 	}
 	if cat.lookup("gpt-5.3-codex-medium") != 400000 {
@@ -52,7 +52,7 @@ func TestContextWindowLookupProjectOverlay(t *testing.T) {
 	if cat.lookup("composer-2.5") != 111000 {
 		t.Fatalf("project should override embed, got %d", cat.lookup("composer-2.5"))
 	}
-	if cat.lookup("grok-4.6") != 256000 {
+	if cat.lookup("grok-4.6") != 500000 {
 		t.Fatalf("embed fallback missing grok-4.6=%d", cat.lookup("grok-4.6"))
 	}
 }

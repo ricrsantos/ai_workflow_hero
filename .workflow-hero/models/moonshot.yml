@@ -1,6 +1,6 @@
 provider: moonshot
 version: 1
-last_updated: 2026-08-15
+last_updated: 2026-08-18
 currency: usd
 unit: per_1m_tokens
 
@@ -11,17 +11,43 @@ models:
     cache_write: 0.00
     cache_read: 0.19
     output: 4.00
-    context_window: 256000
+    context_window: 262144
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: false
+        values: ["na"]
+        default: "na"
+      th:
+        available: true
+        values: ["on"]
+        default: "on"
   kimi-k3:
     input: 3.00
     cache_write: 0.00
     cache_read: 0.30
     output: 15.00
-    context_window: 256000
+    context_window: 1048576
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: false
+        values: ["na"]
+        default: "na"
+      th:
+        available: true
+        values: ["on"]
+        default: "on"
   # Task often exposes the max-effort variant as a distinct slug.
   kimi-k3-max:
     input: 3.00
     cache_write: 0.00
     cache_read: 0.30
     output: 15.00
-    context_window: 1000000
+    context_window: 1048576

@@ -1,28 +1,67 @@
 provider: anthropic
 version: 1
-last_updated: 2026-08-15
+last_updated: 2026-08-18
 currency: usd
 unit: per_1m_tokens
 
 models:
   claude-sonnet-5:
-    input: 3.00
-    cache_write: 3.75
-    cache_read: 0.30
-    output: 15.00
-    context_window: 200000
+    input: 2.00
+    cache_write: 2.50
+    cache_read: 0.20
+    output: 10.00
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh", "max"]
+        default: "high"
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "on"
   claude-4.6-sonnet:
     input: 3.00
     cache_write: 3.75
     cache_read: 0.30
     output: 15.00
-    context_window: 200000
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "max"]
+        default: "high"
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
   claude-opus-4:
     input: 15.00
     cache_write: 18.75
     cache_read: 1.50
     output: 75.00
     context_window: 200000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "high"
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
   # OpenCode-native provider/model ids (PRD-C04-001 §4.10)
   anthropic/claude-sonnet-4:
     input: 3.00
@@ -30,9 +69,35 @@ models:
     cache_read: 0.30
     output: 15.00
     context_window: 200000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "high"
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
   anthropic/claude-opus-4:
     input: 15.00
     cache_write: 18.75
     cache_read: 1.50
     output: 75.00
     context_window: 200000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "high"
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
