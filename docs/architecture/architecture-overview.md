@@ -362,8 +362,34 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
 - Adapters SHALL NOT silently drop parseable events; unknown types emit `StreamKindWarning`.
 - OpenCode `permission.asked` blocks until TUI responds; reply via `POST /permission/{requestID}/reply`.
 - Cursor without terminal `result` + non-zero exit code fails with stderr detail.
+- Cursor `stream-json` success with no substantive output fails with an explicit empty-response error.
 
-- **Execute**: multi-turn agent runs from TUI Chat (and `hero run` paths). Passes `--trust --force --sandbox disabled --workspace`; retries `RetriableError` / `resource_exhausted`; `Cancel("")` aborts before session id exists.
+**Harness watchdog (v2.3, TUI only):**
+
+```
+  TUI Execute (streaming)
+        │
+        ├─ stream deltas → harness.Watchdog.RecordDelta
+        │
+        └─ periodic HealthChecker.CheckHealth (10s)
+                 │
+                 ▼
+           Evaluate(process + server + session + last activity)
+                 │
+     ┌───────────┼───────────────┐
+     ▼           ▼               ▼
+ healthy    suspected_hang     failed
+              │                  │
+              ▼                  ▼
+        user prompt         auto-cancel
+     (wait / cancel / restart)
+```
+
+- Stall timeouts: Cursor 5m, OpenCode 3m (constants in `internal/harness/health.go`).
+- OpenCode health: `GET /global/health`; Cursor: `HasInFlight()` + session status.
+- Empty successful Execute → TUI warning (`convRoleWarning`); not applied to Cursor IDE chat Runtime.
+
+- **Execute**: multi-turn agent runs from TUI Chat (and `hero run` paths).
 - **Dispatch**: thin wrapper → fresh Execute session (palette paths; no leaked `--resume`).
 - **Parse** (`adapters/cursor/parse.go`): `json` and `stream-json` (+ `--stream-partial-output`); Task attribution for nested subagents; warnings for unknown NDJSON types.
 - **Events** (`adapters/opencode/events.go`): full SSE event map; tool/thinking/permission/session handling.

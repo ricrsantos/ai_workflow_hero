@@ -95,3 +95,31 @@ When Cursor `stream-json` ends without a `result` event and the CLI exits non-ze
 #### Scenario: Process exit without result
 - **WHEN** the Cursor CLI exits with a non-zero code before emitting `result`
 - **THEN** Execute fails with stderr detail and does not report success
+
+### Requirement: Harness adapters SHALL expose runtime health probes
+
+Adapters that support TUI Execute SHALL implement `harness.HealthChecker` with `CheckHealth(ctx, sessionID)`. Cursor probes in-flight CLI process state; OpenCode probes managed serve process, `GET /global/health` (fallback: `/config/providers` liveness), and session existence when a session id is known (v2.3 harness health design).
+
+#### Scenario: OpenCode server health
+- **WHEN** TUI requests health during an OpenCode Execute
+- **THEN** the adapter reports `ServerAlive` from `/global/health` or the documented liveness fallback
+
+#### Scenario: Cursor process health
+- **WHEN** TUI requests health during a Cursor Execute
+- **THEN** the adapter reports `ProcessAlive` from the in-flight CLI track
+
+### Requirement: TUI SHALL not block indefinitely on harness Execute
+
+During TUI streaming Execute, Hero SHALL run a generic watchdog (`internal/harness/watchdog.go`) that combines adapter health probes with stream activity timestamps. On `suspected_hang`, the TUI SHALL prompt the user to cancel, wait, or restart the harness. On `failed`, the TUI SHALL cancel the stream and surface a warning. This requirement applies to Hero TUI only — not Cursor IDE chat Runtime.
+
+#### Scenario: Stalled harness during Execute
+- **WHEN** the harness process is alive but no substantive stream activity occurs for the configured stall timeout
+- **THEN** the TUI shows a stall warning with recovery options and does not wait silently
+
+### Requirement: TUI SHALL warn on successful Execute with empty output
+
+When TUI Execute completes without error and the agent transcript has no substantive text or tool output, the TUI SHALL insert a `convRoleWarning` message and set a footer warning. Adapters MAY also return an explicit error for hard empty Cursor stream-json results.
+
+#### Scenario: Empty harness success
+- **WHEN** Execute returns success with empty `Output` and no streamed agent content
+- **THEN** Chat shows a warning that the harness returned an empty response

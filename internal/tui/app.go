@@ -146,6 +146,14 @@ type model struct {
 	harnessPermissionMsg     string
 	harnessPermissionReq     harness.PermissionRequest
 	harnessPermissionRespCh  chan harness.PermissionResponse
+
+	// Harness watchdog (v2.3): runtime health during TUI Execute only.
+	harnessWatchdog      harness.Watchdog
+	harnessHealthStatus  harness.HealthStatus
+	harnessHangPending   bool
+	harnessHangMsg       string
+	harnessHangDismissed bool
+	lastExecutePrompt    string
 }
 
 type refreshDataMsg struct {
@@ -316,6 +324,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case harnessResetOpenMsg:
 		return m.handleHarnessResetOpenMsg(msg)
 
+	case harnessHealthProbeMsg:
+		return m.handleHarnessHealthProbe()
+
+	case harnessHealthResultMsg:
+		return m.handleHarnessHealthResult(msg)
+
 	case heroStartPrepareDoneMsg:
 		return m.handleHeroStartPrepareDone(msg)
 
@@ -349,6 +363,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.harnessPermissionPending {
 			return m.handleHarnessPermissionKey(msg)
+		}
+		if m.harnessHangPending {
+			return m.handleHarnessHangKey(msg)
 		}
 		if m.confirmPending {
 			return m.handleConfirmKey(msg)

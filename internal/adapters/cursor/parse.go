@@ -188,14 +188,18 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 	sc.Buffer(buf, 10*1024*1024)
 
 	var (
-		sessionID  string
-		result     *harness.ExecutionResult
-		assistant  strings.Builder
-		sawPartial bool
-		state      = newStreamParseState()
+		sessionID       string
+		result          *harness.ExecutionResult
+		assistant       strings.Builder
+		sawPartial      bool
+		sawSubstantive  bool
+		state           = newStreamParseState()
 	)
 
 	emit := func(d harness.StreamDelta) {
+		if isSubstantiveStreamDelta(d) {
+			sawSubstantive = true
+		}
 		if opts.OnDelta == nil {
 			return
 		}
@@ -372,7 +376,34 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 			StreamDone: true,
 		}
 	}
+	if err := emptyStreamResultError(result, sawSubstantive); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+func isSubstantiveStreamDelta(d harness.StreamDelta) bool {
+	switch d.Kind {
+	case harness.StreamKindText, harness.StreamKindThinking:
+		return strings.TrimSpace(d.Text) != ""
+	case harness.StreamKindTool:
+		return strings.TrimSpace(d.Text) != "" || d.Phase != ""
+	default:
+		return false
+	}
+}
+
+func emptyStreamResultError(result *harness.ExecutionResult, sawSubstantive bool) error {
+	if result == nil {
+		return fmt.Errorf("cursor agent returned empty response")
+	}
+	if sawSubstantive {
+		return nil
+	}
+	if strings.TrimSpace(result.Output) == "" {
+		return fmt.Errorf("cursor agent returned empty response")
+	}
+	return nil
 }
 
 func extractAssistantText(ev cliStreamEvent) string {

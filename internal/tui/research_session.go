@@ -136,7 +136,7 @@ func (m model) startDiscoverResearchSession() (model, tea.Cmd) {
 		label = "→ Research (model from fallback /hero-model; set agents.discover_agent in workflow-config.yml)"
 	}
 	m = m.beginConversationExecute(label, prompt)
-	return m, waitConvMsg(m.convStreamCh)
+	return m, m.conversationExecuteCmds()
 }
 
 func (m model) resumeOrchestratorAfterResearch() (model, tea.Cmd) {
@@ -154,7 +154,7 @@ func (m model) resumeOrchestratorAfterResearch() (model, tea.Cmd) {
 	prompt := tuiHeroStartContinueAfterResearchPreamble() +
 		"Research closed. Continue the cycle: dispatch the next enabled stage via Task with Model Resolution from workflow-config.yml. Do not grill or re-run Research.\n"
 	m = m.beginConversationExecute("→ Research closed", prompt)
-	return m, waitConvMsg(m.convStreamCh)
+	return m, m.conversationExecuteCmds()
 }
 
 func (m model) prepareDiscoverFollowUp() model {

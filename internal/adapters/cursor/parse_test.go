@@ -231,3 +231,13 @@ func TestIsRetriableFailure(t *testing.T) {
 		t.Fatal("unexpected retriable")
 	}
 }
+
+func TestParseStreamJSONEmptyResponse(t *testing.T) {
+	ndjson := `{"type":"system","subtype":"init","session_id":"s"}
+{"type":"result","subtype":"success","is_error":false,"result":"","session_id":"s"}
+`
+	_, err := cursoradapter.ParseStreamJSON(strings.NewReader(ndjson), nil)
+	if err == nil || !strings.Contains(err.Error(), "empty response") {
+		t.Fatalf("err=%v want empty response error", err)
+	}
+}

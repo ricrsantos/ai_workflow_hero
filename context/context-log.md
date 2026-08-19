@@ -126,6 +126,14 @@
 
 ---
 
+## 2026-08-19 — Harness health watchdog + empty response warning (v2.3, TUI)
+
+**Problem**: TUI Execute could wait indefinitely on a stalled harness with no user feedback; successful Execute with zero agent output left a blank response pane.
+
+**Decision / Outcome**: Added `HarnessHealth` / `HealthChecker` / `Watchdog` in `internal/harness`; Cursor and OpenCode adapters implement `CheckHealth` (OpenCode uses `GET /global/health` with `/config/providers` fallback). TUI runs 10s health probes during streaming, prompts on `suspected_hang` (cancel/wait/restart), auto-cancels on `failed`, and warns on empty successful output via `convRoleWarning`. Cursor `stream-json` with no substantive output returns an explicit error. Scope is TUI harness Execute only — not Cursor IDE chat Runtime. `go test ./...` green.
+
+---
+
 ## 2026-08-15 — OpenCode TUI chat hang ("Waiting for harness")
 
 **Problem**: Chat with OpenCode harness stuck on "Waiting for harness…" — no stream deltas, no error.

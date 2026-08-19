@@ -73,6 +73,10 @@ func convWaitTickCmd() tea.Cmd {
 	})
 }
 
+func (m model) conversationExecuteCmds() tea.Cmd {
+	return tea.Batch(waitConvMsg(m.convStreamCh), convWaitTickCmd(), harnessHealthProbeCmd())
+}
+
 func (m model) harnessAdapter() harness.HarnessAdapter {
 	if m.svc != nil && m.svc.Harness != nil {
 		return m.svc.Harness
@@ -398,7 +402,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	}
 
 	m = m.beginConversationExecute(label, executePrompt)
-	return m, tea.Batch(waitConvMsg(m.convStreamCh), convWaitTickCmd())
+	return m, m.conversationExecuteCmds()
 }
 
 func orchestratorRuntimePrompt(projectDir, cmdBody string) (string, error) {
@@ -425,6 +429,7 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	m.respFollowBottom = true
 	m.respScrollOffset = 0
 	m.chatInputFocused = false
+	m = m.resetHarnessWatchdog(executePrompt)
 	parentName := strings.TrimSpace(m.runtimeAgentName)
 	parentModel := m.conversationModelSlug()
 	m.liveAgents = []liveAgent{{
@@ -761,7 +766,7 @@ func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
 	m = m.syncConversationContext()
 	m = m.clearChatInput()
 	m = m.beginConversationExecute(text, text)
-	return m, tea.Batch(waitConvMsg(m.convStreamCh), convWaitTickCmd())
+	return m, m.conversationExecuteCmds()
 }
 
 func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
@@ -996,6 +1001,7 @@ func (m model) cancelStreamCmd() tea.Cmd {
 func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case streamDeltaMsg:
+		m.harnessWatchdog.RecordDelta(msg.delta, time.Now())
 		m = m.appendStreamDelta(msg.delta)
 		m = m.maybeFollowResponseBottom()
 		if m.streaming && m.convStreamCh != nil {
@@ -1021,6 +1027,10 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.liveAgents = nil
 		m.confirmPending = false
 		m.confirmMsg = ""
+		m.harnessHangPending = false
+		m.harnessHangMsg = ""
+		m.harnessHangDismissed = false
+		m.harnessHealthStatus = harness.HealthHealthy
 		m = m.clearHarnessPermission()
 		if !m.orchestrationLive {
 			m.runtimeModelSlug = ""
@@ -1055,6 +1065,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.transcript[m.agentMsgIndex].content = msg.result.Output
 				}
 			}
+		}
+		if agentResponseEmpty(m, msg) {
+			m = m.warnEmptyAgentResponse()
 		}
 		if m.runtimeCommandName == "new" && msg.err == nil && m.svc != nil {
 			if _, err := m.svc.PrepareCycle(); err != nil {

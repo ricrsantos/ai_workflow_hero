@@ -94,6 +94,9 @@ func (h *streamingHarness) Cancel(_ context.Context, sessionID string) error {
 func (h *streamingHarness) Status(context.Context, string) (*harness.ExecutionStatus, error) {
 	return &harness.ExecutionStatus{State: harness.StatusIdle}, nil
 }
+func (h *streamingHarness) CheckHealth(context.Context, string) (harness.HarnessHealth, error) {
+	return harness.HarnessHealth{ProcessAlive: true, ServerAlive: true, SessionAlive: true}, nil
+}
 func (h *streamingHarness) Dispatch(context.Context, harness.DispatchRequest) (harness.DispatchResult, error) {
 	return harness.DispatchResult{Dispatched: true}, nil
 }
@@ -220,7 +223,7 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 						}
 					}
 				}
-			case convWaitTickMsg, statusTickMsg:
+			case convWaitTickMsg, statusTickMsg, harnessHealthProbeMsg:
 				continue
 			case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
 				return inner
@@ -236,7 +239,7 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 			}
 		}
 		return found
-	case convWaitTickMsg, statusTickMsg:
+	case convWaitTickMsg, statusTickMsg, harnessHealthProbeMsg:
 		return nil
 	default:
 		return msg
@@ -2642,5 +2645,21 @@ func TestHarnessSessionIDForPair_AllowsSameHarness(t *testing.T) {
 	got := HarnessSessionIDForPairForTest(m, "", "cursor")
 	if got != "cursor-sess-abc" {
 		t.Fatalf("session=%q want preserved for same harness", got)
+	}
+}
+
+func TestEmptyAgentResponseWarning(t *testing.T) {
+	svc := newTestServiceWithRunningResearch(t)
+	h := &streamingHarness{deltas: nil, events: nil}
+	svc.Harness = h
+	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "ping")
+	next, cmd := SubmitConversationForTest(m)
+	next = drainConversationStream(t, next, cmd)
+	view := next.View()
+	if !strings.Contains(view, "empty response") {
+		t.Fatalf("expected empty response warning in view, got:\n%s", view)
 	}
 }
