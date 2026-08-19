@@ -3,6 +3,7 @@ package cursor
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -160,12 +161,27 @@ func ParseJSONResult(data []byte) (*harness.ExecutionResult, error) {
 	}, nil
 }
 
+// StreamParseOptions configures ParseStreamJSONWithOptions.
+type StreamParseOptions struct {
+	OnDelta func(harness.StreamDelta)
+	// OnPermissionRequest is invoked for permission_request NDJSON events. Unlike
+	// OpenCode, Cursor headless mode resolves permissions via --force and
+	// --approve-mcps; stream-json has no reply channel, so approval in the TUI
+	// does not unblock the CLI process.
+	OnPermissionRequest func(context.Context, harness.PermissionRequest) (harness.PermissionResponse, error)
+}
+
 // ParseStreamJSON reads NDJSON stream-json events and builds an ExecutionResult.
 // When onDelta is non-nil, thinking, tool activity, and assistant text are forwarded
 // (partial assistant deltas preferred). Thinking/tools are display-only and not
 // included in ExecutionResult.Output. Nested Task assistant text is attributed to
 // the open Task when the CLI forwards it (or when exactly one Task is in flight).
 func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.ExecutionResult, error) {
+	return ParseStreamJSONWithOptions(context.Background(), r, StreamParseOptions{OnDelta: onDelta})
+}
+
+// ParseStreamJSONWithOptions is like ParseStreamJSON with permission callbacks.
+func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamParseOptions) (*harness.ExecutionResult, error) {
 	sc := bufio.NewScanner(r)
 	// Cursor stream lines can be large (tool payloads); raise limit.
 	buf := make([]byte, 0, 64*1024)
@@ -180,7 +196,7 @@ func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.E
 	)
 
 	emit := func(d harness.StreamDelta) {
-		if onDelta == nil {
+		if opts.OnDelta == nil {
 			return
 		}
 		if d.Text == "" && d.Phase == "" {
@@ -189,7 +205,7 @@ func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.E
 		if d.Kind == harness.StreamKindText && d.CallID != "" && d.Text != "" {
 			state.emittedText[d.CallID] = true
 		}
-		onDelta(d)
+		opts.OnDelta(d)
 	}
 
 	emitAttr := func(kind harness.StreamKind, text, name, model, callID, phase string) {
@@ -222,6 +238,12 @@ func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.E
 		switch ev.Type {
 		case "system", "user":
 			// Stream lifecycle events; no user-visible delta.
+		case "permission_request", "permission":
+			if err := handleCursorPermission(ctx, line, ev.SessionID, opts, emit); err != nil {
+				return nil, err
+			}
+		case "permission_decision":
+			// Informational; CLI already resolved the request.
 		case "thinking":
 			if ev.Subtype == "completed" {
 				continue
@@ -261,6 +283,14 @@ func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.E
 				name, model, parentID := state.attrFromEvent(ev)
 				emitAttr(harness.StreamKindTool, label, name, model, parentID, "")
 			case "completed":
+				if toolCallDenied(ev.ToolCall) {
+					emit(harness.StreamDelta{
+						Kind:        harness.StreamKindWarning,
+						Text:        formatToolPermissionDenied(formatToolCall(ev.ToolCall)),
+						HarnessType: "tool_call.permission_denied",
+						SessionID:   sessionID,
+					})
+				}
 				if isTask {
 					if callID == "" {
 						callID = "task:" + info.Name
@@ -665,4 +695,75 @@ func summarize(out string) string {
 		return out[:117] + "..."
 	}
 	return out
+}
+
+func handleCursorPermission(ctx context.Context, line []byte, sessionID string, opts StreamParseOptions, emit func(harness.StreamDelta)) error {
+	var raw map[string]any
+	if err := json.Unmarshal(line, &raw); err != nil {
+		return nil
+	}
+	title := cursorStringProp(raw, "name", "tool", "permission", "action")
+	if title == "" {
+		title = "tool"
+	}
+	desc := cursorStringProp(raw, "reason", "sideEffect", "message")
+	if desc == "" {
+		desc = strings.TrimSpace(string(line))
+	}
+	id, _ := raw["id"].(string)
+	evtType, _ := raw["type"].(string)
+
+	if opts.OnPermissionRequest == nil {
+		emit(harness.WarningDelta("cursor", evtType, sessionID, desc))
+		return fmt.Errorf("cursor permission required (%s) but no OnPermissionRequest handler", title)
+	}
+
+	emit(harness.StreamDelta{
+		Kind:        harness.StreamKindPermission,
+		Text:        title + ": " + desc,
+		HarnessType: evtType,
+		SessionID:   sessionID,
+		Metadata:    map[string]string{"permission_id": id},
+	})
+
+	if _, err := opts.OnPermissionRequest(ctx, harness.PermissionRequest{
+		ID:          id,
+		Title:       title,
+		Description: desc,
+		HarnessType: evtType,
+		SessionID:   sessionID,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func cursorStringProp(props map[string]any, keys ...string) string {
+	for _, k := range keys {
+		v, ok := props[k].(string)
+		if !ok {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func toolCallDenied(raw json.RawMessage) bool {
+	s := strings.ToLower(string(raw))
+	return strings.Contains(s, "user rejected") ||
+		strings.Contains(s, "permission denied") ||
+		strings.Contains(s, `"permissiongranted":false`) ||
+		strings.Contains(s, `"permission_granted":false`)
+}
+
+func formatToolPermissionDenied(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = "tool"
+	}
+	return fmt.Sprintf("Cursor denied %s (permission not granted). Hero runs with --force and --approve-mcps; if this persists, check .cursor/permissions.json or your team MCP allowlist.", label)
 }

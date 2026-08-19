@@ -348,6 +348,9 @@ func TestExecuteJSONFixture(t *testing.T) {
 	if !containsArg(gotArgs, "--force") {
 		t.Fatalf("expected --force in args=%v", gotArgs)
 	}
+	if !containsArg(gotArgs, "--approve-mcps") {
+		t.Fatalf("expected --approve-mcps in args=%v", gotArgs)
+	}
 	if !containsArg(gotArgs, "--sandbox") || !containsArg(gotArgs, "disabled") {
 		t.Fatalf("expected --sandbox disabled in args=%v", gotArgs)
 	}

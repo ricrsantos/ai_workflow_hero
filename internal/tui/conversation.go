@@ -1004,6 +1004,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.harnessPermissionReq = msg.req
 		m.harnessPermissionRespCh = msg.respCh
 		m.harnessPermissionMsg = formatHarnessPermission(msg.req)
+		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessPermissionMsg})
 		if m.streaming && m.convStreamCh != nil {
 			return m, waitConvMsg(m.convStreamCh)
 		}

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -799,13 +801,24 @@ func (h *streamHandler) handlePartUpdated(props map[string]any) streamOutcome {
 
 func (h *streamHandler) handlePermissionAsked(props map[string]any, evtType string) error {
 	id, _ := props["id"].(string)
-	perm, _ := props["permission"].(string)
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("opencode permission event missing id")
+	}
+	perm := stringProp(props, "permission", "action")
 	patterns := stringSliceProp(props, "patterns")
+	if len(patterns) == 0 {
+		patterns = stringSliceProp(props, "resources")
+	}
 	title := perm
 	if title == "" {
 		title = "permission"
 	}
 	desc := strings.Join(patterns, ", ")
+	if desc == "" {
+		if meta, ok := props["metadata"].(map[string]any); ok {
+			desc = stringProp(meta, "filepath", "parentDir")
+		}
+	}
 	if desc == "" {
 		if raw, err := json.Marshal(props); err == nil {
 			desc = truncate(string(raw), 200)
@@ -839,7 +852,7 @@ func (h *streamHandler) handlePermissionAsked(props map[string]any, evtType stri
 	if resp.Approved {
 		reply = "once"
 	}
-	if err := h.adapter.replyPermission(h.ctx, id, reply); err != nil {
+	if err := h.adapter.replyPermission(h.ctx, h.sessionID, id, reply, h.req.ProjectDir); err != nil {
 		return fmt.Errorf("opencode permission reply: %w", err)
 	}
 	return nil
@@ -850,18 +863,41 @@ func (h *streamHandler) emitWarning(evtType string, evt map[string]any) {
 	h.emit(harness.WarningDelta(adapterName, evtType, h.sessionID, string(raw)))
 }
 
-func (a *Adapter) replyPermission(ctx context.Context, requestID, reply string) error {
-	body, _ := json.Marshal(map[string]string{
-		"requestID": requestID,
-		"reply":     reply,
-		"directory": a.ProjectDir,
-	})
-	resp, err := a.post(ctx, "/permission/"+requestID+"/reply", body)
+func (a *Adapter) replyPermission(ctx context.Context, sessionID, requestID, reply, projectDir string) error {
+	body, _ := json.Marshal(map[string]string{"reply": reply})
+	path := "/permission/" + url.PathEscape(requestID) + "/reply"
+	path = withDirectoryQuery(path, projectDir, a.ProjectDir)
+	resp, err := a.post(ctx, path, body)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound && strings.TrimSpace(sessionID) != "" {
+		resp.Body.Close()
+		sessionPath := "/session/" + url.PathEscape(sessionID) + "/permission/" + url.PathEscape(requestID) + "/reply"
+		sessionPath = withDirectoryQuery(sessionPath, projectDir, a.ProjectDir)
+		resp, err = a.post(ctx, sessionPath, body)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+	}
 	return httpOK(resp)
+}
+
+func withDirectoryQuery(path, projectDir, adapterDir string) string {
+	dir := strings.TrimSpace(projectDir)
+	if dir == "" {
+		dir = strings.TrimSpace(adapterDir)
+	}
+	if dir == "" {
+		return path
+	}
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + "directory=" + url.QueryEscape(dir)
 }
 
 func readSSEEvents(ctx context.Context, body io.Reader, handler func(map[string]any) error, onMalformed func(string)) error {

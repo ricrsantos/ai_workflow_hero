@@ -196,7 +196,8 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	// --sandbox disabled keeps the user's PATH (nvm/npm/openspec) in Shell; the
 	// default sandbox often strips those dirs so `hero cycle archive` cannot find
 	// openspec even when it is installed for the login shell.
-	args := []string{"--print", "--output-format", format, "--trust", "--force", "--sandbox", "disabled"}
+	// --approve-mcps auto-approves MCP tool servers in headless mode (no TTY to prompt).
+	args := []string{"--print", "--output-format", format, "--trust", "--force", "--approve-mcps", "--sandbox", "disabled"}
 	if dir != "" {
 		args = append(args, "--workspace", dir)
 	}
@@ -238,7 +239,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		parsed = nil
 		res = RunResult{}
 		if req.Stream {
-			parsed, res, err = a.executeStreamLive(runCtx, runner, dir, spec.Path, fullArgs, req.OnStreamDelta)
+			parsed, res, err = a.executeStreamLive(runCtx, runner, dir, spec.Path, fullArgs, req)
 		} else {
 			res, err = runner.Run(runCtx, dir, spec.Path, fullArgs)
 			if err == nil {
@@ -300,7 +301,7 @@ func (a *Adapter) executeStreamLive(
 	runner CommandRunner,
 	dir, path string,
 	args []string,
-	onDelta func(harness.StreamDelta),
+	req harness.ExecuteRequest,
 ) (*harness.ExecutionResult, RunResult, error) {
 	pr, pw := io.Pipe()
 	type parseOut struct {
@@ -308,8 +309,12 @@ func (a *Adapter) executeStreamLive(
 		err error
 	}
 	parsedCh := make(chan parseOut, 1)
+	opts := StreamParseOptions{
+		OnDelta:             req.OnStreamDelta,
+		OnPermissionRequest: req.OnPermissionRequest,
+	}
 	go func() {
-		res, err := ParseStreamJSON(pr, onDelta)
+		res, err := ParseStreamJSONWithOptions(ctx, pr, opts)
 		parsedCh <- parseOut{res: res, err: err}
 	}()
 
@@ -340,8 +345,8 @@ func (a *Adapter) executeStreamLive(
 	}
 	if runRes.ExitCode != 0 && strings.TrimSpace(out.res.Output) == "" {
 		detail := firstLine(string(runRes.Stderr), string(runRes.Stdout))
-		if onDelta != nil {
-			onDelta(harness.SessionDelta(harness.SessionStateFailed, detail, "process.exit", ""))
+		if req.OnStreamDelta != nil {
+			req.OnStreamDelta(harness.SessionDelta(harness.SessionStateFailed, detail, "process.exit", ""))
 		}
 		return nil, runRes, fmt.Errorf("cursor agent exited with code %d: %s", runRes.ExitCode, detail)
 	}

@@ -8,6 +8,22 @@
 
 ---
 
+## 2026-08-19 — OpenCode external_directory permission reply fix
+
+**Problem**: Hero TUI stalled during corrections when OpenCode asked `external_directory` permission (e.g. reading `~/.nvm/.../opencode-ai/`). Infrastructure existed (`permission.asked` → `OnPermissionRequest` → status bar `Allow? [y/N]`) but reply routing was wrong: `directory` was sent in JSON body instead of query param; v2 events use `action`/`resources` not `permission`/`patterns`; prompt was easy to miss (status bar only).
+
+**Decision / Outcome**: `replyPermission` now sends `{reply}` body + `?directory=` query (session-scoped fallback on 404); `handlePermissionAsked` maps v1+v2 fields and metadata filepath; SSE subscribe uses `?directory=`; TUI also inserts permission prompt into chat transcript. Tests for `external_directory` v2. `go test ./...` green.
+
+---
+
+## 2026-08-19 — Cursor adapter permission parity
+
+**Problem**: Cursor adapter had no permission handling; only `--force`/`--trust`/`--sandbox disabled`. MCP tools could still stall with "User rejected" in headless mode; unknown `permission_request` NDJSON lines emitted generic warnings.
+
+**Decision / Outcome**: Added `--approve-mcps`; `ParseStreamJSONWithOptions` handles `permission_request`/`permission` via `OnPermissionRequest` (no stream-json reply channel — CLI flags resolve permissions); detects denied tool results and emits actionable warnings. Tests in `parse_permission_test.go`. `go test ./...` green.
+
+---
+
 ## 2026-08-18 — Release v2.1.1 (OpenCode harness stream fix)
 
 **Problem**: OpenCode TUI chat dropped or truncated assistant responses when `session.next.text.*` and `message.part.updated` diverged.
@@ -217,6 +233,14 @@ _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+E
 **Problem**: Initial `hero cycle archive` failed — OpenSpec `MODIFIED` deltas referenced requirement headers absent from base specs (`harness-adapter` first failure).
 
 **Decision / Outcome**: Changed C5 delta sections from `## MODIFIED Requirements` to `## ADDED Requirements` in `openspec/changes/model-properties-tui/specs/{harness-adapter,hero-tui,runtime-workflow-execution,sqlite-operational-store}/spec.md`. Retry succeeded: `openspec archive model-properties-tui -y` merged 19 requirements; Hero archived to `.workflow-hero/cycles/archive/C5-2026-08-18-implementa-o-da-sele-o-das-propriedades/`. Resume with `/hero-resume C5`. No active cycle remains.
+
+---
+
+## 2026-08-19 — opencode.yml completed with all 27 OpenCode models
+
+**Problem**: `assets/models/opencode.yml` had only 3 model rows (deepseek-v4-pro, gpt-5.6-luna, glm-5.3), so most `opencode/` (Zen free) and `opencode-go/` models had no pricing/capability row.
+
+**Decision / Outcome**: Completed `assets/models/opencode.yml` (mirrored to `.workflow-hero/models/`) with all 27 model IDs exactly as `opencode models` exposes them: 7 `opencode/` free (big-pickle, deepseek-v4-flash-free, hy3-free, laguna-s-2.1-free, mimo-v2.5-free, nemotron-3-ultra-free, nemotron-3.5-lightning-free) + 20 `opencode-go/` paid (existing 3 kept unchanged + deepseek-v4-flash, glm-5.1, glm-5.2, grok-4.5, hy3, kimi-k2.6, kimi-k2.7-code, kimi-k3, mimo-v2.5, mimo-v2.5-pro, minimax-m2.7, minimax-m3, muse-spark-1.2-contributor, qwen3.6-plus, qwen3.7-plus, qwen3.7-max, qwen3.8-max). Pricing/cache/context from the local opencode server `/provider` API (cross-checked against models.dev TOML via subagent web research); `fs`/`th`/`ef` properties from models.dev `reasoning_options` (effort values, thinking toggles; `fs` fast unavailable for all — no built-in fast variant). Golden rows (deepseek-v4-pro/luna/glm-5.3) untouched. `go test ./...` green.
 
 ---
 

@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -222,8 +223,15 @@ func TestProcessSSEEventSyncUnwrap(t *testing.T) {
 }
 
 func TestProcessSSEEventPermission(t *testing.T) {
+	var gotPath, gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/permission/perm-1/reply" && r.Method == http.MethodPost {
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/permission/") && strings.HasSuffix(r.URL.Path, "/reply") {
+			gotPath = r.URL.Path
+			if r.URL.Query().Get("directory") == "" {
+				t.Fatal("expected directory query param on permission reply")
+			}
+			body, _ := io.ReadAll(r.Body)
+			gotBody = string(body)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -236,11 +244,18 @@ func TestProcessSSEEventPermission(t *testing.T) {
 	state := newStreamState()
 	asked := false
 	req := harness.ExecuteRequest{
+		ProjectDir: t.TempDir(),
 		OnStreamDelta: func(d harness.StreamDelta) {},
 		OnPermissionRequest: func(_ context.Context, pr harness.PermissionRequest) (harness.PermissionResponse, error) {
 			asked = true
 			if pr.ID != "perm-1" {
 				t.Fatalf("id=%q", pr.ID)
+			}
+			if pr.Title != "bash" {
+				t.Fatalf("title=%q", pr.Title)
+			}
+			if pr.Description != "npm test" {
+				t.Fatalf("description=%q", pr.Description)
 			}
 			return harness.PermissionResponse{Approved: true}, nil
 		},
@@ -259,6 +274,62 @@ func TestProcessSSEEventPermission(t *testing.T) {
 	}
 	if !asked {
 		t.Fatal("expected permission callback")
+	}
+	if gotPath != "/permission/perm-1/reply" {
+		t.Fatalf("path=%q", gotPath)
+	}
+	if gotBody != `{"reply":"once"}` {
+		t.Fatalf("body=%q", gotBody)
+	}
+}
+
+func TestProcessSSEEventPermissionExternalDirectoryV2(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/permission/") {
+			body, _ := io.ReadAll(r.Body)
+			gotBody = string(body)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	a := NewAdapter(t.TempDir(), nil)
+	a.baseURL = srv.URL
+	state := newStreamState()
+	req := harness.ExecuteRequest{
+		ProjectDir: t.TempDir(),
+		OnStreamDelta: func(d harness.StreamDelta) {},
+		OnPermissionRequest: func(_ context.Context, pr harness.PermissionRequest) (harness.PermissionResponse, error) {
+			if pr.Title != "external_directory" {
+				t.Fatalf("title=%q", pr.Title)
+			}
+			if !strings.Contains(pr.Description, "opencode-ai") {
+				t.Fatalf("description=%q", pr.Description)
+			}
+			return harness.PermissionResponse{Approved: true}, nil
+		},
+	}
+	evt := map[string]any{
+		"type": "permission.v2.asked",
+		"properties": map[string]any{
+			"sessionID": "sess-1",
+			"id":        "per_test123",
+			"action":    "external_directory",
+			"resources": []any{"/home/user/.nvm/versions/node/v22.23.2/lib/node_modules/opencode-ai/*"},
+			"metadata": map[string]any{
+				"filepath":  "/home/user/.nvm/versions/node/v22.23.2/lib/node_modules/opencode-ai/foo",
+				"parentDir": "/home/user/.nvm/versions/node/v22.23.2/lib/node_modules/opencode-ai",
+			},
+		},
+	}
+	if out := a.processSSEEvent(context.Background(), evt, "sess-1", state, req, nil); out.err != nil {
+		t.Fatal(out.err)
+	}
+	if gotBody != `{"reply":"once"}` {
+		t.Fatalf("body=%q", gotBody)
 	}
 }
 

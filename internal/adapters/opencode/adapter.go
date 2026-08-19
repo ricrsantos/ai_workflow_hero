@@ -312,7 +312,7 @@ func (a *Adapter) executeStream(ctx context.Context, sessionID string, body []by
 
 	var buf strings.Builder
 	state := newStreamState()
-	events, err := a.subscribeEvents(ctx)
+	events, err := a.subscribeEvents(ctx, req.ProjectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -646,11 +646,12 @@ func (a *Adapter) do(ctx context.Context, method, path string, body []byte) (*ht
 	return client.Do(req)
 }
 
-func (a *Adapter) subscribeEvents(ctx context.Context) (io.ReadCloser, error) {
+func (a *Adapter) subscribeEvents(ctx context.Context, projectDir string) (io.ReadCloser, error) {
 	a.mu.Lock()
 	base := a.baseURL
 	a.mu.Unlock()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/event", nil)
+	path := withDirectoryQuery("/event", projectDir, a.ProjectDir)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -1,12 +1,117 @@
 # OpenCode-native model catalog (capability metadata for C5; pricing optional).
 # Installed overlay: .workflow-hero/models/opencode.yml
+# Model IDs match `opencode models` (opencode/ = OpenCode Zen free; opencode-go/ = OpenCode Go).
 provider: opencode-go
 version: 1
-last_updated: 2026-08-18
+last_updated: 2026-08-19
 currency: usd
 unit: per_1m_tokens
 
 models:
+  # --- OpenCode Zen (free) models ---
+  opencode/big-pickle:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 200000
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: false
+  opencode/deepseek-v4-flash-free:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 200000
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "max"]
+        default: "off"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "max"]
+        default: "medium"
+  opencode/hy3-free:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 190000
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "medium"
+  opencode/laguna-s-2.1-free:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 256000
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "medium"
+  opencode/mimo-v2.5-free:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 200000
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: false
+  opencode/nemotron-3-ultra-free:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: false
+  opencode/nemotron-3.5-lightning-free:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 262144
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: false
+
+  # --- OpenCode Go (paid) models ---
   opencode-go/deepseek-v4-pro:
     input: 0.66
     cache_write: 0.00
@@ -56,3 +161,250 @@ models:
         available: true
         values: ["none", "low", "medium", "high", "xhigh", "max"]
         default: "medium"
+  opencode-go/deepseek-v4-flash:
+    input: 0.22
+    cache_write: 0.00
+    cache_read: 0.007
+    output: 0.66
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "max"]
+        default: "off"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "max"]
+        default: "medium"
+  opencode-go/glm-5.1:
+    input: 1.40
+    cache_write: 0.00
+    cache_read: 0.26
+    output: 4.40
+    context_window: 202752
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: false
+  opencode-go/glm-5.2:
+    input: 1.40
+    cache_write: 0.00
+    cache_read: 0.26
+    output: 4.40
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: true
+        values: ["high", "max"]
+        default: "high"
+  opencode-go/grok-4.5:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 500000
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "medium"
+  opencode-go/hy3:
+    input: 0.14
+    cache_write: 0.00
+    cache_read: 0.035
+    output: 0.58
+    context_window: 256000
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
+      ef:
+        available: true
+        values: ["none", "low", "high"]
+        default: "low"
+  opencode-go/kimi-k2.6:
+    input: 0.95
+    cache_write: 0.00
+    cache_read: 0.16
+    output: 4.00
+    context_window: 262144
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: false
+  opencode-go/kimi-k2.7-code:
+    input: 0.95
+    cache_write: 0.00
+    cache_read: 0.19
+    output: 4.00
+    context_window: 262144
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: false
+  opencode-go/kimi-k3:
+    input: 3.00
+    cache_write: 0.00
+    cache_read: 0.30
+    output: 15.00
+    context_window: 1048576
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: true
+        values: ["max"]
+        default: "max"
+  opencode-go/mimo-v2.5:
+    input: 0.14
+    cache_write: 0.00
+    cache_read: 0.0028
+    output: 0.28
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: false
+  opencode-go/mimo-v2.5-pro:
+    input: 0.435
+    cache_write: 0.00
+    cache_read: 0.003625
+    output: 0.87
+    context_window: 1048576
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: false
+  opencode-go/minimax-m2.7:
+    input: 0.30
+    cache_write: 0.00
+    cache_read: 0.06
+    output: 1.20
+    context_window: 204800
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: false
+  opencode-go/minimax-m3:
+    input: 0.30
+    cache_write: 0.00
+    cache_read: 0.06
+    output: 1.20
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
+      ef:
+        available: false
+  opencode-go/muse-spark-1.2-contributor:
+    input: 0.10
+    cache_write: 0.00
+    cache_read: 0.002
+    output: 0.20
+    context_window: 1048576
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: true
+        values: ["minimal", "low", "medium", "high", "xhigh"]
+        default: "medium"
+  opencode-go/qwen3.6-plus:
+    input: 0.50
+    cache_write: 0.625
+    cache_read: 0.05
+    output: 3.00
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
+      ef:
+        available: false
+  opencode-go/qwen3.7-plus:
+    input: 0.40
+    cache_write: 0.50
+    cache_read: 0.04
+    output: 1.60
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
+      ef:
+        available: false
+  opencode-go/qwen3.7-max:
+    input: 2.50
+    cache_write: 3.125
+    cache_read: 0.50
+    output: 7.50
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
+      ef:
+        available: false
+  opencode-go/qwen3.8-max:
+    input: 2.00
+    cache_write: 2.50
+    cache_read: 0.25
+    output: 6.00
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
+      ef:
+        available: false
