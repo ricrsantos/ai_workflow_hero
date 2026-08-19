@@ -4,7 +4,45 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Keep this document under 1,000 words by removing or consolidating outdated entries. Permanent facts (architecture, stack, features) belong in `context/current-state.md`, not here.
 
-**Decision / Outcome**: Catalog YAML for `gpt-5.6-luna` and `glm-5.3`: `fs`/`th` unavailable; `ef` lists `none` through `max`. `deepseek-v4-pro` unchanged. TUI label `Fast Mode`; property picker footer hidden. **Follow-up**: OpenCode `model_options` cache merge (incomplete effort lists). Property picker UX: **Space** cycles values, **Enter** saves only (removed secondary value list). **Bugfix**: Esc from property picker left model-picker rows in `paletteItems`, so Chat `/` overlay was empty — `cancelPropertyDraft` no longer clears `pickingProps` before `closePalette()`.
+**Decision / Outcome**: V2.1.1 harness stream normalization shipped: `StreamDelta` extended, OpenCode SSE full event map + permission flow, Cursor unknown-event warnings, TUI harness permission prompt. Plan: `docs/idea/V2.1.1_fix_adapters_streams/implementation-plan.md`; architecture: `docs/architecture/architecture-overview.md`.
+
+---
+
+## 2026-08-18 — Release v2.1.1 (OpenCode harness stream fix)
+
+**Problem**: OpenCode TUI chat dropped or truncated assistant responses when `session.next.text.*` and `message.part.updated` diverged.
+
+**Decision / Outcome**: Tagged `v2.1.1` on `main` after `go test ./...` green. Harness stream normalization (`StreamDelta`, `events.go` content-based dedup, `hero --debug`, permission flow). Artifacts via `scripts/release.sh`; GitHub Release with binaries + `checksums.txt`.
+
+---
+
+## 2026-08-18 — OpenCode response stream regression fix
+
+**Problem**: TUI showed only thinking + a tiny text fragment; full assistant response missing after delta-only emit policy.
+
+**Decision / Outcome**: OpenCode v2 `session.next.text.*` events carry `assistantMessageID` — adapter sets `assistantMsgID` from them. Text dedup now uses `emittedText` content prefix (not byte length): token deltas accumulate only; `message.part.updated` and `text.ended` emit authoritative full text; divergent paths recover via full re-emit. `go test ./...` green.
+
+---
+
+## 2026-08-18 — Hero --debug chat event filtering
+
+**Problem**: OpenCode observability events (`session.updated`, `plugin.added`, step markers, etc.) cluttered the TUI chat.
+
+**Decision / Outcome**: Wired global `hero --debug` (`internal/common/debug`) into `ExecuteRequest.Debug`; OpenCode adapter suppresses debug-only activity unless debug is on. Streaming: `session.next.text.delta` live when no `message.part` for same textID; `*.ended` + `message.part.updated` authoritative; `assistantMessageID` from v2 events unlocks part filtering.
+
+---
+
+**Problem**: Hero OpenCode adapter and `event_streams_improvements.md` listed obsolete events (`tool.execute.*`, `shell.env`, `lsp.client.diagnostics`) and missed the v2 `session.next.*` family from `anomalyco/opencode` branch `dev`.
+
+**Decision / Outcome**: Extracted canonical list from `packages/schema/src/event-manifest.ts` (87 schema events + transport). Updated `docs/idea/V2.1.1_fix_adapters_streams/event_streams_improvements.md` and `internal/adapters/opencode/events.go` (v2 text/reasoning/tool/shell streaming, `sync` unwrap, `permission.v2.asked`, activity map). Tests added for `session.next.text.delta` and `sync`. `go test ./...` green.
+
+---
+
+## 2026-08-18 — V2.1.1 harness stream events
+
+**Problem**: OpenCode streaming ignored most SSE events (no tools/thinking/permissions); unknown events were dropped silently; harness permission stalls had no TUI feedback.
+
+**Decision / Outcome**: Implemented normalized `StreamDelta` kinds + `OnPermissionRequest`; `internal/adapters/opencode/events.go` handles documented OpenCode event families; Cursor emits warnings for unknown NDJSON types; TUI shows warnings/activity and harness permission prompt in status bar. OpenSpec `harness-adapter` updated. `go test ./...` green.
 
 ---
 

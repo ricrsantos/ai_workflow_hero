@@ -135,6 +135,12 @@ type model struct {
 	confirmMsg     string
 	confirmAction  paletteAction
 	confirmActionN int // optional numeric arg (e.g. /hero-continue N)
+
+	// Harness-native permission prompt (OpenCode permission.asked, etc.).
+	harnessPermissionPending bool
+	harnessPermissionMsg     string
+	harnessPermissionReq     harness.PermissionRequest
+	harnessPermissionRespCh  chan harness.PermissionResponse
 }
 
 type refreshDataMsg struct {
@@ -324,12 +330,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slog.Debug("tui model props refresh done", "harnesses", len(msg.summaries))
 		return m, nil
 
-	case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
+	case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg:
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)
 
 	case tea.KeyMsg:
+		if m.harnessPermissionPending {
+			return m.handleHarnessPermissionKey(msg)
+		}
 		if m.confirmPending {
 			return m.handleConfirmKey(msg)
 		}

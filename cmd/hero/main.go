@@ -5,6 +5,7 @@ import (
 
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
+	herodebug "github.com/ricrsantos/ai_workflow_hero/internal/common/debug"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/doctor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
@@ -18,7 +19,7 @@ import (
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>".
-var version = "2.1.0"
+var version = "2.1.1"
 
 func main() {
 	root := newRootCommand()
@@ -57,14 +58,13 @@ Stages: Configuration → Research → Planning → Implementation → QA → Ju
 			return tui.RunDefault(cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			// verbose/debug flags are available globally; features can query them.
+			herodebug.SetEnabled(debug)
 			_ = verbose
-			_ = debug
 		},
 	}
 
 	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
-	root.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug output (includes stack traces)")
+	root.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug mode (verbose harness events in chat and extended diagnostics)")
 
 	// Register all subcommands.
 	root.AddCommand(

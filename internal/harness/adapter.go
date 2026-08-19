@@ -55,8 +55,14 @@ type ExecuteRequest struct {
 	// (fs, th, ef). Adapters own the native mapping; the map is copied at the
 	// request boundary so adapters cannot mutate TUI state (ADR-038/041).
 	Properties map[string]string
+	// Debug enables verbose harness event output in the TUI (hero --debug).
+	Debug bool
 	// OnStreamDelta receives live stream events when Stream is true (optional).
 	OnStreamDelta func(delta StreamDelta)
+	// OnPermissionRequest blocks until the user approves or denies a harness
+	// permission prompt (OpenCode permission.asked, etc.). When nil, adapters
+	// emit a warning and fail explicitly instead of hanging silently.
+	OnPermissionRequest func(ctx context.Context, req PermissionRequest) (PermissionResponse, error)
 }
 
 // NormalizeExecuteRequest returns a request safe to hand to an adapter.  The
@@ -67,31 +73,6 @@ type ExecuteRequest struct {
 func NormalizeExecuteRequest(req ExecuteRequest) ExecuteRequest {
 	req.Properties = NormalizeProperties(req.Properties)
 	return req
-}
-
-// StreamKind classifies a live harness stream event for TUI display.
-type StreamKind string
-
-const (
-	StreamKindText     StreamKind = "text"
-	StreamKindThinking StreamKind = "thinking"
-	StreamKindTool     StreamKind = "tool"
-)
-
-// StreamPhase marks Task lifecycle events on StreamDelta.
-const (
-	StreamPhaseStarted   = "started"
-	StreamPhaseCompleted = "completed"
-)
-
-// StreamDelta is a live event emitted during Execute when Stream is true.
-type StreamDelta struct {
-	Kind      StreamKind
-	Text      string
-	AgentName string // Hero agent id (qa_agent) or empty for the parent session
-	Model     string // kebab model slug when known
-	CallID    string // Task call_id when attributed to a subagent
-	Phase     string // StreamPhaseStarted / StreamPhaseCompleted, or empty
 }
 
 // Usage holds optional token counts parsed from harness output.

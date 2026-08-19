@@ -335,6 +335,16 @@ func (a *Adapter) executeStreamLive(
 	if out.err != nil {
 		return nil, runRes, out.err
 	}
+	if out.res == nil {
+		return nil, runRes, fmt.Errorf("cursor agent stream-json: empty result")
+	}
+	if runRes.ExitCode != 0 && strings.TrimSpace(out.res.Output) == "" {
+		detail := firstLine(string(runRes.Stderr), string(runRes.Stdout))
+		if onDelta != nil {
+			onDelta(harness.SessionDelta(harness.SessionStateFailed, detail, "process.exit", ""))
+		}
+		return nil, runRes, fmt.Errorf("cursor agent exited with code %d: %s", runRes.ExitCode, detail)
+	}
 	return out.res, runRes, nil
 }
 

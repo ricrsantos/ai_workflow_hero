@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	herodebug "github.com/ricrsantos/ai_workflow_hero/internal/common/debug"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 )
@@ -22,6 +23,8 @@ const (
 	convRoleAgent    convRole = "agent"
 	convRoleThinking convRole = "thinking"
 	convRoleTool     convRole = "tool"
+	convRoleWarning  convRole = "warning"
+	convRoleActivity convRole = "activity"
 )
 
 // Visible content rows inside the OpenCode-style chat panes (excluding status row).
@@ -45,6 +48,11 @@ type convMessage struct {
 
 type streamDeltaMsg struct {
 	delta harness.StreamDelta
+}
+
+type harnessPermissionRequestMsg struct {
+	req    harness.PermissionRequest
+	respCh chan harness.PermissionResponse
 }
 
 type executeDoneMsg struct {
@@ -922,6 +930,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			Prompt:     prompt,
 			SessionID:  sessionID,
 			Stream:     true,
+			Debug:      herodebug.Enabled,
 			StageName:  stageName,
 			AgentName:  agentName,
 			Model:      pair.Model,
@@ -931,6 +940,20 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			Properties: resolved.props,
 			OnStreamDelta: func(delta harness.StreamDelta) {
 				ch <- streamDeltaMsg{delta: delta}
+			},
+			OnPermissionRequest: func(ctx context.Context, perm harness.PermissionRequest) (harness.PermissionResponse, error) {
+				respCh := make(chan harness.PermissionResponse, 1)
+				select {
+				case ch <- harnessPermissionRequestMsg{req: perm, respCh: respCh}:
+				case <-ctx.Done():
+					return harness.PermissionResponse{}, ctx.Err()
+				}
+				select {
+				case resp := <-respCh:
+					return resp, nil
+				case <-ctx.Done():
+					return harness.PermissionResponse{}, ctx.Err()
+				}
 			},
 		}
 		req = harness.NormalizeExecuteRequest(req)
@@ -976,6 +999,16 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case harnessPermissionRequestMsg:
+		m.harnessPermissionPending = true
+		m.harnessPermissionReq = msg.req
+		m.harnessPermissionRespCh = msg.respCh
+		m.harnessPermissionMsg = formatHarnessPermission(msg.req)
+		if m.streaming && m.convStreamCh != nil {
+			return m, waitConvMsg(m.convStreamCh)
+		}
+		return m, nil
+
 	case executeDoneMsg:
 		m.streaming = false
 		m.convStreamCh = nil
@@ -983,6 +1016,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.liveAgents = nil
 		m.confirmPending = false
 		m.confirmMsg = ""
+		m = m.clearHarnessPermission()
 		if !m.orchestrationLive {
 			m.runtimeModelSlug = ""
 			m.runtimeAgentName = ""
@@ -1009,10 +1043,12 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.result.SessionID != "" {
 				m = m.persistHarnessSession(msg.result.SessionID, msg.harnessID)
 			}
-			// Prefer canonical result text over accumulated deltas (partial vs final)
-			// unless subagent blocks are in the turn — replacing would wipe labels.
+			// Prefer canonical result text when it is longer than streamed deltas.
 			if msg.result.Output != "" && m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) && !m.transcriptHasSubagent() {
-				m.transcript[m.agentMsgIndex].content = msg.result.Output
+				streamed := m.transcript[m.agentMsgIndex].content
+				if len(msg.result.Output) >= len(streamed) {
+					m.transcript[m.agentMsgIndex].content = msg.result.Output
+				}
 			}
 		}
 		if m.runtimeCommandName == "new" && msg.err == nil && m.svc != nil {
@@ -1037,6 +1073,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.liveAgents = nil
 		m.confirmPending = false
 		m.confirmMsg = ""
+		m = m.clearHarnessPermission()
 		if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 			m.transcript[m.agentMsgIndex].interrupted = true
 		}
@@ -1057,6 +1094,26 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 		}
 	}
 	if d.Phase == harness.StreamPhaseStarted && d.Kind == harness.StreamKindTool {
+		return m
+	}
+	switch d.Kind {
+	case harness.StreamKindPermission:
+		return m
+	case harness.StreamKindSession:
+		if d.Metadata != nil && d.Metadata["state"] == harness.SessionStateFailed {
+			m.convError = d.Text
+			m = m.setStatusResult(false, "harness", firstStatusLine(d.Text))
+		}
+		return m
+	case harness.StreamKindWarning:
+		slog.Warn("harness stream warning", "harness_type", d.HarnessType, "text", d.Text)
+		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: d.Text})
+		return m
+	case harness.StreamKindActivity:
+		if strings.TrimSpace(d.Text) == "" {
+			return m
+		}
+		m.insertBeforeAgent(convMessage{role: convRoleActivity, content: d.Text})
 		return m
 	}
 	if d.Text == "" {
@@ -1115,6 +1172,53 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 		}
 		return m
 	}
+}
+
+func formatHarnessPermission(req harness.PermissionRequest) string {
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = "Harness permission"
+	}
+	desc := strings.TrimSpace(req.Description)
+	if desc != "" {
+		return fmt.Sprintf("Harness permission: %s — %s. Allow? [y/N]", title, desc)
+	}
+	return fmt.Sprintf("Harness permission: %s. Allow? [y/N]", title)
+}
+
+func (m model) clearHarnessPermission() model {
+	if m.harnessPermissionPending && m.harnessPermissionRespCh != nil {
+		m.harnessPermissionRespCh <- harness.PermissionResponse{Approved: false, Reason: "cancelled"}
+	}
+	m.harnessPermissionPending = false
+	m.harnessPermissionMsg = ""
+	m.harnessPermissionRespCh = nil
+	return m
+}
+
+func (m model) replyHarnessPermission(approved bool) model {
+	if m.harnessPermissionRespCh != nil {
+		m.harnessPermissionRespCh <- harness.PermissionResponse{Approved: approved}
+	}
+	m.harnessPermissionPending = false
+	m.harnessPermissionMsg = ""
+	m.harnessPermissionRespCh = nil
+	return m
+}
+
+func (m model) handleHarnessPermissionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		m = m.replyHarnessPermission(true)
+	case "n", "N", "esc":
+		m = m.replyHarnessPermission(false)
+	default:
+		return m, nil
+	}
+	if m.streaming && m.convStreamCh != nil {
+		return m, waitConvMsg(m.convStreamCh)
+	}
+	return m, nil
 }
 
 func (m model) addLiveAgent(d harness.StreamDelta) model {
@@ -1530,6 +1634,15 @@ func (m model) responseContentLines(contentW int) []string {
 			}
 		case convRoleTool:
 			text := formatChatAgentText(m.runtimeCommandName, "→ "+msg.content)
+			for _, line := range splitOutputLines(text, contentW) {
+				out = append(out, chatInMuted.Render(line))
+			}
+		case convRoleWarning:
+			for _, line := range splitOutputLines(msg.content, contentW) {
+				out = append(out, chatInWarn.Render(line))
+			}
+		case convRoleActivity:
+			text := formatChatAgentText(m.runtimeCommandName, "· "+msg.content)
 			for _, line := range splitOutputLines(text, contentW) {
 				out = append(out, chatInMuted.Render(line))
 			}

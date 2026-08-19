@@ -311,27 +311,28 @@ func (a *Adapter) executeStream(ctx context.Context, sessionID string, body []by
 	resp.Body.Close()
 
 	var buf strings.Builder
-	partTexts := make(map[string]string)
-	assistantMsgID := ""
+	state := newStreamState()
 	events, err := a.subscribeEvents(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer events.Close()
 
-	err = readSSEEvents(ctx, events, func(evt map[string]any) error {
-		var text string
-		var done bool
-		text, done, assistantMsgID = parseEventDelta(evt, sessionID, partTexts, assistantMsgID)
-		if text != "" && req.OnStreamDelta != nil {
-			req.OnStreamDelta(harness.StreamDelta{Kind: harness.StreamKindText, Text: text})
-			buf.WriteString(text)
+	emitMalformed := func(payload string) {
+		if req.OnStreamDelta != nil {
+			req.OnStreamDelta(harness.WarningDelta(adapterName, "sse.malformed", sessionID, payload))
 		}
-		if done {
+	}
+	err = readSSEEvents(ctx, events, func(evt map[string]any) error {
+		out := a.processSSEEvent(ctx, evt, sessionID, state, req, &buf)
+		if out.err != nil {
+			return out.err
+		}
+		if out.done {
 			return io.EOF
 		}
 		return nil
-	})
+	}, emitMalformed)
 	if err != nil && err != io.EOF {
 		return nil, err
 	}
@@ -704,64 +705,6 @@ func extractText(parts []part) string {
 	return b.String()
 }
 
-func parseEventDelta(evt map[string]any, sessionID string, partTexts map[string]string, assistantMsgID string) (text string, done bool, nextAssistantMsgID string) {
-	nextAssistantMsgID = assistantMsgID
-	evtType, _ := evt["type"].(string)
-	props, _ := evt["properties"].(map[string]any)
-	if sid, _ := props["sessionID"].(string); sid != "" && sid != sessionID {
-		return "", false, nextAssistantMsgID
-	}
-
-	switch evtType {
-	case "session.idle":
-		return "", true, nextAssistantMsgID
-	case "session.status":
-		if st, ok := props["status"].(map[string]any); ok {
-			if t, _ := st["type"].(string); t == "idle" {
-				return "", true, nextAssistantMsgID
-			}
-		}
-	case "message.updated":
-		if info, ok := props["info"].(map[string]any); ok {
-			if role, _ := info["role"].(string); role == "assistant" {
-				if id, _ := info["id"].(string); id != "" {
-					nextAssistantMsgID = id
-				}
-			}
-		}
-	case "message.part.updated":
-		part, ok := props["part"].(map[string]any)
-		if !ok {
-			return "", false, nextAssistantMsgID
-		}
-		if pt, _ := part["type"].(string); pt != "text" {
-			return "", false, nextAssistantMsgID
-		}
-		msgID, _ := part["messageID"].(string)
-		// User parts arrive before message.updated(assistant); never stream until bound.
-		if nextAssistantMsgID == "" {
-			return "", false, nextAssistantMsgID
-		}
-		if msgID != "" && msgID != nextAssistantMsgID {
-			return "", false, nextAssistantMsgID
-		}
-		full, _ := part["text"].(string)
-		partID, _ := part["id"].(string)
-		prev := partTexts[partID]
-		if len(full) <= len(prev) {
-			return "", false, nextAssistantMsgID
-		}
-		delta := full[len(prev):]
-		partTexts[partID] = full
-		return delta, false, nextAssistantMsgID
-	case "message.done":
-		if sid, _ := evt["sessionID"].(string); sid == "" || sid == sessionID {
-			return "", true, nextAssistantMsgID
-		}
-	}
-	return "", false, nextAssistantMsgID
-}
-
 func modelPayload(slug string) map[string]string {
 	slug = strings.TrimSpace(slug)
 	if slug == "" {
@@ -774,35 +717,6 @@ func modelPayload(slug string) map[string]string {
 		}
 	}
 	return map[string]string{"modelID": slug}
-}
-
-func readSSEEvents(ctx context.Context, body io.Reader, handler func(map[string]any) error) error {
-	scanner := bufio.NewScanner(body)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, ":") {
-			continue
-		}
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		payload := strings.TrimPrefix(line, "data: ")
-		var evt map[string]any
-		if err := json.Unmarshal([]byte(payload), &evt); err != nil {
-			continue
-		}
-		if err := handler(evt); err != nil {
-			return err
-		}
-	}
-	return scanner.Err()
 }
 
 func httpOK(resp *http.Response) error {

@@ -220,6 +220,8 @@ func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.E
 			sessionID = ev.SessionID
 		}
 		switch ev.Type {
+		case "system", "user":
+			// Stream lifecycle events; no user-visible delta.
 		case "thinking":
 			if ev.Subtype == "completed" {
 				continue
@@ -318,6 +320,10 @@ func ParseStreamJSON(r io.Reader, onDelta func(harness.StreamDelta)) (*harness.E
 			}
 			if result.SessionID == "" {
 				result.SessionID = ev.SessionID
+			}
+		default:
+			if ev.Type != "" {
+				emit(harness.WarningDelta("cursor", ev.Type, sessionID, string(line)))
 			}
 		}
 	}

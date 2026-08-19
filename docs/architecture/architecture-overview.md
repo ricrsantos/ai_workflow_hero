@@ -34,7 +34,9 @@ ai_workflow_hero/
 ├── internal/
 │   ├── install · upgrade · uninstall · doctor · status · variables · update_models
 │   ├── cycle · engine · store · tui · harness · todos · workflowconfig
-│   ├── adapters/cursor/   # Cursor Agent CLI adapter
+│   ├── harness · harnessmgr · store · engine · tui · workflowconfig
+│   ├── adapters/cursor/   # Cursor Agent CLI adapter (NDJSON stream-json)
+│   ├── adapters/opencode/ # OpenCode serve HTTP + SSE /event
 │   ├── common/            # template, clierr, output, envhygiene, userpath
 │   └── integration/       # install/upgrade/doctor integration tests
 ├── scripts/               # release.sh, build_dev.sh (+ contract tests)
@@ -127,10 +129,15 @@ Repository layout: **feature-based vertical slices** under `internal/<feature>/`
         └──────┴──────────────────────────────────────────────┐
                                                               │
                     internal/harness.HarnessAdapter           │
-                    + DetectMarkers (ADR-022)                 │
+                    + stream normalization (StreamDelta)      │
                               │                               │
-                    internal/adapters/cursor.Adapter          │
-                    runner · parse · commands · models        │
+              ┌───────────────┴───────────────┐               │
+              │                               │               │
+    internal/adapters/cursor.Adapter          │               │
+    runner · parse · commands · models        │               │
+              │                               │               │
+    internal/adapters/opencode.Adapter        │               │
+    serve · events · HTTP · properties        │               │
                               │                               │
                     internal/common/                          │
                     template · clierr · output · envhygiene   │
@@ -314,31 +321,54 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
 
 ---
 
-## Harness abstraction (ADR-016, ADR-025)
+## Harness abstraction (ADR-016, ADR-025, ADR-035)
 
 ```
                     HarnessAdapter (interface)
                               │
-                    Cursor Adapter (V1 only)
+              ┌───────────────┴───────────────┐
+              │                               │
+        Cursor Adapter                  OpenCode Adapter
+        (Agent CLI NDJSON)            (opencode serve SSE)
+              │                               │
+              └───────────────┬───────────────┘
                               │
-              ┌───────────────┼───────────────┐
-              │               │               │
-         IsAvailable    Execute/Stream    Dispatch
-         ListModels     Cancel/Status     (thin / best-effort)
-              │               │               │
-              └───────────────┴───────────────┘
+                    StreamDelta normalization
+                    (text · thinking · tool · warning ·
+                     permission · activity · session)
                               │
-              cursor-agent / `cursor agent`  (Agent CLI)
-              json · stream-json · --resume · --model · --mode
-                              │
-                    Cursor IDE (native chat + Task tool)
+                    TUI Chat / hero run
 ```
+
+| Transport | Harness | Parser |
+|---|---|---|
+| Process stdout NDJSON (`stream-json`) | Cursor | `adapters/cursor/parse.go` |
+| HTTP SSE `GET /event` | OpenCode | `adapters/opencode/events.go` |
+
+**Normalized `StreamDelta` kinds** (shared contract in `internal/harness/stream.go`):
+
+| Kind | Use |
+|---|---|
+| `text` | Assistant output (incremental) |
+| `thinking` | Reasoning / chain-of-thought |
+| `tool` | Tool activity (`started` / `completed` phases) |
+| `warning` | Unrecognized or malformed harness events |
+| `permission` | Harness approval prompt (blocks via `OnPermissionRequest`) |
+| `activity` | Observability (file edits, todos, LSP, TUI events) |
+| `session` | Idle / running / failed lifecycle |
+
+**Rules:**
+
+- Adapters SHALL NOT silently drop parseable events; unknown types emit `StreamKindWarning`.
+- OpenCode `permission.asked` blocks until TUI responds; reply via `POST /permission/{requestID}/reply`.
+- Cursor without terminal `result` + non-zero exit code fails with stderr detail.
 
 - **Execute**: multi-turn agent runs from TUI Chat (and `hero run` paths). Passes `--trust --force --sandbox disabled --workspace`; retries `RetriableError` / `resource_exhausted`; `Cancel("")` aborts before session id exists.
 - **Dispatch**: thin wrapper → fresh Execute session (palette paths; no leaked `--resume`).
-- **Parse** (`adapters/cursor/parse.go`): `json` and `stream-json` (+ `--stream-partial-output`); Task attribution for nested subagents.
+- **Parse** (`adapters/cursor/parse.go`): `json` and `stream-json` (+ `--stream-partial-output`); Task attribution for nested subagents; warnings for unknown NDJSON types.
+- **Events** (`adapters/opencode/events.go`): full SSE event map; tool/thinking/permission/session handling.
 - **Runner** (`runner.go`): `StreamingCommandRunner` pipes stdout; prepends user bin dirs to PATH.
-- **Runtime** uses IDE chat and Task directly; TUI uses Agent CLI — same project cwd, different UX surfaces.
+- **Runtime** uses IDE chat and Task directly; TUI uses Agent CLI or OpenCode serve — same project cwd, different UX surfaces.
 
 ---
 
@@ -401,7 +431,7 @@ Parity between TUI and chat is **intentional but not identical** — see [idea n
 | Concept | V1 state |
 |---|---|
 | Generic **Conversation Layer** service | Chat in TUI + IDE only |
-| **Multi-harness** adapters | Cursor only; others post-1.0 (PRD D1–D13) |
+| **Multi-harness** adapters | Cursor + OpenCode with normalized stream events; further harnesses post-2.x |
 | **Daemon / RPC** | CLI-as-API only (ADR-014) |
 | **Distributed event bus** | Events in SQLite |
 | **LLM inside CLI** | Forbidden (ADR-003) |
@@ -465,8 +495,9 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/cycle` | CLI-as-API, archive, OpenSpec coupling, legacy import |
 | `internal/engine` | Deterministic AI Loop state machine |
 | `internal/store` | SQLite operational store + migrations |
-| `internal/harness` | `HarnessAdapter` interface + marker detection |
-| `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import |
+| `internal/harness` | `HarnessAdapter` interface, `StreamDelta` normalization, marker detection |
+| `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import, NDJSON parse |
+| `internal/adapters/opencode` | OpenCode serve adapter, SSE event normalization, C5 properties |
 | `internal/tui` | Bubble Tea terminal UI |
 | `internal/todos` | `## Pending` section parser in `current-state.md` |
 | `internal/workflowconfig` | `workflow-config.yml` load/normalize |

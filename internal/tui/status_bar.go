@@ -125,6 +125,9 @@ func (m model) renderStatusBar() string {
 }
 
 func (m model) statusBarDisplayLines(width int) []string {
+	if m.harnessPermissionPending {
+		return []string{warnStyle.Render(m.harnessPermissionMsg)}
+	}
 	if m.confirmPending {
 		return []string{warnStyle.Render(m.confirmMsg)}
 	}

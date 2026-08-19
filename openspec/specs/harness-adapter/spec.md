@@ -51,3 +51,47 @@ If a harness rejects a selected property, the adapter SHALL return an error iden
 #### Scenario: Cursor rejection is surfaced
 - **WHEN** Cursor rejects a composed property/model slug
 - **THEN** Chat shows the explicit execution error and the saved user choice remains unchanged for the next correction
+
+### Requirement: Harness adapters SHALL normalize stream events without silent loss
+
+During `Execute` with `Stream: true`, adapters SHALL map harness-native events to normalized `StreamDelta` kinds (`text`, `thinking`, `tool`, `warning`, `permission`, `activity`, `session`). Unrecognized event types SHALL emit `StreamKindWarning` with harness name, event type, session id, and truncated payload. Adapters SHALL NOT ignore parseable events silently (V2.1.1 event-stream design).
+
+#### Scenario: Unknown OpenCode SSE event
+- **WHEN** OpenCode `/event` delivers a type not in the versioned handler list
+- **THEN** the adapter emits `StreamKindWarning` and continues streaming
+
+#### Scenario: Unknown Cursor stream-json line
+- **WHEN** Cursor NDJSON includes a `type` not handled by the parser
+- **THEN** the adapter emits `StreamKindWarning` and continues parsing
+
+### Requirement: OpenCode adapter SHALL handle documented SSE event families
+
+The OpenCode adapter SHALL consume `/event` SSE and handle message, tool, permission, session, file, LSP, todo, shell, TUI, and server connection events documented for OpenCode serve. Tool events SHALL map to `StreamKindTool` with `started`/`completed` phases. Message reasoning parts SHALL map to `StreamKindThinking`.
+
+#### Scenario: Tool before and after
+- **WHEN** `tool.execute.before` and `tool.execute.after` arrive for a session
+- **THEN** Chat receives tool started and completed deltas
+
+#### Scenario: Session error ends execution
+- **WHEN** `session.error` arrives for the active session
+- **THEN** Execute returns an error and Chat shows the failure
+
+### Requirement: Harness permission prompts SHALL block until user response
+
+When a harness emits a permission request (e.g. OpenCode `permission.asked`), the adapter SHALL invoke `ExecuteRequest.OnPermissionRequest` and block until the callback returns. When the callback is nil, the adapter SHALL emit a warning and fail explicitly rather than hang silently. The TUI SHALL prompt with `Harness permission: … Allow? [y/N]` distinct from Hero stage approval.
+
+#### Scenario: OpenCode permission approved
+- **WHEN** the user approves a harness permission in Chat
+- **THEN** the adapter replies via `POST /permission/{requestID}/reply` with `reply: once` and execution continues
+
+#### Scenario: Permission without handler
+- **WHEN** `permission.asked` arrives and `OnPermissionRequest` is nil
+- **THEN** Execute fails with an explicit permission error after emitting a warning
+
+### Requirement: Cursor stream termination SHALL surface process failure
+
+When Cursor `stream-json` ends without a `result` event and the CLI exits non-zero with empty assistant output, the adapter SHALL return an error including stderr/exit code and emit a failed session delta when streaming.
+
+#### Scenario: Process exit without result
+- **WHEN** the Cursor CLI exits with a non-zero code before emitting `result`
+- **THEN** Execute fails with stderr detail and does not report success
