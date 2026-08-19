@@ -31,6 +31,7 @@ Always read project documentation **before** writing code or making architectura
 | Terminal UX Spec (index) | [docs/product/UI.md](docs/product/UI.md) | CLI visual style, prompts, error conventions |
 | UI C1 / C2 / C3 | [docs/product/UI-C01-001-hero-tui.md](docs/product/UI-C01-001-hero-tui.md), [UI-C02-001](docs/product/UI-C02-001-tui-slash-command-parity.md), [UI-C03-001](docs/product/UI-C03-001-tui-harness-autonomy.md) | Cycle-specific terminal UX deltas |
 | Architecture (index) | [docs/architecture/ADR.md](docs/architecture/ADR.md) | ADR-001–030, schemas, rationale |
+| Architecture overview | [docs/architecture/architecture-overview.md](docs/architecture/architecture-overview.md) | High-level diagrams and package map (non-normative) |
 | ADR C1 / C2 / C3 | [ADR-C01-001](docs/architecture/ADR-C01-001-hero-1-0.md), [ADR-C02-001](docs/architecture/ADR-C02-001-slash-parity-harness-archive.md), [ADR-C03-001](docs/architecture/ADR-C03-001-cursor-harness-tui-autonomy.md) | Cycle architecture decisions |
 | Deployment Guide | [docs/deployment/DEPLOY.md](docs/deployment/DEPLOY.md) | Build, release, versioning, checksums |
 | Testing | [docs/testing/TESTING.md](docs/testing/TESTING.md) | Test strategy and commands (`go test ./...`) |
@@ -47,6 +48,8 @@ See also `.workflow-hero/config/documents.json` for the machine-readable doc reg
 | Context Log | [context/context-log.md](context/context-log.md) | Short/medium-lived | Operational memory: decisions, investigations, outcomes |
 
 After finishing any task that changes code or decisions: (1) update `context/current-state.md`, and (2) append an entry to `context/context-log.md`.
+
+**Architecture overview** (`docs/architecture/architecture-overview.md`) must be **created when missing** and **updated whenever software architecture changes** (packages, boundaries, adapters, data flows, or ADRs that alter structure). Keep it **synthetic** — more diagrams than prose, brief but complete. Rationale and decisions stay in `ADR.md`.
 
 ## Development Workflow
 

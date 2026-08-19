@@ -6,6 +6,10 @@
 
 ---
 
+## 2026-08-19 — AGENTS.md: architecture-overview maintenance policy
+
+**Decision / Outcome**: Documented mandatory creation and update of `docs/architecture/architecture-overview.md` on architectural changes (synthetic, diagrams over prose). Updated repo `AGENTS.md`, `assets/templates/AGENTS.md`, `context_agent`, and `/hero-sync` to generate the overview on sync when missing and register it in `documents.json`.
+
 ## 2026-08-19 — Release v2.2.0 (OpenCode prepare + harness reset)
 
 **Problem**: After v2.1.2, TUI still needed a way to restart harnesses after agent edits, and `/hero-start` could dispatch OpenCode agents with stale `.opencode/agents` frontmatter.

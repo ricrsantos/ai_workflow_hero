@@ -13,9 +13,10 @@ You are the **orchestration agent** for AI Workflow Hero. This command activates
    - Pass file pointers: project root path, any existing AGENTS.md, docs/, context/.
    - context_agent is read-only: it never implements or decides architecture.
 2. Based on context_agent output, generate:
-   - `AGENTS.md` — from `.workflow-hero/templates/AGENTS.md` (all sections: doc map, context compression files, workflow, reference lookup order, ambiguity policy, testing, constraints, secrets).
+   - `AGENTS.md` — from `.workflow-hero/templates/AGENTS.md` (all sections: doc map, context compression files, architecture overview policy, workflow, reference lookup order, ambiguity policy, testing, constraints, secrets).
    - `context/current-state.md` — source-of-truth snapshot of the current project state.
    - `context/context-log.md` — empty log (first entry written here).
+   - `docs/architecture/architecture-overview.md` — when missing (or refresh when context_agent flags it stale): synthetic high-level diagrams and package map; non-normative; register in `documents.json` when created.
    - Soft secrets hygiene (create only if missing; never overwrite): project-root `.env.example` and ensure `.gitignore` ignores `.env` (use `.workflow-hero/templates/env.example` and `gitignore-secrets` as references).
 3. **Pending docs scan (ADR-029)** — after the codebase snapshot, analyze `docs/product/` and `docs/architecture/` (including cycle PRDs/ADRs such as `PRD-C*.md` and `ADR-C*.md`) for explicit **pending**, **deferred**, **not yet implemented**, or **out-of-scope-for-later** items:
    - Merge discovered items into the appropriate pending sections of `context/current-state.md` (e.g. `## Pending Features`, `## Known Technical Debt`).
@@ -40,7 +41,7 @@ Fall back to `fallback_model` if configured model is unavailable; warn the user 
 
 ```
 → Scanning codebase for Hero sync...
-→ Generating AGENTS.md, current-state.md, context-log.md...
+→ Generating AGENTS.md, current-state.md, context-log.md, architecture-overview.md (when needed)...
 → Scanning docs/product and docs/architecture for pending items...
 → Running hero doctor for harness warnings...
 ✓ Hero sync complete. Review the generated files before starting a development cycle.

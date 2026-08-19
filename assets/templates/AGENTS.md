@@ -23,6 +23,7 @@ Always read project documentation **before** writing code or making architectura
 | PRD | docs/product/PRD.md | Product requirements |
 | UI Spec | docs/product/UI.md | Design specification |
 | ADR | docs/architecture/ADR.md | Architecture decisions |
+| Architecture overview | docs/architecture/architecture-overview.md | High-level diagrams and package map (non-normative) |
 | DEPLOY | docs/deployment/DEPLOY.md | Deployment guide |
 | TESTING | docs/testing/TESTING.md | Testing strategy and commands |
 
@@ -36,6 +37,8 @@ Expand this table as new documents are created (see `documents.json`). Link numb
 | Context Log | context/context-log.md | Short/medium-lived | Operational memory: timestamp, problem, investigation, decision, outcome, refactor, rationale |
 
 After finishing any task that changes code or decisions: (1) update `context/current-state.md` to reflect the new state, and (2) append an entry to `context/context-log.md`.
+
+**Architecture overview** (`docs/architecture/architecture-overview.md`) must be **created when missing** and **updated whenever software architecture changes** (packages, boundaries, adapters, data flows, or ADRs that alter structure). Keep it **synthetic** — more diagrams than prose, brief but complete. Rationale and decisions stay in `ADR.md`.
 
 ## Development Workflow
 
