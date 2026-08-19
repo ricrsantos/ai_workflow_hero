@@ -53,16 +53,16 @@ models:
     properties:
       fs:
         available: false
-        values: ["not found"]
-        default: "not found"
+        values: ["na"]
+        default: na
       ef:
-        available: false
-        values: ["not found"]
-        default: "not found"
+        available: true
+        values: [low, high]
+        default: "high"
       th:
         available: false
-        values: ["not found"]
-        default: "not found"
+        values: ["na"]
+        default: na
   # OpenCode-native provider/model ids (PRD-C04-001 §4.10)
   xai/grok-4.6:
     input: 2.00
