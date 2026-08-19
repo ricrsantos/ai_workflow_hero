@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-08-19 — Release v2.3.0 (harness health watchdog)
+
+**Problem**: TUI Execute could hang indefinitely when a harness process died, the serve became unavailable, or streaming stalled without surfacing an error.
+
+**Decision / Outcome**: Tagged `v2.3.0` on `main` after `go test ./...` green. Ships `HarnessHealth` / `HealthChecker` / `Watchdog` (Cursor + OpenCode adapters), TUI stall prompts (cancel/wait/restart), auto-cancel on failure, and empty-response warnings in Chat. Artifacts via `scripts/release.sh`; GitHub Release with binaries + `checksums.txt`.
+
 ## 2026-08-19 — AGENTS.md: architecture-overview maintenance policy
 
 **Decision / Outcome**: Documented mandatory creation and update of `docs/architecture/architecture-overview.md` on architectural changes (synthetic, diagrams over prose). Updated repo `AGENTS.md`, `assets/templates/AGENTS.md`, `context_agent`, and `/hero-sync` to generate the overview on sync when missing and register it in `documents.json`.
