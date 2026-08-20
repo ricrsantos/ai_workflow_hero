@@ -103,7 +103,7 @@ func checkGlobalHealth(ctx context.Context, baseURL string, client HTTPDoer) (bo
 }
 
 func processAlive(pid int) bool {
-	if pid <= 0 {
+	if pid <= 0 || processZombie(pid) {
 		return false
 	}
 	proc, err := os.FindProcess(pid)

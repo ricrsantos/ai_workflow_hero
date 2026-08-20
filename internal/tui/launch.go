@@ -72,7 +72,7 @@ func RunWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug,
 				if svc.Store != nil {
 					st = svc.Store
 				}
-				if err := stopOpenCodeServe(context.Background(), svc.ProjectDir, st); err != nil {
+				if err := stopOpenCodeServe(context.Background(), svc.ProjectDir, st, svc.Registry); err != nil {
 					slog.Warn("stop opencode serve on tui exit failed", "error", err)
 				}
 			}
@@ -156,7 +156,7 @@ func RunDefault(stdout, stderr io.Writer) error {
 	}
 	defer svc.Close()
 
-	adapter, err := bootHarness(context.Background(), stdout, stderr, svc.ProjectDir, defaultHarnessBootDeps())
+	adapter, err := bootHarness(context.Background(), stdout, stderr, svc.ProjectDir, svc.Store, defaultHarnessBootDeps())
 	if err != nil {
 		if _, ok := err.(*harnessBootError); ok {
 			e := clierr.New("harness validation failed")

@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/assets"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
@@ -131,10 +132,12 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 			}
 			if id == "opencode" {
 				var st *store.Store
+				var reg harnessmgr.Registry
 				if m.svc != nil {
 					st = m.svc.Store
+					reg = m.svc.Registry
 				}
-				if err := stopOpenCodeServe(context.Background(), projectDir, st); err != nil {
+				if err := stopOpenCodeServe(context.Background(), projectDir, st, reg); err != nil {
 					slog.Warn("stop opencode serve on disable failed", "error", err)
 				}
 			}

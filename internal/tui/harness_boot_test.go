@@ -34,7 +34,7 @@ func TestBootHarness_EnabledCursorNoPrompt(t *testing.T) {
 		return store.OpenProject(projectDir)
 	}
 
-	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, deps)
+	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, nil, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestBootHarness_PromptsWhenNoneEnabled(t *testing.T) {
 		return store.OpenProject(projectDir)
 	}
 
-	_, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, deps)
+	_, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, nil, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestBootHarness_WarnsWhenUnavailable(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &stderr, dir, deps)
+	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &stderr, dir, nil, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestBootHarness_OpenCodeDefaultNotFalseCatalogWarn(t *testing.T) {
 		return store.OpenProject(projectDir)
 	}
 
-	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, deps)
+	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, nil, deps)
 	if err != nil {
 		t.Fatal(err)
 	}

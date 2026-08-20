@@ -23,7 +23,7 @@ const (
 // IsManagedOpenCodeServe reports whether pid is alive and its command line looks
 // like an opencode serve child Hero may have started.
 func IsManagedOpenCodeServe(pid int) bool {
-	if pid <= 0 || !processAlive(pid) {
+	if pid <= 0 || processZombie(pid) || !processAlive(pid) {
 		return false
 	}
 	cmdline, err := processCommandLine(pid)
@@ -50,6 +50,7 @@ func TerminateManagedProcess(ctx context.Context, pid int) error {
 	}
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		_ = proc.Kill()
+		waitProcessExit(pid)
 		return nil
 	}
 
@@ -62,24 +63,73 @@ func TerminateManagedProcess(ctx context.Context, pid int) error {
 		select {
 		case <-ctx.Done():
 			_ = proc.Kill()
+			waitProcessExit(pid)
 			return ctx.Err()
 		case <-deadline.C:
 			if processAlive(pid) {
 				_ = proc.Kill()
 			}
+			waitProcessExit(pid)
 			return nil
 		case <-ticker.C:
-			if !processAlive(pid) {
+			if !processAlive(pid) || processZombie(pid) {
+				waitProcessExit(pid)
 				return nil
 			}
 		}
 	}
 }
 
+func terminateAndReap(ctx context.Context, pid int) {
+	if pid <= 0 || processZombie(pid) {
+		return
+	}
+	_ = TerminateManagedProcess(ctx, pid)
+	waitProcessExit(pid)
+}
+
+func stopProcessHandle(ctx context.Context, handle ProcessHandle) error {
+	if handle == nil {
+		return nil
+	}
+	if err := handle.Kill(); err != nil {
+		// process may already be gone
+	}
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- handle.Wait() }()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-waitCh:
+		return nil
+	case <-time.After(serveTerminateTimeout):
+		return nil
+	}
+}
+
+func waitProcessExit(pid int) {
+	if pid <= 0 {
+		return
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return
+	}
+	done := make(chan struct{})
+	go func() {
+		_, _ = proc.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+	}
+}
+
 // KillProcess terminates a managed opencode serve by PID (cross-platform entry).
 // Deprecated: prefer TerminateManagedProcess for graceful shutdown.
 func KillProcess(pid int) {
-	_ = TerminateManagedProcess(context.Background(), pid)
+	terminateAndReap(context.Background(), pid)
 }
 
 // ReapOrphanServers stops registry-recorded serve processes left from a prior
@@ -107,21 +157,32 @@ func ReapOrphanServers(ctx context.Context, projectDir string, st *store.Store) 
 }
 
 func reapEntry(ctx context.Context, e store.ServeRegistryEntry) {
-	if e.PID <= 0 {
+	if e.PID > 0 && processZombie(e.PID) {
+		slog.Debug("reap zombie opencode serve registry row", "pid", e.PID, "port", e.Port)
 		return
 	}
-	if !processAlive(e.PID) {
-		slog.Debug("reap stale opencode serve registry row", "pid", e.PID, "port", e.Port)
-		return
-	}
-	if IsManagedOpenCodeServe(e.PID) {
+	if e.PID > 0 && IsManagedOpenCodeServe(e.PID) {
 		slog.Info("reaping orphan opencode serve", "pid", e.PID, "port", e.Port, "url", e.URL)
-		if err := TerminateManagedProcess(ctx, e.PID); err != nil {
-			slog.Warn("reap orphan terminate failed", "pid", e.PID, "error", err)
+		terminateAndReap(ctx, e.PID)
+		return
+	}
+	if strings.TrimSpace(e.URL) == "" || !serveURLAlive(ctx, e.URL, http.DefaultClient) {
+		if e.PID > 0 && !processAlive(e.PID) {
+			slog.Debug("reap stale opencode serve registry row", "pid", e.PID, "port", e.Port)
 		}
 		return
 	}
-	slog.Warn("registry pid is not opencode serve; skipping kill", "pid", e.PID, "port", e.Port)
+	for _, pid := range listOpenCodeServePIDs() {
+		if e.Port > 0 && !processListenPort(pid, e.Port) {
+			continue
+		}
+		slog.Info("reaping orphan opencode serve by registry url", "pid", pid, "port", e.Port, "url", e.URL)
+		terminateAndReap(ctx, pid)
+		return
+	}
+	if e.PID > 0 && processAlive(e.PID) {
+		slog.Warn("registry pid is not opencode serve; skipping kill", "pid", e.PID, "port", e.Port)
+	}
 }
 
 // stopRegistryProcesses terminates all opencode serve rows in the registry.
@@ -140,7 +201,7 @@ func stopRegistryProcesses(ctx context.Context, st *store.Store, skipPID int) {
 		if e.PID == skipPID {
 			continue
 		}
-		_ = TerminateManagedProcess(ctx, e.PID)
+		terminateAndReap(ctx, e.PID)
 	}
 }
 
@@ -148,14 +209,16 @@ func registerServe(st *store.Store, projectDir string, pid, port int, url string
 	if st == nil {
 		return
 	}
-	_, _ = st.InsertServeRegistry(store.ServeRegistryEntry{
+	if _, err := st.InsertServeRegistry(store.ServeRegistryEntry{
 		Harness:     adapterName,
 		PID:         pid,
 		Port:        port,
 		URL:         url,
 		ProjectPath: projectDir,
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
-	})
+	}); err != nil {
+		slog.Warn("register opencode serve failed", "error", err, "pid", pid, "port", port)
+	}
 }
 
 // PruneStaleServeRegistry removes registry rows whose PID is gone or no longer
@@ -264,25 +327,36 @@ func (a *Adapter) startServeProcess(ctx context.Context) (baseURL string, port i
 	}
 	url, port, err := resolve(handle)
 	if err != nil {
-		_ = handle.Kill()
+		_ = stopProcessHandle(context.Background(), handle)
 		return "", 0, 0, fmt.Errorf("resolve opencode serve url: %w", err)
 	}
-	return url, port, handle.PID(), nil
+	pid = handle.PID()
+	a.mu.Lock()
+	a.baseURL = url
+	a.servePID = pid
+	a.servePort = port
+	a.serveHandle = handle
+	a.mu.Unlock()
+	return url, port, pid, nil
 }
 
 // stopServeState clears in-memory serve state and terminates managed processes.
 func (a *Adapter) stopServeState(ctx context.Context) error {
 	a.mu.Lock()
+	handle := a.serveHandle
 	pid := a.servePID
+	a.serveHandle = nil
 	a.baseURL = ""
 	a.servePID = 0
 	a.servePort = 0
 	a.mu.Unlock()
 
-	if pid > 0 {
-		_ = TerminateManagedProcess(ctx, pid)
+	if handle != nil {
+		_ = stopProcessHandle(ctx, handle)
+	} else if pid > 0 {
+		terminateAndReap(ctx, pid)
 	}
-	stopRegistryProcesses(ctx, a.Store, pid)
+	stopRegistryProcesses(ctx, a.Store, 0)
 	if a.Store != nil {
 		_ = a.Store.ClearServeRegistry()
 	}

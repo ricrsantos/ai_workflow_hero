@@ -56,7 +56,7 @@ func defaultHarnessBootDeps() harnessBootDeps {
 	}
 }
 
-func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir string, deps harnessBootDeps) (harnessBootResult, error) {
+func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir string, st *store.Store, deps harnessBootDeps) (harnessBootResult, error) {
 	hero, err := deps.readHeroJSON(projectDir)
 	if err != nil {
 		slog.Error("harness boot read hero.json failed", "error", err)
@@ -82,11 +82,21 @@ func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir strin
 		}
 	}
 
-	st, err := deps.openStore(projectDir)
-	if err != nil {
-		return harnessBootResult{}, fmt.Errorf("open store: %w", err)
+	ownStore := false
+	if st == nil {
+		var openErr error
+		st, openErr = deps.openStore(projectDir)
+		if openErr != nil {
+			return harnessBootResult{}, fmt.Errorf("open store: %w", openErr)
+		}
+		if st == nil {
+			return harnessBootResult{}, fmt.Errorf("open store: nil store")
+		}
+		ownStore = true
 	}
-	defer st.Close()
+	if ownStore {
+		defer st.Close()
+	}
 
 	if err := deps.reapOrphans(ctx, projectDir, st); err != nil {
 		slog.Warn("orphan serve reap failed", "error", err)

@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **2.3.0** released 2026-08-19 (harness health watchdog, empty-response warning); **v2.4** in-tree (OpenCode serve lifecycle manager). **C5 archived** 2026-08-18 (`model-properties-tui`). No active cycle. |
+| **Phase** | Hero **2.4.0** released 2026-08-20 (OpenCode serve lifecycle manager, zombie/orphan reap, TUI shutdown cleanup). **C5 archived** 2026-08-18 (`model-properties-tui`). No active cycle. |
 
 ## Technology Stack
 

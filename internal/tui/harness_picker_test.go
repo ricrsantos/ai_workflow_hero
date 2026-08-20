@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/ricrsantos/ai_workflow_hero/internal/tui"
@@ -123,7 +124,7 @@ func TestHarnessPickerDisableSuccessLine(t *testing.T) {
 
 	stopCalled := false
 	prev := tui.StopOpenCodeServeFnForTest()
-	tui.SetStopOpenCodeServeFnForTest(func(ctx context.Context, projectDir string, st *store.Store) error {
+	tui.SetStopOpenCodeServeFnForTest(func(ctx context.Context, projectDir string, st *store.Store, _ harnessmgr.Registry) error {
 		stopCalled = true
 		if projectDir != dir {
 			t.Fatalf("projectDir=%q", projectDir)

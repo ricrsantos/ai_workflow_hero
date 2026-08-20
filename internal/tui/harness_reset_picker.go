@@ -165,11 +165,13 @@ func (m model) stopOpenCodeServeHarness(ctx context.Context) error {
 	}
 	projectDir := ""
 	var st *store.Store
+	var reg harnessmgr.Registry
 	if m.svc != nil {
 		projectDir = m.svc.ProjectDir
 		st = m.svc.Store
+		reg = m.svc.Registry
 	}
-	return stopOpenCodeServe(ctx, projectDir, st)
+	return stopOpenCodeServe(ctx, projectDir, st, reg)
 }
 
 func (m model) registryOpenCodeAdapter() *opencodeadapter.Adapter {

@@ -462,12 +462,12 @@ func ReapOpenCodeOrphansForTest(ctx context.Context, projectDir string, st *stor
 }
 
 // StopOpenCodeServeFnForTest returns the injectable stop hook.
-func StopOpenCodeServeFnForTest() func(context.Context, string, *store.Store) error {
+func StopOpenCodeServeFnForTest() func(context.Context, string, *store.Store, harnessmgr.Registry) error {
 	return stopOpenCodeServeFn
 }
 
 // SetStopOpenCodeServeFnForTest replaces the injectable stop hook for tests.
-func SetStopOpenCodeServeFnForTest(fn func(context.Context, string, *store.Store) error) {
+func SetStopOpenCodeServeFnForTest(fn func(context.Context, string, *store.Store, harnessmgr.Registry) error) {
 	stopOpenCodeServeFn = fn
 }
 

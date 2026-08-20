@@ -6,6 +6,28 @@
 
 ---
 
+## 2026-08-20 — Release v2.4.0 (OpenCode serve lifecycle)
+
+**Problem**: Ship OpenCode `serve` process ownership so TUI quit, terminal close, and stale registry rows no longer leave orphan or zombie servers.
+
+**Decision / Outcome**: Tagged `v2.4.0` on `main` after `go test ./...` green. Ships serve lifecycle manager (`TerminateManagedProcess`, registry `project_path`, signal cleanup), shutdown via live store, and zombie/orphan reap (`Pdeathsig`, Kill+Wait, `/proc/net/tcp` fallback). Artifacts via `scripts/release.sh`; GitHub Release with binaries + `checksums.txt`.
+
+## 2026-08-20 — OpenCode zombie/orphan fix (v2.4)
+
+**Problem**: Closing Cursor terminal left `opencode serve` running; restart showed `[opencode] <defunct>` zombie and spawned a second server on next prompt.
+
+**Root cause**: (1) Kill without `Wait()` left zombies when Hero reaped/killed foreign PIDs. (2) No `Pdeathsig` — child survived abrupt parent death. (3) Startup reap skipped stale registry rows when PID was zombie/wrong but URL still live.
+
+**Decision / Outcome**: Store `serveHandle` and `stopProcessHandle` (Kill+Wait) for Hero-owned children; `terminateAndReap` + `waitProcessExit` for registry orphans; Linux `Pdeathsig: SIGTERM` on spawn; `processZombie` detection; URL/port fallback reap via `/proc/net/tcp`. `go test ./...` green.
+
+## 2026-08-20 — OpenCode serve shutdown fix (v2.4)
+
+**Problem**: TUI quit (ctrl+q) left `opencode serve` running; second launch spawned another server. `harness_serve_registry` stayed empty.
+
+**Root cause**: `bootHarness` opened its own SQLite store and `defer st.Close()` before returning the registry. The OpenCode adapter kept a closed store — `registerServe` failed silently, so shutdown had no PID/registry to terminate.
+
+**Decision / Outcome**: `bootHarness` now accepts the caller's live `svc.Store` (no close on shared store). `stopOpenCodeServe` stops via registry singleton adapter (in-memory PID) then store registry + orphan reap. Added `TestEnsureServeRegistersWithLiveStore`. `go test ./...` green.
+
 ## 2026-08-20 — OpenCode serve lifecycle manager (v2.4)
 
 **Problem**: `opencode serve` children could survive unexpected Hero exits; shutdown used immediate `Kill()` without identity checks; registry lacked `project_path`.

@@ -65,6 +65,9 @@ type execHandle struct {
 func (ExecRunner) Start(ctx context.Context, dir, name string, args ...string) (ProcessHandle, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	if attr := parentDeathSignalAttr(); attr != nil {
+		cmd.SysProcAttr = attr
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -132,6 +135,7 @@ type Adapter struct {
 	baseURL      string
 	servePID     int
 	servePort    int
+	serveHandle  ProcessHandle
 	sessions     map[string]*sessionState
 	cancels      map[string]context.CancelFunc
 }
@@ -517,12 +521,6 @@ func (a *Adapter) ensureServe(ctx context.Context) error {
 		return err
 	}
 
-	a.mu.Lock()
-	a.baseURL = url
-	a.servePID = pid
-	a.servePort = port
-	a.mu.Unlock()
-
 	registerServe(a.Store, a.ProjectDir, pid, port, url)
 	a.log().Info("opencode serve started", "pid", pid, "url", url)
 	return nil
@@ -544,6 +542,10 @@ func (a *Adapter) adoptFromRegistry(ctx context.Context) bool {
 		}
 	}
 	if latest == nil {
+		return false
+	}
+	if latest.PID > 0 && (processZombie(latest.PID) || !processAlive(latest.PID)) {
+		_ = a.Store.DeleteServeRegistry(latest.ID)
 		return false
 	}
 	if !serveURLAlive(ctx, latest.URL, a.HTTP) {
