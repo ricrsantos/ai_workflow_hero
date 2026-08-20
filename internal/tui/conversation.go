@@ -29,9 +29,11 @@ const (
 
 // Visible content rows inside the OpenCode-style chat panes (excluding status row).
 const (
-	chatInputVisibleLines = 2
-	chatResponseMinLines  = 2
-	chatResponseMaxLines  = 24
+	chatInputVisibleLines   = 2
+	chatHistoryVisibleLines = 2
+	chatHistoryMinLines     = 2
+	chatResponseMinLines    = 2
+	chatResponseMaxLines    = 24
 )
 
 var waitAnimFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -303,6 +305,7 @@ func (m model) resetChatSession() model {
 	m.agentMsgIndex = -1
 	m.thinkingMsgIndex = -1
 	m.respScrollOffset = 0
+	m.historyScrollOffset = 0
 	m.respFollowBottom = true
 	m.waitAnimFrame = 0
 	m.contextUsedTokens = 0
@@ -428,6 +431,7 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	m.waitAnimFrame = 0
 	m.respFollowBottom = true
 	m.respScrollOffset = 0
+	m.historyScrollOffset = 0
 	m.chatInputFocused = false
 	m = m.resetHarnessWatchdog(executePrompt)
 	parentName := strings.TrimSpace(m.runtimeAgentName)
@@ -466,6 +470,12 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			"ctrl+4", "alt+4", "ctrl+5", "alt+5":
 			// Allow screen navigation while streaming; the goroutine keeps running.
 			return m.handleKey(msg)
+		case "alt+y":
+			return m.copyChatPrompt()
+		case "alt+r":
+			return m.copyChatResponse()
+		case "alt+i":
+			return m.copyChatInput()
 		case "up", "ctrl+p":
 			m = m.scrollResponse(-1)
 			return m, nil
@@ -493,6 +503,12 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		"alt+1", "alt+2", "alt+3", "alt+4", "alt+5",
 		"ctrl+r", "f5":
 		return m.handleKey(msg)
+	case "alt+y":
+		return m.copyChatPrompt()
+	case "alt+r":
+		return m.copyChatResponse()
+	case "alt+i":
+		return m.copyChatInput()
 	}
 
 	// Newline keys are handled before the slash overlay so they never select
@@ -547,12 +563,21 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputScrollOffset--
 			return m, nil
 		}
+		if m.historyScrollOffset > 0 {
+			m.historyScrollOffset--
+			return m, nil
+		}
 		m = m.scrollResponse(-1)
 		return m, nil
 	case "down", "ctrl+n":
 		maxIn := m.maxInputScroll()
 		if m.inputScrollOffset < maxIn {
 			m.inputScrollOffset++
+			return m, nil
+		}
+		maxHist := m.maxHistoryScroll()
+		if m.historyScrollOffset < maxHist {
+			m.historyScrollOffset++
 			return m, nil
 		}
 		m = m.scrollResponse(1)
@@ -1469,52 +1494,86 @@ func (m model) renderWrappedConvError() string {
 	return b.String()
 }
 
-// renderConversationHistory shows prior user turns (compact) above the response pane.
+// renderConversationHistory shows the latest user turn in a scrollable OpenCode-style box.
 func (m model) renderConversationHistory() string {
-	users := make([]convMessage, 0)
-	for _, msg := range m.transcript {
-		if msg.role == convRoleUser {
-			users = append(users, msg)
-		}
-	}
-	if len(users) == 0 {
-		return mutedStyle.Render("Submit a message to start an interação.")
-	}
-	// Keep history minimal so the response pane absorbs vertical growth.
-	maxShown := 1
-	start := 0
-	if len(users) > maxShown {
-		start = len(users) - maxShown
-	}
-	var b strings.Builder
-	if start > 0 {
-		b.WriteString(mutedStyle.Render(fmt.Sprintf("… %d earlier", start)))
-		b.WriteByte('\n')
-	}
-	wrapW := m.chatBoxWidth()
-	for _, msg := range users[start:] {
-		line := "You: " + msg.content
-		b.WriteString(infoStyle.Render(wrapWidth(line, wrapW)))
-		b.WriteByte('\n')
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
+	contentW := m.chatContentWidth()
+	innerW := m.chatInnerWidth()
+	accent := chatAccentUser
+	visible := chatHistoryVisibleLines
 
-func (m model) historyLineCount() int {
+	var b strings.Builder
+
 	users := 0
 	for _, msg := range m.transcript {
 		if msg.role == convRoleUser {
 			users++
 		}
 	}
-	if users == 0 {
-		return 1 // empty-state hint
+	maxShown := 1
+	earlier := 0
+	if users > maxShown {
+		earlier = users - maxShown
+		b.WriteString(mutedStyle.Render(fmt.Sprintf("… %d earlier", earlier)))
+		b.WriteByte('\n')
 	}
-	n := 1
-	if users > 1 {
-		n++ // "… N earlier"
+
+	lines := m.historyContentLines(contentW)
+	offset := m.historyScrollOffset
+	maxOff := len(lines) - visible
+	if maxOff < 0 {
+		maxOff = 0
 	}
-	return n
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOff {
+		offset = maxOff
+	}
+
+	rows := make([]string, 0, visible+1)
+	for i := 0; i < visible; i++ {
+		idx := offset + i
+		var cell string
+		if idx < len(lines) {
+			cell = lines[idx]
+		}
+		rows = append(rows, chatAccentRow(accent, cell, innerW))
+	}
+
+	statusContent := chatInUser.Render("You")
+	if len(lines) > visible {
+		statusContent += chatInMuted.Render(fmt.Sprintf(" · %d–%d/%d", offset+1, minInt(offset+visible, len(lines)), len(lines)))
+	}
+	rows = append(rows, chatAccentRow(accent, statusContent, innerW))
+
+	b.WriteString(chatBoxStyle.Width(m.chatBoxWidth()).Render(strings.Join(rows, "\n")))
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m model) historyContentLines(contentW int) []string {
+	content := m.latestUserContent()
+	if strings.TrimSpace(content) == "" {
+		return []string{chatInMuted.Render("Submit a message to start an interação.")}
+	}
+	var out []string
+	for _, line := range splitOutputLines(content, contentW) {
+		out = append(out, chatInText.Render(line))
+	}
+	return out
+}
+
+func (m model) latestUserContent() string {
+	for i := len(m.transcript) - 1; i >= 0; i-- {
+		if m.transcript[i].role == convRoleUser {
+			return m.transcript[i].content
+		}
+	}
+	return ""
+}
+
+func (m model) historyLineCount() int {
+	// Fixed box: visible content rows + status row inside bordered pane.
+	return chatHistoryVisibleLines + 1
 }
 
 func (m model) chatBoxWidth() int {
@@ -1608,8 +1667,10 @@ func (m model) renderConversationResponse(responseLines int) string {
 
 	var b strings.Builder
 	b.WriteString(chatBoxStyle.Width(m.chatBoxWidth()).Render(strings.Join(rows, "\n")))
-	b.WriteByte('\n')
-	b.WriteString(m.renderScrollHintLine())
+	if hint := m.renderScrollHintLine(); hint != "" {
+		b.WriteByte('\n')
+		b.WriteString(hint)
+	}
 	b.WriteByte('\n')
 	return b.String()
 }
@@ -1781,16 +1842,6 @@ func (m model) renderConversationInput() string {
 	rows = append(rows, chatAccentRow(accent, statusContent, innerW))
 
 	b.WriteString(chatBoxStyle.Width(m.chatBoxWidth()).Render(strings.Join(rows, "\n")))
-	b.WriteByte('\n')
-	if !m.streaming {
-		if m.chatSlashOverlayActive() {
-			b.WriteString(mutedStyle.Render("enter insert · tab insert · esc close · ↑↓"))
-		} else {
-			b.WriteString(mutedStyle.Render("tab mode · / commands · enter send · alt+enter newline · ←→ move · ↑↓ scroll"))
-		}
-	} else {
-		b.WriteString(mutedStyle.Render("ctrl+c interrupt"))
-	}
 	return b.String()
 }
 
@@ -1899,6 +1950,106 @@ func (m model) contentAreaHeight() int {
 		h = 3
 	}
 	return h
+}
+
+func (m model) maxHistoryScroll() int {
+	lines := len(m.historyContentLines(m.chatContentWidth()))
+	maxOff := lines - chatHistoryVisibleLines
+	if maxOff < 0 {
+		return 0
+	}
+	return maxOff
+}
+
+func (m model) scrollHistory(delta int) model {
+	m.historyScrollOffset += delta
+	maxOff := m.maxHistoryScroll()
+	if m.historyScrollOffset < 0 {
+		m.historyScrollOffset = 0
+	}
+	if m.historyScrollOffset > maxOff {
+		m.historyScrollOffset = maxOff
+	}
+	return m
+}
+
+func (m model) copyChatPrompt() (tea.Model, tea.Cmd) {
+	text := strings.TrimSpace(m.latestUserContent())
+	if text == "" {
+		return m.setStatusResult(false, "copy", "nothing to copy"), nil
+	}
+	return m.setStatusResult(true, "copy", "prompt copied"), copyToClipboardCmd(text)
+}
+
+func (m model) copyChatResponse() (tea.Model, tea.Cmd) {
+	text := strings.TrimSpace(m.responsePlainText())
+	if text == "" {
+		return m.setStatusResult(false, "copy", "nothing to copy"), nil
+	}
+	return m.setStatusResult(true, "copy", "response copied"), copyToClipboardCmd(text)
+}
+
+func (m model) copyChatInput() (tea.Model, tea.Cmd) {
+	text := m.input
+	if strings.TrimSpace(text) == "" {
+		return m.setStatusResult(false, "copy", "nothing to copy"), nil
+	}
+	return m.setStatusResult(true, "copy", "input copied"), copyToClipboardCmd(text)
+}
+
+func (m model) responsePlainText() string {
+	turn := m.latestAgentTurn()
+	if len(turn) == 0 {
+		return ""
+	}
+	var parts []string
+	prevKey := ""
+	prevWasSub := false
+	for _, msg := range turn {
+		if msg.role == convRoleAgent && strings.TrimSpace(msg.content) == "" && m.streaming && !msg.failed && !msg.interrupted {
+			continue
+		}
+		key := messageAgentKey(msg)
+		isSub := strings.TrimSpace(msg.callID) != ""
+		if key != prevKey {
+			if prevKey != "" && prevWasSub {
+				parts = append(parts, "")
+			}
+			if isSub {
+				parts = append(parts, "")
+			}
+			header := formatAgentHeader(msg.agentName, msg.modelSlug, m.conversationHarnessTool())
+			parts = append(parts, header)
+			prevKey = key
+			prevWasSub = isSub
+		}
+		switch msg.role {
+		case convRoleThinking:
+			parts = append(parts, formatChatAgentText(m.runtimeCommandName, "Thinking: "+msg.content))
+		case convRoleTool:
+			parts = append(parts, formatChatAgentText(m.runtimeCommandName, "→ "+msg.content))
+		case convRoleWarning:
+			parts = append(parts, msg.content)
+		case convRoleActivity:
+			parts = append(parts, formatChatAgentText(m.runtimeCommandName, "· "+msg.content))
+		case convRoleAgent:
+			text := msg.content
+			if msg.interrupted && text == "" {
+				text = "Interrupted"
+			} else if msg.interrupted && text != "" {
+				text += "\n[Interrupted]"
+			}
+			text = formatChatAgentText(m.runtimeCommandName, text)
+			if text == "" && m.streaming {
+				continue
+			}
+			parts = append(parts, text)
+		}
+	}
+	if prevWasSub {
+		parts = append(parts, "")
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
 func (m model) maxInputScroll() int {

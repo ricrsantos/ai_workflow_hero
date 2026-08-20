@@ -8,6 +8,7 @@ var (
 	colorYellow = lipgloss.Color("3")
 	colorRed    = lipgloss.Color("1")
 	colorBlue   = lipgloss.Color("4")
+	colorUser   = lipgloss.Color("#0000CC") // RGB(0,0,204) — user prompt accent bar (distinct from Build input)
 	colorMuted  = lipgloss.Color("8")
 	chatBg      = lipgloss.Color("236")
 )
@@ -44,6 +45,7 @@ var (
 	chatInMuted = lipgloss.NewStyle().Foreground(colorMuted)
 	chatInModel = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
 	chatInBuild = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
+	chatInUser  = lipgloss.NewStyle().Bold(true).Foreground(colorUser)
 	chatInPlan  = lipgloss.NewStyle().Bold(true).Foreground(colorYellow)
 	chatInAgent = lipgloss.NewStyle().Bold(true).Foreground(colorGreen)
 	chatInThink = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
@@ -53,6 +55,7 @@ var (
 	// Solid 1-cell accent bar.
 	chatAccentBuild    = lipgloss.NewStyle().Background(colorBlue).Foreground(colorBlue)
 	chatAccentPlan     = lipgloss.NewStyle().Background(colorYellow).Foreground(colorYellow)
+	chatAccentUser     = lipgloss.NewStyle().Background(colorUser).Foreground(colorUser)
 	chatAccentResponse = lipgloss.NewStyle().Background(colorGreen).Foreground(colorGreen)
 	// Output panel body: soft readable text (not raw default black/white).
 	outputBodyStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "236", Dark: "252"})

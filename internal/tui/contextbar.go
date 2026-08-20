@@ -194,12 +194,14 @@ func (m model) contextWindowMax() int64 {
 	return m.contextWindows.lookup(m.conversationContextSlug())
 }
 
-// renderScrollHintLine renders the status row below the green response pane:
-// scroll hint on the left, C5 property labels in the middle, context bar on the
-// right (UI-C05-001 §4). Narrow terminals wrap at rune-safe boundaries instead
-// of hiding any component.
+// renderScrollHintLine renders the property/context row below the green response
+// pane (UI-C05-001 §4). Keyboard hints live in the footer only.
 func (m model) renderScrollHintLine() string {
-	return strings.Join(m.renderChatStatusLines(m.width), "\n")
+	lines := m.renderChatStatusLines(m.width)
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n")
 }
 
 // renderChatStatusLines returns the status row as one or more rune-safe lines.
@@ -207,24 +209,21 @@ func (m model) renderChatStatusLines(width int) []string {
 	if width < 1 {
 		width = 1
 	}
-	leftText := "↑↓ scroll response"
-	if m.streaming {
-		leftText = "↑↓ scroll · ctrl+c interrupt"
-	}
-	segments := []statusSegment{
-		{text: leftText, style: mutedStyle},
-	}
+	var segments []statusSegment
 	if labels := m.renderPropertyStatusSegments(); len(labels) > 0 {
 		segments = append(segments, labels...)
 	}
 	if bar := renderContextBar(m.contextUsedTokens, m.contextWindowMax()); bar != "" {
 		segments = append(segments, statusSegment{text: bar, plain: true})
 	}
+	if len(segments) == 0 {
+		return nil
+	}
 	return packStatusSegments(segments, width)
 }
 
-// renderPropertyLabels renders the stable [fs-…] [th-…] [ef-…] labels with the
-// C5 color semantics: green for validated configured values (fs only when
+// renderPropertyLabels renders the stable [fast-…] [thinking-…] [effort-…] labels with the
+// C5 color semantics: green for validated configured values (fast only when
 // validated "true"), gray for na/unavailable/unvalidated (UI-C05-001 §4).
 func (m model) renderPropertyLabels() string {
 	segments := m.renderPropertyStatusSegments()
@@ -249,7 +248,7 @@ func (m model) renderPropertyStatusSegments() []statusSegment {
 		if value == "" {
 			value = "na"
 		}
-		label := "[" + key + "-" + value + "]"
+		label := "[" + propertyStatusLabelPrefix(key) + "-" + value + "]"
 		style := mutedStyle
 		if validated[key] && value != "na" {
 			if key != harness.PropertyFast || value == "true" {

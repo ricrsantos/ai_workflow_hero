@@ -81,8 +81,9 @@ type model struct {
 	chatInputFocused        bool
 
 	// OpenCode-style chat panes: scroll offsets + wait animation.
-	inputScrollOffset int
-	respScrollOffset  int
+	inputScrollOffset   int
+	historyScrollOffset int
+	respScrollOffset    int
 	respFollowBottom  bool // auto-stick response to latest lines while streaming
 	waitAnimFrame     int
 
@@ -252,6 +253,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.screen == screenConversation {
 			m = m.scrollResponse(0) // clamp to new response viewport
+			m = m.scrollHistory(0)
 			m = m.ensureInputCaretVisible()
 		}
 		m = m.clampContentOffset()

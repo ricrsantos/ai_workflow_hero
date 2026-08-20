@@ -337,13 +337,13 @@ func TestStatusLineShowsPropertyLabels(t *testing.T) {
 	m = EnterConversationForTest(m)
 
 	view := ViewForTest(m)
-	for _, want := range []string{"[fs-true]", "[th-max]", "[ef-high]"} {
+	for _, want := range []string{"[fast-true]", "[thinking-max]", "[effort-high]"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("status line missing %q:\n%s", want, view)
 		}
 	}
 	// Labels are green when validated: the rendered line contains the green ANSI code.
-	if !strings.Contains(view, "\x1b[32m[th-max]") && !strings.Contains(view, "\x1b[32m") {
+	if !strings.Contains(view, "\x1b[32m[thinking-max]") && !strings.Contains(view, "\x1b[32m") {
 		t.Fatalf("validated labels must be green:\n%s", view)
 	}
 }
@@ -354,13 +354,13 @@ func TestStatusLineFastOffAndNaAreGrayAndTextual(t *testing.T) {
 	m.freechatProps = map[string]string{"fs": "false", "th": "na", "ef": "na"}
 	m = EnterConversationForTest(m)
 	view := ViewForTest(m)
-	for _, want := range []string{"[fs-false]", "[th-na]", "[ef-na]"} {
+	for _, want := range []string{"[fast-false]", "[thinking-na]", "[effort-na]"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("status line missing %q", want)
 		}
 	}
-	if strings.Contains(view, "\x1b[32m[fs-false]") {
-		t.Fatalf("fs=false must not be green:\n%s", view)
+	if strings.Contains(view, "\x1b[32m[fast-false]") {
+		t.Fatalf("fast=false must not be green:\n%s", view)
 	}
 }
 
@@ -377,7 +377,7 @@ func TestStatusLineVisibleInEmptyChat(t *testing.T) {
 	if !strings.Contains(view, "Agent response will appear here.") {
 		t.Skip("empty chat placeholder changed")
 	}
-	if !strings.Contains(view, "[fs-true]") {
+	if !strings.Contains(view, "[fast-true]") {
 		t.Fatalf("empty chat must still show property labels:\n%s", view)
 	}
 }
@@ -394,7 +394,7 @@ func TestStatusLineNarrowWrapsWithoutHiding(t *testing.T) {
 	m = SetWidth(m, 24)
 	m = EnterConversationForTest(m)
 	view := ViewForTest(m)
-	for _, want := range []string{"[fs-true]", "[th-max]", "[ef-high]"} {
+	for _, want := range []string{"[fast-true]", "[thinking-max]", "[effort-high]"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("narrow terminal must not hide %q:\n%s", want, view)
 		}
@@ -435,11 +435,11 @@ func TestWorkflowProjectionShowsUnvalidatedValues(t *testing.T) {
 	}
 	m = EnterConversationForTest(m)
 	view := ViewForTest(m)
-	if !strings.Contains(view, "[ef-high]") {
+	if !strings.Contains(view, "[effort-high]") {
 		t.Fatalf("workflow ef must appear on the status line:\n%s", view)
 	}
 	// Unvalidated workflow values stay gray (never green).
-	if strings.Contains(view, "\x1b[32m[ef-high]") {
+	if strings.Contains(view, "\x1b[32m[effort-high]") {
 		t.Fatalf("unvalidated workflow ef must be gray:\n%s", view)
 	}
 }

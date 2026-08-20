@@ -182,6 +182,20 @@ func friendlyPropertyName(key string) string {
 	}
 }
 
+// propertyStatusLabelPrefix maps internal C5 keys to the compact Chat status-line labels.
+func propertyStatusLabelPrefix(key string) string {
+	switch key {
+	case harness.PropertyFast:
+		return "fast"
+	case harness.PropertyThink:
+		return "thinking"
+	case harness.PropertyEffort:
+		return "effort"
+	default:
+		return key
+	}
+}
+
 // selectChatModelPair continues the C4 flow into the C5 property step: when at
 // least one property is selectable the property picker opens; otherwise the pair
 // is committed immediately through the same atomic save path.

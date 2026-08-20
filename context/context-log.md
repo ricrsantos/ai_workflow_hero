@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-08-20 — TUI shortcut hints consolidated in footer
+
+**Problem**: Chat duplicated keyboard hints on three lines (property row, input row, footer).
+
+**Decision / Outcome**: Removed `↑↓ scroll` from the property/context row; removed the hint row under the input box; footer carries Chat shortcuts plus compact `alt+n screens`. Tab bar shows numbered screens (`1. Chat │ 2. Status │ …`). `go test ./internal/tui/...` green.
+
+## 2026-08-20 — TUI property status labels readability
+
+**Problem**: Chat status-line property chips `[fs-na] [th-na] [ef-na]` were hard to read.
+
+**Decision / Outcome**: Display-only prefixes changed to `[fast-*] [thinking-*] [effort-*]` via `propertyStatusLabelPrefix` in `internal/tui/model_properties.go`; internal keys (`fs`/`th`/`ef`) unchanged. Tests updated; `go test ./...` green.
+
 ## 2026-08-20 — Release v2.4.0 (OpenCode serve lifecycle)
 
 **Problem**: Ship OpenCode `serve` process ownership so TUI quit, terminal close, and stale registry rows no longer leave orphan or zombie servers.
@@ -303,6 +315,16 @@ _Older 2026-08-14 TUI notes (iterations, orch/discover models, wrap panic, Alt+E
 **Problem**: Initial `hero cycle archive` failed — OpenSpec `MODIFIED` deltas referenced requirement headers absent from base specs (`harness-adapter` first failure).
 
 **Decision / Outcome**: Changed C5 delta sections from `## MODIFIED Requirements` to `## ADDED Requirements` in `openspec/changes/model-properties-tui/specs/{harness-adapter,hero-tui,runtime-workflow-execution,sqlite-operational-store}/spec.md`. Retry succeeded: `openspec archive model-properties-tui -y` merged 19 requirements; Hero archived to `.workflow-hero/cycles/archive/C5-2026-08-18-implementa-o-da-sele-o-das-propriedades/`. Resume with `/hero-resume C5`. No active cycle remains.
+
+---
+
+## 2026-08-20 — TUI Chat user-prompt scroll box + clipboard shortcuts
+
+**Problem**: Long user prompts rendered as full-width blue text above the response pane, overflowing the terminal with no scroll. No way to copy prompt, response, or composer text from Chat.
+
+**Decision / Outcome**: Replaced flat `You:` history with a bordered scroll box (2 visible lines, `#0000CC` accent bar distinct from Build input blue; same in-box text colors). Added `historyScrollOffset`; ↑↓ scroll chains input → user box → response. **Alt+y** / **Alt+r** / **Alt+i** copy plain text via OSC 52 + `atotto/clipboard` (`internal/tui/clipboard.go`). Footer and input hints updated. UI-C03-001 §3 Chat table amended. `go test ./...` green.
+
+**Follow-up (same day)**: User prompt status label `You` now uses `chatInUser` (`#0000CC` foreground) to match the darker accent bar; prompt body text unchanged (`chatInText`).
 
 ---
 

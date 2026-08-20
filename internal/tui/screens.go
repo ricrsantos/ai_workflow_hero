@@ -427,13 +427,18 @@ func screenTabBar(active screen) string {
 	names := []string{"Chat", "Status", "Artifacts", "Costs", "Events"}
 	var parts []string
 	for i, name := range names {
+		label := fmt.Sprintf("%d. %s", i+1, name)
 		if screen(i) == active {
-			parts = append(parts, infoStyle.Render(name))
+			parts = append(parts, infoStyle.Render(label))
 		} else {
-			parts = append(parts, mutedStyle.Render(name))
+			parts = append(parts, mutedStyle.Render(label))
 		}
 	}
 	return strings.Join(parts, " │ ")
+}
+
+func footerScreenNavHints() string {
+	return "alt+n screens"
 }
 
 func (m model) footerHints() string {
@@ -444,21 +449,22 @@ func (m model) footerHints() string {
 		return "esc close · enter select · ↑↓ scroll"
 	}
 	if m.screen == screenOutput {
-		return "esc close · ↑↓ scroll · PgUp/PgDn"
+		return "esc close · ↑↓ scroll · PgUp/PgDn · " + footerScreenNavHints() + " · ctrl+q quit"
 	}
 	if m.screen == screenConversation {
+		nav := footerScreenNavHints()
 		if m.streaming {
-			return "↑↓ scroll · ctrl+c interrupt"
+			return "↑↓ scroll · ctrl+c interrupt · " + nav + " · ctrl+q quit"
 		}
 		if m.chatSlashOverlayActive() {
-			return "enter select · tab select · esc close · ↑↓"
+			return "enter insert · tab insert · esc close · ↑↓ · " + nav + " · ctrl+q quit"
 		}
-		return "tab mode · enter send · alt+enter newline · ↑↓ scroll · /hero-model · alt+1-5 screens · ctrl+q quit"
+		return "tab mode · / commands · enter send · alt+enter newline · alt+y/r/i copy · ↑↓ scroll · " + nav + " · ctrl+q quit"
 	}
 	if m.screenHasContentScroll() {
-		return "↑↓ scroll · alt+1-5 screens · / commands · ctrl+r refresh · ctrl+q quit"
+		return "↑↓ scroll · " + footerScreenNavHints() + " · / commands · ctrl+r refresh · ctrl+q quit"
 	}
-	return "alt+1-5 screens · / commands · ctrl+r refresh · ctrl+q quit"
+	return footerScreenNavHints() + " · / commands · ctrl+r refresh · ctrl+q quit"
 }
 
 func pendingApprovalStage(st cycle.StatusView) string {

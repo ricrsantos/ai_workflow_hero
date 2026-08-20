@@ -474,6 +474,58 @@ func TestResponseVisibleLinesScalesWithHeight(t *testing.T) {
 	}
 }
 
+func TestHistoryBoxScrollsLongPrompt(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 40)
+	m = EnterConversationForTest(m)
+	longPrompt := strings.Repeat("word ", 200)
+	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: longPrompt})
+
+	if m.maxHistoryScroll() == 0 {
+		t.Fatal("long prompt should require history scroll")
+	}
+	hist := m.renderConversationHistory()
+	if strings.Contains(hist, longPrompt) {
+		t.Fatal("history box must not render full unwrapped prompt")
+	}
+	if !strings.Contains(hist, "You") {
+		t.Fatalf("history box missing You label: %q", hist)
+	}
+}
+
+func TestHistoryScrollChainBeforeResponse(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 40)
+	m = EnterConversationForTest(m)
+	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: strings.Repeat("line ", 120)})
+	m.inputScrollOffset = 0
+	m.historyScrollOffset = 2
+	m.respScrollOffset = 1
+
+	next, _ := HandleTestKey(m, "up")
+	if next.historyScrollOffset != 1 {
+		t.Fatalf("history offset = %d want 1", next.historyScrollOffset)
+	}
+	if next.respScrollOffset != 1 {
+		t.Fatalf("response offset changed before history exhausted: %d", next.respScrollOffset)
+	}
+
+	next, _ = HandleTestKey(next, "up")
+	if next.historyScrollOffset != 0 {
+		t.Fatalf("history offset = %d want 0", next.historyScrollOffset)
+	}
+	if next.respScrollOffset != 1 {
+		t.Fatalf("response offset should stay until history at top: %d", next.respScrollOffset)
+	}
+
+	next, _ = HandleTestKey(next, "up")
+	if next.respScrollOffset != 0 {
+		t.Fatalf("response offset = %d want 0", next.respScrollOffset)
+	}
+}
+
 func TestConversationFrameFillsHeight(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 80)
