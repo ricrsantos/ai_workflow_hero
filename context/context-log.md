@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-08-20 — OpenCode serve lifecycle manager (v2.4)
+
+**Problem**: `opencode serve` children could survive unexpected Hero exits; shutdown used immediate `Kill()` without identity checks; registry lacked `project_path`.
+
+**Decision / Outcome**: Extracted `internal/adapters/opencode/server.go` — `TerminateManagedProcess` (SIGTERM → wait → SIGKILL), `IsManagedOpenCodeServe` (cmdline check), `ReapOrphanServers` (startup GC), `PruneStaleServeRegistry` + `RunServeWatchdog` (TUI session). Schema **v6** adds `harness_serve_registry.project_path`. TUI launch registers signal cleanup (SIGINT/SIGTERM/SIGHUP) with `sync.Once` stop hook. Hero only terminates processes it registered and that pass cmdline identity. `go test ./...` green.
+
 ## 2026-08-19 — Release v2.3.0 (harness health watchdog)
 
 **Problem**: TUI Execute could hang indefinitely when a harness process died, the serve became unavailable, or streaming stalled without surfacing an error.

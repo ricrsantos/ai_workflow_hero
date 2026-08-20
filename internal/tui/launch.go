@@ -7,9 +7,13 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"sync"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
+	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
@@ -59,20 +63,42 @@ func RunWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug,
 	defer restoreLog()
 
 	slog.Info("starting hero tui")
-	defer func() {
-		if svc != nil {
-			var st *store.Store
-			if svc.Store != nil {
-				st = svc.Store
+
+	var stopOnce sync.Once
+	stopServe := func() {
+		stopOnce.Do(func() {
+			if svc != nil {
+				var st *store.Store
+				if svc.Store != nil {
+					st = svc.Store
+				}
+				if err := stopOpenCodeServe(context.Background(), svc.ProjectDir, st); err != nil {
+					slog.Warn("stop opencode serve on tui exit failed", "error", err)
+				}
 			}
-			if err := stopOpenCodeServe(context.Background(), svc.ProjectDir, st); err != nil {
-				slog.Warn("stop opencode serve on tui exit failed", "error", err)
-			}
+		})
+	}
+	defer stopServe()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sigCh)
+	go func() {
+		sig, ok := <-sigCh
+		if !ok {
+			return
 		}
+		slog.Info("signal received, stopping managed opencode serve", "signal", sig.String())
+		stopServe()
 	}()
+
 	m := newModelWithChat(svc, models, modelSlug, harnessID, modelWarn)
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	if _, err := p.Run(); err != nil {
+	err := opencodeadapter.RunServeWatchdog(context.Background(), svc.ProjectDir, svc.Store, func() error {
+		p := tea.NewProgram(m, tea.WithAltScreen())
+		_, runErr := p.Run()
+		return runErr
+	})
+	if err != nil {
 		slog.Error("tui exited with error", "error", err)
 		return err
 	}

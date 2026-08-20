@@ -7,20 +7,21 @@ import (
 
 // ServeRegistryEntry records a Hero-managed harness serve process (ADR-035; design D13).
 type ServeRegistryEntry struct {
-	ID        int64
-	Harness   string
-	PID       int
-	Port      int
-	URL       string
-	CreatedAt string
+	ID          int64
+	Harness     string
+	PID         int
+	Port        int
+	URL         string
+	ProjectPath string
+	CreatedAt   string
 }
 
 // InsertServeRegistry records a new serve process.
 func (s *Store) InsertServeRegistry(entry ServeRegistryEntry) (int64, error) {
 	res, err := s.db.Exec(`
-INSERT INTO harness_serve_registry(harness, pid, port, url, created_at)
-VALUES(?, ?, ?, ?, ?)`,
-		entry.Harness, entry.PID, entry.Port, entry.URL, entry.CreatedAt)
+INSERT INTO harness_serve_registry(harness, pid, port, url, project_path, created_at)
+VALUES(?, ?, ?, ?, ?, ?)`,
+		entry.Harness, entry.PID, entry.Port, entry.URL, entry.ProjectPath, entry.CreatedAt)
 	if err != nil {
 		return 0, fmt.Errorf("insert serve registry: %w", err)
 	}
@@ -35,7 +36,7 @@ VALUES(?, ?, ?, ?, ?)`,
 // ListServeRegistry returns all recorded serve entries for the project.
 func (s *Store) ListServeRegistry() ([]ServeRegistryEntry, error) {
 	rows, err := s.db.Query(`
-SELECT id, harness, pid, port, url, created_at FROM harness_serve_registry ORDER BY id ASC`)
+SELECT id, harness, pid, port, url, project_path, created_at FROM harness_serve_registry ORDER BY id ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +44,7 @@ SELECT id, harness, pid, port, url, created_at FROM harness_serve_registry ORDER
 	var out []ServeRegistryEntry
 	for rows.Next() {
 		var e ServeRegistryEntry
-		if err := rows.Scan(&e.ID, &e.Harness, &e.PID, &e.Port, &e.URL, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Harness, &e.PID, &e.Port, &e.URL, &e.ProjectPath, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

@@ -40,8 +40,8 @@ VALUES('opencode', 42, 4096, 'http://127.0.0.1:4096', '2026-08-15T00:00:00Z')`);
 
 	st := newStoreAt(t, dir)
 	v, err := st.SchemaVersion()
-	if err != nil || v != 5 {
-		t.Fatalf("version=%d err=%v want 5", v, err)
+	if err != nil || v != 6 {
+		t.Fatalf("version=%d err=%v want 6", v, err)
 	}
 	var title string
 	if err := st.db.QueryRow(`SELECT title FROM cycles WHERE number = 1`).Scan(&title); err != nil {
@@ -53,6 +53,36 @@ VALUES('opencode', 42, 4096, 'http://127.0.0.1:4096', '2026-08-15T00:00:00Z')`);
 	entries, err := st.ListServeRegistry()
 	if err != nil || len(entries) != 1 || entries[0].Harness != "opencode" {
 		t.Fatalf("v4 serve registry must remain readable: %v %+v", err, entries)
+	}
+}
+
+func TestSchemaV6MigrationFromV5(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, DBFileName)
+
+	v5, err := openCapped(path, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v5.db.Exec(`INSERT INTO harness_serve_registry(harness, pid, port, url, created_at)
+VALUES('opencode', 42, 4096, 'http://127.0.0.1:4096', '2026-08-15T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := v5.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	st := newStoreAt(t, dir)
+	v, err := st.SchemaVersion()
+	if err != nil || v != 6 {
+		t.Fatalf("version=%d err=%v want 6", v, err)
+	}
+	entries, err := st.ListServeRegistry()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("serve registry: %v %+v", err, entries)
+	}
+	if entries[0].ProjectPath != "" {
+		t.Fatalf("project_path=%q want empty default", entries[0].ProjectPath)
 	}
 }
 

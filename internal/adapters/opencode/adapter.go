@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -458,32 +457,7 @@ func (a *Adapter) ResetServe(ctx context.Context) error {
 
 // StopServe stops managed serve children and clears registry rows.
 func (a *Adapter) StopServe(ctx context.Context) error {
-	a.mu.Lock()
-	pid := a.servePID
-	a.baseURL = ""
-	a.servePID = 0
-	a.servePort = 0
-	a.mu.Unlock()
-
-	if pid > 0 {
-		killProcess(pid)
-	}
-
-	if a.Store != nil {
-		entries, err := a.Store.ListServeRegistry()
-		if err == nil {
-			for _, e := range entries {
-				if e.Harness != adapterName || e.PID <= 0 {
-					continue
-				}
-				if e.PID != pid {
-					killProcess(e.PID)
-				}
-			}
-		}
-		_ = a.Store.ClearServeRegistry()
-	}
-	return nil
+	return a.stopServeState(ctx)
 }
 
 // HasManagedServe reports whether Hero has started or adopted an OpenCode serve process.
@@ -516,49 +490,6 @@ func (a *Adapter) HasManagedServe(ctx context.Context) bool {
 	return false
 }
 
-// KillProcess terminates a child process by PID (cross-platform).
-func KillProcess(pid int) {
-	killProcess(pid)
-}
-
-func killProcess(pid int) {
-	if pid <= 0 {
-		return
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return
-	}
-	_ = proc.Kill()
-}
-
-// ServeURLAlive reports whether an opencode serve base URL responds.
-func ServeURLAlive(ctx context.Context, baseURL string) bool {
-	return serveURLAlive(ctx, baseURL, http.DefaultClient)
-}
-
-func serveURLAlive(ctx context.Context, baseURL string, client HTTPDoer) bool {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if baseURL == "" {
-		return false
-	}
-	if client == nil {
-		client = http.DefaultClient
-	}
-	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, baseURL+"/config/providers", nil)
-	if err != nil {
-		return false
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode >= 200 && resp.StatusCode < 500
-}
-
 func (a *Adapter) ensureServe(ctx context.Context) error {
 	a.mu.Lock()
 	if a.baseURL != "" {
@@ -581,40 +512,19 @@ func (a *Adapter) ensureServe(ctx context.Context) error {
 		return nil
 	}
 
-	cli, err := a.cliPath()
+	url, port, pid, err := a.startServeProcess(ctx)
 	if err != nil {
 		return err
-	}
-	handle, err := a.Runner.Start(ctx, a.ProjectDir, cli, "serve", "--port", "0", "--hostname", "127.0.0.1")
-	if err != nil {
-		return fmt.Errorf("start opencode serve: %w", err)
-	}
-	resolve := a.ResolveServeURL
-	if resolve == nil {
-		resolve = defaultServeURLResolver
-	}
-	url, port, err := resolve(handle)
-	if err != nil {
-		_ = handle.Kill()
-		return fmt.Errorf("resolve opencode serve url: %w", err)
 	}
 
 	a.mu.Lock()
 	a.baseURL = url
-	a.servePID = handle.PID()
+	a.servePID = pid
 	a.servePort = port
 	a.mu.Unlock()
 
-	if a.Store != nil {
-		_, _ = a.Store.InsertServeRegistry(store.ServeRegistryEntry{
-			Harness:   adapterName,
-			PID:       handle.PID(),
-			Port:      port,
-			URL:       url,
-			CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		})
-	}
-	a.log().Info("opencode serve started", "pid", handle.PID(), "url", url)
+	registerServe(a.Store, a.ProjectDir, pid, port, url)
+	a.log().Info("opencode serve started", "pid", pid, "url", url)
 	return nil
 }
 

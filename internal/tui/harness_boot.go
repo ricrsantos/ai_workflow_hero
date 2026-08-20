@@ -131,24 +131,7 @@ func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir strin
 }
 
 func reapOpenCodeOrphans(ctx context.Context, projectDir string, st *store.Store) error {
-	if st == nil {
-		return nil
-	}
-	entries, err := st.ListServeRegistry()
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if e.Harness != "opencode" {
-			continue
-		}
-		if opencodeadapter.ServeURLAlive(ctx, e.URL) {
-			slog.Info("reaping orphan opencode serve", "pid", e.PID, "url", e.URL)
-			opencodeadapter.KillProcess(e.PID)
-		}
-		_ = st.DeleteServeRegistry(e.ID)
-	}
-	return nil
+	return opencodeadapter.ReapOrphanServers(ctx, projectDir, st)
 }
 
 func writeHeroJSONFile(projectDir string, hero install.HeroJSON) error {

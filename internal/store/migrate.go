@@ -6,7 +6,7 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 5
+const currentSchemaVersion = 6
 
 func (s *Store) migrate() error {
 	return s.migrateTo(currentSchemaVersion)
@@ -170,6 +170,11 @@ func (s *Store) applyMigration(version int) error {
   pending INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT ''
 )`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+	case 6:
+		// v2.4: project_path on serve registry for lifecycle scoping.
+		if _, err := tx.Exec(`ALTER TABLE harness_serve_registry ADD COLUMN project_path TEXT NOT NULL DEFAULT ''`); err != nil {
 			return fmt.Errorf("migration %d: %w", version, err)
 		}
 	default:

@@ -137,7 +137,7 @@ Repository layout: **feature-based vertical slices** under `internal/<feature>/`
     runner · parse · commands · models        │               │
               │                               │               │
     internal/adapters/opencode.Adapter        │               │
-    serve · events · HTTP · properties        │               │
+    serve · server lifecycle · events · HTTP  │               │
                               │                               │
                     internal/common/                          │
                     template · clierr · output · envhygiene   │
@@ -523,7 +523,7 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/store` | SQLite operational store + migrations |
 | `internal/harness` | `HarnessAdapter` interface, `StreamDelta` normalization, marker detection |
 | `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import, NDJSON parse |
-| `internal/adapters/opencode` | OpenCode serve adapter, SSE event normalization, C5 properties |
+| `internal/adapters/opencode` | OpenCode serve adapter, `server.go` lifecycle (PID registry, graceful shutdown, orphan reap), SSE event normalization, C5 properties |
 | `internal/tui` | Bubble Tea terminal UI |
 | `internal/todos` | `## Pending` section parser in `current-state.md` |
 | `internal/workflowconfig` | `workflow-config.yml` load/normalize |
