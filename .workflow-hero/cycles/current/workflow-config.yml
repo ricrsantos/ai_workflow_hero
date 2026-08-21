@@ -76,19 +76,20 @@ stages:
 agents:
   # Hero 2.0: every agent and fallback_model require `harness` (cursor | opencode)
   # and a native `model` id for that harness:
-  #   Cursor IDE / Agent CLI: kebab slugs (composer-2.5, cursor-grok-4.6-high)
+  #   Cursor IDE / Agent CLI: kebab slugs (auto, composer-2.5, cursor-grok-4.6-high)
   #   OpenCode: provider/model ids (anthropic/claude-sonnet-4, openai/gpt-5.3-codex)
   # TUI freechat and /hero-new use /hero-model (freechat_default pair), not these blocks.
   # Cursor IDE chat ignores orchestration_agent / discover_agent model blocks.
+  # `auto` has no CLI C5 variants → reasoning_effort/thinking stay `na`, fast off.
   orchestration_agent:
-    harness: opencode
-    model: opencode-go/deepseek-v4-flash
-    reasoning_effort: max
+    harness: cursor
+    model: auto
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: max
+    thinking: na
     subagent:
       same_of_agent: true
-      model: composer-2.5
+      model: auto
       reasoning_effort: na
       enable_fast_model: false
       thinking: na
@@ -97,133 +98,133 @@ agents:
   # model is ignored (the IDE session model is used). Hero TUI honors this block:
   # Research runs as a dedicated discover_agent session with this model.
   discover_agent:
-    harness: opencode
-    model: opencode-go/deepseek-v4-flash
-    reasoning_effort: max
+    harness: cursor
+    model: auto
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: max
+    thinking: na
     subagent:
       same_of_agent: true
-      model: composer-2.5
+      model: auto
       reasoning_effort: na
       enable_fast_model: false
       thinking: na
 
   planning_agent:
-    harness: opencode
-    model: opencode-go/deepseek-v4-flash
-    reasoning_effort: max
+    harness: cursor
+    model: auto
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: max
+    thinking: na
     # Nested Task fan-out from this agent (not named Hero agents like context_agent).
     # same_of_agent: true → reuse this agent's model; false → use subagent.model below.
     subagent:
       same_of_agent: true
-      model: composer-2.5
+      model: auto
       reasoning_effort: na
       enable_fast_model: false
       thinking: na
 
   context_agent:
-    harness: opencode
-    model: opencode-go/deepseek-v4-flash
-    reasoning_effort: max
+    harness: cursor
+    model: auto
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: max
+    thinking: na
     subagent:
       same_of_agent: true
-      model: composer-2.5
+      model: auto
       reasoning_effort: na
       enable_fast_model: false
       thinking: na
 
   backend_agent:
-    harness: opencode
-    model: opencode-go/deepseek-v4-flash
-    reasoning_effort: max
+    harness: cursor
+    model: auto
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: max
+    thinking: na
     subagent:
       same_of_agent: true
-      model: opencode-go/deepseek-v4-pro
-      reasoning_effort: max
+      model: auto
+      reasoning_effort: na
       enable_fast_model: false
       thinking: na
 
   frontend_agent:
-    harness: opencode
-    model: opencode-go/deepseek-v4-flash
-    reasoning_effort: max
+    harness: cursor
+    model: auto
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: max
+    thinking: na
     subagent:
       same_of_agent: true
-      model: opencode-go/deepseek-v4-pro
-      reasoning_effort: max
+      model: auto
+      reasoning_effort: na
       enable_fast_model: false
       thinking: na
 
   generic_agent:
-    harness: opencode
-    model: opencode-go/deepseek-v4-flash
-    reasoning_effort: max
+    harness: cursor
+    model: auto
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: max
+    thinking: na
     subagent:
       same_of_agent: true
-      model: composer-2.5
+      model: auto
       reasoning_effort: na
       enable_fast_model: false
       thinking: na
 
   qa_agent:
-    harness: opencode
-    model:  opencode-go/deepseek-v4-flash
-    reasoning_effort: max
+    harness: cursor
+    model: auto
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: max
+    thinking: na
     subagent:
       same_of_agent: true
-      model: composer-2.5
+      model: auto
       reasoning_effort: na
       enable_fast_model: false
       thinking: na
 
   judge_agent:
-    harness: opencode
-    model: opencode-go/deepseek-v4-flash
-    reasoning_effort: max
+    harness: cursor
+    model: auto
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: max
+    thinking: na
     subagent:
       same_of_agent: true
-      model: composer-2.5
+      model: auto
       reasoning_effort: na
       enable_fast_model: false
       thinking: na
 
   browser_ui_agent:
-    harness: opencode
-    model: opencode/deepseek-v4-flash-free
-    reasoning_effort: max
+    harness: cursor
+    model: auto
+    reasoning_effort: na
     enable_fast_model: false
-    thinking: false
+    thinking: na
     subagent:
       same_of_agent: true
-      model: composer-2.5
+      model: auto
       reasoning_effort: na
       enable_fast_model: false
       thinking: na
 
   end2end_qa_agent:
-    harness: opencode
-    model: opencode/deepseek-v4-flash-free
+    harness: cursor
+    model: auto
     reasoning_effort: na
     enable_fast_model: false
-    thinking: false
+    thinking: na
     subagent:
       same_of_agent: true
-      model: composer-2.5
+      model: auto
       reasoning_effort: na
       enable_fast_model: false
       thinking: na
@@ -231,11 +232,11 @@ agents:
 # Fallback model used when an agent's configured model is unavailable.
 # The user is always warned explicitly when this fallback is used.
 fallback_model:
-  harness: opencode
-  model: opencode-go/deepseek-v4-flash
-  reasoning_effort: max
+  harness: cursor
+  model: auto
+  reasoning_effort: na
   enable_fast_model: false
-  thinking: max
+  thinking: na
 
 workflow_rules:
   - Skip any stage that is not enabled.

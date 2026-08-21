@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-21 — Cycle agents → Cursor `auto`
+
+**Problem**: Current cycle `workflow-config.yml` agents still targeted OpenCode DeepSeek models.
+
+**Decision / Outcome**: Set every agent + `fallback_model` to `harness: cursor`, `model: auto`, with `reasoning_effort`/`thinking: na` and `enable_fast_model: false` (Auto has no CLI C5 variants). Subagent blocks keep `same_of_agent: true` and `model: auto`.
+
+---
+
 ## 2026-08-21 — Cursor catalog: add `auto`
 
 **Problem**: CLI default model slug `auto` was missing from `assets/models/cursor.yml`, so metrics/context bar could not resolve Auto Cost pricing.
