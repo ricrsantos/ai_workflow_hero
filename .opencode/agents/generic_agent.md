@@ -1,9 +1,7 @@
 ---
-description: Implements native apps, scripts, and infrastructure for native/script/infrastructure scopes.
-model: opencode-go/deepseek-v4-flash
 name: generic_agent
-reasoningEffort: max
-thinking: max
+description: Implements native apps, scripts, and infrastructure for native/script/infrastructure scopes.
+model: inherit
 ---
 
 # generic_agent — Native / Script / Infrastructure Agent

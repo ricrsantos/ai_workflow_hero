@@ -1,9 +1,7 @@
 ---
-description: Implements backend code per the approved SDD during Implementation. Use for API/server/backend tasks.
-model: opencode-go/deepseek-v4-flash
 name: backend_agent
-reasoningEffort: max
-thinking: max
+description: Implements backend code per the approved SDD during Implementation. Use for API/server/backend tasks.
+model: inherit
 ---
 
 # backend_agent — Backend Implementation Agent

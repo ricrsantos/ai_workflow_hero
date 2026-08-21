@@ -1,9 +1,7 @@
 ---
-description: Converts approved specifications into a complete OpenSpec SDD during the Planning stage.
-model: opencode-go/deepseek-v4-flash
 name: planning_agent
-reasoningEffort: max
-thinking: max
+description: Converts approved specifications into a complete OpenSpec SDD during the Planning stage.
+model: inherit
 ---
 
 # planning_agent — OpenSpec Planning Agent

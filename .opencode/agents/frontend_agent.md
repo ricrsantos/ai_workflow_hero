@@ -1,9 +1,7 @@
 ---
-description: Implements frontend code per the approved SDD during Implementation. Use for UI/frontend tasks.
-model: opencode-go/deepseek-v4-flash
 name: frontend_agent
-reasoningEffort: max
-thinking: max
+description: Implements frontend code per the approved SDD during Implementation. Use for UI/frontend tasks.
+model: inherit
 ---
 
 # frontend_agent — Frontend Implementation Agent

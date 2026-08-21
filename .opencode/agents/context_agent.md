@@ -1,9 +1,7 @@
 ---
-description: Read-only context retrieval — scans codebase and docs on demand. Never implements code.
-model: opencode-go/deepseek-v4-flash
 name: context_agent
-reasoningEffort: max
-thinking: max
+description: Read-only context retrieval — scans codebase and docs on demand. Never implements code.
+model: inherit
 ---
 
 # context_agent — Project Context Retrieval Agent
