@@ -103,10 +103,16 @@ func shouldOpenOutputPanel(text string, width int) bool {
 }
 
 func (m model) outputListHeight() int {
-	chrome := 11 + m.statusBarLineCount() + 2
-	h := m.height - chrome
-	if h < 4 {
-		h = 4
+	contentH := m.frameContentHeight()
+	static := 4 // title, hint, blank, range label
+	if contentH < 8 {
+		static = 2 // title and hint; compact output omits blank/range rows
+	}
+	// Reserve the panel border and both scroll markers. When a marker is not
+	// needed this leaves a blank row, which is preferable to clipping it.
+	h := contentH - static - 2 - 2
+	if h < 1 {
+		h = 1
 	}
 	return h
 }
@@ -192,6 +198,7 @@ func (m model) handleOutputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) renderOutput() string {
 	var b strings.Builder
+	compact := m.frameContentHeight() < 8
 	title := m.outputTitle
 	if title == "" {
 		title = "Output"
@@ -203,8 +210,12 @@ func (m model) renderOutput() string {
 	}
 	b.WriteByte('\n')
 	b.WriteString(mutedStyle.Render("↑↓ scroll · PgUp/PgDn · esc close"))
-	b.WriteByte('\n')
-	b.WriteByte('\n')
+	if !compact {
+		b.WriteByte('\n')
+		b.WriteByte('\n')
+	} else {
+		b.WriteByte('\n')
+	}
 
 	m = m.ensureOutputVisible()
 	lines := m.outputLines
@@ -248,8 +259,10 @@ func (m model) renderOutput() string {
 		BorderForeground(border).
 		Width(panelWidth).
 		Render(strings.TrimRight(list.String(), "\n"))
-	b.WriteString(mutedStyle.Render(rangeLabel))
-	b.WriteByte('\n')
+	if !compact {
+		b.WriteString(mutedStyle.Render(rangeLabel))
+		b.WriteByte('\n')
+	}
 	b.WriteString(panel)
 	return b.String()
 }

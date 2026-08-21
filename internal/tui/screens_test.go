@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
@@ -35,6 +36,62 @@ func TestEmptyArtifactsCostsEventsNoC0(t *testing.T) {
 		}
 		if !strings.Contains(view, "No active cycle") {
 			t.Fatalf("screen %v expected no-active-cycle message: %q", screen, view)
+		}
+	}
+}
+
+func TestChatFooterUsesRealBindingsAndIncludesAllHints(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = EnterConversationForTest(m)
+
+	want := "tab mode · / commands · enter send · alt+enter newline · alt+y/r/i copy · ↑↓ scroll · alt+n screens · ctrl+q quit"
+	for _, state := range []struct {
+		screen    screen
+		streaming bool
+		overlay   bool
+	}{
+		{screen: screenConversation},
+		{screen: screenConversation, streaming: true},
+		{screen: screenConversation, overlay: true},
+		{screen: screenPalette},
+		{screen: screenOutput},
+		{screen: screenStatus},
+	} {
+		m.screen = state.screen
+		m.streaming = state.streaming
+		m.slashOverlayDismissed = !state.overlay
+		if got := m.footerHints(); got != want {
+			t.Fatalf("footer for screen=%v streaming=%t overlay=%t = %q, want %q", state.screen, state.streaming, state.overlay, got, want)
+		}
+	}
+}
+
+func TestFooterWrapsWithoutClippingAndReservesRows(t *testing.T) {
+	const width, height = 40, 24
+	m := NewTestModel(nil)
+	m = SetWidth(m, width)
+	m = SetHeight(m, height)
+	m = EnterConversationForTest(m)
+
+	footerLines := m.footerHintLines()
+	if len(footerLines) < 2 {
+		t.Fatalf("expected narrow footer to wrap, got %v", footerLines)
+	}
+	for _, line := range footerLines {
+		if got := lipgloss.Width(line); got > width {
+			t.Fatalf("footer line width=%d want <= %d: %q", got, width, line)
+		}
+	}
+
+	viewLines := strings.Split(stripANSI(ViewForTest(m)), "\n")
+	if got := len(viewLines); got != height {
+		t.Fatalf("frame lines=%d want %d", got, height)
+	}
+	footerStart := len(viewLines) - len(footerLines)
+	for i, want := range footerLines {
+		if got := viewLines[footerStart+i]; got != want {
+			t.Fatalf("footer line %d=%q want %q\n%s", i, got, want, strings.Join(viewLines, "\n"))
 		}
 	}
 }

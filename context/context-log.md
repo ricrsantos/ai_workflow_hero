@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-08-21 — TUI fixed navigation footer
+
+**Problem**: The footer hints changed by screen/streaming state and the long line could wrap without reserving its rows, causing incomplete or overwritten navigation instructions.
+
+**Outcome**: `internal/tui/screens.go` now renders one fixed footer string for every TUI state, wraps only between hint groups, and includes the wrapped footer in frame-height calculations. Chat response sizing and the idle agents box were tightened so the header/composer remain visible. Added coverage for fixed content, narrow wrapping, and footer anchoring; UI-C03 and context state now document the fixed footer.
+
+---
+
+## 2026-08-21 — Codex stdio deadlock + stall 3m
+
+**Problem**: Live Hero↔Codex hang — Codex blocked on `anon_pipe_write` (~75KB JSONL), Hero stdout pipe full (~64KB), no TCP; sync `onNotify` + TUI `ch <-` backpressure stopped `readLoop` draining.
+
+**Fix**: Codex `rpcConn` serial `notifyQ` (never block stdout reader); TUI stream chan 512 + timed backpressure drop; OpenCode+Codex `StallTimeout` **3m** (was 6m).
+
+---
+
 ## 2026-08-21 — GitHub release v2.5.0
 
 **Outcome**: `go test ./...` green → annotated tag `v2.5.0` on `main` (`6c898e7`) → pushed → `scripts/release.sh` → GitHub Release with 4 binaries + `checksums.txt`. URL: https://github.com/ricrsantos/ai_workflow_hero/releases/tag/v2.5.0

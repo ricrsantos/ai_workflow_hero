@@ -452,7 +452,9 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	m.agentMsgIndex = len(m.transcript) - 1
 	m.thinkingMsgIndex = -1
 
-	ch := make(chan tea.Msg, 32)
+	// Large buffer absorbs Codex/OpenCode delta bursts so OnStreamDelta rarely
+	// blocks the harness reader (stdio/SSE backpressure → stall).
+	ch := make(chan tea.Msg, 512)
 	m.convStreamCh = ch
 	m.startConversationExecute(executePrompt, ch)
 	return m
@@ -974,7 +976,18 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			// Chat//hero-new, YAML-derived for workflow commands; ADR-041/042).
 			Properties: resolved.props,
 			OnStreamDelta: func(delta harness.StreamDelta) {
-				ch <- streamDeltaMsg{delta: delta}
+				msg := streamDeltaMsg{delta: delta}
+				select {
+				case ch <- msg:
+				default:
+					// Keep delivering under UI lag without spinning forever on a
+					// closed/orphaned consumer: block briefly then give up.
+					select {
+					case ch <- msg:
+					case <-time.After(2 * time.Second):
+						slog.Warn("tui stream delta dropped under backpressure", "kind", delta.Kind)
+					}
+				}
 			},
 			OnPermissionRequest: func(ctx context.Context, perm harness.PermissionRequest) (harness.PermissionResponse, error) {
 				respCh := make(chan harness.PermissionResponse, 1)
@@ -1368,6 +1381,14 @@ func (m *model) appendAgentDelta(delta string) {
 func (m model) renderConversation(contentH int) string {
 	n := m.responseVisibleLines(contentH)
 	s := m.buildConversation(n)
+	// The response pane has a display cap, but that cap can still exceed the
+	// available frame after the header, history, input, and status rows are
+	// measured. Reduce only the response rows first so the frame never has to
+	// discard the header/agents box or the composer.
+	for countContentLines(s) > contentH && n > 0 {
+		n--
+		s = m.buildConversation(n)
+	}
 	// Absorb measurement drift so leftover rows go into the response pane.
 	for countContentLines(s) < contentH && n < chatResponseMaxLines {
 		n++
@@ -1465,8 +1486,6 @@ func (m model) renderAgentsBox() string {
 	body := line1
 	if line2 != "" {
 		body += "\n" + line2
-	} else {
-		body += "\n"
 	}
 	return chatBoxStyle.Width(agentsBoxWidth).Render(body)
 }
@@ -1504,7 +1523,7 @@ func (m model) renderConversationHistory() string {
 	contentW := m.chatContentWidth()
 	innerW := m.chatInnerWidth()
 	accent := chatAccentUser
-	visible := chatHistoryVisibleLines
+	visible := m.chatHistoryVisibleLines()
 
 	var b strings.Builder
 
@@ -1578,7 +1597,24 @@ func (m model) latestUserContent() string {
 
 func (m model) historyLineCount() int {
 	// Fixed box: visible content rows + status row inside bordered pane.
-	return chatHistoryVisibleLines + 1
+	return m.chatHistoryVisibleLines() + 1
+}
+
+// Short terminals still need to show the Chat header and composer so the
+// footer does not force the frame to discard those controls. The two scroll
+// panes give up one content row each before the outer frame trims anything.
+func (m model) chatHistoryVisibleLines() int {
+	if m.frameContentHeight() < 18 {
+		return 1
+	}
+	return chatHistoryVisibleLines
+}
+
+func (m model) chatInputVisibleLines() int {
+	if m.frameContentHeight() < 18 {
+		return 1
+	}
+	return chatInputVisibleLines
 }
 
 func (m model) chatBoxWidth() int {
@@ -1813,7 +1849,7 @@ func (m model) renderConversationInput() string {
 	}
 
 	lines := m.inputContentLines(contentW)
-	visible := chatInputVisibleLines
+	visible := m.chatInputVisibleLines()
 	offset := m.inputScrollOffset
 	maxOff := len(lines) - visible
 	if maxOff < 0 {
@@ -1959,7 +1995,7 @@ func (m model) contentAreaHeight() int {
 
 func (m model) maxHistoryScroll() int {
 	lines := len(m.historyContentLines(m.chatContentWidth()))
-	maxOff := lines - chatHistoryVisibleLines
+	maxOff := lines - m.chatHistoryVisibleLines()
 	if maxOff < 0 {
 		return 0
 	}
@@ -2059,7 +2095,7 @@ func (m model) responsePlainText() string {
 
 func (m model) maxInputScroll() int {
 	lines := len(m.inputContentLines(m.chatContentWidth()))
-	maxOff := lines - chatInputVisibleLines
+	maxOff := lines - m.chatInputVisibleLines()
 	if maxOff < 0 {
 		return 0
 	}
@@ -2125,10 +2161,11 @@ func (m model) ensureInputCaretVisible() model {
 	if caretLine < m.inputScrollOffset {
 		m.inputScrollOffset = caretLine
 	}
-	if caretLine >= m.inputScrollOffset+chatInputVisibleLines {
-		m.inputScrollOffset = caretLine - chatInputVisibleLines + 1
+	visible := m.chatInputVisibleLines()
+	if caretLine >= m.inputScrollOffset+visible {
+		m.inputScrollOffset = caretLine - visible + 1
 	}
-	maxOff := len(lines) - chatInputVisibleLines
+	maxOff := len(lines) - visible
 	if maxOff < 0 {
 		maxOff = 0
 	}

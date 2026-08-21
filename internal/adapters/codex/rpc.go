@@ -12,6 +12,15 @@ import (
 	"sync/atomic"
 )
 
+// notifyQueueSize keeps readLoop draining stdout under TUI backpressure.
+// A full queue must never block the reader (pipe deadlock with Codex).
+const notifyQueueSize = 1024
+
+type notifyJob struct {
+	method string
+	params json.RawMessage
+}
+
 // rpcConn is a bidirectional JSON-RPC 2.0 client over JSONL stdio.
 // The wire format omits "jsonrpc":"2.0" (Codex app-server convention).
 type rpcConn struct {
@@ -26,6 +35,8 @@ type rpcConn struct {
 	handlerMu sync.RWMutex
 	onNotify  func(method string, params json.RawMessage)
 	onRequest func(id json.RawMessage, method string, params json.RawMessage)
+
+	notifyQ chan notifyJob
 
 	readErr atomic.Value // error
 }
@@ -60,8 +71,10 @@ func newRPCConn(stdin io.WriteCloser, stdout io.ReadCloser) *rpcConn {
 		stdout:  stdout,
 		pending: make(map[int64]chan rpcMsg),
 		closed:  make(chan struct{}),
+		notifyQ: make(chan notifyJob, notifyQueueSize),
 	}
 	go c.readLoop()
+	go c.notifyLoop()
 	return c
 }
 
@@ -219,6 +232,45 @@ func (c *rpcConn) readLoop() {
 	}
 }
 
+// notifyLoop delivers notifications serially so stream order is preserved, but
+// off the stdout reader — slow OnStreamDelta / TUI must not stall pipe reads.
+func (c *rpcConn) notifyLoop() {
+	for {
+		select {
+		case <-c.closed:
+			return
+		case job, ok := <-c.notifyQ:
+			if !ok {
+				return
+			}
+			c.handlerMu.RLock()
+			h := c.onNotify
+			c.handlerMu.RUnlock()
+			if h != nil {
+				h(job.method, job.params)
+			}
+		}
+	}
+}
+
+func (c *rpcConn) enqueueNotify(method string, params json.RawMessage) {
+	job := notifyJob{method: method, params: params}
+	select {
+	case <-c.closed:
+		return
+	case c.notifyQ <- job:
+		return
+	default:
+		// Queue saturated: never block readLoop (stdout pipe deadlock).
+		go func() {
+			select {
+			case <-c.closed:
+			case c.notifyQ <- job:
+			}
+		}()
+	}
+}
+
 func (c *rpcConn) dispatch(msg rpcMsg) {
 	hasID := len(msg.ID) > 0 && string(msg.ID) != "null"
 	hasMethod := strings.TrimSpace(msg.Method) != ""
@@ -235,13 +287,8 @@ func (c *rpcConn) dispatch(msg rpcMsg) {
 			go h(idCopy, msg.Method, paramsCopy)
 		}
 	case hasMethod && !hasID:
-		c.handlerMu.RLock()
-		h := c.onNotify
-		c.handlerMu.RUnlock()
-		if h != nil {
-			paramsCopy := append(json.RawMessage(nil), msg.Params...)
-			h(msg.Method, paramsCopy)
-		}
+		paramsCopy := append(json.RawMessage(nil), msg.Params...)
+		c.enqueueNotify(msg.Method, paramsCopy)
 	case hasID:
 		var id int64
 		if err := json.Unmarshal(msg.ID, &id); err != nil {

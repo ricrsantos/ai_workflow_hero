@@ -21,11 +21,7 @@ func (m model) renderContent() string {
 	case screenEvents:
 		return m.renderEvents()
 	case screenConversation:
-		h := m.height - (5 + statusBarMaxLines)
-		if h < 3 {
-			h = 3
-		}
-		return m.renderConversation(h)
+		return m.renderConversation(m.frameContentHeight())
 	case screenPalette:
 		return m.renderPalette()
 	case screenOutput:
@@ -219,6 +215,7 @@ func (m model) renderPalette() string {
 		return b.String()
 	}
 	var b strings.Builder
+	compact := m.frameContentHeight() < 10
 	switch {
 	case m.pickingModel && m.modelPickerHarness != "":
 		b.WriteString(headerStyle.Render("/hero-model · " + harnessDisplayName(m.modelPickerHarness)))
@@ -241,14 +238,21 @@ func (m model) renderPalette() string {
 		b.WriteByte('\n')
 		b.WriteString(mutedStyle.Render("Type to filter · ↑↓ navigate · PgUp/PgDn · enter run · esc close"))
 	}
-	b.WriteByte('\n')
-	prompt := "/"
-	if m.paletteFilter != "" {
-		prompt = "/" + m.paletteFilter
+	if !compact {
+		b.WriteByte('\n')
+		prompt := "/"
+		if m.paletteFilter != "" {
+			prompt = "/" + m.paletteFilter
+		}
+		b.WriteString(infoStyle.Render(prompt))
+		b.WriteByte('\n')
+		b.WriteByte('\n')
+	} else {
+		// The fixed footer can occupy several rows on a narrow/short terminal.
+		// Keep the palette's header and scroll markers intact instead of
+		// letting its prompt chrome push the markers into the footer.
+		b.WriteByte('\n')
 	}
-	b.WriteString(infoStyle.Render(prompt))
-	b.WriteByte('\n')
-	b.WriteByte('\n')
 
 	items := m.filteredPaletteItems()
 	if len(items) == 0 {
@@ -317,8 +321,10 @@ func (m model) renderPalette() string {
 		BorderForeground(colorMuted).
 		Width(panelWidth).
 		Render(strings.TrimRight(list.String(), "\n"))
-	b.WriteString(mutedStyle.Render(title))
-	b.WriteByte('\n')
+	if !compact || m.frameContentHeight() >= 8 {
+		b.WriteString(mutedStyle.Render(title))
+		b.WriteByte('\n')
+	}
 	b.WriteString(panel)
 	return b.String()
 }
@@ -332,12 +338,19 @@ func formatHarnessCheckboxLine(name, availHint string, checked bool) string {
 }
 
 func (m model) paletteListHeight() int {
-	// title+tabs, rules (3), Commands header, hint, prompt, blank, range line,
-	// border (2), optional ▲/▼ (2), status bar, footer.
-	chrome := 14 + m.statusBarLineCount() + 2 // status content + separators around it
-	h := m.height - chrome
-	if h < 4 {
-		h = 4
+	contentH := m.frameContentHeight()
+	static := 5 // header, hint, prompt, blank, range label
+	if contentH < 10 {
+		static = 3 // header, hint, range label (prompt/blank omitted)
+	}
+	if contentH < 8 {
+		static = 2 // header and hint only
+	}
+	// Reserve the panel border and both scroll markers. When a marker is not
+	// needed this leaves a blank row, which is preferable to clipping it.
+	h := contentH - static - 2 - 2
+	if h < 1 {
+		h = 1
 	}
 	return h
 }
@@ -399,7 +412,7 @@ func (m model) renderFrame() string {
 	bottom.WriteByte('\n')
 	bottom.WriteString(strings.Repeat("─", max(20, m.width)))
 	bottom.WriteByte('\n')
-	bottom.WriteString(footerStyle.Render(m.footerHints()))
+	bottom.WriteString(m.renderFooter())
 
 	topStr := top.String()
 	bottomStr := bottom.String()
@@ -418,9 +431,39 @@ func (m model) renderFrame() string {
 			content = m.clipScrolledContent(content, contentH)
 		}
 	}
-	content = strings.TrimRight(content, "\n") + "\n"
+	// Keep the footer anchored to the bottom of the terminal. Chat can have
+	// more fixed pane chrome than fits in a very short terminal; retain its
+	// bottom rows (composer/status) while trimming the excess instead of
+	// allowing the content to push the footer out of the frame.
+	content = fitContentHeight(content, contentH, m.screen == screenConversation)
+	content += "\n"
 
 	return topStr + content + bottomStr
+}
+
+// fitContentHeight makes the content area exactly height rows. A fixed frame
+// is important here: if content is shorter, the footer must still stay at the
+// terminal bottom; if it is taller, the footer must not be overwritten by it.
+func fitContentHeight(content string, height int, keepBottom bool) string {
+	if height <= 0 {
+		return ""
+	}
+	content = strings.TrimRight(content, "\n")
+	var lines []string
+	if content != "" {
+		lines = strings.Split(content, "\n")
+	}
+	if len(lines) > height {
+		if keepBottom {
+			lines = lines[len(lines)-height:]
+		} else {
+			lines = lines[:height]
+		}
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func screenTabBar(active screen) string {
@@ -437,34 +480,59 @@ func screenTabBar(active screen) string {
 	return strings.Join(parts, " │ ")
 }
 
-func footerScreenNavHints() string {
-	return "alt+n screens"
-}
+const fixedFooterHints = "tab mode · / commands · enter send · alt+enter newline · alt+y/r/i copy · ↑↓ scroll · alt+n screens · ctrl+q quit"
 
 func (m model) footerHints() string {
-	if m.screen == screenPalette {
-		if m.pickingProps || m.propsAwaitingRefresh {
-			return ""
+	return fixedFooterHints
+}
+
+// footerHintLines wraps the footer at the terminal width. The footer used to
+// be rendered as a single unbounded line, so long Chat hints were clipped by
+// the terminal and could visually collide with the content above them.
+func (m model) footerHintLines() []string {
+	width := m.width
+	if width < 1 {
+		width = 1
+	}
+	hints := strings.TrimSpace(m.footerHints())
+	if hints == "" {
+		// Keep one reserved footer row for picker states that render their own
+		// keyboard guidance in the content area.
+		return []string{""}
+	}
+	// Keep each hint atomic while wrapping. In particular, splitting the
+	// `↑↓ scroll` or `alt+enter newline` pairs makes the fixed footer look
+	// incomplete even though all text is technically present.
+	parts := strings.Split(hints, " · ")
+	lines := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if len(lines) == 0 {
+			lines = append(lines, part)
+			continue
 		}
-		return "esc close · enter select · ↑↓ scroll"
-	}
-	if m.screen == screenOutput {
-		return "esc close · ↑↓ scroll · PgUp/PgDn · " + footerScreenNavHints() + " · ctrl+q quit"
-	}
-	if m.screen == screenConversation {
-		nav := footerScreenNavHints()
-		if m.streaming {
-			return "↑↓ scroll · ctrl+c interrupt · " + nav + " · ctrl+q quit"
+		candidate := lines[len(lines)-1] + " · " + part
+		if lipgloss.Width(candidate) <= width {
+			lines[len(lines)-1] = candidate
+			continue
 		}
-		if m.chatSlashOverlayActive() {
-			return "enter insert · tab insert · esc close · ↑↓ · " + nav + " · ctrl+q quit"
-		}
-		return "tab mode · / commands · enter send · alt+enter newline · alt+y/r/i copy · ↑↓ scroll · " + nav + " · ctrl+q quit"
+		lines = append(lines, part)
 	}
-	if m.screenHasContentScroll() {
-		return "↑↓ scroll · " + footerScreenNavHints() + " · / commands · ctrl+r refresh · ctrl+q quit"
+	return lines
+}
+
+func (m model) footerLineCount() int {
+	return len(m.footerHintLines())
+}
+
+func (m model) renderFooter() string {
+	lines := m.footerHintLines()
+	for i, line := range lines {
+		// Render each row independently. Lipgloss pads multi-line strings to
+		// their widest row, which makes shorter wrapped hints look like they
+		// overlap the terminal edge.
+		lines[i] = footerStyle.Render(line)
 	}
-	return footerScreenNavHints() + " · / commands · ctrl+r refresh · ctrl+q quit"
+	return strings.Join(lines, "\n")
 }
 
 func pendingApprovalStage(st cycle.StatusView) string {
@@ -559,8 +627,9 @@ func (m model) screenHasContentScroll() bool {
 }
 
 func (m model) frameContentHeight() int {
-	// Match renderFrame chrome: title+tabs, rule, status rules, status bar, footer.
-	h := m.height - (2 + 1 + m.statusBarLineCount() + 1 + 1)
+	// Match renderFrame chrome: title+tabs, rule, status rules, status bar, and
+	// the responsive footer (which may occupy more than one line).
+	h := m.height - (2 + 1 + m.statusBarLineCount() + 1 + m.footerLineCount())
 	if h < 3 {
 		h = 3
 	}
