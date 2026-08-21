@@ -11,6 +11,11 @@
     "installedAt": "2026-08-21T01:12:01Z"
   },
   "harnesses": {
+    "codex": {
+      "enabled": true,
+      "model": "gpt-5.6-luna",
+      "enable_fast_model": false
+    },
     "cursor": {
       "enabled": true,
       "model": "auto",
@@ -23,10 +28,16 @@
     }
   },
   "freechat_default": {
-    "harness": "cursor",
-    "model": "auto"
+    "harness": "codex",
+    "model": "gpt-5.6-luna"
   },
   "model_properties": {
+    "codex": {
+      "gpt-5.6-luna": {
+        "ef": "xhigh",
+        "th": "on"
+      }
+    },
     "cursor": {
       "composer-2.5": {
         "fs": "false"

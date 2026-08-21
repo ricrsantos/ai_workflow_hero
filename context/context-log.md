@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-08-21 — Codex stream UX: debug noise + agentMessage dedupe
+
+**Problem**: Chat showed garbled then clean duplicate of the same agent answer (`stringField` TrimSpace on deltas + full `item/completed` re-emit). Noisy activities (`userMessage`, `agent message`, tokens, rate limits) and unrecognized-event warnings always appeared.
+
+**Decision / Outcome**: Mirror OpenCode: `stringFieldRaw` for text/tool deltas; authoritative `item/completed` for agentMessage (suffix-only / skip); reasoning live deltas suppressed, thinking from completed snapshot only; activities + unrecognized warnings gated on `ExecuteRequest.Debug` (`hero --debug`). UI-C06 §5 updated. Tests in `events_test.go` + adapter/integration mocks.
+
+---
+
+## 2026-08-21 — OpenAI + Codex model catalog refresh
+
+**Change**: Added `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4-mini` (plus `openai/` OpenCode ids) to `assets/models/openai.yml` and `.workflow-hero/models/openai.yml`. Same native ids in `assets/models/codex.yml` / `.workflow-hero/models/codex.yml` with ChatGPT rates at 0.00, `th` (summary) available, `fs` na. OpenAI pricing from API docs; GPT-5.6 `cache_write` at 1.25× input on openai.yml only.
+
+---
+
 ## 2026-08-21 — C6 §9: Integration + close (native complete)
 
 **Problem**: Close Implementation: integration lock for upgrade→enable→Execute→orphan reap, SemVer 2.5.0, context landing, openspec-change persistence.

@@ -14,8 +14,99 @@ type streamOutcome struct {
 	err  error
 }
 
+// turnStreamState tracks text already streamed for a single Execute turn so
+// item/completed can emit only the authoritative suffix (OpenCode pattern).
+type turnStreamState struct {
+	emittedText map[string]string
+}
+
+func newTurnStreamState() *turnStreamState {
+	return &turnStreamState{emittedText: make(map[string]string)}
+}
+
+func (st *turnStreamState) noteTextDelta(key, delta string) {
+	if st == nil || delta == "" {
+		return
+	}
+	if st.emittedText == nil {
+		st.emittedText = make(map[string]string)
+	}
+	st.emittedText[key] += delta
+}
+
+func (st *turnStreamState) emitAuthoritativeText(key, full, harnessType, sessionID string, emit func(harness.StreamDelta)) {
+	if full == "" {
+		return
+	}
+	if st == nil {
+		emit(harness.StreamDelta{
+			Kind:        harness.StreamKindText,
+			Text:        full,
+			HarnessType: harnessType,
+			SessionID:   sessionID,
+			Phase:       harness.StreamPhaseCompleted,
+		})
+		return
+	}
+	if st.emittedText == nil {
+		st.emittedText = make(map[string]string)
+	}
+	emitted := st.emittedText[key]
+	if full == emitted {
+		return
+	}
+	if strings.HasPrefix(full, emitted) {
+		if suffix := full[len(emitted):]; suffix != "" {
+			emit(harness.StreamDelta{
+				Kind:        harness.StreamKindText,
+				Text:        suffix,
+				HarnessType: harnessType,
+				SessionID:   sessionID,
+				Phase:       harness.StreamPhaseCompleted,
+			})
+		}
+		st.emittedText[key] = full
+		return
+	}
+	if strings.HasPrefix(emitted, full) {
+		return
+	}
+	// Live deltas diverged from the completed snapshot — emit the authoritative text.
+	emit(harness.StreamDelta{
+		Kind:        harness.StreamKindText,
+		Text:        full,
+		HarnessType: harnessType,
+		SessionID:   sessionID,
+		Phase:       harness.StreamPhaseCompleted,
+	})
+	st.emittedText[key] = full
+}
+
+func agentTextKey(sessionID, itemID string) string {
+	if itemID == "" {
+		return sessionID + ":agent"
+	}
+	return sessionID + ":agent:" + itemID
+}
+
+// resolveAgentTextKey prefers the item id key; falls back when deltas lacked itemId.
+func resolveAgentTextKey(st *turnStreamState, sessionID, itemID string) string {
+	key := agentTextKey(sessionID, itemID)
+	if st == nil || st.emittedText == nil || itemID == "" {
+		return key
+	}
+	if st.emittedText[key] != "" {
+		return key
+	}
+	fallback := agentTextKey(sessionID, "")
+	if st.emittedText[fallback] != "" {
+		return fallback
+	}
+	return key
+}
+
 // handleNotification maps Codex app-server notifications to StreamDelta.
-func (a *Adapter) handleNotification(ctx context.Context, method string, raw json.RawMessage, sessionID string, req harness.ExecuteRequest, textBuf *strings.Builder) streamOutcome {
+func (a *Adapter) handleNotification(ctx context.Context, method string, raw json.RawMessage, sessionID string, req harness.ExecuteRequest, textBuf *strings.Builder, st *turnStreamState) streamOutcome {
 	_ = ctx
 	emit := func(d harness.StreamDelta) {
 		if req.OnStreamDelta == nil {
@@ -85,39 +176,41 @@ func (a *Adapter) handleNotification(ctx context.Context, method string, raw jso
 		}
 
 	case "item/agentMessage/delta":
-		delta := stringField(params, "delta", "text")
+		delta := stringFieldRaw(params, "delta", "text")
 		if delta != "" {
+			key := agentTextKey(sessionID, stringField(params, "itemId"))
+			st.noteTextDelta(key, delta)
 			emit(harness.StreamDelta{Kind: harness.StreamKindText, Text: delta, HarnessType: method, SessionID: sessionID})
 		}
 		return streamOutcome{}
 
 	case "item/plan/delta":
-		delta := stringField(params, "delta", "text")
+		delta := stringFieldRaw(params, "delta", "text")
 		if delta != "" {
 			emit(harness.StreamDelta{Kind: harness.StreamKindText, Text: delta, HarnessType: method, SessionID: sessionID})
 		}
 		return streamOutcome{}
 
 	case "item/reasoning/summaryTextDelta", "item/reasoning/textDelta":
-		delta := stringField(params, "delta", "text")
-		if delta != "" {
-			emit(harness.StreamDelta{Kind: harness.StreamKindThinking, Text: delta, HarnessType: method, SessionID: sessionID})
-		}
+		// Buffer-only: live reasoning deltas often omit inter-token spaces.
+		// Emit StreamKindThinking once from item/completed (OpenCode pattern).
 		return streamOutcome{}
 
 	case "item/reasoning/summaryPartAdded":
-		emit(harness.ActivityDelta(method, "reasoning summary section", sessionID))
+		if req.Debug {
+			emit(harness.ActivityDelta(method, "reasoning summary section", sessionID))
+		}
 		return streamOutcome{}
 
 	case "item/commandExecution/outputDelta":
-		delta := stringField(params, "delta", "text")
+		delta := stringFieldRaw(params, "delta", "text")
 		if delta != "" {
 			emit(harness.StreamDelta{Kind: harness.StreamKindTool, Text: delta, HarnessType: method, SessionID: sessionID})
 		}
 		return streamOutcome{}
 
 	case "item/started", "item/completed":
-		return a.handleItemLifecycle(method, params, sessionID, emit)
+		return a.handleItemLifecycle(method, params, sessionID, req, st, emit)
 
 	case "turn/plan/updated":
 		emit(harness.ActivityDelta(method, "plan updated", sessionID))
@@ -132,14 +225,16 @@ func (a *Adapter) handleNotification(ctx context.Context, method string, raw jso
 		return streamOutcome{}
 
 	case "thread/tokenUsage/updated":
-		a.mapTokenUsage(params, sessionID, emit)
+		a.mapTokenUsage(params, sessionID, req.Debug, emit)
 		return streamOutcome{}
 
 	case "account/rateLimits/updated":
-		emit(harness.ActivityDelta(method, "rate limits updated", sessionID))
 		a.mu.Lock()
 		a.usageUSDUnset = true
 		a.mu.Unlock()
+		if req.Debug {
+			emit(harness.ActivityDelta(method, "rate limits updated", sessionID))
+		}
 		return streamOutcome{}
 
 	case "warning", "configWarning":
@@ -168,45 +263,62 @@ func (a *Adapter) handleNotification(ctx context.Context, method string, raw jso
 		return streamOutcome{}
 
 	case "serverRequest/resolved", "account/updated", "account/login/completed", "skills/changed":
-		emit(harness.ActivityDelta(method, method, sessionID))
+		if req.Debug {
+			emit(harness.ActivityDelta(method, method, sessionID))
+		}
 		return streamOutcome{}
 
 	default:
-		// UI-C06-001 §5 / design D11: yellow warning, never dump raw JSON-RPC.
+		// UI-C06-001 §5 / design D11: yellow warning only in --debug; never dump raw JSON-RPC.
 		a.log().Debug("unrecognized codex app-server event", "method", method, "payload_bytes", len(raw))
-		emit(harness.StreamDelta{
-			Kind:        harness.StreamKindWarning,
-			Text:        fmt.Sprintf("WARNING: unrecognized Codex app-server event %q", method),
-			HarnessType: method,
-			SessionID:   sessionID,
-		})
+		if req.Debug {
+			emit(harness.StreamDelta{
+				Kind:        harness.StreamKindWarning,
+				Text:        fmt.Sprintf("WARNING: unrecognized Codex app-server event %q", method),
+				HarnessType: method,
+				SessionID:   sessionID,
+			})
+		}
 		return streamOutcome{}
 	}
 }
 
-func (a *Adapter) handleItemLifecycle(method string, params map[string]any, sessionID string, emit func(harness.StreamDelta)) streamOutcome {
+func (a *Adapter) handleItemLifecycle(method string, params map[string]any, sessionID string, req harness.ExecuteRequest, st *turnStreamState, emit func(harness.StreamDelta)) streamOutcome {
 	item, _ := params["item"].(map[string]any)
 	if item == nil {
-		emit(harness.ActivityDelta(method, method, sessionID))
+		if req.Debug {
+			emit(harness.ActivityDelta(method, method, sessionID))
+		}
 		return streamOutcome{}
 	}
 	itemType := stringField(item, "type")
 	switch itemType {
 	case "agentMessage":
 		if method == "item/completed" {
-			if text := stringField(item, "text"); text != "" {
-				emit(harness.StreamDelta{Kind: harness.StreamKindText, Text: text, HarnessType: method, SessionID: sessionID, Phase: harness.StreamPhaseCompleted})
+			text := stringFieldRaw(item, "text")
+			if text == "" {
+				text = stringField(item, "text")
 			}
-		} else {
+			key := resolveAgentTextKey(st, sessionID, stringField(item, "id"))
+			st.emitAuthoritativeText(key, text, method, sessionID, emit)
+		} else if req.Debug {
 			emit(harness.ActivityDelta(method, "agent message", sessionID))
 		}
 	case "reasoning":
-		emit(harness.StreamDelta{
-			Kind:        harness.StreamKindThinking,
-			Text:        firstNonEmpty(stringField(item, "summary"), stringField(item, "content")),
-			HarnessType: method,
-			SessionID:   sessionID,
-		})
+		// Thinking only from the completed snapshot (spaces preserved).
+		if method != "item/completed" {
+			return streamOutcome{}
+		}
+		text := firstNonEmpty(stringFieldRaw(item, "summary"), stringFieldRaw(item, "content"),
+			stringField(item, "summary"), stringField(item, "content"))
+		if text != "" {
+			emit(harness.StreamDelta{
+				Kind:        harness.StreamKindThinking,
+				Text:        text,
+				HarnessType: method,
+				SessionID:   sessionID,
+			})
+		}
 	case "commandExecution", "mcpToolCall", "dynamicToolCall", "webSearch", "collabToolCall":
 		summary := itemType
 		if cmd := stringField(item, "command", "tool", "query"); cmd != "" {
@@ -216,24 +328,28 @@ func (a *Adapter) handleItemLifecycle(method string, params map[string]any, sess
 	case "fileChange":
 		emit(harness.ActivityDelta(method, "file change", sessionID))
 	case "plan":
-		if text := stringField(item, "text"); text != "" {
+		if text := stringFieldRaw(item, "text"); text != "" {
+			emit(harness.StreamDelta{Kind: harness.StreamKindText, Text: text, HarnessType: method, SessionID: sessionID})
+		} else if text := stringField(item, "text"); text != "" {
 			emit(harness.StreamDelta{Kind: harness.StreamKindText, Text: text, HarnessType: method, SessionID: sessionID})
 		} else {
 			emit(harness.ActivityDelta(method, "plan", sessionID))
 		}
 	case "contextCompaction", "enteredReviewMode", "exitedReviewMode", "imageView", "userMessage":
-		emit(harness.ActivityDelta(method, itemType, sessionID))
+		if req.Debug {
+			emit(harness.ActivityDelta(method, itemType, sessionID))
+		}
 	default:
 		if itemType == "" {
 			emit(harness.WarningDelta(adapterName, method, sessionID, fmt.Sprintf("%v", item)))
-		} else {
+		} else if req.Debug {
 			emit(harness.ActivityDelta(method, itemType, sessionID))
 		}
 	}
 	return streamOutcome{}
 }
 
-func (a *Adapter) mapTokenUsage(params map[string]any, sessionID string, emit func(harness.StreamDelta)) {
+func (a *Adapter) mapTokenUsage(params map[string]any, sessionID string, debug bool, emit func(harness.StreamDelta)) {
 	usage := harness.Usage{}
 	hasUSD := false
 	extract := func(m map[string]any) {
@@ -281,8 +397,10 @@ func (a *Adapter) mapTokenUsage(params map[string]any, sessionID string, emit fu
 	}
 	a.mu.Unlock()
 
-	emit(harness.ActivityDelta("thread/tokenUsage/updated",
-		fmt.Sprintf("tokens in=%d out=%d", usage.InputTokens, usage.OutputTokens), sessionID))
+	if debug {
+		emit(harness.ActivityDelta("thread/tokenUsage/updated",
+			fmt.Sprintf("tokens in=%d out=%d", usage.InputTokens, usage.OutputTokens), sessionID))
+	}
 }
 
 // handleServerRequest answers Codex approval prompts via OnPermissionRequest.
@@ -395,6 +513,25 @@ func stringField(m map[string]any, keys ...string) string {
 	return ""
 }
 
+// stringFieldRaw preserves whitespace-only deltas (e.g. inter-token spaces).
+func stringFieldRaw(m map[string]any, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			switch t := v.(type) {
+			case string:
+				if t != "" {
+					return t
+				}
+			case fmt.Stringer:
+				if s := t.String(); s != "" {
+					return s
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func int64Field(m map[string]any, keys ...string) int64 {
 	for _, k := range keys {
 		if v, ok := m[k]; ok {
@@ -417,7 +554,7 @@ func int64Field(m map[string]any, keys ...string) int64 {
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
+			return v
 		}
 	}
 	return ""

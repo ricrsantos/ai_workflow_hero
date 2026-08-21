@@ -78,7 +78,7 @@ Harness id is lowercase `codex`:
 - Input status (Build/Plan) shows harness next to the model.
 - Context bar keys off the **native** Codex id in `models/*.yml` after the catalog task. Missing window → hide bar (existing rule).
 
-Unknown App Server events: yellow warning in the existing status area (OpenCode unknown-event analog). Do **not** print raw JSON-RPC dumps as the default assistant transcript.
+Unknown App Server events: yellow warning in the existing status area **only when Hero runs with `hero --debug`** (OpenCode unknown-event analog). Do **not** print raw JSON-RPC dumps as the default assistant transcript. Without `--debug`, unrecognized methods are logged at debug level only.
 
 ## 6. Auth, availability, and process errors
 

@@ -45,7 +45,64 @@ models:
         default: "na"
       ef:
         available: true
-        values: ["low", "medium", "high"]
+        values: ["none", "low", "medium", "high", "xhigh"]
+        default: "none"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  gpt-5.5:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 272000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  gpt-5.6-terra:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 272000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  gpt-5.6-luna:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 272000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
         default: "medium"
       th:
         available: true

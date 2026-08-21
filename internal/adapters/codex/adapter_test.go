@@ -165,6 +165,18 @@ func (m *mockStdioPeer) serve() {
 			m.write(map[string]any{"method": "item/reasoning/summaryTextDelta", "params": map[string]any{
 				"threadId": "thr_test_1", "delta": "thinking…",
 			}})
+			m.write(map[string]any{"method": "item/completed", "params": map[string]any{
+				"threadId": "thr_test_1",
+				"item": map[string]any{
+					"type": "reasoning", "id": "rsn_1", "summary": "thinking…",
+				},
+			}})
+			m.write(map[string]any{"method": "item/completed", "params": map[string]any{
+				"threadId": "thr_test_1",
+				"item": map[string]any{
+					"type": "agentMessage", "id": "item_1", "text": "Hello Codex",
+				},
+			}})
 			m.write(map[string]any{"method": "thread/tokenUsage/updated", "params": map[string]any{
 				"threadId": "thr_test_1",
 				"usage": map[string]any{
@@ -256,10 +268,12 @@ func TestExecute_MockStdioStreamsAndUsage(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	var sawText, sawThink, sawWarn, sawUsageWarn bool
+	var textJoined string
 	for _, d := range deltas {
 		switch d.Kind {
 		case harness.StreamKindText:
 			sawText = true
+			textJoined += d.Text
 		case harness.StreamKindThinking:
 			sawThink = true
 		case harness.StreamKindWarning:
@@ -271,8 +285,14 @@ func TestExecute_MockStdioStreamsAndUsage(t *testing.T) {
 			}
 		}
 	}
-	if !sawText || !sawThink || !sawWarn {
-		t.Fatalf("deltas missing kinds text=%v think=%v warn=%v: %+v", sawText, sawThink, sawWarn, deltas)
+	if !sawText || !sawThink {
+		t.Fatalf("deltas missing kinds text=%v think=%v: %+v", sawText, sawThink, deltas)
+	}
+	if sawWarn {
+		t.Fatal("unrecognized events must not warn without Debug")
+	}
+	if textJoined != "Hello Codex" {
+		t.Fatalf("agent text duplicated or spaced wrong: %q", textJoined)
 	}
 	if !sawUsageWarn {
 		t.Fatal("expected USD-missing usage warning")

@@ -245,10 +245,11 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	a.setStatus(sessionID, harness.StatusRunning, "")
 
 	var buf strings.Builder
+	turnState := newTurnStreamState()
 	streamDone := make(chan streamOutcome, 1)
 	a.rpc.SetHandlers(
 		func(method string, raw json.RawMessage) {
-			out := a.handleNotification(runCtx, method, raw, sessionID, req, &buf)
+			out := a.handleNotification(runCtx, method, raw, sessionID, req, &buf, turnState)
 			if out.done || out.err != nil {
 				select {
 				case streamDone <- out:

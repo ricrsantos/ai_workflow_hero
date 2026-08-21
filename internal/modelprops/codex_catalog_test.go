@@ -11,7 +11,10 @@ import (
 // Codex-native ids ship with context-capable properties and provider:codex.
 func TestEmbeddedCodexCatalogNativeIDs(t *testing.T) {
 	cat := LoadCatalogFromFS(assets.FS, "models")
-	for _, id := range []string{"gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"} {
+	for _, id := range []string{
+		"gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "gpt-5.6-terra", "gpt-5.6-luna",
+		"gpt-5.3-codex", "gpt-5.3-codex-spark",
+	} {
 		if !cat.HasModel(id) {
 			t.Fatalf("missing Codex-native catalog id %q", id)
 		}

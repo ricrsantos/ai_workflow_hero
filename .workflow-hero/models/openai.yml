@@ -1,6 +1,6 @@
 provider: openai
 version: 1
-last_updated: 2026-08-18
+last_updated: 2026-08-21
 currency: usd
 unit: per_1m_tokens
 
@@ -43,6 +43,82 @@ models:
         available: false
         values: ["na"]
         default: "na"
+  gpt-5.6-terra:
+    input: 2.00
+    cache_write: 2.50
+    cache_read: 0.20
+    output: 12.00
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+  gpt-5.6-luna:
+    input: 0.20
+    cache_write: 0.25
+    cache_read: 0.02
+    output: 1.20
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+  gpt-5.5:
+    input: 5.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 30.00
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh"]
+        default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+  gpt-5.4-mini:
+    input: 0.75
+    cache_write: 0.00
+    cache_read: 0.075
+    output: 4.50
+    context_window: 400000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh"]
+        default: "none"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
   # OpenCode-native provider/model ids (PRD-C04-001 §4.10)
   openai/gpt-5.3-codex:
     input: 1.75
@@ -59,6 +135,82 @@ models:
         available: true
         values: ["low", "medium", "high", "xhigh"]
         default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+  openai/gpt-5.6-terra:
+    input: 2.00
+    cache_write: 2.50
+    cache_read: 0.20
+    output: 12.00
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+  openai/gpt-5.6-luna:
+    input: 0.20
+    cache_write: 0.25
+    cache_read: 0.02
+    output: 1.20
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+  openai/gpt-5.5:
+    input: 5.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 30.00
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh"]
+        default: "medium"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+  openai/gpt-5.4-mini:
+    input: 0.75
+    cache_write: 0.00
+    cache_read: 0.075
+    output: 4.50
+    context_window: 400000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh"]
+        default: "none"
       th:
         available: false
         values: ["na"]

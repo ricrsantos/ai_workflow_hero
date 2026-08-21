@@ -233,6 +233,12 @@ func (m *integrationCodexPeer) serve() {
 			m.write(map[string]any{"method": "item/reasoning/summaryTextDelta", "params": map[string]any{
 				"threadId": "thr_int_1", "delta": "thinking…",
 			}})
+			m.write(map[string]any{"method": "item/completed", "params": map[string]any{
+				"threadId": "thr_int_1",
+				"item": map[string]any{
+					"type": "reasoning", "id": "rsn_1", "summary": "thinking…",
+				},
+			}})
 			m.write(map[string]any{"method": "turn/completed", "params": map[string]any{
 				"turn": map[string]any{"id": "turn_1", "status": "completed", "error": nil},
 			}})
