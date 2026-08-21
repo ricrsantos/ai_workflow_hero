@@ -81,7 +81,15 @@ func FormatFallbackWarning(fromAgent, fromHarness, fromModel, toHarness, toModel
 }
 
 // FormatHardStop formats the hard-stop message when agent + fallback both fail (UI-C04-001 §6).
+// When the failing pair is Codex and the CLI is missing, uses UI-C06-001 §6 copy.
 func FormatHardStop(agentName, harnessID, model string, attempts []FallbackAttempt) string {
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	if agentName == "" {
+		agentName = "freechat"
+	}
+	if harnessID == "codex" && isCodexCLIMissingAttempt(attempts) {
+		return FormatCodexCLIMissing(agentName)
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "✗ Cannot run %s: harness %s is not available", agentName, harnessID)
 	if len(attempts) > 1 {
@@ -95,13 +103,35 @@ func FormatHardStop(agentName, harnessID, model string, attempts []FallbackAttem
 	return b.String()
 }
 
+// FormatCodexCLIMissing is the UI-C06-001 §6 hard-stop when `codex` is not on PATH.
+func FormatCodexCLIMissing(agentName string) string {
+	if strings.TrimSpace(agentName) == "" {
+		agentName = "freechat"
+	}
+	return fmt.Sprintf("✗ Cannot run %s: harness codex is not available\n  codex CLI not found on PATH.\n\n  Suggestion: install the Codex CLI, enable it with /hero-harness,\n  then run /hero-continue.", agentName)
+}
+
+func isCodexCLIMissingAttempt(attempts []FallbackAttempt) bool {
+	for _, a := range attempts {
+		if !strings.EqualFold(strings.TrimSpace(a.HarnessID), "codex") || a.Err == nil {
+			continue
+		}
+		lower := strings.ToLower(a.Err.Error())
+		if strings.Contains(lower, "cli not") || strings.Contains(lower, "not found on path") {
+			return true
+		}
+	}
+	return false
+}
+
 // ListModels aggregates model ids from enabled harness adapters.
-// OpenCode is skipped so boot does not start `opencode serve` (UI-C04-001 §7).
-// Use ListModelsFor when the user selects a harness in /hero-model.
+// OpenCode and Codex are skipped so boot does not start managed children
+// (UI-C04-001 §7; UI-C06-001 §7). Use ListModelsFor when the user selects a
+// harness in /hero-model.
 func ListModels(ctx context.Context, reg Registry, hero install.HeroJSON) ([]ModelOption, error) {
 	var out []ModelOption
 	for _, id := range reg.EnabledIDs(hero) {
-		if id == "opencode" {
+		if id == "opencode" || id == "codex" {
 			continue
 		}
 		models, err := ListModelsFor(ctx, reg, id)
@@ -116,7 +146,8 @@ func ListModels(ctx context.Context, reg Registry, hero install.HeroJSON) ([]Mod
 	return out, nil
 }
 
-// ListModelsFor lists native model ids for one harness (may start OpenCode serve).
+// ListModelsFor lists native model ids for one harness (may start OpenCode serve
+// or Codex app-server).
 func ListModelsFor(ctx context.Context, reg Registry, harnessID string) ([]string, error) {
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
 	if reg == nil {

@@ -118,6 +118,35 @@ func TestHarnessResetOpenCodeNotStarted(t *testing.T) {
 	}
 }
 
+func TestHarnessResetCodexNotStarted(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "codex": {"enabled": true}}
+}
+`))
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	m := tui.RunHarnessResetPickerForTest(tui.NewTestModel(svc))
+	items := tui.PaletteItemsForTest(m)
+	idx := paletteIndexByLabel(items, "Codex")
+	if idx < 0 {
+		t.Fatal("Codex not in reset picker")
+	}
+	m = tui.SetPaletteIndexForTest(m, idx)
+	m, _ = tui.HandleTestKey(m, "enter")
+
+	if tui.StatusTextForTest(m) != "Codex has not been started by Hero yet." {
+		t.Fatalf("status=%q", tui.StatusTextForTest(m))
+	}
+	if tui.StatusKindForTest(m) != "warn" {
+		t.Fatalf("status kind=%q want warn", tui.StatusKindForTest(m))
+	}
+}
+
 func TestHarnessResetCursorNothingRunning(t *testing.T) {
 	dir := t.TempDir()
 	writeHeroJSON(t, dir, []byte(`{
@@ -178,5 +207,45 @@ func TestHarnessResetOpenCodeStopsManagedServe(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("expected serve registry cleared, got %d entries", len(entries))
+	}
+}
+
+func TestHarnessResetCodexStopsManagedAppServer(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "codex": {"enabled": true}}
+}
+`))
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	if _, err := svc.Store.InsertCodexServeRegistry(dir, 4242); err != nil {
+		t.Fatal(err)
+	}
+
+	m := tui.RunHarnessResetPickerForTest(tui.NewTestModel(svc))
+	items := tui.PaletteItemsForTest(m)
+	idx := paletteIndexByLabel(items, "Codex")
+	if idx < 0 {
+		t.Fatal("Codex not in reset picker")
+	}
+	m = tui.SetPaletteIndexForTest(m, idx)
+	m, _ = tui.HandleTestKey(m, "enter")
+
+	if !strings.Contains(tui.StatusTextForTest(m), "Codex app-server stopped") {
+		t.Fatalf("unexpected status: %q", tui.StatusTextForTest(m))
+	}
+	if tui.StatusKindForTest(m) != "ok" {
+		t.Fatalf("status kind=%q want ok", tui.StatusKindForTest(m))
+	}
+	entries, err := svc.Store.ListCodexServeRegistry(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected codex registry cleared, got %d entries", len(entries))
 	}
 }

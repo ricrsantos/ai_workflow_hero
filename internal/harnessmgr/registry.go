@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	codexadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
@@ -28,6 +29,7 @@ type DefaultRegistry struct {
 	mu       sync.Mutex
 	cursor   harness.HarnessAdapter
 	opencode harness.HarnessAdapter
+	codex    harness.HarnessAdapter
 }
 
 // NewRegistry returns a registry for projectDir with optional operational store.
@@ -53,6 +55,13 @@ func (r *DefaultRegistry) Adapter(id string) (harness.HarnessAdapter, error) {
 			r.opencode = opencodeadapter.NewAdapter(r.ProjectDir, r.Store)
 		}
 		return r.opencode, nil
+	case "codex":
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.codex == nil {
+			r.codex = codexadapter.NewAdapter(r.ProjectDir, r.Store)
+		}
+		return r.codex, nil
 	default:
 		return nil, fmt.Errorf("unsupported harness %q", id)
 	}

@@ -4,6 +4,7 @@
 //   - cursor/agents/    → .cursor/agents/    (Agent markdown files)
 //   - cursor/skills/    → .cursor/skills/    (Skill markdown files)
 //   - opencode/         → .opencode/         (OpenCode projection when enabled)
+//   - codex/            → .codex/            (Codex projection when enabled; C6)
 //   - templates/        → .workflow-hero/templates/ (Workflow templates)
 //   - models/           → .workflow-hero/models/    (Model pricing YAML files)
 //   - config/           → .workflow-hero/config/    (Config templates)
@@ -12,5 +13,5 @@ package assets
 
 import "embed"
 
-//go:embed cursor opencode templates models config docs
+//go:embed cursor opencode codex templates models config docs
 var FS embed.FS

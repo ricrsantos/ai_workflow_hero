@@ -36,6 +36,7 @@ type HealthChecker interface {
 const (
 	CursorStallTimeout   = 5 * time.Minute
 	OpenCodeStallTimeout = 6 * time.Minute
+	CodexStallTimeout    = 6 * time.Minute
 	HealthProbeInterval  = 30 * time.Second
 )
 
@@ -44,6 +45,8 @@ func StallTimeoutForHarness(harnessID string) time.Duration {
 	switch harnessID {
 	case "opencode":
 		return OpenCodeStallTimeout
+	case "codex":
+		return CodexStallTimeout
 	default:
 		return CursorStallTimeout
 	}

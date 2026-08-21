@@ -17,13 +17,15 @@
 set -euo pipefail
 
 # Require an exact tag on the current commit (no "dev" fallback).
+# Hero 2.5.0 (C6 Codex adapter): tag the release commit as v2.5.0 before running.
 TAG=$(git describe --tags --exact-match 2>/dev/null || true)
 if [ -z "${TAG}" ]; then
-  echo "[ERROR] Current commit is not tagged. Tag the release commit first (e.g. git tag v0.5.0)." >&2
+  echo "[ERROR] Current commit is not tagged. Tag the release commit first (e.g. git tag v2.5.0)." >&2
   exit 1
 fi
 
-# Git tags use a leading "v" (v0.5.0); CLI version omits it (0.5.0).
+# Git tags use a leading "v" (v2.5.0); CLI version omits it (2.5.0).
+# Injected via -ldflags "-X main.version=${VERSION}" — do not hardcode SemVer here.
 VERSION="${TAG#v}"
 echo "Building version: ${VERSION} (tag ${TAG})"
 

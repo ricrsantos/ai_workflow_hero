@@ -40,7 +40,7 @@ func paletteIndexByLabel(items []tui.PaletteItemView, label string) int {
 func TestHarnessPickerCheckboxesShowAvailability(t *testing.T) {
 	dir := t.TempDir()
 	writeHeroJSON(t, dir, []byte(`{
-  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}}
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}, "codex": {"enabled": false}}
 }
 `))
 	svc, err := cycle.OpenService(dir)
@@ -53,10 +53,10 @@ func TestHarnessPickerCheckboxesShowAvailability(t *testing.T) {
 		t.Fatal("expected harness picker")
 	}
 	view := tui.ViewForTest(next)
-	if !strings.Contains(view, "[x] Cursor") || !strings.Contains(view, "[ ] OpenCode") {
+	if !strings.Contains(view, "[x] Cursor") || !strings.Contains(view, "[ ] OpenCode") || !strings.Contains(view, "[ ] Codex") {
 		t.Fatalf("missing checkboxes: %q", view)
 	}
-	if !strings.Contains(view, "Cursor (") || !strings.Contains(view, "OpenCode (") {
+	if !strings.Contains(view, "Cursor (") || !strings.Contains(view, "OpenCode (") || !strings.Contains(view, "Codex (") {
 		t.Fatalf("missing availability parens: %q", view)
 	}
 	if !strings.Contains(view, "available") && !strings.Contains(view, "unavailable") {
@@ -110,6 +110,52 @@ func TestHarnessPickerEnableOpenCodeSuccessLine(t *testing.T) {
 	}
 }
 
+func TestHarnessPickerEnableCodexSuccessLine(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}, "codex": {"enabled": false}}
+}
+`))
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	if !tui.PickingHarnessForTest(next) {
+		t.Fatal("expected harness picker")
+	}
+	items := tui.FilteredPalette(next)
+	idx := paletteIndexByLabel(items, "Codex")
+	if idx < 0 {
+		t.Fatalf("Codex missing from picker: %v", items)
+	}
+	next = tui.SetPaletteIndexForTest(next, idx)
+	next, _ = tui.HandleTestKey(next, " ")
+	view := tui.ViewForTest(next)
+	if !strings.Contains(view, "[x] Codex") {
+		t.Fatalf("space should check Codex: %q", view)
+	}
+	next, _ = tui.HandleTestKey(next, "enter")
+	if tui.StatusKindForTest(next) != "ok" {
+		t.Fatalf("status=%s text=%q", tui.StatusKindForTest(next), tui.StatusTextForTest(next))
+	}
+	if !strings.Contains(tui.StatusTextForTest(next), "Codex enabled (projected .codex/)") {
+		t.Fatalf("text=%q", tui.StatusTextForTest(next))
+	}
+	hero, err := install.LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !install.IsHarnessEnabled(hero, "codex") {
+		t.Fatal("codex not enabled")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".codex", "agents")); err != nil {
+		t.Fatalf(".codex/ not projected on enable: %v", err)
+	}
+}
+
 func TestHarnessPickerDisableSuccessLine(t *testing.T) {
 	dir := t.TempDir()
 	writeHeroJSON(t, dir, []byte(`{
@@ -147,6 +193,69 @@ func TestHarnessPickerDisableSuccessLine(t *testing.T) {
 	}
 }
 
+func TestHarnessPickerDisableCodexStopsAppServer(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}, "codex": {"enabled": true}}
+}
+`))
+	// Seed projected files so disable can assert they are kept.
+	codexAgents := filepath.Join(dir, ".codex", "agents")
+	if err := os.MkdirAll(codexAgents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(codexAgents, "keep-me.md")
+	if err := os.WriteFile(marker, []byte("keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	stopCalled := false
+	prev := tui.StopCodexAppServerFnForTest()
+	tui.SetStopCodexAppServerFnForTest(func(ctx context.Context, projectDir string, st *store.Store, _ harnessmgr.Registry) error {
+		stopCalled = true
+		if projectDir != dir {
+			t.Fatalf("projectDir=%q", projectDir)
+		}
+		return nil
+	})
+	t.Cleanup(func() { tui.SetStopCodexAppServerFnForTest(prev) })
+
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	items := tui.FilteredPalette(next)
+	idx := paletteIndexByLabel(items, "Codex")
+	if idx < 0 {
+		t.Fatalf("Codex missing from picker: %v", items)
+	}
+	next = tui.SetPaletteIndexForTest(next, idx)
+	next, _ = tui.HandleTestKey(next, " ")
+	next, _ = tui.HandleTestKey(next, "enter")
+	if tui.StatusKindForTest(next) != "ok" {
+		t.Fatalf("status=%s text=%q", tui.StatusKindForTest(next), tui.StatusTextForTest(next))
+	}
+	if !strings.Contains(tui.StatusTextForTest(next), "Codex disabled (files kept)") {
+		t.Fatalf("text=%q", tui.StatusTextForTest(next))
+	}
+	if !stopCalled {
+		t.Fatal("expected stopCodexAppServer on codex disable")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("disable must keep .codex/ files: %v", err)
+	}
+	hero, err := install.LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if install.IsHarnessEnabled(hero, "codex") {
+		t.Fatal("codex should be disabled")
+	}
+}
+
 func TestHarnessPickerLastHarnessError(t *testing.T) {
 	dir := t.TempDir()
 	writeHeroJSON(t, dir, []byte(`{
@@ -173,5 +282,44 @@ func TestHarnessPickerLastHarnessError(t *testing.T) {
 	}
 	if !tui.PickingHarnessForTest(next) {
 		t.Fatal("picker should stay open after empty selection")
+	}
+}
+
+func TestHarnessPickerLastHarnessError_CodexOnly(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": false}, "opencode": {"enabled": false}, "codex": {"enabled": true}}
+}
+`))
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	items := tui.FilteredPalette(next)
+	idx := paletteIndexByLabel(items, "Codex")
+	if idx < 0 {
+		t.Fatalf("Codex missing from picker: %v", items)
+	}
+	next = tui.SetPaletteIndexForTest(next, idx)
+	next, _ = tui.HandleTestKey(next, " ")
+	next, _ = tui.HandleTestKey(next, "enter")
+	if tui.StatusKindForTest(next) != "err" {
+		t.Fatalf("status=%s text=%q", tui.StatusKindForTest(next), tui.StatusTextForTest(next))
+	}
+	if !strings.Contains(tui.StatusTextForTest(next), "Select at least one harness") {
+		t.Fatalf("text=%q", tui.StatusTextForTest(next))
+	}
+	if !tui.PickingHarnessForTest(next) {
+		t.Fatal("picker should stay open after empty selection")
+	}
+	hero, err := install.LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !install.IsHarnessEnabled(hero, "codex") {
+		t.Fatal("codex must remain enabled when last-harness guard rejects")
 	}
 }

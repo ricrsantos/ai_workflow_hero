@@ -146,7 +146,71 @@ func TestValidateBootDefaultModel(t *testing.T) {
 	if got := validateBootDefaultModel("opencode", "opencode-go/glm-5.3", catalog); got != "" {
 		t.Fatalf("opencode default must not validate against cursor-only catalog: %q", got)
 	}
+	if got := validateBootDefaultModel("codex", "gpt-5.4", catalog); got != "" {
+		t.Fatalf("codex default must not validate against cursor-only catalog: %q", got)
+	}
 }
+
+func TestBootHarness_CodexEnabledWarnsWhenUnavailable(t *testing.T) {
+	dir := writeHeroJSONForBootTest(t, []string{"codex"}, true)
+
+	deps := defaultHarnessBootDeps()
+	deps.newRegistry = func(projectDir string, st *store.Store) harnessmgr.Registry {
+		return &bootRegistry{adapter: &bootUnavailableCodexHarness{}}
+	}
+	deps.openStore = func(projectDir string) (*store.Store, error) {
+		return store.OpenProject(projectDir)
+	}
+	deps.listModels = func(ctx context.Context, reg harnessmgr.Registry, hero install.HeroJSON) ([]harnessmgr.ModelOption, error) {
+		return nil, nil
+	}
+
+	var stderr bytes.Buffer
+	result, err := bootHarness(context.Background(), &bytes.Buffer{}, &stderr, dir, nil, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Enabled) != 1 || result.Enabled[0] != "codex" {
+		t.Fatalf("enabled=%v", result.Enabled)
+	}
+	if len(result.AvailWarnings) == 0 {
+		t.Fatal("expected availability warning (enabled ≠ available)")
+	}
+	if !strings.Contains(stderr.String(), "Codex") {
+		t.Fatalf("stderr=%q", stderr.String())
+	}
+}
+
+func TestBootHarness_ReapsCodexOrphans(t *testing.T) {
+	dir := writeHeroJSONForBootTest(t, []string{"cursor"}, true)
+	reaped := false
+	deps := defaultHarnessBootDeps()
+	deps.reapOrphans = func(ctx context.Context, projectDir string, st *store.Store) error {
+		reaped = true
+		if projectDir != dir {
+			t.Fatalf("projectDir=%q", projectDir)
+		}
+		if st == nil {
+			t.Fatal("expected store")
+		}
+		return nil
+	}
+	deps.newRegistry = func(projectDir string, st *store.Store) harnessmgr.Registry {
+		return &bootRegistry{adapter: &bootOKHarness{}}
+	}
+	deps.openStore = func(projectDir string) (*store.Store, error) {
+		return store.OpenProject(projectDir)
+	}
+
+	if _, err := bootHarness(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, dir, nil, deps); err != nil {
+		t.Fatal(err)
+	}
+	if !reaped {
+		t.Fatal("expected orphan reap on TUI boot")
+	}
+}
+
+func (r *bootRegistry) SupportedIDs() []string { return []string{"cursor", "opencode", "codex"} }
 
 type bootRegistry struct {
 	adapter harness.HarnessAdapter
@@ -158,7 +222,6 @@ func (r *bootRegistry) Adapter(id string) (harness.HarnessAdapter, error) {
 	}
 	return nil, errors.New("no adapter")
 }
-func (r *bootRegistry) SupportedIDs() []string { return []string{"cursor", "opencode"} }
 func (r *bootRegistry) EnabledIDs(install.HeroJSON) []string {
 	return []string{"cursor"}
 }
@@ -200,6 +263,27 @@ func (bootUnavailableHarness) Status(context.Context, string) (*harness.Executio
 	return nil, nil
 }
 func (bootUnavailableHarness) Dispatch(context.Context, harness.DispatchRequest) (harness.DispatchResult, error) {
+	return harness.DispatchResult{}, nil
+}
+
+type bootUnavailableCodexHarness struct{}
+
+func (bootUnavailableCodexHarness) Name() string { return "codex" }
+func (bootUnavailableCodexHarness) IsAvailable(context.Context) error {
+	return errors.New("codex CLI not found on PATH")
+}
+func (bootUnavailableCodexHarness) CreateSession(context.Context, harness.SessionRequest) (*harness.Session, error) {
+	return nil, nil
+}
+func (bootUnavailableCodexHarness) ResumeSession(context.Context, string) error { return nil }
+func (bootUnavailableCodexHarness) Execute(context.Context, harness.ExecuteRequest) (*harness.ExecutionResult, error) {
+	return nil, nil
+}
+func (bootUnavailableCodexHarness) Cancel(context.Context, string) error { return nil }
+func (bootUnavailableCodexHarness) Status(context.Context, string) (*harness.ExecutionStatus, error) {
+	return nil, nil
+}
+func (bootUnavailableCodexHarness) Dispatch(context.Context, harness.DispatchRequest) (harness.DispatchResult, error) {
 	return harness.DispatchResult{}, nil
 }
 

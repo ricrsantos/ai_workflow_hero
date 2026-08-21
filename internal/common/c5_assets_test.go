@@ -42,6 +42,23 @@ func TestEmbeddedOpenCodeFixtureLoadsCapabilities(t *testing.T) {
 	}
 }
 
+// TestEmbeddedCodexFixtureLoadsCapabilities validates Codex-native catalog rows
+// (PRD-C06-001 §4.8): context/properties present; no invented ChatGPT USD rates.
+func TestEmbeddedCodexFixtureLoadsCapabilities(t *testing.T) {
+	cat := modelprops.LoadCatalogFromFS(assets.FS, "models")
+	if !cat.HasModel("gpt-5.4") {
+		t.Fatal("embedded Codex fixture gpt-5.4 missing")
+	}
+	ef, ok := cat.CatalogValues("gpt-5.4", "ef")
+	if !ok || !ef.Available || ef.Default != "medium" {
+		t.Fatalf("gpt-5.4 ef: %+v", ef)
+	}
+	cost, warn := modelprops.EstimateCatalogCostUSD(cat, "gpt-5.4", 100, 50)
+	if cost != 0 || warn == "" {
+		t.Fatalf("Codex ChatGPT rates must stay unset/zero with warning: cost=%v warn=%q", cost, warn)
+	}
+}
+
 // TestEmbeddedCatalogPropertyMetadataSurvivesInstallProjection proves the
 // optional property metadata is preserved when install copies assets/models/*
 // into .workflow-hero/models/, while existing pricing/context-window entries

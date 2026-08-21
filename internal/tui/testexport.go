@@ -391,6 +391,11 @@ func SetChatHarnessIDForTest(m model, harnessID string) model {
 	return m
 }
 
+// ChatHarnessIDForTest returns the active chat harness id.
+func ChatHarnessIDForTest(m model) string {
+	return m.chatHarnessID
+}
+
 // SetAvailableModelsForTest sets Cursor model ids for the picker cache.
 func SetAvailableModelsForTest(m model, models []string) model {
 	m.availableModels = append([]string(nil), models...)
@@ -461,6 +466,16 @@ func ReapOpenCodeOrphansForTest(ctx context.Context, projectDir string, st *stor
 	return reapOpenCodeOrphans(ctx, projectDir, st)
 }
 
+// ReapCodexOrphansForTest runs Codex app-server orphan cleanup (integration tests).
+func ReapCodexOrphansForTest(ctx context.Context, projectDir string, st *store.Store) error {
+	return reapCodexOrphans(ctx, projectDir, st)
+}
+
+// ReapManagedOrphansForTest runs OpenCode + Codex orphan cleanup (TUI boot path).
+func ReapManagedOrphansForTest(ctx context.Context, projectDir string, st *store.Store) error {
+	return reapManagedOrphans(ctx, projectDir, st)
+}
+
 // StopOpenCodeServeFnForTest returns the injectable stop hook.
 func StopOpenCodeServeFnForTest() func(context.Context, string, *store.Store, harnessmgr.Registry) error {
 	return stopOpenCodeServeFn
@@ -469,6 +484,16 @@ func StopOpenCodeServeFnForTest() func(context.Context, string, *store.Store, ha
 // SetStopOpenCodeServeFnForTest replaces the injectable stop hook for tests.
 func SetStopOpenCodeServeFnForTest(fn func(context.Context, string, *store.Store, harnessmgr.Registry) error) {
 	stopOpenCodeServeFn = fn
+}
+
+// StopCodexAppServerFnForTest returns the injectable Codex stop hook.
+func StopCodexAppServerFnForTest() func(context.Context, string, *store.Store, harnessmgr.Registry) error {
+	return stopCodexAppServerFn
+}
+
+// SetStopCodexAppServerFnForTest replaces the injectable Codex stop hook for tests.
+func SetStopCodexAppServerFnForTest(fn func(context.Context, string, *store.Store, harnessmgr.Registry) error) {
+	stopCodexAppServerFn = fn
 }
 
 // HarnessSessionIDForPairForTest exposes session binding for tests.

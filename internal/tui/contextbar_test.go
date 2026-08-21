@@ -21,11 +21,17 @@ func TestContextWindowLookup(t *testing.T) {
 	if cat.lookup("gpt-5.3-codex-medium") != 400000 {
 		t.Fatalf("suffix strip window=%d", cat.lookup("gpt-5.3-codex-medium"))
 	}
+	if cat.lookup("gpt-5.4") != 272000 {
+		t.Fatalf("codex-native gpt-5.4 window=%d", cat.lookup("gpt-5.4"))
+	}
 	if cat.lookup("composer-2.5-thinking-max") != 200000 {
 		t.Fatalf("combined property suffix strip window=%d", cat.lookup("composer-2.5-thinking-max"))
 	}
 	if cat.lookup("unknown-model") != 0 {
 		t.Fatalf("unknown slug should be 0, got %d", cat.lookup("unknown-model"))
+	}
+	if cat.lookup("unknown-codex-model-xyz") != 0 {
+		t.Fatalf("unknown Codex id must not panic and must return 0, got %d", cat.lookup("unknown-codex-model-xyz"))
 	}
 	if cat.lookup("anthropic/claude-sonnet-4") != 200000 {
 		t.Fatalf("opencode id window=%d", cat.lookup("anthropic/claude-sonnet-4"))

@@ -16,6 +16,10 @@ func NewCommand() *cobra.Command {
 		Long: `Fetch the latest model pricing YAML files from the Hero GitHub repository
 and rewrite .workflow-hero/models/*.yml with the updated data.
 
+Catalog keys include Cursor Task slugs, OpenCode-native ids (provider/model),
+and Codex-native ids (e.g. gpt-5.4). Do not invent ChatGPT-subsidized USD rates
+for Codex — unknown cost stays unset/zero with a warning.
+
 Locally customized model files (detected via checksum comparison) are backed up as
 {filename}_{timestamp}.conflict before being replaced; Hero warns for each conflict.
 

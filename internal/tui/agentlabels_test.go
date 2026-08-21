@@ -34,6 +34,18 @@ func TestFormatAgentHeader(t *testing.T) {
 	if got := formatAgentHeader("qa_agent", "composer-2.5", "opencode"); got != "[QA - composer-2.5 · opencode]" {
 		t.Fatalf("sub qa=%q", got)
 	}
+	if got := formatAgentHeader("orchestration_agent", "gpt-5.4", "codex"); got != "[ORCH - gpt-5.4 · codex]" {
+		t.Fatalf("codex orch=%q", got)
+	}
+	if got := formatAgentHeader("planning_agent", "composer-2.5", "cursor"); got != "[PLAN - composer-2.5 · cursor]" {
+		t.Fatalf("plan cursor=%q", got)
+	}
+	if got := formatAgentHeader("qa_agent", "anthropic/claude-sonnet-4", "opencode"); got != "[QA - anthropic/claude-sonnet-4 · opencode]" {
+		t.Fatalf("qa opencode=%q", got)
+	}
+	if got := formatAgentHeader("", "gpt-5.4", "codex"); got != "[HARN - gpt-5.4 · codex]" {
+		t.Fatalf("codex freechat=%q", got)
+	}
 	if got := formatAgentHeader("", "grok-4.6", "cursor"); got != "[HARN - grok-4.6 · cursor]" {
 		t.Fatalf("freechat=%q", got)
 	}

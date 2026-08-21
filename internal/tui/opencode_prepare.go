@@ -2,8 +2,10 @@ package tui
 
 import (
 	"context"
+	"log/slog"
 
 	tea "github.com/charmbracelet/bubbletea"
+	codexadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
@@ -27,8 +29,13 @@ func (m model) heroStartPrepareCmd(slug string) tea.Cmd {
 		st = m.svc.Store
 	}
 	return func() tea.Msg {
-		err := opencodeadapter.PrepareHeroStart(context.Background(), projectDir, st)
-		if err != nil {
+		// OpenCode first (existing path), then Codex — each no-ops when unused.
+		if err := opencodeadapter.PrepareHeroStart(context.Background(), projectDir, st); err != nil {
+			slog.Error("hero-start prepare failed", "harness", "opencode", "error", err)
+			return heroStartPrepareDoneMsg{slug: slug, err: err.Error()}
+		}
+		if err := codexadapter.PrepareHeroStart(context.Background(), projectDir, st); err != nil {
+			slog.Error("hero-start prepare failed", "harness", "codex", "error", err)
 			return heroStartPrepareDoneMsg{slug: slug, err: err.Error()}
 		}
 		return heroStartPrepareDoneMsg{slug: slug}

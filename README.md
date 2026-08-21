@@ -46,7 +46,8 @@ Designed for an open-source workflow, it helps you move through:
 - TUI command palette uses `/hero-<name>` labels; can also list non-Hero Cursor commands from `.cursor/commands` (and `~/.cursor/commands`) and run them by expanding the markdown into the harness agent
 - `hero doctor` / install warn when other harness folders are detected but unsupported (Cursor-only assets in V1)
 - `/hero-archive` archives the linked OpenSpec change first (`openspec archive -y`), then the Hero cycle folder (force path if OpenSpec fails)
-- Cursor Runtime assets: 15 `/hero-<name>` commands and 11 specialized agents
+- Cursor Runtime assets: 15 `/hero-<name>` commands and 11 specialized agents (Cursor IDE stays Cursor-only; Codex/OpenCode run in the TUI)
+- Optional TUI harnesses: OpenCode (`.opencode/`) and Codex (`.codex/` projection; `codex login`; Hero-managed `codex app-server`)
 - Configurable stage flow with human approval, iteration limits, timeouts, and escalation
 - Scope routing to `backend_agent`, `frontend_agent`, or `generic_agent`
 - Three-level model fallback (`agent model` → `fallback_model` → wait for `/hero-continue`)
@@ -101,14 +102,14 @@ sudo mv hero /usr/local/bin/hero
 Inside the target project (must be a git repository, or pass `--git-init`):
 
 ```bash
-# Interactive (select Cursor and/or OpenCode harnesses)
+# Interactive (select Cursor, OpenCode, and/or Codex)
 hero install
 
-# Scripted project fields only (harness choice stays interactive in 2.0)
+# Scripted project fields only (harness choice stays interactive in 2.0+)
 hero install --name "My Project" --summary "Short project summary" --yes --git-init
 ```
 
-After install, manage harnesses in the TUI with `/hero-harness` and pick the default freechat model pair with `/hero-model` (`model · harness`). OpenCode runs via Hero-managed `opencode serve` (started lazily on first TUI Execute).
+After install, manage harnesses in the TUI with `/hero-harness` and pick the default freechat model pair with `/hero-model` (`model · harness`). OpenCode runs via Hero-managed `opencode serve` (started lazily on first TUI Execute). **Codex** is an optional TUI harness (Hero 2.5+): enabling it projects agents/commands/skills into **`.codex/`**; run `codex login` once before Execute (Hero never asks for an API key). Cursor IDE chat Runtime stays Cursor-only and does not start Codex. Upgrade from 2.4.x does **not** auto-enable Codex.
 
 Then, in Cursor chat:
 
@@ -415,7 +416,8 @@ Projetado para um fluxo open source, ele ajuda você a avançar em:
 - Palette da TUI com labels `/hero-<name>`; também lista commands Cursor de `.cursor/commands` (e `~/.cursor/commands`) e os executa expandindo o markdown para o agente do harness
 - `hero doctor` / install avisam quando detectam pastas de outros harnesses ainda não suportados (V1 só materializa Cursor)
 - `/hero-archive` arquiva primeiro o change OpenSpec ligado (`openspec archive -y`) e depois a pasta do ciclo Hero (com caminho de force se o OpenSpec falhar)
-- Assets de Runtime no Cursor: 15 comandos `/hero-<name>` e 11 agentes especializados
+- Assets de Runtime no Cursor: 15 comandos `/hero-<name>` e 11 agentes especializados (chat do Cursor permanece só Cursor; Codex/OpenCode rodam na TUI)
+- Harnesses TUI opcionais: OpenCode (`.opencode/`) e Codex (projeção `.codex/`; `codex login`; `codex app-server` gerenciado pelo Hero)
 - Fluxo de stages configurável com aprovação humana, limites de iteração, timeouts e escalonamento
 - Roteamento de scope para `backend_agent`, `frontend_agent` ou `generic_agent`
 - Fallback de modelo em 3 níveis (`modelo do agente` → `fallback_model` → espera `/hero-continue`)
@@ -470,14 +472,14 @@ sudo mv hero /usr/local/bin/hero
 Dentro do projeto-alvo (precisa ser um repositório git, ou use `--git-init`):
 
 ```bash
-# Interativo (selecione Cursor e/ou OpenCode)
+# Interativo (selecione Cursor, OpenCode e/ou Codex)
 hero install
 
-# Campos do projeto scriptados (escolha de harness continua interativa no 2.0)
+# Campos do projeto scriptados (escolha de harness continua interativa no 2.0+)
 hero install --name "Meu Projeto" --summary "Resumo curto do projeto" --yes --git-init
 ```
 
-Depois do install, gerencie harnesses no TUI com `/hero-harness` e escolha o par padrão freechat com `/hero-model`. OpenCode usa `opencode serve` gerenciado pelo Hero.
+Depois do install, gerencie harnesses no TUI com `/hero-harness` e escolha o par padrão freechat com `/hero-model`. OpenCode usa `opencode serve` gerenciado pelo Hero. **Codex** é harness TUI opcional (Hero 2.5+): ao habilitar, projeta agentes/comandos/skills em **`.codex/`**; rode `codex login` uma vez antes do Execute (o Hero nunca pede API key). O Runtime do chat Cursor permanece só Cursor e não inicia Codex. Upgrade a partir de 2.4.x **não** habilita Codex automaticamente.
 
 Em seguida, no chat do Cursor:
 

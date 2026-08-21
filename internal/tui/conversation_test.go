@@ -2335,6 +2335,69 @@ func TestConversationResponseSpeakerFollowsLiveAgent(t *testing.T) {
 	}
 }
 
+// UI-C06-001 §5 / design D11: Codex speaker + input status harness id.
+func TestConversationCodexSpeakerAndInputStatus(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 28)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "gpt-5.4")
+	m = SetChatHarnessIDForTest(m, "codex")
+	m.runtimeAgentName = "orchestration_agent"
+	m.streaming = true
+	m.liveAgents = []liveAgent{
+		{Name: "orchestration_agent", Label: "ORCH", Model: "gpt-5.4"},
+	}
+	view := ViewForTest(m)
+	if !strings.Contains(view, "[ORCH - gpt-5.4 · codex]") {
+		t.Fatalf("expected Codex orch speaker: %q", view)
+	}
+	if !strings.Contains(view, "Build") || !strings.Contains(view, "gpt-5.4") || !strings.Contains(view, "codex") {
+		t.Fatalf("expected input status Build · gpt-5.4 · codex: %q", view)
+	}
+}
+
+// UI-C06-001 §5: unknown app-server event → yellow status warning, not raw JSON dump.
+func TestConversationUnknownCodexEventWarnsInStatus(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m.streaming = true
+	m.agentMsgIndex = 0
+	m.transcript = []convMessage{{role: convRoleAgent, content: ""}}
+
+	warnText := `WARNING: unrecognized Codex app-server event "totally/unknown"`
+	next, _ := m.Update(streamDeltaMsg{delta: harness.StreamDelta{
+		Kind:        harness.StreamKindWarning,
+		Text:        warnText,
+		HarnessType: "totally/unknown",
+	}})
+	nm := next.(model)
+	if StatusKindForTest(nm) != "warn" {
+		t.Fatalf("status kind=%q want warn", StatusKindForTest(nm))
+	}
+	if !strings.Contains(StatusTextForTest(nm), "unrecognized Codex") {
+		t.Fatalf("status text=%q", StatusTextForTest(nm))
+	}
+	view := ViewForTest(nm)
+	if strings.Contains(view, `"x":1`) || strings.Contains(view, "raw-json") {
+		t.Fatalf("must not dump raw JSON in view: %q", view)
+	}
+	foundWarn := false
+	for _, msg := range nm.transcript {
+		if msg.role == convRoleWarning {
+			foundWarn = true
+			if strings.Contains(msg.content, "{") {
+				t.Fatalf("warning transcript must not include JSON dump: %q", msg.content)
+			}
+		}
+	}
+	if !foundWarn {
+		t.Fatal("expected warning message in transcript")
+	}
+}
+
 func TestConversationSubagentTranscriptLabels(t *testing.T) {
 	m, h, _ := newConversationTestModel(t)
 	h.deltas = nil
@@ -2678,6 +2741,27 @@ func TestHarnessSessionIDForPair_BlocksStageHarnessMismatch(t *testing.T) {
 	}
 }
 
+func TestHarnessSessionIDForPair_BlocksCodexThreadAsCursorOrOpenCode(t *testing.T) {
+	svc := newTestServiceWithRunningResearch(t)
+	if err := svc.SetStageHarnessID("research", "codex"); err != nil {
+		t.Fatal(err)
+	}
+	m := NewTestModel(svc)
+	m = SetHarnessSessionIDForTest(m, "thread-codex-xyz")
+	m = SetHarnessSessionHarnessIDForTest(m, "codex")
+	m.conversationStage = "research"
+
+	for _, foreign := range []string{"cursor", "opencode"} {
+		got := HarnessSessionIDForPairForTest(m, "research", foreign)
+		if got != "" {
+			t.Fatalf("codex thread must not resume as %s; got %q", foreign, got)
+		}
+	}
+	if got := HarnessSessionIDForPairForTest(m, "research", "codex"); got != "thread-codex-xyz" {
+		t.Fatalf("same-harness resume got %q", got)
+	}
+}
+
 func TestHarnessSessionIDForPair_BlocksInMemoryHarnessMismatch(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetHarnessSessionIDForTest(m, "cursor-sess-abc")
@@ -2686,6 +2770,17 @@ func TestHarnessSessionIDForPair_BlocksInMemoryHarnessMismatch(t *testing.T) {
 	got := HarnessSessionIDForPairForTest(m, "", "opencode")
 	if got != "" {
 		t.Fatalf("session=%q want empty when in-memory harness differs", got)
+	}
+}
+
+func TestHarnessSessionIDForPair_BlocksInMemoryCodexAsCursor(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetHarnessSessionIDForTest(m, "thread-codex-1")
+	m = SetHarnessSessionHarnessIDForTest(m, "codex")
+
+	got := HarnessSessionIDForPairForTest(m, "", "cursor")
+	if got != "" {
+		t.Fatalf("session=%q want empty when in-memory codex vs cursor", got)
 	}
 }
 

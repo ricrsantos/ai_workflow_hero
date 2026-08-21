@@ -141,7 +141,11 @@ func TestUpgrade_24xTo25x_AddsCodexDisabledWithoutProjection(t *testing.T) {
 	if heroJSON.CLI.Version != "2.5.0" {
 		t.Fatalf("cli.version = %q, want 2.5.0", heroJSON.CLI.Version)
 	}
-	if install.IsHarnessEnabled(heroJSON, "codex") {
+	codex, ok := heroJSON.Harnesses["codex"]
+	if !ok {
+		t.Fatal("harnesses.codex key must be written on 2.4.x → 2.5.0 upgrade")
+	}
+	if codex.Enabled {
 		t.Fatal("harnesses.codex.enabled must be false after 2.4.x → 2.5.0 upgrade")
 	}
 	if !install.IsHarnessEnabled(heroJSON, "cursor") || !install.IsHarnessEnabled(heroJSON, "opencode") {
@@ -369,5 +373,67 @@ func TestUpgrade_ImportsLegacyCycleFrom09LikeFixture(t *testing.T) {
 	}
 	if cycles[0].Title != "Legacy Upgrade" {
 		t.Errorf("cycle title = %q, want Legacy Upgrade", cycles[0].Title)
+	}
+}
+
+// asset-bootstrap / ADR-046: upgrade refreshes enabled .codex/ with conflict backup.
+func TestUpgrade_CodexCustomizedFileConflictBackup(t *testing.T) {
+	dir := makeInstalledDir(t)
+	if err := install.EnableHarnessWithProjection(dir, "codex", assets.FS); err != nil {
+		t.Fatalf("enable codex: %v", err)
+	}
+
+	targetRel := filepath.Join(".codex", "agents", "backend_agent.md")
+	targetAbs := filepath.Join(dir, targetRel)
+	original, err := os.ReadFile(targetAbs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalHash := sha256hex(original)
+	customized := append(original, []byte("\n# Codex user customization\n")...)
+	if err := os.WriteFile(targetAbs, customized, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	result, err := upgrade.Run(upgrade.Options{
+		ProjectDir: dir,
+		Version:    "2.5.0",
+		AssetsFS:   assets.FS,
+	}, &out, &out)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+
+	found := false
+	for _, s := range result.Replaced {
+		if s == targetRel {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected %q in replaced, got %v", targetRel, result.Replaced)
+	}
+	after, _ := os.ReadFile(targetAbs)
+	if sha256hex(after) != originalHash {
+		t.Fatal("customized .codex file was not replaced with embedded content")
+	}
+	entries, err := os.ReadDir(filepath.Dir(targetAbs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupFound := false
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".conflict") && strings.HasPrefix(e.Name(), "backend_agent.md_") {
+			backupFound = true
+			data, _ := os.ReadFile(filepath.Join(filepath.Dir(targetAbs), e.Name()))
+			if !strings.Contains(string(data), "Codex user customization") {
+				t.Error("conflict backup missing user content")
+			}
+		}
+	}
+	if !backupFound {
+		t.Fatal("conflict backup for .codex agent not found")
 	}
 }

@@ -106,8 +106,15 @@ func TestMigrateHarnessState_AddsCodexDisabledFrom24x(t *testing.T) {
 	if !install.IsHarnessEnabled(hero, "cursor") || !install.IsHarnessEnabled(hero, "opencode") {
 		t.Fatal("existing enabled harnesses must be preserved")
 	}
-	if install.IsHarnessEnabled(hero, "codex") {
+	codex, ok := hero.Harnesses["codex"]
+	if !ok {
+		t.Fatal("harnesses.codex key must be present after 2.4.x → 2.5.0 migration")
+	}
+	if codex.Enabled {
 		t.Fatal("harnesses.codex.enabled must be false on 2.4.x → 2.5.0 migration")
+	}
+	if codex.Model != "" {
+		t.Fatalf("harnesses.codex.model must stay empty, got %q", codex.Model)
 	}
 	if hero.Harnesses["cursor"].Model != "composer-2.5" || hero.Harnesses["opencode"].Model != "opencode-go/deepseek-v4-flash" {
 		t.Fatalf("existing models must be preserved: %+v", hero.Harnesses)

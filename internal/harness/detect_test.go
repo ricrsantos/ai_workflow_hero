@@ -41,7 +41,7 @@ func TestDetectMarkersAllKnownDirs(t *testing.T) {
 	if len(res.Present) != len(KnownMarkers) {
 		t.Fatalf("present = %d want %d", len(res.Present), len(KnownMarkers))
 	}
-	if len(res.UnsupportedPresent) != 3 {
+	if len(res.UnsupportedPresent) != 2 {
 		t.Fatalf("unsupported = %+v", res.UnsupportedPresent)
 	}
 }

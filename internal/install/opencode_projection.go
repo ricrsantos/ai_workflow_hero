@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	opencodeDirName     = ".opencode"
-	opencodeJSONRelPath = ".opencode/opencode.json"
+	opencodeDirName = ".opencode"
 )
 
 // OpenCodePaths holds project-relative OpenCode projection paths.
@@ -35,6 +34,30 @@ func OpenCodePathsFor(projectDir string) OpenCodePaths {
 	}
 }
 
+// OpenCodeOwnedPaths returns Hero-managed directories/files under .opencode/ that uninstall removes.
+func OpenCodeOwnedPaths(projectDir string) []string {
+	p := OpenCodePathsFor(projectDir)
+	return []string{
+		p.Agents,
+		p.Commands,
+		filepath.Join(p.Skills, "workflow-hero"),
+		filepath.Join(p.Skills, "grilling"),
+		filepath.Join(p.Root, "opencode.json"),
+	}
+}
+
+// OpenCodeAssetGroups returns embed.FS src → destination pairs for OpenCode projection
+// (agents/commands/skills). Minimal opencode.json is written separately.
+func OpenCodeAssetGroups(projectDir string) []struct{ Src, Dst string } {
+	paths := OpenCodePathsFor(projectDir)
+	return []struct{ Src, Dst string }{
+		{"opencode/agents", paths.Agents},
+		{"opencode/commands", paths.Commands},
+		{"opencode/skills/workflow-hero", filepath.Join(paths.Skills, "workflow-hero")},
+		{"opencode/skills/grilling", filepath.Join(paths.Skills, "grilling")},
+	}
+}
+
 // ProvisionOpenCode writes .opencode/ assets from embedded FS when opencode is enabled (design D7).
 func ProvisionOpenCode(projectDir string, assetsFS fs.FS, checksums Checksums) error {
 	paths := OpenCodePathsFor(projectDir)
@@ -44,18 +67,9 @@ func ProvisionOpenCode(projectDir string, assetsFS fs.FS, checksums Checksums) e
 			return fmt.Errorf("create %s: %w", d, err)
 		}
 	}
-	groups := []struct {
-		src string
-		dst string
-	}{
-		{"opencode/agents", paths.Agents},
-		{"opencode/commands", paths.Commands},
-		{"opencode/skills/workflow-hero", filepath.Join(paths.Skills, "workflow-hero")},
-		{"opencode/skills/grilling", filepath.Join(paths.Skills, "grilling")},
-	}
-	for _, g := range groups {
-		if err := copyAssetDir(assetsFS, g.src, g.dst, projectDir, checksums); err != nil {
-			return fmt.Errorf("copy opencode %s: %w", g.src, err)
+	for _, g := range OpenCodeAssetGroups(projectDir) {
+		if err := copyAssetDir(assetsFS, g.Src, g.Dst, projectDir, checksums); err != nil {
+			return fmt.Errorf("copy opencode %s: %w", g.Src, err)
 		}
 	}
 	if err := writeMinimalOpenCodeJSON(paths.Root, checksums, projectDir); err != nil {
@@ -134,6 +148,8 @@ func EnabledHarnessSummary(selected []string) string {
 			names = append(names, "Cursor")
 		case "opencode":
 			names = append(names, "OpenCode")
+		case "codex":
+			names = append(names, "Codex")
 		default:
 			names = append(names, id)
 		}

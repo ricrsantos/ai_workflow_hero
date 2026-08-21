@@ -319,3 +319,147 @@ func TestDoctor_CursorCLIOk(t *testing.T) {
 		t.Error("expected cursor-cli ok check")
 	}
 }
+
+func TestDoctor_CodexCLIMissing_WarnsWhenEnabled(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0")
+	if err := install.EnableHarnessWithProjection(dir, "codex", assets.FS); err != nil {
+		t.Fatalf("enable codex: %v", err)
+	}
+	t.Setenv("PATH", t.TempDir()) // no codex binary
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+		CursorCLIProbe: func(context.Context, string) error { return nil },
+	})
+
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "codex-cli" && c.Status == "warn" {
+			found = true
+			if !strings.Contains(c.Message, "Codex CLI not on PATH") {
+				t.Errorf("unexpected message: %q", c.Message)
+			}
+			if !strings.Contains(c.Message, "unavailable until installed") {
+				t.Errorf("expected unavailable guidance in: %q", c.Message)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("expected codex-cli warn when Codex enabled and CLI missing")
+	}
+	if !report.OK {
+		t.Error("codex-cli warn must not fail the doctor report")
+	}
+
+	// Cursor doctor line still present (UI-C06-001 §8: OpenCode/Cursor unchanged).
+	cursorOK := false
+	for _, c := range report.Checks {
+		if c.Name == "cursor-cli" && c.Status == "ok" {
+			cursorOK = true
+			break
+		}
+	}
+	if !cursorOK {
+		t.Error("expected cursor-cli ok to remain when Codex warn is present")
+	}
+}
+
+func TestDoctor_CodexCLI_NoCheckWhenDisabled(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0") // Codex disabled by default
+	t.Setenv("PATH", t.TempDir())
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+		CursorCLIProbe: func(context.Context, string) error { return nil },
+	})
+
+	for _, c := range report.Checks {
+		if c.Name == "codex-cli" {
+			t.Fatalf("codex-cli check must not run when Codex disabled: %+v", c)
+		}
+	}
+	if !report.OK {
+		t.Error("doctor must stay OK when Codex is disabled")
+	}
+
+	cursorOK := false
+	for _, c := range report.Checks {
+		if c.Name == "cursor-cli" && c.Status == "ok" {
+			cursorOK = true
+			break
+		}
+	}
+	if !cursorOK {
+		t.Error("expected cursor-cli ok when Codex disabled")
+	}
+}
+
+func TestDoctor_CodexCLIOk_WhenOnPATH(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0")
+	if err := install.EnableHarnessWithProjection(dir, "codex", assets.FS); err != nil {
+		t.Fatalf("enable codex: %v", err)
+	}
+
+	binDir := t.TempDir()
+	stub := filepath.Join(binDir, "codex")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+		CursorCLIProbe: func(context.Context, string) error { return nil },
+	})
+
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "codex-cli" && c.Status == "ok" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected codex-cli ok when codex is on PATH")
+	}
+	if !report.OK {
+		t.Error("expected doctor OK when Codex CLI is available")
+	}
+}
+
+func TestDoctor_OpenCodeCLI_UnchangedWithCodexDisabled(t *testing.T) {
+	dir := makeInstalledDir(t, "1.0.0")
+	if err := install.EnableHarnessWithProjection(dir, "opencode", assets.FS); err != nil {
+		t.Fatalf("enable opencode: %v", err)
+	}
+	t.Setenv("PATH", t.TempDir()) // no opencode/codex binaries
+
+	report := doctor.Run(doctor.Options{
+		ProjectDir:    dir,
+		BinaryVersion: "1.0.0",
+		CursorCLIProbe: func(context.Context, string) error { return nil },
+	})
+
+	opencodeWarn := false
+	for _, c := range report.Checks {
+		if c.Name == "codex-cli" {
+			t.Fatalf("codex-cli must not appear when Codex disabled: %+v", c)
+		}
+		if c.Name == "opencode-cli" && c.Status == "warn" {
+			opencodeWarn = true
+			if !strings.Contains(c.Message, "opencode CLI not on PATH") {
+				t.Errorf("unexpected opencode-cli message: %q", c.Message)
+			}
+		}
+	}
+	if !opencodeWarn {
+		t.Error("expected opencode-cli warn (unchanged) when OpenCode enabled and CLI missing")
+	}
+	if !report.OK {
+		t.Error("opencode-cli warn must not fail the doctor report")
+	}
+}

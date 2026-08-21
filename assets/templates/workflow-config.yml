@@ -74,12 +74,15 @@ stages:
     use_playwright: false
 
 agents:
-  # Hero 2.0: every agent and fallback_model require `harness` (cursor | opencode)
+  # Hero 2.0+: every agent and fallback_model require `harness` (cursor | opencode | codex)
   # and a native `model` id for that harness:
   #   Cursor IDE / Agent CLI: kebab slugs (composer-2.5, cursor-grok-4.6-high)
   #   OpenCode: provider/model ids (anthropic/claude-sonnet-4, openai/gpt-5.3-codex)
+  #   Codex (TUI only): native Codex ids (e.g. harness: codex, model: gpt-5.4)
   # TUI freechat and /hero-new use /hero-model (freechat_default pair), not these blocks.
-  # Cursor IDE chat ignores orchestration_agent / discover_agent model blocks.
+  # /hero-new injects missing harness from enabled project harnesses (one → that id;
+  # multiple including Cursor → cursor; never a disabled harness).
+  # Cursor IDE chat ignores orchestration_agent / discover_agent model blocks and harness.
   orchestration_agent:
     harness: cursor
     model: gpt-5.3-codex

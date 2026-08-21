@@ -1,0 +1,5 @@
+✗ Cannot run planning_agent: harness codex is not available
+  codex CLI not found on PATH.
+
+  Suggestion: install the Codex CLI, enable it with /hero-harness,
+  then run /hero-continue.

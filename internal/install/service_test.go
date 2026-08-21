@@ -317,3 +317,94 @@ func TestRun_UnsupportedHarnessMarker_Warns(t *testing.T) {
 		t.Errorf("cursor commands should be installed: %v", err)
 	}
 }
+
+// interactive-harness-install / ADR-046: Codex-only selection is valid and
+// provisions .codex/ immediately (PATH-independent).
+func TestRun_CodexOnlyInstall(t *testing.T) {
+	dir := makeGitRepo(t)
+
+	opts := install.Options{
+		ProjectDir: dir,
+		Name:       "Codex Only",
+		Summary:    "Codex-only harness install",
+		Tools:      []string{"codex"},
+		Version:    "2.5.0",
+		GitInit:    false,
+		AssetsFS:   assets.FS,
+	}
+
+	var out strings.Builder
+	if err := install.Run(opts, &out, &out); err != nil {
+		t.Fatalf("install.Run codex-only failed: %v", err)
+	}
+
+	heroData, err := os.ReadFile(filepath.Join(dir, cursoradapter.HeroJSONPath))
+	if err != nil {
+		t.Fatalf("hero.json: %v", err)
+	}
+	var heroJSON install.HeroJSON
+	if err := json.Unmarshal(heroData, &heroJSON); err != nil {
+		t.Fatalf("parse hero.json: %v", err)
+	}
+	if !install.IsHarnessEnabled(heroJSON, "codex") {
+		t.Fatal("harnesses.codex.enabled must be true")
+	}
+	if install.IsHarnessEnabled(heroJSON, "cursor") || install.IsHarnessEnabled(heroJSON, "opencode") {
+		t.Fatal("cursor/opencode must stay disabled on Codex-only install")
+	}
+	if heroJSON.FreechatDefault.Harness != "codex" {
+		t.Fatalf("freechat_default.harness = %q, want codex", heroJSON.FreechatDefault.Harness)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".codex", "agents", "orchestration_agent.md")); err != nil {
+		t.Fatalf(".codex/ must be provisioned on Codex enable: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".opencode")); !os.IsNotExist(err) {
+		t.Fatal("Codex-only install must not provision .opencode/")
+	}
+}
+
+// Cursor + Codex install enables both and provisions .codex/ (success summary names both).
+func TestRun_CursorAndCodexInstall(t *testing.T) {
+	dir := makeGitRepo(t)
+
+	opts := install.Options{
+		ProjectDir: dir,
+		Name:       "Cursor Codex",
+		Summary:    "dual harness",
+		Tools:      []string{"cursor", "codex"},
+		Version:    "2.5.0",
+		GitInit:    false,
+		AssetsFS:   assets.FS,
+	}
+
+	var out strings.Builder
+	if err := install.Run(opts, &out, &out); err != nil {
+		t.Fatalf("install.Run: %v", err)
+	}
+
+	heroData, _ := os.ReadFile(filepath.Join(dir, cursoradapter.HeroJSONPath))
+	var heroJSON install.HeroJSON
+	_ = json.Unmarshal(heroData, &heroJSON)
+	if !install.IsHarnessEnabled(heroJSON, "cursor") || !install.IsHarnessEnabled(heroJSON, "codex") {
+		t.Fatalf("want cursor+codex enabled: %+v", heroJSON.Harnesses)
+	}
+	if install.IsHarnessEnabled(heroJSON, "opencode") {
+		t.Fatal("opencode must stay disabled")
+	}
+	if _, err := os.Stat(filepath.Join(dir, cursoradapter.CommandsDir)); err != nil {
+		t.Fatalf("cursor assets missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".codex", "skills", "grilling", "SKILL.md")); err != nil {
+		t.Fatalf(".codex projection missing: %v", err)
+	}
+}
+
+func TestEnabledHarnessSummary_IncludesCodex(t *testing.T) {
+	got := install.EnabledHarnessSummary([]string{"cursor", "codex"})
+	if got != "Cursor, Codex" {
+		t.Fatalf("summary = %q, want Cursor, Codex", got)
+	}
+	if install.EnabledHarnessSummary([]string{"codex"}) != "Codex" {
+		t.Fatalf("codex-only summary = %q", install.EnabledHarnessSummary([]string{"codex"}))
+	}
+}

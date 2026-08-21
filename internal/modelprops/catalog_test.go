@@ -243,6 +243,7 @@ func TestCatalogModelsForHarnessUsesProviderAndNativeIDFallback(t *testing.T) {
 		"models/cursor.yml":    "provider: cursor\nmodels:\n  composer-2.5: {}\n",
 		"models/open-code.yml": "provider: opencode-go\nmodels:\n  opencode-go/deepseek-v4-pro: {}\n",
 		"models/openai.yml":    "provider: openai\nmodels:\n  gpt-5-mini: {}\n  openai/gpt-5-mini: {}\n",
+		"models/codex.yml":     "provider: codex\nmodels:\n  gpt-5.4: {}\n",
 	})
 	cursor := cat.ModelsForHarness("cursor")
 	if strings.Join(cursor, ",") != "composer-2.5" {
@@ -252,5 +253,9 @@ func TestCatalogModelsForHarnessUsesProviderAndNativeIDFallback(t *testing.T) {
 	want := "openai/gpt-5-mini,opencode-go/deepseek-v4-pro"
 	if strings.Join(opencode, ",") != want {
 		t.Fatalf("opencode catalog rows=%v want %s", opencode, want)
+	}
+	codex := cat.ModelsForHarness("codex")
+	if strings.Join(codex, ",") != "gpt-5.4" {
+		t.Fatalf("codex catalog rows=%v", codex)
 	}
 }

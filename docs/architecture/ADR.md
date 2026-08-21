@@ -552,7 +552,7 @@ workflow_rules:
 
 ### `models/*.yml` (pricing reference files)
 
-One file per provider (`openai.yml`, `anthropic.yml`, `google.yml`, `cursor.yml`, `moonshot.yml`, `zhipu.yml`, `xai.yml`), refreshed by `hero update-models` (see [DEPLOY.md §8](../deployment/DEPLOY.md#8-pricing-data-updates)). Common shape:
+One file per provider (`openai.yml`, `anthropic.yml`, `google.yml`, `cursor.yml`, `moonshot.yml`, `zhipu.yml`, `xai.yml`, `opencode.yml`, `codex.yml`), refreshed by `hero update-models` (see [DEPLOY.md §8](../deployment/DEPLOY.md#8-pricing-data-updates)). Common shape:
 
 ```yaml
 provider: anthropic

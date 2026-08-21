@@ -38,6 +38,8 @@ var ModelNames = []string{
 	"moonshot.yml",
 	"zhipu.yml",
 	"xai.yml",
+	"opencode.yml",
+	"codex.yml",
 }
 
 // Run fetches updated model pricing files and writes them to .workflow-hero/models/.

@@ -65,20 +65,24 @@ func RunWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug,
 	slog.Info("starting hero tui")
 
 	var stopOnce sync.Once
-	stopServe := func() {
+	stopManaged := func() {
 		stopOnce.Do(func() {
-			if svc != nil {
-				var st *store.Store
-				if svc.Store != nil {
-					st = svc.Store
-				}
-				if err := stopOpenCodeServe(context.Background(), svc.ProjectDir, st, svc.Registry); err != nil {
-					slog.Warn("stop opencode serve on tui exit failed", "error", err)
-				}
+			if svc == nil {
+				return
+			}
+			var st *store.Store
+			if svc.Store != nil {
+				st = svc.Store
+			}
+			if err := stopOpenCodeServe(context.Background(), svc.ProjectDir, st, svc.Registry); err != nil {
+				slog.Warn("stop opencode serve on tui exit failed", "error", err)
+			}
+			if err := stopCodexAppServer(context.Background(), svc.ProjectDir, st, svc.Registry); err != nil {
+				slog.Warn("stop codex app-server on tui exit failed", "error", err)
 			}
 		})
 	}
-	defer stopServe()
+	defer stopManaged()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
@@ -88,8 +92,8 @@ func RunWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug,
 		if !ok {
 			return
 		}
-		slog.Info("signal received, stopping managed opencode serve", "signal", sig.String())
-		stopServe()
+		slog.Info("signal received, stopping managed harness processes", "signal", sig.String())
+		stopManaged()
 	}()
 
 	m := newModelWithChat(svc, models, modelSlug, harnessID, modelWarn)

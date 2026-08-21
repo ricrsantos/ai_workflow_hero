@@ -904,6 +904,61 @@ func TestRuntimeAssets_WorkflowConfigRequiresHarness(t *testing.T) {
 	}
 }
 
+// TestRuntimeAssets_CursorIDENoCodexRouting verifies Cursor IDE Runtime stays Cursor-only
+// (ADR-043 / PRD-C06-001 §4.11): no Codex Execute routing, no app-server start, no .codex/ backend.
+func TestRuntimeAssets_CursorIDENoCodexRouting(t *testing.T) {
+	cursorContent := loadAllAssetContent(t, "cursor")
+
+	// Cursor Runtime must keep slash + Task orchestration path.
+	for _, kw := range []string{"/hero-start", "Task tool", "orchestration_agent", "workflow-config.yml"} {
+		if !strings.Contains(cursorContent, kw) {
+			t.Errorf("Cursor Runtime missing expected keyword %q", kw)
+		}
+	}
+
+	banned := []string{
+		"codex app-server",
+		"CodexAdapter",
+		"PrepareHeroStart",
+		"ResetAppServer",
+		"harness: codex",
+		"harness:codex",
+		"`harness: codex`",
+		"agents.*.harness",
+		"route to Codex",
+		"start Codex",
+		"start codex",
+	}
+	for _, b := range banned {
+		if strings.Contains(cursorContent, b) {
+			t.Errorf("Cursor IDE Runtime must not contain Codex routing %q (ADR-043)", b)
+		}
+	}
+
+	// `.codex/` may appear only as a doctor/marker mention (hero-sync), never as Execute backend.
+	for _, name := range []string{
+		"orchestration_agent.md", "hero-start.md", "hero-new.md", "hero-approve.md",
+	} {
+		var path string
+		if strings.HasSuffix(name, "_agent.md") {
+			path = "cursor/agents/" + name
+		} else {
+			path = "cursor/commands/" + name
+		}
+		data, err := fs.ReadFile(assets.FS, path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		s := string(data)
+		if strings.Contains(s, ".codex/") {
+			t.Errorf("%s must not read .codex/ for Hero execution", path)
+		}
+		if strings.Contains(strings.ToLower(s), "codex app-server") {
+			t.Errorf("%s must not start codex app-server", path)
+		}
+	}
+}
+
 func minInt(a, b int) int {
 	if a < b {
 		return a

@@ -58,9 +58,10 @@ Architecture rule: do **not** change architecture without an approved ADR.
 ## 3. Requirements
 
 - Linux or macOS (`amd64` or `arm64`)
-- [Cursor](https://cursor.com) IDE (V1)
+- [Cursor](https://cursor.com) IDE (V1) — Cursor chat Runtime stays Cursor-only (ignores YAML `harness`; never starts Codex)
 - Git (required for `/hero-cancel` checkpoints; `hero install` can run `git init` with consent)
 - [OpenSpec](https://github.com/Fission-AI/OpenSpec) for Planning (installed with consent when needed)
+- **Optional TUI harnesses** (Hero 2.0+ / 2.5+): [OpenCode](https://opencode.ai) CLI and/or [OpenAI Codex](https://github.com/openai/codex) CLI on `PATH`. Codex requires `codex login` before TUI Execute (Hero never prompts for an API key).
 
 ---
 
@@ -94,14 +95,16 @@ sudo mv hero /usr/local/bin/hero
 Run inside the target project directory:
 
 ```bash
-# Interactive (select Cursor and/or OpenCode)
+# Interactive (select Cursor, OpenCode, and/or Codex)
 hero install
 
-# Scripted project fields (harness selection stays interactive in Hero 2.0)
+# Scripted project fields (harness selection stays interactive in Hero 2.0+)
 hero install --name "My Project" --summary "Short summary" --yes --git-init
 ```
 
-Manage harnesses later in the TUI with `/hero-harness`. Pick the default freechat model **pair and properties** with `/hero-model` (model, harness, then `fs` fast / `th` thinking / `ef` reasoning effort). The picker uses cache/catalog rows immediately and refreshes every enabled harness only when opened; OpenCode TUI Execute uses Hero-managed `opencode serve` (lazy start; orphan processes are reaped on TUI boot).
+Manage harnesses later in the TUI with `/hero-harness`. Pick the default freechat model **pair and properties** with `/hero-model` (model, harness, then `fs` fast / `th` thinking / `ef` reasoning effort). The picker uses cache/catalog rows immediately and refreshes every enabled harness only when opened.
+
+**TUI harnesses:** OpenCode uses Hero-managed `opencode serve` (lazy start; orphan reap on TUI boot). **Codex** (Hero 2.5+, optional) uses Hero-managed `codex app-server` over stdio; enabling Codex projects agents/commands/skills into **`.codex/`** (checksummed; no root `AGENTS.md`). Authenticate once with `codex login` in a terminal — unauthenticated Execute fails with that instruction (no API key prompt in the TUI). Cursor IDE slash Runtime does **not** route to Codex.
 
 Flags:
 
@@ -118,9 +121,11 @@ What install creates (overview):
 
 | Path | Purpose |
 |------|---------|
-| `.cursor/commands/hero-*.md` | Runtime slash commands |
-| `.cursor/agents/*.md` | Specialized agents |
-| `.cursor/skills/` | `workflow-hero`, `grilling` |
+| `.cursor/commands/hero-*.md` | Runtime slash commands (when Cursor enabled) |
+| `.cursor/agents/*.md` | Specialized agents (when Cursor enabled) |
+| `.cursor/skills/` | `workflow-hero`, `grilling` (when Cursor enabled) |
+| `.opencode/` | OpenCode projection (when OpenCode enabled) |
+| `.codex/` | Codex projection — agents/commands/skills (when Codex enabled) |
 | `.workflow-hero/config/` | `hero.json`, `project.json`, `documents.json`, `checksums.json` |
 | `.workflow-hero/templates/` | Cycle templates (incl. `workflow-config.yml`) |
 | `.workflow-hero/models/` | Model pricing YAML |
@@ -144,9 +149,9 @@ After a successful install the CLI prints:
 hero uninstall
 ```
 
-Removes **only Hero-owned paths**: `.workflow-hero/`, Hero agents/skills under `.cursor/`, and `.cursor/commands/hero-*.md`.
+Removes **only Hero-owned paths**: `.workflow-hero/`, Hero agents/skills/commands under `.cursor/`, and the analogous Hero trees under `.opencode/` and `.codex/` when present.
 
-**Preserved:** `AGENTS.md`, `docs/`, `context/`, `openspec/`, `.env.example`, `.gitignore`, and your application code.
+**Preserved:** `AGENTS.md`, `docs/`, `context/`, `openspec/`, `.env.example`, `.gitignore`, user-added `.codex/config.toml`, and your application code.
 
 ---
 
@@ -157,6 +162,8 @@ hero upgrade
 ```
 
 Re-copies Hero assets from the binary. Files you customized are **not** silently overwritten (checksum comparison → warning + skip). Also refreshes soft secrets hygiene files/patterns when needed, and migrates legacy `generic_model` → `fallback_model` in workflow configs when applicable.
+
+**Hero 2.5.0 (minor):** upgrade from 2.4.x does **not** auto-enable Codex or write `.codex/` — enable Codex via a new install selection or `/hero-harness`.
 
 ---
 
@@ -233,13 +240,13 @@ Use **Cursor/Task model ids** in `agents.*.model` (e.g. `cursor-grok-4.5`, not t
 
 | Command | Purpose |
 |---------|---------|
-| `hero install` | Bootstrap Hero (interactive harness selection: Cursor and/or OpenCode) |
+| `hero install` | Bootstrap Hero (interactive harness selection: Cursor, OpenCode, and/or Codex) |
 | `hero upgrade` | Update Hero assets (checksum-safe) |
 | `hero uninstall` | Remove Hero-owned paths only |
 | `hero doctor` | Health checks (table; `--json` for CI). Secrets issues are **warnings** only |
 | `hero status` | Current cycle stage table (`--json` supported) |
 | `hero variables` | Show key `project.json` / `hero.json` fields (`--json` supported) |
-| `hero update-models` | Refresh structured model pricing from upstream |
+| `hero update-models` | Refresh structured model pricing from upstream (Cursor slugs, OpenCode `provider/model` ids, Codex-native ids) |
 | `hero version` | Print CLI version |
 | `hero help` | Cobra help |
 | Global `--verbose` / `--debug` | Reserved for verbose/debug output (stack traces per UI spec) |
@@ -273,7 +280,7 @@ hero update-models
 | `/hero-status` | Show cycle status in chat |
 | `/hero-cycles` | List all cycles with per-etapa metrics (SQLite + archive folders) |
 | `/hero-todos` | Show pending items from `context/current-state.md` (run `/hero-sync` first when docs changed) |
-| `/hero-harness` | Enable/disable harnesses (OpenCode provisions `.opencode/` on enable) |
+| `/hero-harness` | Enable/disable harnesses (OpenCode → `.opencode/`; Codex → `.codex/` on enable; disable keeps files) |
 | `/hero-model` | Select TUI default model **pair and properties** (model · harness · `fs`/`th`/`ef`; atomically persists `hero.json` `freechat_default` + `model_properties`) |
 | `/hero-help` | List Runtime commands |
 
@@ -340,7 +347,7 @@ Never log secrets, tokens, or PII. Prefer the project’s existing logger; other
 | `context/context-log.md` | Short/medium decision log |
 | `AGENTS.md` | Stable agent instructions for the project |
 
-Token/cost estimates use character count ÷ ~4 × prices from `.workflow-hero/models/*.yml`, then persist via `hero … --metrics-json` (not cycle `metrics.md`).
+Token/cost estimates use character count ÷ ~4 × prices from `.workflow-hero/models/*.yml`, then persist via `hero … --metrics-json` (not cycle `metrics.md`). Catalog keys cover Cursor Task slugs, OpenCode-native ids (`provider/model`), and Codex-native ids (e.g. `gpt-5.4`). ChatGPT-subsidized Codex models without known USD rates stay cost-zero with a warning — Hero does not invent rates.
 
 ---
 
@@ -422,9 +429,10 @@ Regra de arquitetura: **não** alterar arquitetura sem ADR aprovado.
 ## 3. Requisitos
 
 - Linux ou macOS (`amd64` ou `arm64`)
-- IDE [Cursor](https://cursor.com) (V1)
+- IDE [Cursor](https://cursor.com) (V1) — o Runtime do chat Cursor permanece só Cursor (ignora `harness` no YAML; nunca inicia Codex)
 - Git (obrigatório; `hero install` pode rodar `git init` com consentimento)
 - [OpenSpec](https://github.com/Fission-AI/OpenSpec) para Planning (instalado com consentimento quando necessário)
+- **Harnesses TUI opcionais** (Hero 2.0+ / 2.5+): CLI [OpenCode](https://opencode.ai) e/ou [OpenAI Codex](https://github.com/openai/codex) no `PATH`. Codex exige `codex login` antes do Execute na TUI (o Hero nunca pede API key).
 
 ---
 
@@ -455,9 +463,12 @@ sudo mv hero /usr/local/bin/hero
 
 ```bash
 hero install
+# Interativo: selecione Cursor, OpenCode e/ou Codex
 # ou
 hero install --name "Meu Projeto" --summary "Resumo" --yes --git-init
 ```
+
+Gerencie harnesses depois na TUI com `/hero-harness`. **Codex** (Hero 2.5+, opcional) projeta agentes/comandos/skills em **`.codex/`**; autentique com `codex login` no terminal. O Runtime do Cursor IDE **não** roteia para Codex. Upgrade 2.4.x → 2.5.0 **não** habilita Codex automaticamente.
 
 Após o sucesso:
 
@@ -476,7 +487,7 @@ Este arquivo (`workflow-help.md`) é copiado para `.workflow-hero/docs/` na inst
 hero uninstall
 ```
 
-Remove apenas caminhos do Hero. Preserva `AGENTS.md`, `docs/`, `context/`, `openspec/` e o código da aplicação.
+Remove apenas caminhos do Hero (inclui árvores Hero em `.cursor/`, `.opencode/` e `.codex/` quando existirem). Preserva `AGENTS.md`, `docs/`, `context/`, `openspec/`, `.codex/config.toml` do usuário e o código da aplicação.
 
 ---
 
@@ -486,7 +497,7 @@ Remove apenas caminhos do Hero. Preserva `AGENTS.md`, `docs/`, `context/`, `open
 hero upgrade
 ```
 
-Atualiza assets com proteção por checksum (customizações locais não são sobrescritas em silêncio).
+Atualiza assets com proteção por checksum (customizações locais não são sobrescritas em silêncio). **Hero 2.5.0:** o upgrade a partir de 2.4.x **não** habilita Codex nem cria `.codex/` — use `/hero-harness` ou um novo install.
 
 ---
 

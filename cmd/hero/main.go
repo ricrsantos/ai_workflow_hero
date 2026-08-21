@@ -19,7 +19,8 @@ import (
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>".
-var version = "2.4.1"
+// Default matches the next release (Hero 2.5.0 / C6 Codex adapter) when untagged.
+var version = "2.5.0"
 
 func main() {
 	root := newRootCommand()

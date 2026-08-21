@@ -15,9 +15,9 @@ type MarkerDir struct {
 var KnownMarkers = []MarkerDir{
 	{Dir: ".cursor", ToolID: "cursor", Supported: true},
 	{Dir: ".opencode", ToolID: "opencode", Supported: true},
+	{Dir: ".codex", ToolID: "codex", Supported: true},
 	{Dir: ".claude", ToolID: "claude", Supported: false},
 	{Dir: ".windsurf", ToolID: "windsurf", Supported: false},
-	{Dir: ".codex", ToolID: "codex", Supported: false},
 }
 
 // DetectionResult is the outcome of comparing filesystem markers to cli.tools.

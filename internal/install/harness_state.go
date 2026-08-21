@@ -55,7 +55,9 @@ func DefaultFreechatDefault(harnesses map[string]HarnessConfig) FreechatDefault 
 	return FreechatDefault{Harness: h, Model: ""}
 }
 
-// MigrateHarnessState upgrades legacy hero.json (cli.tools only) to harnesses.*.enabled (ADR-034).
+// MigrateHarnessState upgrades legacy hero.json (cli.tools only) to harnesses.*.enabled (ADR-034)
+// and fills missing supported harness keys (C6 / ADR-048: adds harnesses.codex.enabled=false on
+// 2.4.x → 2.5.0 without enabling Codex or provisioning .codex/).
 // Returns true when hero was modified.
 func MigrateHarnessState(hero *HeroJSON) bool {
 	if hero == nil {

@@ -6,8 +6,9 @@ import (
 	"strings"
 )
 
-// EnableHarnessWithProjection enables a harness in hero.json and provisions OpenCode
-// projection assets when harnessID is opencode (UI-C04-001 §3; design D7).
+// EnableHarnessWithProjection enables a harness in hero.json and provisions
+// projection assets when harnessID is opencode or codex (UI-C04-001 §3;
+// UI-C06-001 §3; ADR-046).
 func EnableHarnessWithProjection(projectDir, harnessID string, assetsFS fs.FS) error {
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
 	if harnessID == "" {
@@ -27,13 +28,20 @@ func EnableHarnessWithProjection(projectDir, harnessID string, assetsFS fs.FS) e
 	cfg.Enabled = true
 	hero.Harnesses[harnessID] = cfg
 
-	if harnessID == "opencode" && assetsFS != nil {
+	if assetsFS != nil && (harnessID == "opencode" || harnessID == "codex") {
 		checksums, err := LoadChecksums(projectDir)
 		if err != nil {
 			return fmt.Errorf("load checksums: %w", err)
 		}
-		if err := ProvisionOpenCode(projectDir, assetsFS, checksums); err != nil {
-			return fmt.Errorf("provision opencode: %w", err)
+		switch harnessID {
+		case "opencode":
+			if err := ProvisionOpenCode(projectDir, assetsFS, checksums); err != nil {
+				return fmt.Errorf("provision opencode: %w", err)
+			}
+		case "codex":
+			if err := ProvisionCodex(projectDir, assetsFS, checksums); err != nil {
+				return fmt.Errorf("provision codex: %w", err)
+			}
 		}
 		if err := WriteChecksums(projectDir, checksums); err != nil {
 			return fmt.Errorf("write checksums: %w", err)

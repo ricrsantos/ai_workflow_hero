@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	codexadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
@@ -127,6 +128,21 @@ func (m model) applyHarnessReset(harnessID string) (model, tea.Cmd) {
 		m = m.clearHarnessBindingIfMatch("opencode")
 		m = m.setStatusResult(true, label, "OpenCode serve stopped. It will restart on the next request.")
 		return m, tea.Batch(batch...)
+	case "codex":
+		if !m.codexManagedByHero() {
+			m = m.setStatusWarning(label, "Codex has not been started by Hero yet.")
+			return m, nil
+		}
+		if m.streaming && m.chatHarnessID == "codex" {
+			batch = append(batch, m.cancelStreamCmd())
+		}
+		if err := m.stopCodexAppServerHarness(ctx); err != nil {
+			m = m.setStatusResult(false, label, err.Error())
+			return m, nil
+		}
+		m = m.clearHarnessBindingIfMatch("codex")
+		m = m.setStatusResult(true, label, "Codex app-server stopped. It will restart on the next request.")
+		return m, tea.Batch(batch...)
 	case "cursor":
 		cancelled := false
 		if m.streaming && (m.chatHarnessID == "cursor" || m.chatHarnessID == "") {
@@ -159,6 +175,13 @@ func (m model) openCodeManagedByHero(ctx context.Context) bool {
 	return false
 }
 
+func (m model) codexManagedByHero() bool {
+	if a := m.registryCodexAdapter(); a != nil {
+		return a.HasManagedAppServer()
+	}
+	return false
+}
+
 func (m model) stopOpenCodeServeHarness(ctx context.Context) error {
 	if a := m.registryOpenCodeAdapter(); a != nil {
 		return a.StopServe(ctx)
@@ -174,6 +197,21 @@ func (m model) stopOpenCodeServeHarness(ctx context.Context) error {
 	return stopOpenCodeServe(ctx, projectDir, st, reg)
 }
 
+func (m model) stopCodexAppServerHarness(ctx context.Context) error {
+	if a := m.registryCodexAdapter(); a != nil {
+		return a.StopAppServer(ctx)
+	}
+	projectDir := ""
+	var st *store.Store
+	var reg harnessmgr.Registry
+	if m.svc != nil {
+		projectDir = m.svc.ProjectDir
+		st = m.svc.Store
+		reg = m.svc.Registry
+	}
+	return stopCodexAppServer(ctx, projectDir, st, reg)
+}
+
 func (m model) registryOpenCodeAdapter() *opencodeadapter.Adapter {
 	if m.svc == nil || m.svc.Registry == nil {
 		return nil
@@ -187,6 +225,21 @@ func (m model) registryOpenCodeAdapter() *opencodeadapter.Adapter {
 		return nil
 	}
 	return oc
+}
+
+func (m model) registryCodexAdapter() *codexadapter.Adapter {
+	if m.svc == nil || m.svc.Registry == nil {
+		return nil
+	}
+	a, err := m.svc.Registry.Adapter("codex")
+	if err != nil {
+		return nil
+	}
+	cx, ok := a.(*codexadapter.Adapter)
+	if !ok {
+		return nil
+	}
+	return cx
 }
 
 func (m model) registryCursorAdapter() *cursoradapter.Adapter {

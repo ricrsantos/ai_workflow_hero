@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -52,11 +53,15 @@ func loadContextWindowsFromDir(dir string, cat contextWindowCatalog) {
 	if err != nil {
 		return
 	}
+	names := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".yml") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		names = append(names, e.Name())
+	}
+	for _, name := range sortModelCatalogFiles(names) {
+		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			continue
 		}
@@ -69,16 +74,35 @@ func loadContextWindowsFromFS(fsys fs.FS, dir string, cat contextWindowCatalog) 
 	if err != nil {
 		return
 	}
+	names := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".yml") {
 			continue
 		}
-		data, err := fs.ReadFile(fsys, dir+"/"+e.Name())
+		names = append(names, e.Name())
+	}
+	for _, name := range sortModelCatalogFiles(names) {
+		data, err := fs.ReadFile(fsys, dir+"/"+name)
 		if err != nil {
 			continue
 		}
 		mergeContextWindows(cat, data)
 	}
+}
+
+// sortModelCatalogFiles mirrors modelprops: alphabetical with codex.yml last so
+// Codex-native context_window rows win over shared openai bare ids.
+func sortModelCatalogFiles(names []string) []string {
+	out := append([]string(nil), names...)
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := strings.ToLower(out[i]), strings.ToLower(out[j])
+		aCodex, bCodex := a == "codex.yml", b == "codex.yml"
+		if aCodex != bCodex {
+			return !aCodex
+		}
+		return a < b
+	})
+	return out
 }
 
 func mergeContextWindows(cat contextWindowCatalog, data []byte) {

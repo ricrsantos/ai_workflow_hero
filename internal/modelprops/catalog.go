@@ -113,7 +113,8 @@ func CatalogPropertyKeys(m CatalogModel) []string {
 
 // LoadCatalogFromFS parses every .yml file under dir in fsys into a Catalog.
 // Malformed files and unknown keys are ignored without panicking. Later files
-// win per model ID, matching the installed-overlay semantics.
+// win per model ID, matching the installed-overlay semantics. `codex.yml` is
+// merged last so Codex-native ids keep provider:codex over shared openai bare ids.
 func LoadCatalogFromFS(fsys fs.FS, dir string) Catalog {
 	cat := make(Catalog)
 	if fsys == nil {
@@ -124,13 +125,17 @@ func LoadCatalogFromFS(fsys fs.FS, dir string) Catalog {
 		slog.Debug("modelprops catalog read failed", "dir", dir, "error", err)
 		return cat
 	}
+	names := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".yml") {
 			continue
 		}
-		data, err := fs.ReadFile(fsys, dir+"/"+e.Name())
+		names = append(names, e.Name())
+	}
+	for _, name := range sortModelCatalogFiles(names) {
+		data, err := fs.ReadFile(fsys, dir+"/"+name)
 		if err != nil {
-			slog.Debug("modelprops catalog file read failed", "file", e.Name(), "error", err)
+			slog.Debug("modelprops catalog file read failed", "file", name, "error", err)
 			continue
 		}
 		mergeCatalogYAML(cat, data)
@@ -146,17 +151,36 @@ func LoadCatalogFromDir(dir string) Catalog {
 		slog.Debug("modelprops catalog dir read failed", "dir", dir, "error", err)
 		return cat
 	}
+	names := make([]string, 0, len(entries))
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".yml") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		names = append(names, e.Name())
+	}
+	for _, name := range sortModelCatalogFiles(names) {
+		data, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			continue
 		}
 		mergeCatalogYAML(cat, data)
 	}
 	return cat
+}
+
+// sortModelCatalogFiles returns alphabetical order with codex.yml last so
+// Codex-native rows win provider/property metadata over openai.yml bare ids.
+func sortModelCatalogFiles(names []string) []string {
+	out := append([]string(nil), names...)
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := strings.ToLower(out[i]), strings.ToLower(out[j])
+		aCodex, bCodex := a == "codex.yml", b == "codex.yml"
+		if aCodex != bCodex {
+			return !aCodex // non-codex before codex
+		}
+		return a < b
+	})
+	return out
 }
 
 // LoadCatalog loads embedded assets.FS plus the installed project overlay.
@@ -263,6 +287,8 @@ func (c Catalog) ModelsForHarness(harnessID string) []string {
 			// provider pricing files also contain native slash IDs.
 			matches = provider == "opencode" || provider == "opencode-go" ||
 				(provider != "cursor" && strings.Contains(id, "/"))
+		case "codex":
+			matches = provider == "codex"
 		default:
 			matches = provider == harnessID
 		}

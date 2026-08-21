@@ -903,9 +903,9 @@ stages:
 	if !strings.Contains(string(data), `"model": "auto"`) {
 		t.Fatalf("hero.json not updated: %s", data)
 	}
-	// C5: the model has no property metadata, so the pair commits immediately
-	// and a yellow missing-catalog warning is shown (UI-C05-001 §5).
-	if StatusKindForTest(next) != "warn" {
+	// C5: `auto` is in the Cursor catalog (with `na` properties), so the pair
+	// commits cleanly without a missing-catalog warning.
+	if StatusKindForTest(next) != "ok" {
 		t.Fatalf("status=%s", StatusKindForTest(next))
 	}
 }

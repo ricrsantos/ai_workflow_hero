@@ -113,11 +113,12 @@ func ValidateAgents(cfg ConfigFile) error {
 }
 
 // ResolvePair builds harness + model from an agent block; slug is harness-specific.
+// OpenCode and Codex use the native model id as slug (no Cursor kebab transforms).
 func ResolvePair(cfg AgentModelConfig) AgentPair {
 	h := strings.TrimSpace(strings.ToLower(cfg.Harness))
 	m := strings.TrimSpace(cfg.Model)
 	slug := ResolveModelSlug(cfg)
-	if h == "opencode" {
+	if h == "opencode" || h == "codex" {
 		slug = m
 	}
 	return AgentPair{Harness: h, Model: m, Slug: slug}
@@ -148,21 +149,20 @@ func OrchestratorPair(projectDir string) (AgentPair, error) {
 	return pair, nil
 }
 
-// InjectHarnessForNew sets harness on agents when missing per enabled harness rules (ADR-032).
+// InjectHarnessForNew sets harness on agents when missing per enabled harness rules
+// (ADR-032; C6 / ADR-048 three-harness extension):
+//   - one enabled → that id
+//   - multiple including Cursor → cursor
+//   - multiple without Cursor → first enabled (stable caller order, e.g. ListEnabledHarnesses)
+//   - never inject a disabled harness (empty enabled list → no injection)
+// Explicit harness values are preserved.
 func InjectHarnessForNew(cfg *ConfigFile, enabledHarnesses []string) {
 	if cfg == nil {
 		return
 	}
-	defaultHarness := "cursor"
-	if len(enabledHarnesses) == 1 {
-		defaultHarness = enabledHarnesses[0]
-	} else if len(enabledHarnesses) > 1 {
-		for _, id := range enabledHarnesses {
-			if id == "cursor" {
-				defaultHarness = "cursor"
-				break
-			}
-		}
+	defaultHarness := pickInjectHarness(enabledHarnesses)
+	if defaultHarness == "" {
+		return
 	}
 	inject := func(block *AgentModelConfig) {
 		if strings.TrimSpace(block.Harness) != "" {
@@ -176,6 +176,29 @@ func InjectHarnessForNew(cfg *ConfigFile, enabledHarnesses []string) {
 		inject(&a)
 		cfg.Agents[name] = a
 	}
+}
+
+// pickInjectHarness chooses the /hero-new injection id from enabled harnesses only.
+func pickInjectHarness(enabledHarnesses []string) string {
+	var enabled []string
+	for _, id := range enabledHarnesses {
+		id = strings.TrimSpace(strings.ToLower(id))
+		if id != "" {
+			enabled = append(enabled, id)
+		}
+	}
+	if len(enabled) == 0 {
+		return ""
+	}
+	if len(enabled) == 1 {
+		return enabled[0]
+	}
+	for _, id := range enabled {
+		if id == "cursor" {
+			return "cursor"
+		}
+	}
+	return enabled[0]
 }
 
 // AgentModelSlug resolves agents.<agentName> from the current workflow-config,

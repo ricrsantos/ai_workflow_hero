@@ -1,0 +1,4 @@
+Codex app-server failed to start (incompatible or not installed).
+
+  Suggestion: verify `codex` on PATH (`codex --version`) and retry.
+  Hero does not pin a Codex CLI version.

@@ -108,3 +108,33 @@ func TestUninstall_PreservesProjectArtifacts(t *testing.T) {
 		}
 	}
 }
+
+func TestUninstall_RemovesCodexOwnedPathsKeepsUserConfig(t *testing.T) {
+	dir := makeInstalledDir(t)
+	if err := install.EnableHarnessWithProjection(dir, "codex", assets.FS); err != nil {
+		t.Fatalf("enable codex: %v", err)
+	}
+	userConfig := filepath.Join(dir, ".codex", "config.toml")
+	if err := os.WriteFile(userConfig, []byte("# user\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	agentPath := filepath.Join(dir, ".codex", "agents", "orchestration_agent.md")
+	if _, err := os.Stat(agentPath); err != nil {
+		t.Fatalf("projection missing before uninstall: %v", err)
+	}
+
+	var out strings.Builder
+	if err := uninstall.Run(uninstall.Options{ProjectDir: dir}, &out, &out); err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+
+	if _, err := os.Stat(agentPath); !os.IsNotExist(err) {
+		t.Fatal("Hero-managed .codex/agents must be removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".codex", "commands")); !os.IsNotExist(err) {
+		t.Fatal("Hero-managed .codex/commands must be removed")
+	}
+	if _, err := os.Stat(userConfig); err != nil {
+		t.Fatalf("user .codex/config.toml must be preserved: %v", err)
+	}
+}

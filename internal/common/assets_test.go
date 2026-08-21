@@ -59,7 +59,7 @@ func TestAssets_SkillFiles(t *testing.T) {
 func TestAssets_ModelFiles(t *testing.T) {
 	models := []string{
 		"openai.yml", "anthropic.yml", "google.yml",
-		"cursor.yml", "moonshot.yml", "zhipu.yml", "xai.yml", "opencode.yml",
+		"cursor.yml", "moonshot.yml", "zhipu.yml", "xai.yml", "opencode.yml", "codex.yml",
 	}
 	for _, m := range models {
 		path := "models/" + m

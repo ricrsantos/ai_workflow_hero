@@ -1,0 +1,91 @@
+# Codex-native model catalog (capability + context for C5 / context bar).
+# Installed overlay: .workflow-hero/models/codex.yml
+# Model IDs match Codex app-server ListModels (PRD-C06-001 §4.8; design D12).
+# ChatGPT plans may lack USD rates — leave input/output at 0.00; do NOT invent
+# subsidized pricing. API rates for shared bare ids may still live in openai.yml
+# for Cursor Task slug metrics; this file wins for provider:codex fallback.
+provider: codex
+version: 1
+last_updated: 2026-08-21
+currency: usd
+unit: per_1m_tokens
+
+models:
+  # Default Codex CLI model (flagship). Context: Codex default window (~272k);
+  # API max may be higher — do not invent ChatGPT USD rates.
+  gpt-5.4:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 272000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  gpt-5.4-mini:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 272000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  gpt-5.3-codex:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 400000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  gpt-5.3-codex-spark:
+    input: 0.00
+    cache_write: 0.00
+    cache_read: 0.00
+    output: 0.00
+    context_window: 272000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: false
+        values: ["na"]
+        default: "na"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"

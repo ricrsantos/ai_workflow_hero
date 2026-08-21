@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	codexadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
@@ -785,10 +786,15 @@ func (m model) beginHeroStart() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-start", err.Error())
 		return m, nil
 	}
-	if !m.heroStartNeedsOpenCodePrepare() {
+	if !m.heroStartNeedsPrepare() {
 		return m.beginHeroRuntimeConversation("start", slug, heroRuntimeOpts{})
 	}
 	return m.beginHeroStartPrepare(slug)
+}
+
+// heroStartNeedsPrepare is true when OpenCode and/or Codex Prepare-on-start must run.
+func (m model) heroStartNeedsPrepare() bool {
+	return m.heroStartNeedsOpenCodePrepare() || m.heroStartNeedsCodexPrepare()
 }
 
 func (m model) heroStartNeedsOpenCodePrepare() bool {
@@ -809,6 +815,30 @@ func (m model) heroStartNeedsOpenCodePrepare() bool {
 	}
 	for _, id := range install.ListEnabledHarnesses(hero) {
 		if strings.EqualFold(id, "opencode") {
+			return true
+		}
+	}
+	return false
+}
+
+func (m model) heroStartNeedsCodexPrepare() bool {
+	if m.svc == nil {
+		return false
+	}
+	projectDir := m.svc.ProjectDir
+	cfg, _, err := workflowconfig.LoadCurrent(projectDir)
+	if err != nil {
+		return false
+	}
+	if len(codexadapter.AgentsUsingHarness(cfg, "codex")) == 0 {
+		return false
+	}
+	hero, err := install.LoadHeroJSON(projectDir)
+	if err != nil {
+		return false
+	}
+	for _, id := range install.ListEnabledHarnesses(hero) {
+		if strings.EqualFold(id, "codex") {
 			return true
 		}
 	}
@@ -1127,8 +1157,16 @@ func (m model) todosCmd() tea.Cmd {
 	}
 }
 
-func dispatchPromptMsg(svc *cycle.Service, label, prompt, modelSlug, mode string) tea.Msg {
+func dispatchPromptMsg(svc *cycle.Service, label, prompt, modelSlug, mode, harnessID string) tea.Msg {
 	adapter := svc.Harness
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	// Prefer an explicitly injected adapter (tests / hero run). Otherwise route by
+	// active chat harness via the multi-harness registry (Codex/OpenCode/Cursor).
+	if adapter == nil && svc != nil && svc.Registry != nil && harnessID != "" {
+		if a, err := svc.Registry.Adapter(harnessID); err == nil {
+			adapter = a
+		}
+	}
 	if adapter == nil {
 		adapter = cursoradapter.NewAdapter(svc.ProjectDir)
 	}
@@ -1177,6 +1215,7 @@ func (m model) importCommandCmd(item paletteItem) tea.Cmd {
 	label := item.commandLabel
 	path := item.commandPath
 	modelSlug := m.conversationModelSlug()
+	harnessID := m.conversationHarnessTool()
 	mode := m.chatMode
 	if mode == "" {
 		mode = harness.ModeBuild
@@ -1187,7 +1226,7 @@ func (m model) importCommandCmd(item paletteItem) tea.Cmd {
 			slog.Error("tui import command read failed", "path", path, "error", err)
 			return actionResultMsg{err: fmt.Errorf("read command %s: %w", label, err)}
 		}
-		return dispatchPromptMsg(svc, label, prompt, modelSlug, mode)
+		return dispatchPromptMsg(svc, label, prompt, modelSlug, mode, harnessID)
 	}
 }
 

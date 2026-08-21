@@ -202,10 +202,11 @@ func Run(opts Options) Report {
 		addHarnessMarkerChecks(opts.ProjectDir, configuredTools, addCheck)
 	}
 
-	// 11. Cursor Agent CLI diagnostics (warn-only; PRD-C03-001 §4.10; complementary to TUI boot).
+	// 11. Harness CLI diagnostics (warn-only; PRD-C03-001 §4.10; UI-C06-001 §8; complementary to TUI boot).
 	if heroInstalled {
 		addCursorCLIChecks(context.Background(), opts.ProjectDir, opts.CursorCLIProbe, addCheck)
 		addOpenCodeCLIChecks(opts.ProjectDir, addCheck)
+		addCodexCLIChecks(opts.ProjectDir, addCheck)
 	}
 
 	return report

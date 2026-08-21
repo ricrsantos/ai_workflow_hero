@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **2.4.1** (C5 archived). **C6 Research** specifies Hero **2.5.0** Codex TUI adapter (`internal/adapters/codex`, not yet implemented).
+> **Status:** reflects codebase at Hero **2.5.0** (C6 Codex adapter native complete). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -37,7 +37,7 @@ ai_workflow_hero/
 │   ├── harness · harnessmgr · store · engine · tui · workflowconfig
 │   ├── adapters/cursor/   # Cursor Agent CLI adapter (NDJSON stream-json)
 │   ├── adapters/opencode/ # OpenCode serve HTTP + SSE /event
-│   ├── adapters/codex/    # C6: Codex app-server stdio JSON-RPC (Hero 2.5.0)
+│   ├── adapters/codex/    # Codex app-server stdio JSON-RPC + PrepareHeroStart (C6 §4–§7; Hero 2.5.0)
 │   ├── common/            # template, clierr, output, envhygiene, userpath
 │   └── integration/       # install/upgrade/doctor integration tests
 ├── scripts/               # release.sh, build_dev.sh (+ contract tests)
@@ -530,6 +530,8 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/harness` | `HarnessAdapter` interface, `StreamDelta` normalization, marker detection |
 | `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import, NDJSON parse |
 | `internal/adapters/opencode` | OpenCode serve adapter, `server.go` lifecycle (PID registry, graceful shutdown, orphan reap), SSE event normalization, C5 properties |
+| `internal/adapters/codex` | Codex app-server adapter (stdio JSON-RPC, thread/turn, registry, auth, C5 properties, stream map, CheckHealth, ResetAppServer, PrepareHeroStart) |
+| `internal/harnessmgr` | Adapter registry (cursor + opencode + codex), fallback chain, boot ListModels skip for lazy children |
 | `internal/tui` | Bubble Tea terminal UI |
 | `internal/todos` | `## Pending` section parser in `current-state.md` |
 | `internal/workflowconfig` | `workflow-config.yml` load/normalize |

@@ -154,6 +154,7 @@ func (m model) syncConversationContext() model {
 }
 
 // harnessSessionIDForPair returns sessionID only when it belongs to pairHarness (PRD §4.11).
+// Codex thread ids never resume as Cursor/OpenCode (and vice versa).
 func (m model) harnessSessionIDForPair(stageName, pairHarness string) string {
 	sid := strings.TrimSpace(m.harnessSessionID)
 	pairHarness = strings.TrimSpace(strings.ToLower(pairHarness))
@@ -1152,6 +1153,8 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 		return m
 	case harness.StreamKindWarning:
 		slog.Warn("harness stream warning", "harness_type", d.HarnessType, "text", d.Text)
+		// UI-C06-001 §5 / D11: yellow status-area warning (not raw JSON in assistant text).
+		m = m.setStatusWarning("harness", firstStatusLine(d.Text))
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: d.Text})
 		return m
 	case harness.StreamKindActivity:

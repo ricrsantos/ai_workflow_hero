@@ -47,6 +47,13 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 	}
 
 	newChecksums := make(install.Checksums)
+	// Preserve checksums for paths not refreshed in this pass (e.g. disabled harness
+	// projections left on disk after disable — ADR-046).
+	for k, v := range originalChecksums {
+		newChecksums[k] = v
+	}
+
+	heroForGroups, _ := install.LoadHeroJSON(opts.ProjectDir)
 
 	// Copy assets, checking for local customizations.
 	assetGroups := []struct {
@@ -60,6 +67,16 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 		{"templates", filepath.Join(opts.ProjectDir, cursoradapter.HeroTemplatesDir)},
 		{"models", filepath.Join(opts.ProjectDir, cursoradapter.HeroModelsDir)},
 		{"docs", filepath.Join(opts.ProjectDir, cursoradapter.HeroDocsDir)},
+	}
+	if install.IsHarnessEnabled(heroForGroups, "opencode") {
+		for _, g := range install.OpenCodeAssetGroups(opts.ProjectDir) {
+			assetGroups = append(assetGroups, struct{ src, dst string }{g.Src, g.Dst})
+		}
+	}
+	if install.IsHarnessEnabled(heroForGroups, "codex") {
+		for _, g := range install.CodexAssetGroups(opts.ProjectDir) {
+			assetGroups = append(assetGroups, struct{ src, dst string }{g.Src, g.Dst})
+		}
 	}
 
 	for _, group := range assetGroups {
@@ -118,6 +135,13 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 			return nil
 		}); err != nil {
 			return result, fmt.Errorf("upgrade asset group %s: %w", group.src, err)
+		}
+	}
+
+	// Refresh minimal opencode.json when OpenCode is enabled (same conflict rules).
+	if install.IsHarnessEnabled(heroForGroups, "opencode") {
+		if err := refreshMinimalOpenCodeJSON(opts.ProjectDir, originalChecksums, newChecksums, &result, stderr); err != nil {
+			return result, err
 		}
 	}
 
@@ -187,5 +211,46 @@ func ensureStoreAndImportLegacy(opts Options, result *Result, stderr io.Writer) 
 		slog.Info("legacy cycle imported", "cycle", ensureRes.LegacyCycleNum)
 	}
 
+	return nil
+}
+
+// refreshMinimalOpenCodeJSON applies conflict-aware refresh for .opencode/opencode.json.
+func refreshMinimalOpenCodeJSON(
+	projectDir string,
+	originalChecksums, newChecksums install.Checksums,
+	result *Result,
+	stderr io.Writer,
+) error {
+	body := []byte("{\n  \"$schema\": \"https://opencode.ai/config.json\"\n}\n")
+	path := filepath.Join(install.OpenCodePathsFor(projectDir).Root, "opencode.json")
+	relKey, _ := filepath.Rel(projectDir, path)
+	newHash := assetconflict.SHA256Hex(body)
+
+	existingData, readErr := os.ReadFile(path)
+	if readErr == nil {
+		existingHash := assetconflict.SHA256Hex(existingData)
+		originalHash := originalChecksums[relKey]
+		if assetconflict.IsCustomized(existingData, originalHash) {
+			if existingHash == newHash {
+				newChecksums[relKey] = newHash
+				return nil
+			}
+			if _, err := assetconflict.Replace(path, existingData, body, relKey, stderr, time.Now()); err != nil {
+				return err
+			}
+			newChecksums[relKey] = newHash
+			result.Replaced = append(result.Replaced, relKey)
+			result.Updated = append(result.Updated, relKey)
+			return nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create opencode dir: %w", err)
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		return fmt.Errorf("write opencode.json: %w", err)
+	}
+	newChecksums[relKey] = newHash
+	result.Updated = append(result.Updated, relKey)
 	return nil
 }

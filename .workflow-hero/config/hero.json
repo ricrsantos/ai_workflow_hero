@@ -13,7 +13,7 @@
   "harnesses": {
     "cursor": {
       "enabled": true,
-      "model": "composer-2.5",
+      "model": "auto",
       "enable_fast_model": false
     },
     "opencode": {
@@ -23,8 +23,8 @@
     }
   },
   "freechat_default": {
-    "harness": "opencode",
-    "model": "opencode/muse-spark-1.2-contributor-free"
+    "harness": "cursor",
+    "model": "auto"
   },
   "model_properties": {
     "cursor": {

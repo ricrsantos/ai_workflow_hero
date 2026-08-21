@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	codexadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
@@ -50,7 +51,7 @@ func defaultHarnessBootDeps() harnessBootDeps {
 		newRegistry: func(projectDir string, st *store.Store) harnessmgr.Registry {
 			return harnessmgr.NewRegistry(projectDir, st)
 		},
-		reapOrphans: reapOpenCodeOrphans,
+		reapOrphans: reapManagedOrphans,
 		listModels:  harnessmgr.ListModels,
 		openStore:   store.OpenProject,
 	}
@@ -99,7 +100,7 @@ func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir strin
 	}
 
 	if err := deps.reapOrphans(ctx, projectDir, st); err != nil {
-		slog.Warn("orphan serve reap failed", "error", err)
+		slog.Warn("orphan harness process reap failed", "error", err)
 	}
 
 	reg := deps.newRegistry(projectDir, st)
@@ -140,8 +141,19 @@ func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir strin
 	}, nil
 }
 
+func reapManagedOrphans(ctx context.Context, projectDir string, st *store.Store) error {
+	return errors.Join(
+		opencodeadapter.ReapOrphanServers(ctx, projectDir, st),
+		codexadapter.ReapOrphanAppServers(ctx, projectDir, st),
+	)
+}
+
 func reapOpenCodeOrphans(ctx context.Context, projectDir string, st *store.Store) error {
 	return opencodeadapter.ReapOrphanServers(ctx, projectDir, st)
+}
+
+func reapCodexOrphans(ctx context.Context, projectDir string, st *store.Store) error {
+	return codexadapter.ReapOrphanAppServers(ctx, projectDir, st)
 }
 
 func writeHeroJSONFile(projectDir string, hero install.HeroJSON) error {
@@ -162,6 +174,7 @@ func promptInstallLikeHarnesses(_ io.Writer) ([]string, error) {
 				Options(
 					huh.NewOption("Cursor", "cursor"),
 					huh.NewOption("OpenCode", "opencode"),
+					huh.NewOption("Codex", "codex"),
 				).
 				Value(&selected).
 				Validate(func(v []string) error {
@@ -244,6 +257,8 @@ func harnessDisplayName(toolID string) string {
 		return "Cursor"
 	case "opencode":
 		return "OpenCode"
+	case "codex":
+		return "Codex"
 	default:
 		if toolID == "" {
 			return "Harness"
@@ -257,15 +272,16 @@ func readHeroJSON(projectDir string) (install.HeroJSON, error) {
 }
 
 // validateBootDefaultModel checks the persisted freechat pair against the boot-time catalog.
-// Aggregate ListModels skips OpenCode so boot does not start opencode serve (UI-C04-001 §7);
-// OpenCode defaults are validated on demand via /hero-model and first Execute.
+// Aggregate ListModels skips OpenCode and Codex so boot does not start managed children
+// (UI-C04-001 §7; UI-C06-001 §7); those defaults are validated on demand via /hero-model
+// and first Execute.
 func validateBootDefaultModel(harnessID, model string, catalog []harnessmgr.ModelOption) string {
 	model = strings.TrimSpace(model)
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
 	if model == "" || harnessID == "" {
 		return ""
 	}
-	if harnessID == "opencode" {
+	if harnessID == "opencode" || harnessID == "codex" {
 		return ""
 	}
 	if len(catalog) == 0 {

@@ -141,6 +141,17 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 					slog.Warn("stop opencode serve on disable failed", "error", err)
 				}
 			}
+			if id == "codex" {
+				var st *store.Store
+				var reg harnessmgr.Registry
+				if m.svc != nil {
+					st = m.svc.Store
+					reg = m.svc.Registry
+				}
+				if err := stopCodexAppServer(context.Background(), projectDir, st, reg); err != nil {
+					slog.Warn("stop codex app-server on disable failed", "error", err)
+				}
+			}
 			disabledNames = append(disabledNames, harnessDisplayName(id))
 		}
 	}
@@ -153,8 +164,11 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 	var parts []string
 	for _, name := range enabledNames {
 		msg := name + " enabled"
-		if name == "OpenCode" {
+		switch name {
+		case "OpenCode":
 			msg = "OpenCode enabled (projected .opencode/)"
+		case "Codex":
+			msg = "Codex enabled (projected .codex/)"
 		}
 		parts = append(parts, msg)
 	}

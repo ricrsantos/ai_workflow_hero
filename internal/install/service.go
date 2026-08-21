@@ -155,6 +155,11 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 			return fmt.Errorf("provision opencode: %w", err)
 		}
 	}
+	if containsTool(enabled, "codex") {
+		if err := ProvisionCodex(opts.ProjectDir, opts.AssetsFS, checksums); err != nil {
+			return fmt.Errorf("provision codex: %w", err)
+		}
+	}
 
 	harnesses := HarnessesFromSelection(enabled)
 	freechat := DefaultFreechatDefault(harnesses)
