@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-08-21 — GitHub release v2.5.0
+
+**Outcome**: `go test ./...` green → annotated tag `v2.5.0` on `main` (`6c898e7`) → pushed → `scripts/release.sh` → GitHub Release with 4 binaries + `checksums.txt`. URL: https://github.com/ricrsantos/ai_workflow_hero/releases/tag/v2.5.0
+
+---
+
 ## 2026-08-21 — Codex stream UX: debug noise + agentMessage dedupe
 
 **Problem**: Chat showed garbled then clean duplicate of the same agent answer (`stringField` TrimSpace on deltas + full `item/completed` re-emit). Noisy activities (`userMessage`, `agent message`, tokens, rate limits) and unrecognized-event warnings always appeared.

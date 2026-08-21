@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **2.5.0** native implementation complete (C6 Codex TUI adapter). Default CLI version `2.5.0`; release via `scripts/release.sh` + tag `v2.5.0`. QA/Judge next. |
+| **Phase** | Hero **2.5.0** released (tag `v2.5.0` on GitHub). C6 Codex TUI adapter shipped; QA/Judge next for cycle archive. |
 
 ## Technology Stack
 
@@ -98,7 +98,7 @@
 
 ## Next Steps
 
-1. C6 QA → Judge (Browser UI / E2E skipped by scope); tag/release **v2.5.0** when approved.
+1. C6 QA → Judge (Browser UI / E2E skipped by scope); **v2.5.0** already published on GitHub Releases.
 2. Archive C6 with `/hero-archive` when ready (OpenSpec `codex-adapter`).
 
 ---
