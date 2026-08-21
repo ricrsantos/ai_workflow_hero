@@ -40,8 +40,8 @@ VALUES('opencode', 42, 4096, 'http://127.0.0.1:4096', '2026-08-15T00:00:00Z')`);
 
 	st := newStoreAt(t, dir)
 	v, err := st.SchemaVersion()
-	if err != nil || v != 6 {
-		t.Fatalf("version=%d err=%v want 6", v, err)
+	if err != nil || v != currentSchemaVersion {
+		t.Fatalf("version=%d err=%v want %d", v, err, currentSchemaVersion)
 	}
 	var title string
 	if err := st.db.QueryRow(`SELECT title FROM cycles WHERE number = 1`).Scan(&title); err != nil {
@@ -74,8 +74,8 @@ VALUES('opencode', 42, 4096, 'http://127.0.0.1:4096', '2026-08-15T00:00:00Z')`);
 
 	st := newStoreAt(t, dir)
 	v, err := st.SchemaVersion()
-	if err != nil || v != 6 {
-		t.Fatalf("version=%d err=%v want 6", v, err)
+	if err != nil || v != currentSchemaVersion {
+		t.Fatalf("version=%d err=%v want %d", v, err, currentSchemaVersion)
 	}
 	entries, err := st.ListServeRegistry()
 	if err != nil || len(entries) != 1 {

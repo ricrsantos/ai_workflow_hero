@@ -108,6 +108,53 @@ func TestUpgrade_MigratesMissingHarnessDefaults(t *testing.T) {
 	}
 }
 
+// 2.4.x → 2.5.0 (ADR-048; PRD-C06-001 §4.6): upgrade adds harnesses.codex.enabled=false,
+// preserves existing Cursor/OpenCode settings, and never auto-provisions .codex/.
+func TestUpgrade_24xTo25x_AddsCodexDisabledWithoutProjection(t *testing.T) {
+	dir := makeInstalledDir(t)
+	heroPath := filepath.Join(dir, cursoradapter.HeroJSONPath)
+	v24 := install.HeroJSON{
+		CLI:    install.CLIInfo{Version: "2.4.1", InstalledAt: "2026-08-20T00:00:00Z", Tools: []string{"cursor", "opencode"}},
+		Assets: install.AssetsInfo{Version: "2.4.1", InstalledAt: "2026-08-20T00:00:00Z"},
+		Harnesses: map[string]install.HarnessConfig{
+			"cursor":   {Enabled: true, Model: "composer-2.5"},
+			"opencode": {Enabled: true, Model: "opencode-go/deepseek-v4-flash"},
+		},
+	}
+	data, _ := json.MarshalIndent(v24, "", "  ")
+	if err := os.WriteFile(heroPath, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	if _, err := upgrade.Run(upgrade.Options{
+		ProjectDir: dir,
+		Version:    "2.5.0",
+		AssetsFS:   assets.FS,
+	}, &out, &out); err != nil {
+		t.Fatalf("upgrade 2.4.x → 2.5.0: %v", err)
+	}
+
+	heroData, _ := os.ReadFile(heroPath)
+	var heroJSON install.HeroJSON
+	_ = json.Unmarshal(heroData, &heroJSON)
+	if heroJSON.CLI.Version != "2.5.0" {
+		t.Fatalf("cli.version = %q, want 2.5.0", heroJSON.CLI.Version)
+	}
+	if install.IsHarnessEnabled(heroJSON, "codex") {
+		t.Fatal("harnesses.codex.enabled must be false after 2.4.x → 2.5.0 upgrade")
+	}
+	if !install.IsHarnessEnabled(heroJSON, "cursor") || !install.IsHarnessEnabled(heroJSON, "opencode") {
+		t.Fatal("existing Cursor/OpenCode enablement must be preserved")
+	}
+	if heroJSON.Harnesses["cursor"].Model != "composer-2.5" || heroJSON.Harnesses["opencode"].Model != "opencode-go/deepseek-v4-flash" {
+		t.Fatalf("existing models must be preserved: %+v", heroJSON.Harnesses)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".codex")); !os.IsNotExist(err) {
+		t.Fatal("upgrade must not auto-provision .codex/ until Codex is enabled")
+	}
+}
+
 func TestUpgrade_MigratesLegacyGenericModelInCycleConfig(t *testing.T) {
 	dir := makeInstalledDir(t)
 

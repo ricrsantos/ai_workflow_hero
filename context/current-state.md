@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **2.4.0** released 2026-08-20 (OpenCode serve lifecycle manager, zombie/orphan reap, TUI shutdown cleanup). **C5 archived** 2026-08-18 (`model-properties-tui`). No active cycle. |
+| **Phase** | Hero **2.4.1** released 2026-08-20. **C6 Research complete** (Codex TUI adapter → Hero 2.5.0); implementation not started. |
 
 ## Technology Stack
 
@@ -81,7 +81,7 @@
 
 - **Windows CLI** — out of scope for Hero 2.0; planned for a future major (PRD §7; DEPLOY.md).
 - **CI/CD release automation and GPG-signed artifacts** — no GitHub Actions / GoReleaser pipeline in 2.0; manual `scripts/release.sh` only (ADR-010; PRD §7).
-- **Additional harness adapters** — Claude Code, Codex, VS Code, and other IDEs remain deferred; C4 ships **Cursor + OpenCode** in the TUI only (PRD §2.3; PRD-C04-001).
+- **Additional harness adapters** — Claude Code, VS Code, and other IDEs remain deferred. C4 ships **Cursor + OpenCode** in the TUI; **C6** adds **Codex** in the TUI only (PRD-C06-001).
 - **C5 QA/Judge** — QA PASS 2026-08-18 (build/vet/tests green, race clean, ADR-038–042 + C4 constraints honored); 2 minor findings open (`t.Skip` condicional em `internal/tui/model_properties_test.go:393`; branch duplicado em `internal/tui/property_picker.go:169`). Judge completed by user `/hero-approve` without formal SDD coverage verification because `judge_agent` cannot emit output in the opencode harness (7 empty Task returns; re-sync/fix agent for next cycles).
 - **Post-1.0 deferred D2–D13** not covered by C4 — e.g. external integrations (D2), notification manager (D3), daemon/RPC `hero serve` (D7), full event bus (D8), rich TUI roadmap (D10) (PRD-C01-001 §4).
 
@@ -117,8 +117,8 @@
 
 ## Next Steps
 
-1. Archive C4 with `/hero-archive` when ready (OpenSpec `hero-2-0-multi-harness` first; folder date from store `completed_at`).
-2. Archive C5 with `/hero-archive` when ready (OpenSpec `model-properties-tui` first; folder date from store `completed_at`).
+1. C6 Planning: OpenSpec SDD for CodexAdapter from PRD-C06-001 / ADR-043–048 (OpenCodeAdapter as behavioral template).
+2. Archive C5 with `/hero-archive` when ready if not already archived (OpenSpec `model-properties-tui`).
 
 ---
 

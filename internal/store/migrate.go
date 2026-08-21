@@ -6,7 +6,7 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 6
+const currentSchemaVersion = 7
 
 func (s *Store) migrate() error {
 	return s.migrateTo(currentSchemaVersion)
@@ -175,6 +175,18 @@ func (s *Store) applyMigration(version int) error {
 	case 6:
 		// v2.4: project_path on serve registry for lifecycle scoping.
 		if _, err := tx.Exec(`ALTER TABLE harness_serve_registry ADD COLUMN project_path TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+	case 7:
+		// v2.5 / ADR-044 (C6): Codex app-server registry rows live in the same
+		// harness_serve_registry table (pid, harness=codex, project_path, created_at).
+		// Stdio transport has no HTTP URL — codex rows store port=0 / url='' and
+		// Hero never fabricates a serve URL. The existing columns already fit those
+		// rows; this migration adds the (harness, project_path) lookup index used by
+		// TUI boot orphan reap for both OpenCode serve and Codex app-server children.
+		// OpenCode serve rows are untouched (forward compatible; ADR-044).
+		if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_harness_serve_registry_harness_project
+  ON harness_serve_registry(harness, project_path)`); err != nil {
 			return fmt.Errorf("migration %d: %w", version, err)
 		}
 	default:

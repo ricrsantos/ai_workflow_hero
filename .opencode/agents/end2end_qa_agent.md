@@ -1,7 +1,7 @@
 ---
-name: end2end_qa_agent
 description: Validates the complete user journey end-to-end during the QA End-to-End stage.
 model: opencode/deepseek-v4-flash-free
+name: end2end_qa_agent
 thinking: false
 ---
 

@@ -1,8 +1,9 @@
 ---
-name: planning_agent
 description: Converts approved specifications into a complete OpenSpec SDD during the Planning stage.
-model: opencode-go/gpt-5.6-luna
+model: opencode-go/deepseek-v4-flash
+name: planning_agent
 reasoningEffort: max
+thinking: max
 ---
 
 # planning_agent — OpenSpec Planning Agent

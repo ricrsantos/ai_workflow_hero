@@ -1,14 +1,14 @@
 {
   "cli": {
-    "version": "2.4.0",
+    "version": "2.4.1",
     "installedAt": "2026-08-04T19:30:24Z",
     "tools": [
       "cursor"
     ]
   },
   "assets": {
-    "version": "2.4.0",
-    "installedAt": "2026-08-20T18:00:21Z"
+    "version": "2.4.1",
+    "installedAt": "2026-08-21T01:12:01Z"
   },
   "harnesses": {
     "cursor": {
@@ -18,13 +18,13 @@
     },
     "opencode": {
       "enabled": true,
-      "model": "opencode/deepseek-v4-flash-free",
+      "model": "opencode-go/deepseek-v4-flash",
       "enable_fast_model": false
     }
   },
   "freechat_default": {
     "harness": "opencode",
-    "model": "opencode/deepseek-v4-flash-free"
+    "model": "opencode-go/deepseek-v4-flash"
   },
   "model_properties": {
     "cursor": {
@@ -37,6 +37,10 @@
       }
     },
     "opencode": {
+      "opencode-go/deepseek-v4-flash": {
+        "ef": "max",
+        "th": "max"
+      },
       "opencode-go/deepseek-v4-pro": {
         "ef": "high",
         "fs": "false",

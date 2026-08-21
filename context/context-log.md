@@ -6,6 +6,20 @@
 
 ---
 
+## 2026-08-20 — C6 Research: Codex Adapter (Hero 2.5.0)
+
+**Problem**: Users cannot run OpenAI Codex as a Hero TUI harness (C4 left Codex out of scope).
+
+**Decision / Outcome**: Research complete. OpenCodeAdapter is the behavioral spec; idea file `docs/idea/v2.5_codex_adapter/codex_adapter.md` yields on divergence. TUI-only. ChatGPT `codex login` outside TUI (no API key). PATH CLI, no version pin. Projection `assets/codex/` → `.codex/`. Out: MCP, images, web search. Docs: PRD-C06-001, ADR-043–048, UI-C06-001; DEPLOY/TESTING/indexes updated.
+
+---
+
+## 2026-08-20 — Release v2.4.1 (TUI UX patch)
+
+**Problem**: Ship TUI conversation improvements accumulated since v2.4.0.
+
+**Decision / Outcome**: Bumped default version to `2.4.1` in `cmd/hero/main.go`. Tagged `v2.4.1` on `main` after `go test ./...` green. Ships bordered prompt box, clipboard copy for assistant messages, context bar refinements, and model picker display fixes. Artifacts via `scripts/release.sh`; GitHub Release https://github.com/ricrsantos/ai_workflow_hero/releases/tag/v2.4.1
+
 ## 2026-08-20 — TUI shortcut hints consolidated in footer
 
 **Problem**: Chat duplicated keyboard hints on three lines (property row, input row, footer).

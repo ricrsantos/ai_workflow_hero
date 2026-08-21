@@ -151,6 +151,30 @@
       "slug": "tui-model-properties",
       "path": "docs/product/UI-C05-001-tui-model-properties.md",
       "title": "TUI Model Property Selection and Status"
+    },
+    {
+      "category": "PRD",
+      "cycle": "C06",
+      "seq": 1,
+      "slug": "codex-adapter",
+      "path": "docs/product/PRD-C06-001-codex-adapter.md",
+      "title": "Codex Adapter (Hero 2.5.0)"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C06",
+      "seq": 1,
+      "slug": "codex-adapter",
+      "path": "docs/architecture/ADR-C06-001-codex-adapter.md",
+      "title": "Codex Adapter (ADR-043–048)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C06",
+      "seq": 1,
+      "slug": "tui-codex-adapter",
+      "path": "docs/product/UI-C06-001-tui-codex-adapter.md",
+      "title": "TUI Codex Adapter (Hero 2.5.0)"
     }
   ]
 }

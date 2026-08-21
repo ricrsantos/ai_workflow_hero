@@ -1,8 +1,9 @@
 ---
-name: generic_agent
 description: Implements native apps, scripts, and infrastructure for native/script/infrastructure scopes.
-model: opencode-go/gpt-5.6-luna
+model: opencode-go/deepseek-v4-flash
+name: generic_agent
 reasoningEffort: max
+thinking: max
 ---
 
 # generic_agent — Native / Script / Infrastructure Agent

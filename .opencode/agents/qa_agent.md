@@ -1,7 +1,9 @@
 ---
-name: qa_agent
 description: Validates technical quality during the QA stage — tests, coverage, lint, build.
-model: opencode/deepseek-v4-flash-free
+model: opencode-go/deepseek-v4-flash
+name: qa_agent
+reasoningEffort: max
+thinking: max
 ---
 
 # qa_agent — Quality Assurance Agent

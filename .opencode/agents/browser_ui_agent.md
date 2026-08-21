@@ -1,7 +1,7 @@
 ---
-name: browser_ui_agent
 description: Validates browser UI health (render, console, network/CSS) and optional visual comparison during Browser UI Validation.
 model: opencode/deepseek-v4-flash-free
+name: browser_ui_agent
 reasoningEffort: max
 thinking: false
 ---

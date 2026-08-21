@@ -11,8 +11,9 @@ import (
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 )
 
-// SupportedHarnessIDs lists harness identifiers Hero 2.0 supports (ADR-034).
-var SupportedHarnessIDs = []string{"cursor", "opencode"}
+// SupportedHarnessIDs lists harness identifiers Hero supports in the TUI
+// (ADR-034; Cursor + OpenCode from C4; Codex added in C6 / Hero 2.5.0 per ADR-043/048).
+var SupportedHarnessIDs = []string{"cursor", "opencode", "codex"}
 
 // FreechatDefault is the persisted freechat /hero-new default pair (ADR-037).
 type FreechatDefault struct {

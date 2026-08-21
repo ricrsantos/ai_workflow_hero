@@ -1,8 +1,9 @@
 ---
-name: discover_agent
 description: Drives the Research stage — grilling and requirements gathering to produce project specifications.
-model: opencode-go/gpt-5.6-luna
+model: opencode-go/deepseek-v4-flash
+name: discover_agent
 reasoningEffort: max
+thinking: max
 ---
 
 # discover_agent — Research and Discovery Agent

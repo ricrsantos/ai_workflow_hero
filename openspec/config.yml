@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   Project: AI Workflow Hero (Hero) — the Hero CLI + Runtime assets themselves.
   This is Hero's own source code repository, not a project that consumes Hero.
-  Phase: Cycle C5 — Dynamic Model Properties in the Hero TUI.
+  Phase: Cycle C6 — Codex Adapter (Hero 2.5.0).
 
   Authoritative baseline sources — read before planning or writing any artifact:
     - AGENTS.md (project summary, doc map, reference lookup order, testing loop, ambiguity policy)
@@ -36,34 +36,37 @@ context: |
     - [C05 PRD] docs/product/PRD-C05-001-model-properties-tui.md — Dynamic Model Properties in the Hero TUI
     - [C05 ADR] docs/architecture/ADR-C05-001-model-properties-tui.md — Dynamic Model Properties, Capability Discovery, and Cache
     - [C05 UI] docs/product/UI-C05-001-tui-model-properties.md — TUI Model Property Selection and Status
+    - [C06 PRD] docs/product/PRD-C06-001-codex-adapter.md — Codex Adapter (Hero 2.5.0)
+    - [C06 ADR] docs/architecture/ADR-C06-001-codex-adapter.md — Codex Adapter (ADR-043–048)
+    - [C06 UI] docs/product/UI-C06-001-tui-codex-adapter.md — TUI Codex Adapter (Hero 2.5.0)
 
   Terminology: **etapa** = workflow stage; **interação** = one conversational round within an etapa;
   **enabled** = user selected harness in hero.json; **available** = adapter IsAvailable true;
-  **native model id** = harness-specific model string (Cursor slug vs OpenCode provider/model).
+  **native model id** = harness-specific model string (Cursor slug, OpenCode provider/model, Codex native id).
 
-  Do not invent requirements. Preserve C4 Cursor/OpenCode pair selection, Cursor adapter behavior,
-  Cursor IDE Runtime, checksum upgrade, dual-entry, lazy OpenCode boot, and deterministic engine.
-  Model metadata belongs to project SQLite; model selections belong to hero.json. No hero serve daemon.
-  Scope: native=true (generic_agent). Browser UI Validation and QA End-to-End are disabled for C5.
+  Behavioral template: `internal/adapters/opencode/` (OpenCodeAdapter wins over idea file on divergence).
+  Do not invent requirements. Preserve C4/C5 Cursor/OpenCode behavior, Cursor IDE Runtime, checksum upgrade,
+  dual-entry, lazy harness boot, C5 model properties, and deterministic engine. No hero serve daemon.
+  Scope: native=true (generic_agent). Browser UI Validation and QA End-to-End are disabled for C6.
 
   Stack: Go, Cobra, embed.FS, Feature Based + Vertical Slice, huh + Bubble Tea, SQLite (ADR-013).
-  Test command: `go test ./...`. Active OpenSpec change: `model-properties-tui`.
+  Test command: `go test ./...`. Active OpenSpec change: `codex-adapter`.
 
 rules:
   proposal:
-    - Reference PRD-C05-001 sections; cite ADR-038–042 and UI-C05-001
-    - State in/out of scope; preserve C4 multi-harness and Cursor behavior
-    - Classify CLI vs Runtime per ADR-003
-    - Include dedicated model capability/catalog and project-cache tasks
+    - Reference PRD-C06-001 sections; cite ADR-043–048 and UI-C06-001
+    - State in/out of scope; OpenCodeAdapter is the behavioral spec; idea file yields on divergence
+    - Classify CLI vs Runtime per ADR-003; Cursor IDE stays Cursor-only (ADR-043)
+    - Include dedicated Codex model catalog and `.codex/` projection tasks
 
   specs:
     - Use WHEN/THEN acceptance scenarios (exactly 4 hashtags for `#### Scenario:`)
-    - Align with PRD-C05-001, UI-C05-001, and ADR-038–042
+    - Align with PRD-C06-001, UI-C06-001, and ADR-043–048
 
   design:
-    - Follow ADR-002, ADR-003, ADR-038–042; native protocol stays inside adapters
+    - Follow ADR-002, ADR-003, ADR-043–048; Codex JSON-RPC stays inside `internal/adapters/codex`
 
   tasks:
     - Atomic checklist; `go test ./...`; mark PARALLEL vs SERIES
     - Scope native → generic_agent; colocated _test.go per package touched
-    - Keep model catalog/fixture work standalone; do not fold it into UI-only tasks
+    - Keep Codex catalog/projection work standalone; do not fold into UI-only tasks

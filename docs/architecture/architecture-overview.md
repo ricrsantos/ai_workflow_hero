@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **1.1.1** (C3 archived; no active cycle).
+> **Status:** reflects codebase at Hero **2.4.1** (C5 archived). **C6 Research** specifies Hero **2.5.0** Codex TUI adapter (`internal/adapters/codex`, not yet implemented).
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -37,6 +37,7 @@ ai_workflow_hero/
 │   ├── harness · harnessmgr · store · engine · tui · workflowconfig
 │   ├── adapters/cursor/   # Cursor Agent CLI adapter (NDJSON stream-json)
 │   ├── adapters/opencode/ # OpenCode serve HTTP + SSE /event
+│   ├── adapters/codex/    # C6: Codex app-server stdio JSON-RPC (Hero 2.5.0)
 │   ├── common/            # template, clierr, output, envhygiene, userpath
 │   └── integration/       # install/upgrade/doctor integration tests
 ├── scripts/               # release.sh, build_dev.sh (+ contract tests)
@@ -138,6 +139,9 @@ Repository layout: **feature-based vertical slices** under `internal/<feature>/`
               │                               │               │
     internal/adapters/opencode.Adapter        │               │
     serve · server lifecycle · events · HTTP  │               │
+              │                               │               │
+    internal/adapters/codex.Adapter (C6)      │               │
+    app-server · stdio JSON-RPC · events      │               │
                               │                               │
                     internal/common/                          │
                     template · clierr · output · envhygiene   │
