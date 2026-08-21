@@ -368,29 +368,31 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
 - Cursor without terminal `result` + non-zero exit code fails with stderr detail.
 - Cursor `stream-json` success with no substantive output fails with an explicit empty-response error.
 
-**Harness watchdog (v2.3, TUI only):**
+**Harness watchdog (v2.3+, TUI only, warn-only):**
 
 ```
   TUI Execute (streaming)
         │
-        ├─ stream deltas → harness.Watchdog.RecordDelta
+        ├─ stream deltas → Watchdog.RecordDelta (resets stall clock)
+        │                  recent activity ⇒ skip CheckHealth this tick
         │
-        └─ periodic HealthChecker.CheckHealth (10s)
+        └─ periodic HealthChecker.CheckHealth (30s, single-flight, read-only)
                  │
                  ▼
            Evaluate(process + server + session + last activity)
                  │
      ┌───────────┼───────────────┐
      ▼           ▼               ▼
- healthy    suspected_hang     failed
+ healthy    suspected_hang     failed / degraded
               │                  │
-              ▼                  ▼
-        user prompt         auto-cancel
-     (wait / cancel / restart)
+              └────────┬─────────┘
+                       ▼
+              Chat warning / footer only
+           (no auto-cancel / no auto-reset)
 ```
 
-- Stall timeouts: Cursor 5m, OpenCode 3m (constants in `internal/harness/health.go`).
-- OpenCode health: `GET /global/health`; Cursor: `HasInFlight()` + session status.
+- Stall timeouts: Cursor 5m, OpenCode 6m (`internal/harness/health.go`).
+- OpenCode health: `GET /global/health` + read-only `GET /session/{id}` (no `ensureServe`); Cursor: `HasInFlight()` + session status.
 - Empty successful Execute → TUI warning (`convRoleWarning`); not applied to Cursor IDE chat Runtime.
 
 - **Execute**: multi-turn agent runs from TUI Chat (and `hero run` paths).

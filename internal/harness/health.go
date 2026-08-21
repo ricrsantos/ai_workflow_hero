@@ -35,8 +35,8 @@ type HealthChecker interface {
 // Default stall-detection timeouts (conservative; no hero.json schema in v2.3).
 const (
 	CursorStallTimeout   = 5 * time.Minute
-	OpenCodeStallTimeout = 3 * time.Minute
-	HealthProbeInterval  = 10 * time.Second
+	OpenCodeStallTimeout = 6 * time.Minute
+	HealthProbeInterval  = 30 * time.Second
 )
 
 // StallTimeoutForHarness returns the inactivity threshold before suspected_hang.

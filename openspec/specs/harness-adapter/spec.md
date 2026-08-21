@@ -98,11 +98,11 @@ When Cursor `stream-json` ends without a `result` event and the CLI exits non-ze
 
 ### Requirement: Harness adapters SHALL expose runtime health probes
 
-Adapters that support TUI Execute SHALL implement `harness.HealthChecker` with `CheckHealth(ctx, sessionID)`. Cursor probes in-flight CLI process state; OpenCode probes managed serve process, `GET /global/health` (fallback: `/config/providers` liveness), and session existence when a session id is known (v2.3 harness health design).
+Adapters that support TUI Execute SHALL implement `harness.HealthChecker` with `CheckHealth(ctx, sessionID)`. Health probes SHALL be read-only: they MUST NOT start, adopt, stop, or reset harness processes. Cursor probes in-flight CLI process state; OpenCode probes managed serve process, `GET /global/health` (fallback: `/config/providers` liveness), and a read-only session existence GET when a session id is known. Inconclusive session probes (timeout, non-404 errors) MUST NOT set `SessionAlive` to false.
 
 #### Scenario: OpenCode server health
 - **WHEN** TUI requests health during an OpenCode Execute
-- **THEN** the adapter reports `ServerAlive` from `/global/health` or the documented liveness fallback
+- **THEN** the adapter reports `ServerAlive` from `/global/health` or the documented liveness fallback without spawning or resetting serve
 
 #### Scenario: Cursor process health
 - **WHEN** TUI requests health during a Cursor Execute
@@ -110,11 +110,15 @@ Adapters that support TUI Execute SHALL implement `harness.HealthChecker` with `
 
 ### Requirement: TUI SHALL not block indefinitely on harness Execute
 
-During TUI streaming Execute, Hero SHALL run a generic watchdog (`internal/harness/watchdog.go`) that combines adapter health probes with stream activity timestamps. On `suspected_hang`, the TUI SHALL prompt the user to cancel, wait, or restart the harness. On `failed`, the TUI SHALL cancel the stream and surface a warning. This requirement applies to Hero TUI only — not Cursor IDE chat Runtime.
+During TUI streaming Execute, Hero SHALL run a generic watchdog (`internal/harness/watchdog.go`) that combines adapter health probes with stream activity timestamps. Probe interval SHALL be 30s; OpenCode stall timeout SHALL be 6m (Cursor stall remains 5m). When the stream delivers substantive activity within the probe interval, the TUI SHALL treat the harness as healthy and MAY skip that interval's `CheckHealth`. On `degraded`, `suspected_hang`, or `failed`, the TUI SHALL surface warnings or error messages only — it MUST NOT cancel Execute, restart the harness, or take other corrective actions from the health path. This requirement applies to Hero TUI only — not Cursor IDE chat Runtime.
 
 #### Scenario: Stalled harness during Execute
 - **WHEN** the harness process is alive but no substantive stream activity occurs for the configured stall timeout
-- **THEN** the TUI shows a stall warning with recovery options and does not wait silently
+- **THEN** the TUI shows a stall warning and does not cancel or reset the harness automatically
+
+#### Scenario: Active stream skips health probe
+- **WHEN** substantive stream activity occurred within the last probe interval
+- **THEN** the TUI skips `CheckHealth` for that tick and keeps watchdog status healthy
 
 ### Requirement: TUI SHALL warn on successful Execute with empty output
 

@@ -229,10 +229,14 @@ func (a *Adapter) ResumeSession(ctx context.Context, sessionID string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
 		return fmt.Errorf("session %q not found", sessionID)
+	case resp.StatusCode < 200 || resp.StatusCode >= 300:
+		return fmt.Errorf("resume session %q: unexpected status %d", sessionID, resp.StatusCode)
+	default:
+		return nil
 	}
-	return nil
 }
 
 // Execute implements harness.HarnessAdapter.

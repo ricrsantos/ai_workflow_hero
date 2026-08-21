@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -19,6 +20,10 @@ type globalHealthResponse struct {
 }
 
 // CheckHealth implements harness.HealthChecker for the OpenCode serve harness.
+//
+// Probes are strictly observational: they MUST NOT call ensureServe, ResumeSession,
+// StopServe, or ResetServe, and MUST NOT take serveStartMu. Session checks are a
+// read-only GET; inconclusive results leave SessionAlive true to avoid false degraded.
 func (a *Adapter) CheckHealth(ctx context.Context, sessionID string) (harness.HarnessHealth, error) {
 	a.mu.Lock()
 	pid := a.servePID
@@ -55,15 +60,51 @@ func (a *Adapter) CheckHealth(ctx context.Context, sessionID string) (harness.Ha
 
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID != "" {
-		if err := a.ResumeSession(ctx, sessionID); err != nil {
+		alive, conclusive, detail := probeSessionAlive(ctx, baseURL, sessionID, a.HTTP)
+		if conclusive && !alive {
 			health.SessionAlive = false
+		}
+		if detail != "" {
 			if health.Details != "" {
 				health.Details += "; "
 			}
-			health.Details += err.Error()
+			health.Details += detail
 		}
 	}
 	return health, nil
+}
+
+// probeSessionAlive is a read-only existence check. It never starts a serve.
+// conclusive is true only for HTTP 2xx (alive) or 404 (not alive).
+func probeSessionAlive(ctx context.Context, baseURL, sessionID string, client HTTPDoer) (alive, conclusive bool, detail string) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	sessionID = strings.TrimSpace(sessionID)
+	if baseURL == "" || sessionID == "" {
+		return true, false, ""
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, baseURL+"/session/"+sessionID, nil)
+	if err != nil {
+		return true, false, "session probe inconclusive"
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return true, false, "session probe inconclusive"
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		return true, true, ""
+	case resp.StatusCode == http.StatusNotFound:
+		return false, true, fmt.Sprintf("session %q not found", sessionID)
+	default:
+		return true, false, fmt.Sprintf("session probe inconclusive (status %d)", resp.StatusCode)
+	}
 }
 
 func checkGlobalHealth(ctx context.Context, baseURL string, client HTTPDoer) (bool, string) {

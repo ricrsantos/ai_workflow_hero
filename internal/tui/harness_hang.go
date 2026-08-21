@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	harnessHangConfirmMsg = "Harness appears stalled. [y] Cancel  [n] Wait  [r] Restart harness"
-	emptyResponseWarning  = "WARNING: Harness returned an empty response. The agent produced no text or tool output."
+	harnessStallWarnMsg      = "Harness appears stalled (no activity). Cancel the run or use /harness-reset if needed."
+	harnessFailedWarnHint    = "Cancel the run or use /harness-reset if needed."
+	emptyResponseWarning     = "WARNING: Harness returned an empty response. The agent produced no text or tool output."
+	healthProbeTimeout       = 5 * time.Second
 )
 
 type harnessHealthProbeMsg struct{}
@@ -36,7 +38,7 @@ func (m model) harnessHealthCheckCmd() tea.Cmd {
 	watchdog := m.harnessWatchdog
 	adapter := m.harnessAdapter()
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), healthProbeTimeout)
 		defer cancel()
 		probe := harness.HarnessHealth{
 			ProcessAlive: true,
@@ -60,21 +62,35 @@ func (m model) harnessHealthCheckCmd() tea.Cmd {
 func (m model) resetHarnessWatchdog(executePrompt string) model {
 	m.harnessWatchdog.Reset(time.Now())
 	m.harnessHealthStatus = harness.HealthHealthy
-	m.harnessHangPending = false
-	m.harnessHangMsg = ""
-	m.harnessHangDismissed = false
+	m.harnessHealthInFlight = false
 	m.lastExecutePrompt = executePrompt
+	return m
+}
+
+func (m model) clearHarnessHealthWarnings() model {
+	m.harnessHealthStatus = harness.HealthHealthy
 	return m
 }
 
 func (m model) handleHarnessHealthProbe() (model, tea.Cmd) {
 	if !m.streaming {
+		m.harnessHealthInFlight = false
 		return m, nil
 	}
+	// Stream delivering substantive activity: healthy — skip HTTP probe this interval.
+	if m.harnessWatchdog.HasRecentActivity(time.Now(), harness.HealthProbeInterval) {
+		m = m.clearHarnessHealthWarnings()
+		return m, harnessHealthProbeCmd()
+	}
+	if m.harnessHealthInFlight {
+		return m, harnessHealthProbeCmd()
+	}
+	m.harnessHealthInFlight = true
 	return m, tea.Batch(m.harnessHealthCheckCmd(), harnessHealthProbeCmd())
 }
 
 func (m model) handleHarnessHealthResult(msg harnessHealthResultMsg) (model, tea.Cmd) {
+	m.harnessHealthInFlight = false
 	if !m.streaming {
 		return m, nil
 	}
@@ -83,14 +99,16 @@ func (m model) handleHarnessHealthResult(msg harnessHealthResultMsg) (model, tea
 
 	switch msg.status {
 	case harness.HealthFailed:
-		warn := "Harness process is not running."
-		if d := strings.TrimSpace(msg.health.Details); d != "" {
-			warn = d
+		if prev != harness.HealthFailed {
+			warn := "Harness process is not running."
+			if d := strings.TrimSpace(msg.health.Details); d != "" {
+				warn = d
+			}
+			warn = warn + " " + harnessFailedWarnHint
+			m.insertBeforeAgent(convMessage{role: convRoleWarning, content: "WARNING: " + warn})
+			m = m.setStatusWarning("execute", warn)
 		}
-		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: "WARNING: " + warn})
-		m = m.setStatusWarning("execute", warn)
-		m.harnessHangPending = false
-		return m, m.cancelStreamCmd()
+		return m, nil
 
 	case harness.HealthDegraded:
 		if prev != harness.HealthDegraded {
@@ -104,45 +122,17 @@ func (m model) handleHarnessHealthResult(msg harnessHealthResultMsg) (model, tea
 			m.insertBeforeAgent(convMessage{role: convRoleWarning, content: "WARNING: " + warn})
 			m = m.setStatusWarning("execute", warn)
 		}
-		return m, harnessHealthProbeCmd()
+		return m, nil
 
 	case harness.HealthSuspected:
-		if m.harnessHangDismissed {
-			return m, harnessHealthProbeCmd()
+		if prev != harness.HealthSuspected {
+			m.insertBeforeAgent(convMessage{role: convRoleWarning, content: "WARNING: " + harnessStallWarnMsg})
+			m = m.setStatusWarning("execute", harnessStallWarnMsg)
 		}
-		if !m.harnessHangPending {
-			m.harnessHangPending = true
-			m.harnessHangMsg = harnessHangConfirmMsg
-			m.insertBeforeAgent(convMessage{role: convRoleWarning, content: "WARNING: Harness appears stalled (no activity). " + harnessHangConfirmMsg})
-		}
-		return m, harnessHealthProbeCmd()
+		return m, nil
 
 	default:
-		if prev == harness.HealthSuspected || prev == harness.HealthDegraded {
-			m.harnessHangPending = false
-			m.harnessHangMsg = ""
-		}
-		return m, harnessHealthProbeCmd()
-	}
-}
-
-func (m model) handleHarnessHangKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "y", "Y":
-		m.harnessHangPending = false
-		m.harnessHangMsg = ""
-		return m, m.cancelStreamCmd()
-	case "r", "R":
-		m.harnessHangPending = false
-		m.harnessHangMsg = ""
-		harnessID := m.conversationHarnessTool()
-		next, resetCmd := m.applyHarnessReset(harnessID)
-		return next, tea.Batch(m.cancelStreamCmd(), resetCmd)
-	default:
-		m.harnessHangPending = false
-		m.harnessHangMsg = ""
-		m.harnessHangDismissed = true
-		return m, harnessHealthProbeCmd()
+		return m, nil
 	}
 }
 

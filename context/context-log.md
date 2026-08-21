@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-08-21 — Cursor catalog: add `auto`
+
+**Problem**: CLI default model slug `auto` was missing from `assets/models/cursor.yml`, so metrics/context bar could not resolve Auto Cost pricing.
+
+**Decision / Outcome**: Added `auto` with Auto Cost rates from Cursor docs ($1.25 input+cache_write / $0.25 cache_read / $6.00 output per 1M), `context_window: 500000` (Grok 4.5 router pool floor), and C5 `fs`/`ef`/`th` as `na` (no CLI variants). Mirrored into `.workflow-hero/models/cursor.yml`. `last_updated: 2026-08-21`.
+
+---
+
+## 2026-08-21 — OpenCode health/watchdog warn-only + read-only probes
+
+**Problem**: OpenCode health probes caused false alerts and could interfere with the live stream (`ResumeSession` → `ensureServe`, overlapping probes, auto-cancel on `failed`).
+
+**Decision / Outcome**: `CheckHealth` is read-only (session via `GET /session/{id}` only; inconclusive probes keep `SessionAlive`); TUI probes every 30s, skips when stream has recent activity, single-flight; OpenCode stall 6m; health path is warn-only (no auto-cancel/reset). `ResumeSession` now errors on non-2xx. Specs/overview/context updated; `go test ./...`.
+
+---
+
 ## 2026-08-20 — C6 Research: Codex Adapter (Hero 2.5.0)
 
 **Problem**: Users cannot run OpenAI Codex as a Hero TUI harness (C4 left Codex out of scope).

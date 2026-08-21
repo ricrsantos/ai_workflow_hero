@@ -63,3 +63,19 @@ func TestWatchdogHealthyWithinTimeout(t *testing.T) {
 		t.Fatalf("status=%q want healthy", got)
 	}
 }
+
+func TestWatchdogHasRecentActivity(t *testing.T) {
+	var w harness.Watchdog
+	start := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	w.Reset(start)
+	if w.HasRecentActivity(start.Add(time.Second), harness.HealthProbeInterval) {
+		t.Fatal("no activity yet")
+	}
+	w.RecordDelta(harness.StreamDelta{Kind: harness.StreamKindText, Text: "hi"}, start.Add(10*time.Second))
+	if !w.HasRecentActivity(start.Add(20*time.Second), harness.HealthProbeInterval) {
+		t.Fatal("expected recent activity within probe interval")
+	}
+	if w.HasRecentActivity(start.Add(10*time.Second+harness.HealthProbeInterval), harness.HealthProbeInterval) {
+		t.Fatal("activity outside window must not count as recent")
+	}
+}

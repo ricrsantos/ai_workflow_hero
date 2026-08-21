@@ -47,6 +47,17 @@ func (w *Watchdog) LastActivityAt() time.Time {
 	return w.lastActivityAt
 }
 
+// HasRecentActivity reports whether substantive stream activity occurred within window.
+func (w *Watchdog) HasRecentActivity(now time.Time, window time.Duration) bool {
+	if !w.hasActivity || window <= 0 {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return now.Sub(w.lastActivityAt) < window
+}
+
 // Evaluate merges adapter probe results with local activity timestamps.
 // Absence of events alone does not imply a hang; process/server/session must
 // be considered together with last activity (v2.3 design).

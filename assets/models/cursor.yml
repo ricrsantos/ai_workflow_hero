@@ -1,6 +1,6 @@
 provider: cursor
 version: 1
-last_updated: 2026-08-18
+last_updated: 2026-08-21
 currency: usd
 unit: per_1m_tokens
 
@@ -9,6 +9,32 @@ unit: per_1m_tokens
 # base-slug lookup (ADR-039).
 
 models:
+  # Cursor Agent CLI default (`agent models`: "auto - Auto (default)").
+  # Pricing = Auto Cost flat rates (docs: $1.25 input+cache write / $0.25 cache
+  # read / $6.00 output per 1M tokens), regardless of which model the router
+  # picks. Balance/Intelligence bill at the routed model's API rates instead.
+  # context_window uses the Grok 4.5 pool floor (required router model); the
+  # effective window still depends on the model chosen for each request.
+  # No CLI variant slugs (auto-fast / effort) → C5 properties unavailable.
+  auto:
+    input: 1.25
+    cache_write: 1.25
+    cache_read: 0.25
+    output: 6.00
+    context_window: 500000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: false
+        values: ["na"]
+        default: "na"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
   composer-2.5:
     input: 0.50
     cache_write: 0.00

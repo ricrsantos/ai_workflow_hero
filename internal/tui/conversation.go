@@ -1026,7 +1026,11 @@ func (m model) cancelStreamCmd() tea.Cmd {
 func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case streamDeltaMsg:
+		prevActivity := m.harnessWatchdog.LastActivityAt()
 		m.harnessWatchdog.RecordDelta(msg.delta, time.Now())
+		if m.harnessWatchdog.LastActivityAt().After(prevActivity) {
+			m = m.clearHarnessHealthWarnings()
+		}
 		m = m.appendStreamDelta(msg.delta)
 		m = m.maybeFollowResponseBottom()
 		if m.streaming && m.convStreamCh != nil {
@@ -1052,9 +1056,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.liveAgents = nil
 		m.confirmPending = false
 		m.confirmMsg = ""
-		m.harnessHangPending = false
-		m.harnessHangMsg = ""
-		m.harnessHangDismissed = false
+		m.harnessHealthInFlight = false
 		m.harnessHealthStatus = harness.HealthHealthy
 		m = m.clearHarnessPermission()
 		if !m.orchestrationLive {
