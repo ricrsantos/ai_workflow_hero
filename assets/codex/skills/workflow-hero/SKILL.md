@@ -1,3 +1,11 @@
+---
+name: workflow-hero
+description: >-
+  AI Workflow Hero runtime workflow context for the orchestration agent. Use when
+  working in a Hero-managed project, running /hero-* slash commands, advancing
+  stages, or applying Hero stage-close and workspace rules.
+---
+
 # Hero Workflow Skill
 
 This skill provides the AI Workflow Hero runtime workflow context for the orchestration agent.

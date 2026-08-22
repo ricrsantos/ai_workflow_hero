@@ -49,7 +49,7 @@
 - **Feature Based + Vertical Slice**: `cmd/hero` + `internal/<feature>/` (`install`, `upgrade`, `uninstall`, `doctor`, `status`, `variables`, `update_models`, `cycle`, `store`, `engine`, `tui`, `harness`, `harnessmgr`, `todos`, `workflowconfig`) + `internal/adapters/cursor/` + `internal/adapters/opencode/` + `internal/adapters/codex/` + `internal/common/` (includes `assetconflict` for upgrade conflict backup/replace).
 - **Strict CLI vs Runtime**: CLI is deterministic; orchestration lives in embedded `assets/cursor/`.
 - **Simple templating**: `internal/common/template` — `{{path.key}}` only (ADR-006).
-- **Assets**: embedded via `assets.FS`; install copies into `.cursor/` (when Cursor enabled), `.opencode/` (when OpenCode enabled), `.codex/` (when Codex enabled — full agents/commands/skills mirroring OpenCode; no AGENTS.md / no config.toml), and `.workflow-hero/`.
+- **Assets**: embedded via `assets.FS`; install copies into `.cursor/` (when Cursor enabled), `.opencode/` (when OpenCode enabled), `.codex/` (when Codex enabled — full agents/commands/skills mirroring OpenCode; no AGENTS.md / no config.toml), and `.workflow-hero/`. Codex `SKILL.md` files include required YAML frontmatter (`name`, `description`) for Codex skill discovery.
 - **Multi-harness (C4/C5)**: `hero.json` → `harnesses.<id>.enabled`, `freechat_default {harness, model}`, and C5 `model_properties`; `workflow-config.yml` requires `harness` on every agent + `fallback_model`; `internal/harnessmgr` registry + fallback chain (ADR-033); SQLite schema **v6** (`harness_serve_registry` + `project_path`, `stages.harness_id`, project model-list/capability cache).
 
 ## Implemented Features

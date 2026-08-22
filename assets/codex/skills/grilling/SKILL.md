@@ -1,3 +1,11 @@
+---
+name: grilling
+description: >-
+  Structured requirements elicitation through relentless questioning. Use during
+  Research when stress-testing a plan or design before implementation, clarifying
+  vague requirements, or running discover_agent grilling sessions.
+---
+
 # Grilling Skill — Structured Requirements Elicitation
 
 ## When to Use

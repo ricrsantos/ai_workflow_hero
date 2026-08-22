@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-21 — Codex skill YAML frontmatter
+
+**Problem**: Codex warned that Hero-provisioned `.codex/skills/*/SKILL.md` lacked YAML frontmatter (`---` delimited `name` + `description`).
+
+**Fix**: Added required frontmatter to `assets/codex/skills/{grilling,workflow-hero}/SKILL.md`; synced dogfood projection + checksums; regression test `TestCodexSkills_HaveRequiredYAMLFrontmatter`.
+
+**Validation**: `go test ./... -count=1` passed.
+
 ## 2026-08-21 — Multi-harness TUI labels (model × harness mix)
 
 **Problem**: During multi-harness cycles the Chat speaker/input could show a Cursor model with an OpenCode harness (e.g. `[ORCH - composer-2.5 · opencode]`). Display used freechat `chatHarnessID` while the model came from `runtimeModelSlug` (YAML orch).

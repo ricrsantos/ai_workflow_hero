@@ -10,6 +10,7 @@ import (
 
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"gopkg.in/yaml.v3"
 )
 
 func TestProvisionCodex_ProjectsMirroredFamilies(t *testing.T) {
@@ -166,5 +167,47 @@ func TestAssetsFS_EmbedsCodexFamilies(t *testing.T) {
 	}
 	if _, err := fs.Stat(assets.FS, "codex/agents/STUB.md"); err == nil {
 		t.Fatal("STUB.md must be removed after §5 full projection assets")
+	}
+}
+
+// Codex rejects SKILL.md without YAML frontmatter (name + description required).
+func TestCodexSkills_HaveRequiredYAMLFrontmatter(t *testing.T) {
+	skills := []string{"grilling", "workflow-hero"}
+	for _, skill := range skills {
+		t.Run(skill, func(t *testing.T) {
+			data, err := fs.ReadFile(assets.FS, "codex/skills/"+skill+"/SKILL.md")
+			if err != nil {
+				t.Fatalf("read skill: %v", err)
+			}
+			content := string(data)
+			if !strings.HasPrefix(content, "---\n") && !strings.HasPrefix(content, "---\r\n") {
+				t.Fatal("SKILL.md must start with YAML frontmatter delimited by ---")
+			}
+			rest := strings.TrimPrefix(content, "---\r\n")
+			rest = strings.TrimPrefix(rest, "---\n")
+			end := strings.Index(rest, "\n---")
+			if end < 0 {
+				t.Fatal("SKILL.md missing closing --- for YAML frontmatter")
+			}
+			var meta struct {
+				Name        string `yaml:"name"`
+				Description string `yaml:"description"`
+			}
+			if err := yaml.Unmarshal([]byte(rest[:end]), &meta); err != nil {
+				t.Fatalf("parse frontmatter: %v", err)
+			}
+			if meta.Name != skill {
+				t.Fatalf("frontmatter name %q must match directory %q", meta.Name, skill)
+			}
+			if strings.TrimSpace(meta.Description) == "" {
+				t.Fatal("frontmatter description is required")
+			}
+			if len(meta.Name) > 100 {
+				t.Fatalf("name exceeds Codex 100-char limit: %d", len(meta.Name))
+			}
+			if len(meta.Description) > 500 {
+				t.Fatalf("description exceeds Codex 500-char limit: %d", len(meta.Description))
+			}
+		})
 	}
 }
