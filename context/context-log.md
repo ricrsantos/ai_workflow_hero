@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-22 — `/hero-config-update` reloads TUI model labels
+
+**Problem**: Mid-cycle edits to `workflow-config.yml` or `hero.json` were used by Execute (disk reload) but Chat input `Build · model · harness` kept stale `runtimeModelSlug` / boot-time `chatModelSlug`. No poll desired.
+
+**Fix**: Built-in slash `/hero-config-update` calls `syncDisplayModelFromDisk` (freechat from `hero.json`; active orch/discover/runtime agent from YAML) and refreshes the input label. Palette + composer dispatch; no harness Execute.
+
+**Validation**: `go test ./... -count=1` passed.
+
 ## 2026-08-22 — Token usage: context bar + cycle SQLite
 
 **Problem**: Freechat (and TUI stage executes) left the Chat context bar at 0 tokens. Cycle Costs/SQLite relied only on LLM Metrics Procedure (chars÷4 via `--metrics-json`). OpenCode never populated `ExecutionResult.Usage`; Codex `thread/tokenUsage/updated` could be dropped under notify backpressure.

@@ -980,6 +980,10 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 		m = m.clearChatInput()
 		next, cmd := m.openModelPicker()
 		return next, cmd, true
+	case "/hero-config-update":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroConfigUpdate()
+		return next, cmd, true
 	case "/hero-cycles":
 		m = m.clearChatInput()
 		next, cmd := m.beginAction("/hero-cycles", m.cyclesCmd())

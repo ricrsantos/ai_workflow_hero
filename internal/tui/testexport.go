@@ -413,6 +413,11 @@ func SetRuntimeModelSlugForTest(m model, slug string) model {
 	return m
 }
 
+// RuntimeModelSlugForTest returns the active runtime workflow model slug.
+func RuntimeModelSlugForTest(m model) string {
+	return m.runtimeModelSlug
+}
+
 // SetAvailableModelsForTest sets Cursor model ids for the picker cache.
 func SetAvailableModelsForTest(m model, models []string) model {
 	m.availableModels = append([]string(nil), models...)

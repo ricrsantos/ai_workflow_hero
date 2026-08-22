@@ -38,6 +38,7 @@ const (
 	actionApplyHarness
 	actionHarnessReset
 	actionSelectHarnessReset
+	actionConfigUpdate
 )
 
 type paletteItem struct {
@@ -69,6 +70,7 @@ func defaultHeroPaletteItems() []paletteItem {
 		{label: "/hero-cycles", hint: "list cycles", action: actionCycles},
 		{label: "/hero-todos", hint: "pending items", action: actionTodos},
 		{label: "/hero-sync", hint: "sync project", action: actionSync},
+		{label: "/hero-config-update", hint: "reload model from config", action: actionConfigUpdate},
 		{label: "/hero-harness", hint: "manage harnesses", action: actionHarness},
 		{label: "/harness-reset", hint: "restart harness connection", action: actionHarnessReset},
 		{label: "/hero-help", hint: "workflow guide", action: actionHelp},

@@ -21,6 +21,7 @@ func TestDefaultHeroPaletteOrder(t *testing.T) {
 		"/hero-cycles",
 		"/hero-todos",
 		"/hero-sync",
+		"/hero-config-update",
 		"/hero-harness",
 		"/harness-reset",
 		"/hero-help",

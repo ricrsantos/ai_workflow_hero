@@ -670,6 +670,8 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		return m.beginAction("/hero-todos", m.todosCmd())
 	case actionModel:
 		return m.openModelPicker()
+	case actionConfigUpdate:
+		return m.beginHeroConfigUpdate()
 	case actionHarness:
 		return m.openHarnessPicker()
 	case actionHelp:
