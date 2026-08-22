@@ -398,11 +398,9 @@ func (m model) ensurePaletteVisible() model {
 
 func (m model) renderFrame() string {
 	var bottom strings.Builder
-	bottom.WriteString(strings.Repeat("─", max(20, m.width)))
-	bottom.WriteByte('\n')
 	bottom.WriteString(m.renderStatusBar())
 	bottom.WriteByte('\n')
-	bottom.WriteString(strings.Repeat("─", max(20, m.width)))
+	bottom.WriteString(m.renderBorderRule())
 	bottom.WriteByte('\n')
 	bottom.WriteString(m.renderFooter())
 	bottomStr := bottom.String()
@@ -463,10 +461,17 @@ func fitContentHeight(content string, height int, keepBottom bool) string {
 	return strings.Join(lines, "\n")
 }
 
-const fixedFooterHints = "tab mode · / commands · enter send · alt+enter newline · alt+y/r/i copy · ↑↓ scroll · alt+n screens · ctrl+q quit"
+const fixedFooterHints = "tab mode · / commands · enter send · alt+enter newline · alt+y/r/i copy · ↑↓ scroll · ctrl+q quit"
 
 func (m model) footerHints() string {
 	return fixedFooterHints
+}
+
+// renderBorderRule draws a full-width horizontal rule in the same border color
+// used by chat/sidebar rounded boxes.
+func (m model) renderBorderRule() string {
+	w := max(20, m.width)
+	return lipgloss.NewStyle().Foreground(colorBorder).Render(strings.Repeat("─", w))
 }
 
 // footerHintLines wraps the footer at the terminal width. The footer used to
@@ -610,9 +615,9 @@ func (m model) screenHasContentScroll() bool {
 }
 
 func (m model) frameContentHeight() int {
-	// Match renderFrame chrome: bottom rules, status bar, and the responsive
-	// footer. The left nav sidebar shares this middle band (no top tab chrome).
-	h := m.height - (1 + m.statusBarLineCount() + 1 + m.footerLineCount())
+	// Match renderFrame chrome: status bar, one border rule under status, and
+	// the responsive footer. No rule above the status area.
+	h := m.height - (m.statusBarLineCount() + 1 + m.footerLineCount())
 	if h < 0 {
 		h = 0
 	}

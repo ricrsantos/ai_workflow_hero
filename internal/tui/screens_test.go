@@ -45,7 +45,7 @@ func TestChatFooterUsesRealBindingsAndIncludesAllHints(t *testing.T) {
 	m = SetWidth(m, 80)
 	m = EnterConversationForTest(m)
 
-	want := "tab mode · / commands · enter send · alt+enter newline · alt+y/r/i copy · ↑↓ scroll · alt+n screens · ctrl+q quit"
+	want := "tab mode · / commands · enter send · alt+enter newline · alt+y/r/i copy · ↑↓ scroll · ctrl+q quit"
 	for _, state := range []struct {
 		screen    screen
 		streaming bool

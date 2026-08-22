@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-08-22 — TUI chrome polish (borders, footer, rules)
+
+**Fixes**: Chat/agents boxes overflowed by 2 cols (lipgloss `Width` is inner; borders add outside) so bottom borders wrapped — sized sidebar/chat boxes with `GetHorizontalFrameSize()`. Removed footer hint `alt+n screens`. Dropped the rule above the status area; the rule between status and footer now uses `colorBorder` (same as box borders).
+
+**Validation**: `go test ./internal/tui/ -count=1` passed.
+
 ## 2026-08-22 — TUI left nav sidebar (Bonito style)
 
 **Change**: Moved the horizontal `1. Chat │ 2. Status │ …` tab bar into a left framed sidebar (title **AI Hero**, `>` active marker, `alt+1-5` footer). Applied Bonito dark palette hex tokens in `styles.go`. Layout is `JoinHorizontal(sidebar, content)` above full-width status/footer chrome; sidebar auto-hides below 80 cols. Still Bubble Tea / Lip Gloss v1 (no Charm v2 migration).

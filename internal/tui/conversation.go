@@ -1821,7 +1821,7 @@ func (m model) renderAgentsBox() string {
 	for _, a := range m.liveAgents {
 		labels = append(labels, a.Label)
 	}
-	innerW := agentsBoxWidth - 2
+	innerW := agentsBoxWidth - chatBoxStyle.GetHorizontalFrameSize()
 	if innerW < 8 {
 		innerW = 8
 	}
@@ -1831,7 +1831,7 @@ func (m model) renderAgentsBox() string {
 	if line2 != "" {
 		body += "\n" + line2
 	}
-	return chatBoxStyle.Width(agentsBoxWidth).Render(body)
+	return chatBoxStyle.Width(innerW).Render(body)
 }
 
 func (m model) latestAgentFailed() bool {
@@ -1962,19 +1962,25 @@ func (m model) chatInputVisibleLines() int {
 }
 
 func (m model) chatBoxWidth() int {
-	boxW := m.contentWidth()
-	if boxW <= 0 {
-		boxW = 72
+	// lipgloss Width is the inner content width; borders are drawn outside it.
+	// Size the inner width so the full bordered box fits in contentWidth().
+	outer := m.contentWidth()
+	if outer <= 0 {
+		outer = 72
 	}
-	if boxW < 28 {
-		boxW = 28
+	if outer < 28 {
+		outer = 28
 	}
-	return boxW
+	inner := outer - chatBoxStyle.GetHorizontalFrameSize()
+	if inner < 10 {
+		inner = 10
+	}
+	return inner
 }
 
 // chatInnerWidth is the width available inside the rounded border (excludes border cells).
 func (m model) chatInnerWidth() int {
-	inner := m.chatBoxWidth() - 2
+	inner := m.chatBoxWidth()
 	if inner < 10 {
 		inner = 10
 	}

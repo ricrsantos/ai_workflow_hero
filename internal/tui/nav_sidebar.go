@@ -45,6 +45,7 @@ func (m model) renderNavSidebar(height int) string {
 		return ""
 	}
 	box := navSidebarBoxStyle
+	// Width/Height on bordered styles are inner content sizes; borders add outside.
 	innerW := navSidebarWidth - box.GetHorizontalFrameSize()
 	if innerW < 1 {
 		innerW = 1
@@ -87,8 +88,8 @@ func (m model) renderNavSidebar(height int) string {
 
 	footer := navSidebarFooterStyle.Render(truncateNavText(" alt+1-5", innerW))
 	body := strings.TrimSuffix(b.String(), "\n") + "\n" + footer
-	// Height is the content box only; borders are added outside (lipgloss v1).
-	return box.Width(navSidebarWidth).Height(innerH).Render(body)
+	// Width/Height are content-box sizes; borders are added outside (lipgloss v1).
+	return box.Width(innerW).Height(innerH).Render(body)
 }
 
 // truncateNavText shortens s to at most width columns (ANSI-aware via lipgloss).
