@@ -105,19 +105,50 @@ func resolveAgentTextKey(st *turnStreamState, sessionID, itemID string) string {
 	return key
 }
 
+// resolveRepairTextKey picks the stream key whose emitted prefix matches full,
+// so turn/completed summaries repair without duplicating prior deltas.
+func (st *turnStreamState) resolveRepairTextKey(sessionID, full string) string {
+	fallback := agentTextKey(sessionID, "")
+	if st == nil || st.emittedText == nil || full == "" {
+		return fallback
+	}
+	prefix := sessionID + ":agent"
+	var bestKey string
+	bestLen := -1
+	for key, emitted := range st.emittedText {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		if emitted == "" {
+			continue
+		}
+		if full == emitted || strings.HasPrefix(full, emitted) {
+			if len(emitted) > bestLen {
+				bestKey = key
+				bestLen = len(emitted)
+			}
+		}
+	}
+	if bestKey != "" {
+		return bestKey
+	}
+	return fallback
+}
+
 // handleNotification maps Codex app-server notifications to StreamDelta.
 func (a *Adapter) handleNotification(ctx context.Context, method string, raw json.RawMessage, sessionID string, req harness.ExecuteRequest, textBuf *strings.Builder, st *turnStreamState) streamOutcome {
 	_ = ctx
 	emit := func(d harness.StreamDelta) {
-		if req.OnStreamDelta == nil {
-			return
-		}
 		if d.SessionID == "" {
 			d.SessionID = sessionID
 		}
-		req.OnStreamDelta(d)
+		// Buffer text before notifying the TUI so ExecutionResult.Output stays
+		// complete even when OnStreamDelta blocks or the consumer lags.
 		if d.Kind == harness.StreamKindText && d.Text != "" && textBuf != nil {
 			textBuf.WriteString(d.Text)
+		}
+		if req.OnStreamDelta != nil {
+			req.OnStreamDelta(d)
 		}
 	}
 
@@ -148,7 +179,9 @@ func (a *Adapter) handleNotification(ctx context.Context, method string, raw jso
 	case "turn/completed":
 		status := ""
 		var turnErr error
-		if turn, ok := params["turn"].(map[string]any); ok {
+		var turn map[string]any
+		if t, ok := params["turn"].(map[string]any); ok {
+			turn = t
 			status = strings.ToLower(stringField(turn, "status"))
 			if errObj, ok := turn["error"].(map[string]any); ok {
 				msg := stringField(errObj, "message")
@@ -158,6 +191,14 @@ func (a *Adapter) handleNotification(ctx context.Context, method string, raw jso
 						turnErr = &AuthError{Err: turnErr}
 					}
 				}
+			}
+		}
+		// Newer Codex builds may include the final agent message on completion
+		// when live deltas were dropped under app-server backpressure.
+		if status == "" || status == "completed" || status == "success" {
+			if msg := lastAgentMessageFromTurn(turn, params); msg != "" {
+				key := st.resolveRepairTextKey(sessionID, msg)
+				st.emitAuthoritativeText(key, msg, method, sessionID, emit)
 			}
 		}
 		switch status {
@@ -493,6 +534,40 @@ func approvalDecision(method string, approved bool) any {
 		return map[string]any{"decision": "accept"}
 	}
 	return map[string]any{"decision": "decline"}
+}
+
+// lastAgentMessageFromTurn extracts a completion-summary agent message when
+// Codex includes it on turn/completed (repairs dropped live deltas).
+func lastAgentMessageFromTurn(turn, params map[string]any) string {
+	candidates := []map[string]any{turn, params}
+	for _, m := range candidates {
+		if m == nil {
+			continue
+		}
+		if s := stringFieldRaw(m, "lastAgentMessage", "last_agent_message"); s != "" {
+			return s
+		}
+		if summary, ok := m["summary"].(map[string]any); ok {
+			if s := stringFieldRaw(summary, "lastAgentMessage", "last_agent_message", "text"); s != "" {
+				return s
+			}
+		}
+		if items, ok := m["items"].([]any); ok {
+			for i := len(items) - 1; i >= 0; i-- {
+				item, _ := items[i].(map[string]any)
+				if item == nil {
+					continue
+				}
+				if stringField(item, "type") != "agentMessage" {
+					continue
+				}
+				if s := stringFieldRaw(item, "text"); s != "" {
+					return s
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func stringField(m map[string]any, keys ...string) string {

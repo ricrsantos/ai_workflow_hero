@@ -465,6 +465,23 @@ func (s *Service) CloseStage(name string, summary string, metricsJSON string, fa
 	})
 }
 
+// AccumulateStageHarnessMetrics adds turn token usage onto the active cycle's
+// metrics row for stage+agent. No-op when there is no active cycle.
+func (s *Service) AccumulateStageHarnessMetrics(stageName, agent, model string, usage harness.Usage, duration time.Duration) error {
+	if s == nil || s.Engine == nil || s.Store == nil {
+		return nil
+	}
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return nil // freechat / no cycle — skip silently
+	}
+	ms := duration.Milliseconds()
+	if ms < 0 {
+		ms = 0
+	}
+	return s.Engine.AccumulateStageMetrics(c.ID, stageName, agent, model, usage, ms)
+}
+
 // RunResult is the outcome of hero run dispatch.
 type RunResult struct {
 	Stage      string

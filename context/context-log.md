@@ -6,6 +6,29 @@
 
 ---
 
+## 2026-08-22 — Token usage: context bar + cycle SQLite
+
+**Problem**: Freechat (and TUI stage executes) left the Chat context bar at 0 tokens. Cycle Costs/SQLite relied only on LLM Metrics Procedure (chars÷4 via `--metrics-json`). OpenCode never populated `ExecutionResult.Usage`; Codex `thread/tokenUsage/updated` could be dropped under notify backpressure.
+
+**Fix**:
+- OpenCode: extract `info.tokens` / step-finish tokens into `ExecutionResult.Usage`.
+- Codex: `thread/tokenUsage/updated` is `notifyMustDeliver`.
+- `harness.EstimateUsage` / `ResolveUsage` (chars÷4 fallback).
+- TUI `executeDone`: context bar uses ResolveUsage; when `conversationStage` is set, accumulate into SQLite via `AccumulateStageHarnessMetrics`.
+- Engine `persistMetrics` prefers prior harness tokens over agent estimates (still accepts agent cost when unset).
+
+**Validation**: `go test ./... -count=1` passed.
+
+## 2026-08-22 — Green pane response truncation (Codex/TUI)
+
+**Problem**: Assistant replies in the Chat green pane sometimes ended mid-sentence when using Codex (and under TUI backpressure generally).
+
+**Root causes**: (1) TUI `OnStreamDelta` dropped text deltas after a 2s backpressure timeout; (2) Codex `notifyQ` overflow reordered transcript events via unordered goroutines; (3) viewport clip made wrap boundaries look like incomplete answers.
+
+**Fix**: Lossless delivery for text/thinking/warning/session deltas; `reconcileParentAgentOutput` on `executeDone` (prefix-superset, works with subagents); Codex must-deliver ordered enqueue + `textBuf` before `OnStreamDelta`; `turn/completed` `lastAgentMessage` repair; green pane `↓ more` / `…` clip markers.
+
+**Validation**: `go test ./internal/tui/ ./internal/adapters/codex/ -count=1` (focused + package).
+
 ## 2026-08-21 — Codex skill YAML frontmatter
 
 **Problem**: Codex warned that Hero-provisioned `.codex/skills/*/SKILL.md` lacked YAML frontmatter (`---` delimited `name` + `description`).
@@ -21,6 +44,7 @@
 **Fix**: Added `runtimeHarnessID` (parallel to `runtimeModelSlug`); `conversationHarnessTool` prefers it; orch/discover/start paths apply `AgentPairFor`; `executePairMsg` updates labels after `ResolveExecutePair` (incl. fallback); `liveAgent`/`convMessage` carry per-agent harness for nested speakers.
 
 **Validation**: `go test ./... -count=1` passed.
+
 
 ## 2026-08-21 — Responsive `/hero-start` preflight and streaming
 

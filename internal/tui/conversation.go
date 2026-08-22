@@ -1122,18 +1122,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			// Chat//hero-new, YAML-derived for workflow commands; ADR-041/042).
 			Properties: resolved.props,
 			OnStreamDelta: func(delta harness.StreamDelta) {
-				msg := streamDeltaMsg{delta: delta}
-				select {
-				case ch <- msg:
-				default:
-					// Keep delivering under UI lag without spinning forever on a
-					// closed/orphaned consumer: block briefly then give up.
-					select {
-					case ch <- msg:
-					case <-time.After(2 * time.Second):
-						slog.Warn("tui stream delta dropped under backpressure", "kind", delta.Kind)
-					}
-				}
+				deliverStreamDelta(ch, delta)
 			},
 			OnPermissionRequest: func(ctx context.Context, perm harness.PermissionRequest) (harness.PermissionResponse, error) {
 				respCh := make(chan harness.PermissionResponse, 1)
@@ -1154,6 +1143,37 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 		res, err := pair.Adapter.Execute(ctx, req)
 		ch <- executeDoneMsg{result: res, err: err, harnessID: pair.HarnessID}
 	}()
+}
+
+// streamDeltaMustDeliver is true for transcript-critical events. Dropping them
+// truncates the green response pane mid-sentence under TUI backpressure.
+func streamDeltaMustDeliver(kind harness.StreamKind) bool {
+	switch kind {
+	case harness.StreamKindText, harness.StreamKindThinking, harness.StreamKindWarning, harness.StreamKindSession:
+		return true
+	default:
+		return false
+	}
+}
+
+// deliverStreamDelta sends a harness delta to the conversation channel.
+// Text/thinking/warning/session block until accepted; tool/activity may drop
+// after a short wait so high-volume progress cannot stall the harness forever.
+func deliverStreamDelta(ch chan<- tea.Msg, delta harness.StreamDelta) {
+	msg := streamDeltaMsg{delta: delta}
+	if streamDeltaMustDeliver(delta.Kind) {
+		ch <- msg
+		return
+	}
+	select {
+	case ch <- msg:
+	default:
+		select {
+		case ch <- msg:
+		case <-time.After(2 * time.Second):
+			slog.Warn("tui stream delta dropped under backpressure", "kind", delta.Kind)
+		}
+	}
 }
 
 func waitConvMsg(ch <-chan tea.Msg) tea.Cmd {
@@ -1285,6 +1305,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case executeDoneMsg:
 		heroStartAction := m.actionBusy && m.statusLabel == "/hero-start"
+		stageForMetrics := strings.TrimSpace(m.conversationStage)
+		agentForMetrics := strings.TrimSpace(m.runtimeAgentName)
+		modelForMetrics := m.conversationModelSlug()
 		m.streaming = false
 		m.convStreamCh = nil
 		m.chatInputFocused = true
@@ -1321,17 +1344,22 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.result != nil {
-			m.contextUsedTokens = msg.result.Usage.InputTokens + msg.result.Usage.OutputTokens
+			usage := harness.ResolveUsage(msg.result.Usage, m.lastExecutePrompt, msg.result.Output)
+			m.contextUsedTokens = usage.InputTokens + usage.OutputTokens
+			if m.svc != nil && stageForMetrics != "" {
+				if err := m.svc.AccumulateStageHarnessMetrics(
+					stageForMetrics, agentForMetrics, modelForMetrics, usage, msg.result.Duration,
+				); err != nil {
+					slog.Debug("tui accumulate stage metrics failed", "error", err)
+				}
+			}
 			if msg.result.SessionID != "" {
 				m = m.persistHarnessSession(msg.result.SessionID, msg.harnessID)
 			}
-			// Prefer canonical result text when it is longer than streamed deltas.
-			if msg.result.Output != "" && m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) && !m.transcriptHasSubagent() {
-				streamed := m.transcript[m.agentMsgIndex].content
-				if len(msg.result.Output) >= len(streamed) {
-					m.transcript[m.agentMsgIndex].content = msg.result.Output
-					m.invalidateResponseCache(m.agentMsgIndex)
-				}
+			// Prefer canonical result text when it supersedes streamed deltas
+			// (repairs TUI drops / Codex incomplete live deltas). Parent slot only.
+			if msg.result.Output != "" {
+				m = m.reconcileParentAgentOutput(msg.result.Output)
 			}
 		}
 		if agentResponseEmpty(m, msg) {
@@ -1596,13 +1624,39 @@ func (m model) removeLiveAgent(callID string) model {
 	return m
 }
 
-func (m model) transcriptHasSubagent() bool {
-	for _, msg := range m.latestAgentTurn() {
-		if strings.TrimSpace(msg.callID) != "" {
-			return true
-		}
+// reconcileParentAgentOutput replaces the parent agent message when Output is a
+// longer prefix-superset of what the TUI streamed (or the parent slot is empty).
+// Subagent rows are left untouched.
+func (m model) reconcileParentAgentOutput(output string) model {
+	if m.agentMsgIndex < 0 || m.agentMsgIndex >= len(m.transcript) {
+		return m
 	}
-	return false
+	streamed := m.transcript[m.agentMsgIndex].content
+	if !shouldReplaceStreamedAgentText(streamed, output) {
+		return m
+	}
+	m.transcript[m.agentMsgIndex].content = output
+	m.invalidateResponseCache(m.agentMsgIndex)
+	return m
+}
+
+// shouldReplaceStreamedAgentText is true when canonical Output repairs a
+// truncated or empty live transcript without clobbering a longer divergent stream.
+func shouldReplaceStreamedAgentText(streamed, output string) bool {
+	if strings.TrimSpace(output) == "" {
+		return false
+	}
+	if streamed == "" {
+		return true
+	}
+	if streamed == output {
+		return false
+	}
+	if strings.HasPrefix(output, streamed) {
+		return true
+	}
+	// Byte-length fallback: Output is at least as complete as the stream.
+	return len(output) >= len(streamed)
 }
 
 func (m *model) appendAttributed(role convRole, d harness.StreamDelta) {
@@ -1987,7 +2041,14 @@ func (m model) renderConversationResponse(responseLines int) string {
 	}
 	statusContent += chatInAgent.Render(m.responseSpeakerHeader())
 	if visible > 0 && len(lines) > visible {
-		statusContent += chatInMuted.Render(fmt.Sprintf(" · %d–%d/%d", offset+1, minInt(offset+visible, len(lines)), len(lines)))
+		end := minInt(offset+visible, len(lines))
+		statusContent += chatInMuted.Render(fmt.Sprintf(" · %d–%d/%d", offset+1, end, len(lines)))
+		if offset > 0 {
+			statusContent += chatInMuted.Render(" · ↑ more")
+		}
+		if end < len(lines) {
+			statusContent += chatInMuted.Render(" · ↓ more")
+		}
 	}
 	rows = append(rows, chatAccentRow(accent, statusContent, innerW))
 
@@ -2289,7 +2350,7 @@ func chatAccentRow(accent lipgloss.Style, content string, innerW int) string {
 	content = strings.ReplaceAll(content, "\n", " ")
 	content = strings.ReplaceAll(content, "\r", "")
 	if lipgloss.Width(content) > contentW {
-		content = lipgloss.NewStyle().MaxWidth(contentW).Render(content)
+		content = truncateDisplayWidth(content, contentW)
 	}
 	pad := contentW - lipgloss.Width(content)
 	if pad < 0 {
@@ -2297,6 +2358,27 @@ func chatAccentRow(accent lipgloss.Style, content string, innerW int) string {
 	}
 	bar := accent.Width(1).Render(" ")
 	return bar + " " + content + strings.Repeat(" ", pad)
+}
+
+// truncateDisplayWidth clips styled/plain text to maxCells, appending "…" when clipped.
+func truncateDisplayWidth(s string, maxCells int) string {
+	if maxCells < 1 {
+		return ""
+	}
+	if lipgloss.Width(s) <= maxCells {
+		return s
+	}
+	ellipsis := "…"
+	if maxCells == 1 {
+		return ellipsis
+	}
+	budget := maxCells - lipgloss.Width(ellipsis)
+	if budget < 1 {
+		return ellipsis
+	}
+	// Prefer lipgloss MaxWidth so ANSI sequences stay intact, then mark the clip.
+	clipped := lipgloss.NewStyle().MaxWidth(budget).Render(s)
+	return clipped + ellipsis
 }
 
 func (m model) renderInputCaret() string {

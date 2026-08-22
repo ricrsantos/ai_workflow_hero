@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 )
@@ -122,6 +123,26 @@ ON CONFLICT(cycle_id, stage_name, agent) DO UPDATE SET
 		return fmt.Errorf("upsert metric: %w", err)
 	}
 	return nil
+}
+
+// GetMetric returns the metrics row for cycle+stage+agent, or nil when absent.
+func (s *Store) GetMetric(cycleID int64, stageName, agent string) (*Metric, error) {
+	var m Metric
+	err := s.db.QueryRow(`
+SELECT id, cycle_id, stage_name, model, agent, input_tokens, output_tokens, cost_usd, duration_ms
+FROM metrics WHERE cycle_id = ? AND stage_name = ? AND agent = ?`,
+		cycleID, stageName, agent,
+	).Scan(
+		&m.ID, &m.CycleID, &m.StageName, &m.Model, &m.Agent,
+		&m.InputTokens, &m.OutputTokens, &m.CostUSD, &m.DurationMS,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get metric: %w", err)
+	}
+	return &m, nil
 }
 
 // ListMetrics returns all metrics for a cycle.

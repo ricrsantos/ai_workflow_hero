@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -479,6 +480,9 @@ func TestChatAccentRowIsSingleLine(t *testing.T) {
 	if lipgloss.Width(row) != 42 {
 		t.Fatalf("row width=%d want 42", lipgloss.Width(row))
 	}
+	if !strings.Contains(row, "…") {
+		t.Fatalf("oversized accent row must mark clip with ellipsis: %q", row)
+	}
 	row2 := chatAccentRow(chatAccentResponse, "short", 42)
 	if strings.Count(row2, "\n") != 0 {
 		t.Fatalf("short accent row wrapped: %q", row2)
@@ -486,6 +490,101 @@ func TestChatAccentRowIsSingleLine(t *testing.T) {
 	empty := chatAccentRow(chatAccentResponse, "", 42)
 	if lipgloss.Width(empty) != 42 {
 		t.Fatalf("empty row width=%d want 42", lipgloss.Width(empty))
+	}
+}
+
+func TestShouldReplaceStreamedAgentText(t *testing.T) {
+	cases := []struct {
+		streamed, output string
+		want             bool
+	}{
+		{"", "full", true},
+		{"Hello", "Hello world", true},
+		{"Hello world", "Hello world", false},
+		{"Hello world extra", "Hello", false}, // shorter divergent — length gate fails
+		{"abc", "xyz", true},                  // same length / longer divergent → replace
+		{"ab", "xyz", true},
+	}
+	for _, tc := range cases {
+		if got := shouldReplaceStreamedAgentText(tc.streamed, tc.output); got != tc.want {
+			t.Fatalf("streamed=%q output=%q got %v want %v", tc.streamed, tc.output, got, tc.want)
+		}
+	}
+}
+
+func TestReconcileParentAgentOutputRepairsTruncationWithSubagent(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "hi"},
+		{role: convRoleAgent, content: "Não recomendo inferir", agentName: "orchestration_agent"},
+		{role: convRoleAgent, content: "sub work", agentName: "qa_agent", callID: "task-1"},
+	}
+	m.agentMsgIndex = 1
+
+	full := "Não recomendo inferir o modo apenas pela existência do cli.json."
+	m = m.reconcileParentAgentOutput(full)
+	if m.transcript[1].content != full {
+		t.Fatalf("parent=%q want full repair", m.transcript[1].content)
+	}
+	if m.transcript[2].content != "sub work" {
+		t.Fatalf("subagent mutated: %q", m.transcript[2].content)
+	}
+}
+
+func TestExecuteDoneReconcilesTruncatedParentOutput(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m.streaming = true
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "q"},
+		{role: convRoleAgent, content: "partial answer that was cut"},
+	}
+	m.agentMsgIndex = 1
+
+	full := "partial answer that was cut mid-sentence but recovered from Output"
+	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{Output: full}, nil))
+	got := next.(model)
+	if got.transcript[1].content != full {
+		t.Fatalf("after executeDone content=%q want %q", got.transcript[1].content, full)
+	}
+}
+
+func TestStreamDeltaMustDeliver(t *testing.T) {
+	if !streamDeltaMustDeliver(harness.StreamKindText) {
+		t.Fatal("text must deliver")
+	}
+	if !streamDeltaMustDeliver(harness.StreamKindThinking) {
+		t.Fatal("thinking must deliver")
+	}
+	if streamDeltaMustDeliver(harness.StreamKindTool) {
+		t.Fatal("tool is best-effort")
+	}
+	if streamDeltaMustDeliver(harness.StreamKindActivity) {
+		t.Fatal("activity is best-effort")
+	}
+}
+
+func TestDeliverStreamDeltaTextBlocksUntilAccepted(t *testing.T) {
+	ch := make(chan tea.Msg) // unbuffered — would drop under old timeout path
+	done := make(chan struct{})
+	go func() {
+		deliverStreamDelta(ch, harness.StreamDelta{Kind: harness.StreamKindText, Text: "hello"})
+		close(done)
+	}()
+	select {
+	case msg := <-ch:
+		sd, ok := msg.(streamDeltaMsg)
+		if !ok || sd.delta.Text != "hello" {
+			t.Fatalf("msg=%v", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("text delta was not delivered")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("deliverStreamDelta did not return")
 	}
 }
 
@@ -2850,6 +2949,61 @@ func TestExecuteDoneUpdatesContextUsedTokens(t *testing.T) {
 	view := stripANSI(ViewForTest(got))
 	if !strings.Contains(view, "180k/200k") {
 		t.Fatalf("view missing updated bar: %q", view)
+	}
+}
+
+func TestExecuteDoneEstimatesTokensWhenUsageMissing(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m.streaming = true
+	m.lastExecutePrompt = "abcdefgh" // 8 runes → 2 tokens
+	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
+		SessionID: "sess-1",
+		Output:    "abcdefghij", // 10 runes → 3 tokens
+	}, nil))
+	got := next.(model)
+	if got.contextUsedTokens != 5 {
+		t.Fatalf("used=%d want 5 (estimate)", got.contextUsedTokens)
+	}
+}
+
+func TestExecuteDoneAccumulatesStageMetricsWhenCycleActive(t *testing.T) {
+	svc := newTestServiceWithRunningResearch(t)
+	m := NewTestModel(svc)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m.conversationStage = "research"
+	m.runtimeAgentName = "discover_agent"
+	m.streaming = true
+	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
+		SessionID: "sess-1",
+		Output:    "grill done",
+		Usage:     harness.Usage{InputTokens: 70, OutputTokens: 30},
+		Duration:  2 * time.Second,
+	}, nil))
+	got := next.(model)
+	if got.contextUsedTokens != 100 {
+		t.Fatalf("used=%d want 100", got.contextUsedTokens)
+	}
+	view, err := svc.Metrics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, r := range view.Rows {
+		if r.Stage == "research" && r.Agent == "discover_agent" {
+			found = true
+			if r.InputTokens != 70 || r.OutputTokens != 30 {
+				t.Fatalf("row=%+v", r)
+			}
+			if r.DurationMS < 2000 {
+				t.Fatalf("duration=%d want >=2000", r.DurationMS)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected research/discover_agent metric, rows=%+v", view.Rows)
 	}
 }
 

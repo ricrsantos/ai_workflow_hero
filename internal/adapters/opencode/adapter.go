@@ -307,6 +307,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		SessionID:  sessionID,
 		Output:     text,
 		Summary:    truncate(text, 200),
+		Usage:      extractOpenCodeUsage(msgResp.Info),
 		Duration:   time.Since(start),
 		StreamDone: true,
 	}, nil
@@ -354,6 +355,7 @@ func (a *Adapter) executeStream(ctx context.Context, sessionID string, body []by
 		SessionID:  sessionID,
 		Output:     out,
 		Summary:    truncate(out, 200),
+		Usage:      state.usage,
 		Duration:   time.Since(start),
 		StreamDone: true,
 	}, nil
@@ -646,7 +648,8 @@ type opencodeSession struct {
 }
 
 type messageResponse struct {
-	Parts []part `json:"parts"`
+	Info  map[string]any `json:"info"`
+	Parts []part         `json:"parts"`
 }
 
 type part struct {

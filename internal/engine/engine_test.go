@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -465,6 +466,71 @@ func TestParseMetricsJSON(t *testing.T) {
 	m, err = ParseMetricsJSON(`[{"agent":"a"},{"agent":"b"}]`)
 	if err != nil || len(m) != 2 {
 		t.Fatalf("%+v %v", m, err)
+	}
+}
+
+func TestAccumulateStageMetricsAndPreferHarnessOnClose(t *testing.T) {
+	e, s := openTestEngine(t)
+	id := seedCycle(t, s, false)
+	if err := e.StartStage(id, "research"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.AccumulateStageMetrics(id, "research", "discover_agent", "composer-2.5",
+		harness.Usage{InputTokens: 100, OutputTokens: 40}, 1500); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.AccumulateStageMetrics(id, "research", "discover_agent", "composer-2.5",
+		harness.Usage{InputTokens: 50, OutputTokens: 10}, 500); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetMetric(id, "research", "discover_agent")
+	if err != nil || got == nil {
+		t.Fatalf("get metric: %+v %v", got, err)
+	}
+	if got.InputTokens != 150 || got.OutputTokens != 50 || got.DurationMS != 2000 {
+		t.Fatalf("accumulated=%+v", got)
+	}
+
+	// Agent estimate must not overwrite harness tokens; cost may fill when unset.
+	if err := e.CloseStage(id, "research", StageCloseInput{
+		Summary: "done",
+		Metrics: []MetricInput{{
+			Agent: "discover_agent", Model: "composer-2.5",
+			InputTokens: 999, OutputTokens: 999, CostUSD: 0.05, DurationMS: 100,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetMetric(id, "research", "discover_agent")
+	if err != nil || got == nil {
+		t.Fatalf("after close: %+v %v", got, err)
+	}
+	if got.InputTokens != 150 || got.OutputTokens != 50 {
+		t.Fatalf("harness tokens overwritten: %+v", got)
+	}
+	if got.CostUSD != 0.05 {
+		t.Fatalf("cost not merged from agent: %+v", got)
+	}
+}
+
+func TestPersistMetricsUsesAgentWhenNoHarnessAccumulate(t *testing.T) {
+	e, s := openTestEngine(t)
+	id := seedCycle(t, s, false)
+	if err := e.StartStage(id, "research"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.CloseStage(id, "research", StageCloseInput{
+		Summary: "done",
+		Metrics: []MetricInput{{Agent: "discover_agent", InputTokens: 40, OutputTokens: 10, CostUSD: 0.01}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetMetric(id, "research", "discover_agent")
+	if err != nil || got == nil {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if got.InputTokens != 40 || got.OutputTokens != 10 || got.CostUSD != 0.01 {
+		t.Fatalf("agent metrics missing: %+v", got)
 	}
 }
 

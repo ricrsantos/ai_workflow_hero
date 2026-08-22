@@ -255,19 +255,48 @@ func (c *rpcConn) notifyLoop() {
 
 func (c *rpcConn) enqueueNotify(method string, params json.RawMessage) {
 	job := notifyJob{method: method, params: params}
+	if notifyMustDeliver(method) {
+		// Transcript + turn lifecycle must stay ordered. Blocking here can stall
+		// readLoop briefly, but unordered overflow goroutines drop/reorder text.
+		select {
+		case <-c.closed:
+		case c.notifyQ <- job:
+		}
+		return
+	}
 	select {
 	case <-c.closed:
 		return
 	case c.notifyQ <- job:
 		return
 	default:
-		// Queue saturated: never block readLoop (stdout pipe deadlock).
+		// Best-effort progress: never block readLoop (stdout pipe deadlock).
 		go func() {
 			select {
 			case <-c.closed:
 			case c.notifyQ <- job:
 			}
 		}()
+	}
+}
+
+// notifyMustDeliver is true for Codex notifications that form the assistant
+// transcript or turn lifecycle. Dropping/reordering them truncates TUI output.
+func notifyMustDeliver(method string) bool {
+	switch method {
+	case "item/agentMessage/delta",
+		"item/plan/delta",
+		"item/completed",
+		"item/started",
+		"turn/started",
+		"turn/completed",
+		"thread/tokenUsage/updated",
+		"item/reasoning/summaryTextDelta",
+		"item/reasoning/textDelta",
+		"item/reasoning/summaryPartAdded":
+		return true
+	default:
+		return false
 	}
 }
 

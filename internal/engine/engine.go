@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -403,20 +405,100 @@ func (e *Engine) persistMetrics(cycleID int64, defaultStage string, metrics []Me
 		if stage == "" {
 			stage = defaultStage
 		}
-		if err := e.Store.UpsertMetric(store.Metric{
-			CycleID:      cycleID,
+		agent := m.Agent
+		existing, err := e.Store.GetMetric(cycleID, stage, agent)
+		if err != nil {
+			return err
+		}
+		merged := mergeMetricRow(existing, MetricInput{
 			StageName:    stage,
 			Model:        m.Model,
-			Agent:        m.Agent,
+			Agent:        agent,
 			InputTokens:  m.InputTokens,
 			OutputTokens: m.OutputTokens,
 			CostUSD:      m.CostUSD,
 			DurationMS:   m.DurationMS,
-		}); err != nil {
+		})
+		merged.CycleID = cycleID
+		if err := e.Store.UpsertMetric(merged); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// AccumulateStageMetrics adds harness (or estimated) turn tokens onto the
+// existing cycle+stage+agent metrics row. Used by the TUI when conversationStage
+// is set so Costs/SQLite reflect real adapter usage without waiting for --metrics-json.
+func (e *Engine) AccumulateStageMetrics(cycleID int64, stageName, agent, model string, usage harness.Usage, durationMS int64) error {
+	stageName = strings.TrimSpace(stageName)
+	if stageName == "" {
+		return fmt.Errorf("accumulate metrics: stage name required")
+	}
+	agent = strings.TrimSpace(agent)
+	model = strings.TrimSpace(model)
+	if usage.InputTokens == 0 && usage.OutputTokens == 0 && durationMS <= 0 {
+		return nil
+	}
+	existing, err := e.Store.GetMetric(cycleID, stageName, agent)
+	if err != nil {
+		return err
+	}
+	row := store.Metric{
+		CycleID:   cycleID,
+		StageName: stageName,
+		Agent:     agent,
+		Model:     model,
+	}
+	if existing != nil {
+		row = *existing
+		if model != "" {
+			row.Model = model
+		}
+	}
+	row.InputTokens += usage.InputTokens
+	row.OutputTokens += usage.OutputTokens
+	if durationMS > 0 {
+		row.DurationMS += durationMS
+	}
+	return e.Store.UpsertMetric(row)
+}
+
+// mergeMetricRow prefers previously accumulated harness tokens over agent
+// Metrics Procedure estimates. When no prior tokens exist, agent values win.
+func mergeMetricRow(existing *store.Metric, incoming MetricInput) store.Metric {
+	out := store.Metric{
+		StageName: incoming.StageName,
+		Model:     incoming.Model,
+		Agent:     incoming.Agent,
+	}
+	if existing != nil {
+		out = *existing
+		if incoming.Model != "" {
+			out.Model = incoming.Model
+		}
+		if incoming.Agent != "" {
+			out.Agent = incoming.Agent
+		}
+		if incoming.StageName != "" {
+			out.StageName = incoming.StageName
+		}
+	}
+	existingTok := out.InputTokens + out.OutputTokens
+	if existingTok > 0 {
+		if out.CostUSD == 0 && incoming.CostUSD > 0 {
+			out.CostUSD = incoming.CostUSD
+		}
+		if incoming.DurationMS > out.DurationMS {
+			out.DurationMS = incoming.DurationMS
+		}
+		return out
+	}
+	out.InputTokens = incoming.InputTokens
+	out.OutputTokens = incoming.OutputTokens
+	out.CostUSD = incoming.CostUSD
+	out.DurationMS = incoming.DurationMS
+	return out
 }
 
 // ParseMetricsJSON parses a --metrics-json payload into MetricInput slice.

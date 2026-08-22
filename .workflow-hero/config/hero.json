@@ -1,19 +1,19 @@
 {
   "cli": {
-    "version": "2.5.0",
+    "version": "2.5.0_042f0db",
     "installedAt": "2026-08-04T19:30:24Z",
     "tools": [
       "cursor"
     ]
   },
   "assets": {
-    "version": "2.5.0",
-    "installedAt": "2026-08-21T19:05:47Z"
+    "version": "2.5.0_042f0db",
+    "installedAt": "2026-08-22T02:46:08Z"
   },
   "harnesses": {
     "codex": {
       "enabled": true,
-      "model": "gpt-5.6-terra",
+      "model": "gpt-5.6-luna",
       "enable_fast_model": false
     },
     "cursor": {
@@ -29,7 +29,7 @@
   },
   "freechat_default": {
     "harness": "codex",
-    "model": "gpt-5.6-terra"
+    "model": "gpt-5.6-luna"
   },
   "model_properties": {
     "codex": {

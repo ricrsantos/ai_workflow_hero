@@ -26,6 +26,7 @@ type streamState struct {
 	connected            bool
 	lastTextPartID       string // last assistant text part that emitted output
 	sessionNextReasoning bool   // v2 reasoning stream active; skip v1 reasoning parts
+	usage                harness.Usage
 }
 
 func newStreamState() *streamState {
@@ -685,6 +686,7 @@ func (h *streamHandler) handleMessageUpdated(props map[string]any) {
 	if agent, _ := info["agent"].(string); agent != "" {
 		h.state.agentName = agent
 	}
+	h.noteUsage(info)
 }
 
 func (h *streamHandler) handlePartDelta(props map[string]any) streamOutcome {
@@ -726,6 +728,7 @@ func (h *streamHandler) handlePartUpdated(props map[string]any) streamOutcome {
 		}
 		return streamOutcome{}
 	case "step-finish":
+		h.noteUsage(part)
 		if h.req.Debug {
 			h.emit(harness.ActivityDelta("message.part.updated", "step finished", h.sessionID))
 		}
@@ -975,6 +978,78 @@ func stringProp(props map[string]any, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// noteUsage extracts token counts from OpenCode message.info or step-finish parts.
+func (h *streamHandler) noteUsage(m map[string]any) {
+	if h == nil || h.state == nil || m == nil {
+		return
+	}
+	usage := extractOpenCodeUsage(m)
+	if usage.InputTokens == 0 && usage.OutputTokens == 0 {
+		return
+	}
+	h.state.usage = usage
+}
+
+func extractOpenCodeUsage(m map[string]any) harness.Usage {
+	usage := harness.Usage{}
+	if m == nil {
+		return usage
+	}
+	extract := func(src map[string]any) {
+		if src == nil {
+			return
+		}
+		if in := int64Field(src, "input", "inputTokens", "input_tokens", "prompt", "promptTokens"); in > 0 {
+			usage.InputTokens = in
+		}
+		if out := int64Field(src, "output", "outputTokens", "output_tokens", "completion", "completionTokens"); out > 0 {
+			usage.OutputTokens = out
+		}
+		if total := int64Field(src, "total", "totalTokens", "tokensUsed"); total > 0 && usage.InputTokens == 0 && usage.OutputTokens == 0 {
+			usage.InputTokens = total
+		}
+	}
+	if tokens, ok := m["tokens"].(map[string]any); ok {
+		extract(tokens)
+	}
+	if u, ok := m["usage"].(map[string]any); ok {
+		extract(u)
+	}
+	if usage.InputTokens == 0 && usage.OutputTokens == 0 {
+		extract(m)
+	}
+	return usage
+}
+
+func int64Field(m map[string]any, keys ...string) int64 {
+	for _, k := range keys {
+		v, ok := m[k]
+		if !ok {
+			continue
+		}
+		switch n := v.(type) {
+		case float64:
+			if n > 0 {
+				return int64(n)
+			}
+		case int64:
+			if n > 0 {
+				return n
+			}
+		case int:
+			if n > 0 {
+				return int64(n)
+			}
+		case json.Number:
+			i, err := n.Int64()
+			if err == nil && i > 0 {
+				return i
+			}
+		}
+	}
+	return 0
 }
 
 // stringPropRaw preserves whitespace-only deltas (e.g. inter-token spaces).

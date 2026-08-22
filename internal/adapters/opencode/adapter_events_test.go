@@ -893,3 +893,49 @@ func TestToolPartSuppressedWithoutDebug(t *testing.T) {
 		t.Fatalf("expected suppression, kinds=%v", kinds)
 	}
 }
+
+func TestExtractOpenCodeUsageFromMessageUpdated(t *testing.T) {
+	state := newStreamState()
+	evt := map[string]any{
+		"type": "message.updated",
+		"properties": map[string]any{
+			"sessionID": "sess-1",
+			"info": map[string]any{
+				"id":   "msg-asst",
+				"role": "assistant",
+				"tokens": map[string]any{
+					"input":  120.0,
+					"output": 45.0,
+				},
+			},
+		},
+	}
+	parseEventDelta(evt, "sess-1", state)
+	if state.usage.InputTokens != 120 || state.usage.OutputTokens != 45 {
+		t.Fatalf("usage=%+v", state.usage)
+	}
+}
+
+func TestExtractOpenCodeUsageFromStepFinish(t *testing.T) {
+	state := newStreamState()
+	state.assistantMsgID = "msg-asst"
+	evt := map[string]any{
+		"type": "message.part.updated",
+		"properties": map[string]any{
+			"sessionID": "sess-1",
+			"part": map[string]any{
+				"id":        "prt-fin",
+				"type":      "step-finish",
+				"messageID": "msg-asst",
+				"tokens": map[string]any{
+					"input":  10.0,
+					"output": 3.0,
+				},
+			},
+		},
+	}
+	parseEventDelta(evt, "sess-1", state)
+	if state.usage.InputTokens != 10 || state.usage.OutputTokens != 3 {
+		t.Fatalf("usage=%+v", state.usage)
+	}
+}

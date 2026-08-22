@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
@@ -172,5 +173,95 @@ func TestDebugOnlyActivities(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in %q", want, joined)
 		}
+	}
+}
+
+func TestTextBufWrittenBeforeOnStreamDelta(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var buf strings.Builder
+	blocked := make(chan struct{})
+	entered := make(chan struct{})
+	req := harness.ExecuteRequest{
+		OnStreamDelta: func(d harness.StreamDelta) {
+			if d.Kind != harness.StreamKindText {
+				return
+			}
+			close(entered)
+			<-blocked
+		},
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"threadId": "thr", "itemId": "m1", "delta": "Hello",
+	})
+	done := make(chan struct{})
+	go func() {
+		_ = a.handleNotification(context.Background(), "item/agentMessage/delta", payload, "thr", req, &buf, st)
+		close(done)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("OnStreamDelta did not start")
+	}
+	if buf.String() != "Hello" {
+		t.Fatalf("textBuf=%q want Hello before OnStreamDelta returns", buf.String())
+	}
+	close(blocked)
+	<-done
+}
+
+func TestTurnCompletedLastAgentMessageRepairsTruncation(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var text string
+	var buf strings.Builder
+	req := harness.ExecuteRequest{
+		OnStreamDelta: func(d harness.StreamDelta) {
+			if d.Kind == harness.StreamKindText {
+				text += d.Text
+			}
+		},
+	}
+	// Partial live deltas only.
+	payload, _ := json.Marshal(map[string]any{
+		"threadId": "thr", "itemId": "m1", "delta": "Hello ",
+	})
+	_ = a.handleNotification(context.Background(), "item/agentMessage/delta", payload, "thr", req, &buf, st)
+
+	completed, _ := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"turn": map[string]any{
+			"status":           "completed",
+			"lastAgentMessage": "Hello world from summary",
+		},
+	})
+	out := a.handleNotification(context.Background(), "turn/completed", completed, "thr", req, &buf, st)
+	if !out.done {
+		t.Fatal("expected turn done")
+	}
+	if text != "Hello world from summary" {
+		t.Fatalf("text=%q want repaired full message", text)
+	}
+	if buf.String() != "Hello world from summary" {
+		t.Fatalf("buf=%q", buf.String())
+	}
+}
+
+func TestNotifyMustDeliver(t *testing.T) {
+	if !notifyMustDeliver("item/agentMessage/delta") {
+		t.Fatal("agentMessage delta must deliver")
+	}
+	if !notifyMustDeliver("item/completed") {
+		t.Fatal("item/completed must deliver")
+	}
+	if !notifyMustDeliver("turn/completed") {
+		t.Fatal("turn/completed must deliver")
+	}
+	if !notifyMustDeliver("thread/tokenUsage/updated") {
+		t.Fatal("thread/tokenUsage/updated must deliver")
+	}
+	if notifyMustDeliver("item/commandExecution/outputDelta") {
+		t.Fatal("command output is best-effort")
 	}
 }
