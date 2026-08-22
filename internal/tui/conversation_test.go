@@ -2342,13 +2342,13 @@ func TestConversationExecuteErrorWrapsInView(t *testing.T) {
 
 func TestTabBarListsChatFirst(t *testing.T) {
 	m := NewTestModel(nil)
-	m = SetWidth(m, 80)
+	m = SetWidth(m, 100)
 	m = SetHeight(m, 24)
 	view := ViewForTest(m)
 	chat := strings.Index(view, "Chat")
 	status := strings.Index(view, "Status")
 	if chat < 0 || status < 0 || chat > status {
-		t.Fatalf("expected Chat before Status in tab bar: %q", view)
+		t.Fatalf("expected Chat before Status in nav sidebar: %q", view)
 	}
 }
 

@@ -2,69 +2,101 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Hero semantic colors (UI.md §2.1).
+// Bonito-inspired dark palette (blue/violet accents). Hex tokens degrade to
+// ANSI approximations on terminals without truecolor.
 var (
-	colorGreen  = lipgloss.Color("2")
-	colorYellow = lipgloss.Color("3")
-	colorRed    = lipgloss.Color("1")
-	colorBlue   = lipgloss.Color("4")
-	colorUser   = lipgloss.Color("#0000CC") // RGB(0,0,204) — user prompt accent bar (distinct from Build input)
-	colorMuted  = lipgloss.Color("8")
-	chatBg      = lipgloss.Color("236")
+	colorBgBase     = lipgloss.Color("#0B0E1A")
+	colorBgSurface  = lipgloss.Color("#131726")
+	colorBgSurface2 = lipgloss.Color("#1B2036")
+	colorBorder     = lipgloss.Color("#2A3050")
+	colorTextPri    = lipgloss.Color("#E8EAF6")
+	colorTextDim    = lipgloss.Color("#8A90B0")
+	colorAccentUser = lipgloss.Color("#7C6CFF")
+	colorAccentAI   = lipgloss.Color("#4CC2FF")
+	colorAccentFast = lipgloss.Color("#E3B341")
+	colorOK         = lipgloss.Color("#56D364")
+	colorError      = lipgloss.Color("#F85149")
+
+	// Aliases kept for call sites that still use the older names.
+	colorGreen  = colorOK
+	colorYellow = colorAccentFast
+	colorRed    = colorError
+	colorBlue   = colorAccentAI
+	colorUser   = colorAccentUser
+	colorMuted  = colorTextDim
+	chatBg      = colorBgSurface
+)
+
+// Nav sidebar layout (ported from the Bonito reference TUI).
+const (
+	navSidebarWidth     = 24
+	navSidebarMinWidth  = 80 // show sidebar when terminal width >= this
+	navSidebarMinMain   = 40 // need at least this many cols for the main pane
 )
 
 var (
-	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
-	headerStyle   = lipgloss.NewStyle().Bold(true).Underline(true)
-	footerStyle   = lipgloss.NewStyle().Foreground(colorMuted)
-	successStyle  = lipgloss.NewStyle().Foreground(colorGreen)
-	warnStyle     = lipgloss.NewStyle().Foreground(colorYellow)
-	errorStyle    = lipgloss.NewStyle().Foreground(colorRed)
-	infoStyle     = lipgloss.NewStyle().Foreground(colorBlue)
-	thinkingStyle = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
-	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue).Background(lipgloss.Color("236"))
-	mutedStyle    = lipgloss.NewStyle().Foreground(colorMuted)
-	// Filled caret when chat input has focus (white — distinct from accent bar).
+	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(colorTextPri)
+	headerStyle   = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(colorTextPri)
+	footerStyle   = lipgloss.NewStyle().Foreground(colorTextDim)
+	successStyle  = lipgloss.NewStyle().Foreground(colorOK)
+	warnStyle     = lipgloss.NewStyle().Foreground(colorAccentFast)
+	errorStyle    = lipgloss.NewStyle().Foreground(colorError)
+	infoStyle     = lipgloss.NewStyle().Foreground(colorAccentAI)
+	thinkingStyle = lipgloss.NewStyle().Foreground(colorTextDim).Italic(true)
+	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(colorAccentUser).Background(colorBgSurface2)
+	mutedStyle    = lipgloss.NewStyle().Foreground(colorTextDim)
+	// Filled caret when chat input has focus (light on surface — distinct from accent bar).
 	caretFilledStyle = lipgloss.NewStyle().
-				Foreground(chatBg).
-				Background(lipgloss.Color("15")).
+				Foreground(colorBgSurface).
+				Background(colorTextPri).
 				Bold(true)
 	// Outline caret when chat input lost focus.
 	caretHollowStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("15")).
-				Background(chatBg).
+				Foreground(colorTextPri).
+				Background(colorBgSurface).
 				Bold(true)
-	promptStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
+	promptStyle = lipgloss.NewStyle().Bold(true).Foreground(colorAccentAI)
 	// OpenCode-style chat panes: solid fill comes from the box Background + Width.
 	// In-box text must NOT set Background (nested bg causes black gutter artifacts).
 	chatBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Background(chatBg)
-	chatInText  = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	chatInMuted = lipgloss.NewStyle().Foreground(colorMuted)
-	chatInModel = lipgloss.NewStyle().Foreground(lipgloss.Color("15"))
-	chatInBuild = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
-	chatInUser  = lipgloss.NewStyle().Bold(true).Foreground(colorUser)
-	chatInPlan  = lipgloss.NewStyle().Bold(true).Foreground(colorYellow)
-	chatInAgent = lipgloss.NewStyle().Bold(true).Foreground(colorGreen)
-	chatInThink = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
-	chatInOK    = lipgloss.NewStyle().Foreground(colorGreen)
-	chatInWarn  = lipgloss.NewStyle().Foreground(colorYellow)
-	chatInErr   = lipgloss.NewStyle().Foreground(colorRed)
+			BorderForeground(colorBorder).
+			Background(colorBgSurface)
+	chatInText  = lipgloss.NewStyle().Foreground(colorTextPri)
+	chatInMuted = lipgloss.NewStyle().Foreground(colorTextDim)
+	chatInModel = lipgloss.NewStyle().Foreground(colorTextPri)
+	chatInBuild = lipgloss.NewStyle().Bold(true).Foreground(colorAccentAI)
+	chatInUser  = lipgloss.NewStyle().Bold(true).Foreground(colorAccentUser)
+	chatInPlan  = lipgloss.NewStyle().Bold(true).Foreground(colorAccentFast)
+	chatInAgent = lipgloss.NewStyle().Bold(true).Foreground(colorOK)
+	chatInThink = lipgloss.NewStyle().Foreground(colorTextDim).Italic(true)
+	chatInOK    = lipgloss.NewStyle().Foreground(colorOK)
+	chatInWarn  = lipgloss.NewStyle().Foreground(colorAccentFast)
+	chatInErr   = lipgloss.NewStyle().Foreground(colorError)
 	// Solid 1-cell accent bar.
-	chatAccentBuild    = lipgloss.NewStyle().Background(colorBlue).Foreground(colorBlue)
-	chatAccentPlan     = lipgloss.NewStyle().Background(colorYellow).Foreground(colorYellow)
-	chatAccentUser     = lipgloss.NewStyle().Background(colorUser).Foreground(colorUser)
-	chatAccentResponse = lipgloss.NewStyle().Background(colorGreen).Foreground(colorGreen)
+	chatAccentBuild    = lipgloss.NewStyle().Background(colorAccentAI).Foreground(colorAccentAI)
+	chatAccentPlan     = lipgloss.NewStyle().Background(colorAccentFast).Foreground(colorAccentFast)
+	chatAccentUser     = lipgloss.NewStyle().Background(colorAccentUser).Foreground(colorAccentUser)
+	chatAccentResponse = lipgloss.NewStyle().Background(colorOK).Foreground(colorOK)
 	// Output panel body: soft readable text (not raw default black/white).
-	outputBodyStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "236", Dark: "252"})
-	outputCycleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorBlue)
-	outputTotalStyle = lipgloss.NewStyle().Foreground(colorGreen)
+	outputBodyStyle  = lipgloss.NewStyle().Foreground(colorTextPri)
+	outputCycleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorAccentAI)
+	outputTotalStyle = lipgloss.NewStyle().Foreground(colorOK)
 	outputPanelStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(colorBlue).
+				BorderForeground(colorBorder).
+				Background(colorBgSurface).
 				Padding(0, 1)
+
+	// Nav sidebar styles (SESSIONS-like frame).
+	navSidebarTitleStyle  = lipgloss.NewStyle().Foreground(colorTextPri).Bold(true)
+	navSidebarItemStyle   = lipgloss.NewStyle().Foreground(colorTextPri)
+	navSidebarActiveStyle = lipgloss.NewStyle().Foreground(colorAccentUser).Bold(true)
+	navSidebarFooterStyle = lipgloss.NewStyle().Foreground(colorTextDim)
+	navSidebarBoxStyle    = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colorBorder).
+				Background(colorBgSurface)
 )
 
 func stageStatusStyle(status string) lipgloss.Style {

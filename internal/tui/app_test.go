@@ -52,9 +52,9 @@ func TestBootOpensChat(t *testing.T) {
 	if !ChatInputFocusedForTest(m) {
 		t.Fatal("expected chat input focused at boot")
 	}
-	view := ViewForTest(SetWidth(SetHeight(m, 24), 80))
+	view := ViewForTest(SetWidth(SetHeight(m, 24), 100))
 	if !strings.Contains(view, "Chat") {
-		t.Fatalf("expected Chat tab in view: %q", view)
+		t.Fatalf("expected Chat nav item in view: %q", view)
 	}
 }
 

@@ -1797,8 +1797,9 @@ func (m model) renderConversationHeader() string {
 	}
 	right := m.renderAgentsBox()
 	gap := 1
-	leftW := m.width - agentsBoxWidth - gap
-	if m.width <= 0 || leftW < 20 {
+	cw := m.contentWidth()
+	leftW := cw - agentsBoxWidth - gap
+	if cw <= 0 || leftW < 20 {
 		return left.String() + "\n" + right
 	}
 	leftBlock := lipgloss.NewStyle().Width(leftW).MaxWidth(leftW).Render(left.String())
@@ -1961,7 +1962,7 @@ func (m model) chatInputVisibleLines() int {
 }
 
 func (m model) chatBoxWidth() int {
-	boxW := m.width
+	boxW := m.contentWidth()
 	if boxW <= 0 {
 		boxW = 72
 	}
@@ -2396,7 +2397,7 @@ func (m model) renderInputCaret() string {
 }
 
 func (m model) contentAreaHeight() int {
-	h := m.height - (5 + statusBarMaxLines)
+	h := m.frameContentHeight()
 	if h < 3 {
 		h = 3
 	}

@@ -342,8 +342,9 @@ func TestStatusLineShowsPropertyLabels(t *testing.T) {
 			t.Fatalf("status line missing %q:\n%s", want, view)
 		}
 	}
-	// Labels are green when validated: the rendered line contains the green ANSI code.
-	if !strings.Contains(view, "\x1b[32m[thinking-max]") && !strings.Contains(view, "\x1b[32m") {
+	// Labels are green when validated: ANSI-16 may map the palette green to
+	// either standard (32) or bright (92) green depending on the hex token.
+	if !strings.Contains(view, "\x1b[32m") && !strings.Contains(view, "\x1b[92m") {
 		t.Fatalf("validated labels must be green:\n%s", view)
 	}
 }
@@ -359,7 +360,7 @@ func TestStatusLineFastOffAndNaAreGrayAndTextual(t *testing.T) {
 			t.Fatalf("status line missing %q", want)
 		}
 	}
-	if strings.Contains(view, "\x1b[32m[fast-false]") {
+	if strings.Contains(view, "\x1b[32m[fast-false]") || strings.Contains(view, "\x1b[92m[fast-false]") {
 		t.Fatalf("fast=false must not be green:\n%s", view)
 	}
 }
@@ -439,7 +440,7 @@ func TestWorkflowProjectionShowsUnvalidatedValues(t *testing.T) {
 		t.Fatalf("workflow ef must appear on the status line:\n%s", view)
 	}
 	// Unvalidated workflow values stay gray (never green).
-	if strings.Contains(view, "\x1b[32m[effort-high]") {
+	if strings.Contains(view, "\x1b[32m[effort-high]") || strings.Contains(view, "\x1b[92m[effort-high]") {
 		t.Fatalf("unvalidated workflow ef must be gray:\n%s", view)
 	}
 }

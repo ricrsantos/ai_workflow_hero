@@ -312,7 +312,7 @@ func (m model) renderPalette() string {
 	}
 
 	title := fmt.Sprintf(" %d–%d of %d ", start+1, end, len(items))
-	panelWidth := m.width - 2
+	panelWidth := m.contentWidth() - 2
 	if panelWidth < 24 {
 		panelWidth = 24
 	}
@@ -397,14 +397,6 @@ func (m model) ensurePaletteVisible() model {
 }
 
 func (m model) renderFrame() string {
-	var top strings.Builder
-	top.WriteString(titleStyle.Render("AI Hero"))
-	top.WriteString(mutedStyle.Render("  ·  "))
-	top.WriteString(screenTabBar(m.screen))
-	top.WriteByte('\n')
-	top.WriteString(strings.Repeat("─", max(20, m.width)))
-	top.WriteByte('\n')
-
 	var bottom strings.Builder
 	bottom.WriteString(strings.Repeat("─", max(20, m.width)))
 	bottom.WriteByte('\n')
@@ -413,16 +405,9 @@ func (m model) renderFrame() string {
 	bottom.WriteString(strings.Repeat("─", max(20, m.width)))
 	bottom.WriteByte('\n')
 	bottom.WriteString(m.renderFooter())
-
-	topStr := top.String()
 	bottomStr := bottom.String()
-	chrome := countContentLines(topStr) + countContentLines(bottomStr)
-	contentH := m.height - chrome
-	if contentH < 0 {
-		// The footer is fixed chrome. On a short terminal, let the content area
-		// disappear rather than pushing the footer below the visible frame.
-		contentH = 0
-	}
+
+	contentH := m.frameContentHeight()
 
 	var content string
 	if m.screen == screenConversation {
@@ -439,12 +424,18 @@ func (m model) renderFrame() string {
 	// allowing the content to push the footer out of the frame.
 	if contentH > 0 {
 		content = fitContentHeight(content, contentH, m.screen == screenConversation)
-		content += "\n"
 	} else {
 		content = ""
 	}
 
-	return topStr + content + bottomStr
+	mid := content
+	if sidebar := m.renderNavSidebar(contentH); sidebar != "" {
+		mid = lipgloss.JoinHorizontal(lipgloss.Top, sidebar, content)
+	}
+	if mid != "" {
+		mid += "\n"
+	}
+	return mid + bottomStr
 }
 
 // fitContentHeight makes the content area exactly height rows. A fixed frame
@@ -470,20 +461,6 @@ func fitContentHeight(content string, height int, keepBottom bool) string {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n")
-}
-
-func screenTabBar(active screen) string {
-	names := []string{"Chat", "Status", "Artifacts", "Costs", "Events"}
-	var parts []string
-	for i, name := range names {
-		label := fmt.Sprintf("%d. %s", i+1, name)
-		if screen(i) == active {
-			parts = append(parts, infoStyle.Render(label))
-		} else {
-			parts = append(parts, mutedStyle.Render(label))
-		}
-	}
-	return strings.Join(parts, " │ ")
 }
 
 const fixedFooterHints = "tab mode · / commands · enter send · alt+enter newline · alt+y/r/i copy · ↑↓ scroll · alt+n screens · ctrl+q quit"
@@ -633,9 +610,9 @@ func (m model) screenHasContentScroll() bool {
 }
 
 func (m model) frameContentHeight() int {
-	// Match renderFrame chrome: title+tabs, rule, status rules, status bar, and
-	// the responsive footer (which may occupy more than one line).
-	h := m.height - (2 + 1 + m.statusBarLineCount() + 1 + m.footerLineCount())
+	// Match renderFrame chrome: bottom rules, status bar, and the responsive
+	// footer. The left nav sidebar shares this middle band (no top tab chrome).
+	h := m.height - (1 + m.statusBarLineCount() + 1 + m.footerLineCount())
 	if h < 0 {
 		h = 0
 	}

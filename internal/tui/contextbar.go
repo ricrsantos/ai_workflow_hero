@@ -221,7 +221,7 @@ func (m model) contextWindowMax() int64 {
 // renderScrollHintLine renders the property/context row below the green response
 // pane (UI-C05-001 §4). Keyboard hints live in the footer only.
 func (m model) renderScrollHintLine() string {
-	lines := m.renderChatStatusLines(m.width)
+	lines := m.renderChatStatusLines(m.contentWidth())
 	if len(lines) == 0 {
 		return ""
 	}

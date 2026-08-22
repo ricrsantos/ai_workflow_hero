@@ -27,7 +27,7 @@ func (m model) openOutput(title, text string, isErr bool) model {
 }
 
 func (m model) rebuildOutputLines() model {
-	width := m.width - 6
+	width := m.contentWidth() - 6
 	if width < 20 {
 		width = 20
 	}
@@ -247,7 +247,7 @@ func (m model) renderOutput() string {
 	}
 
 	rangeLabel := fmt.Sprintf(" %d–%d of %d ", start+1, end, len(lines))
-	panelWidth := m.width - 2
+	panelWidth := m.contentWidth() - 2
 	if panelWidth < 24 {
 		panelWidth = 24
 	}

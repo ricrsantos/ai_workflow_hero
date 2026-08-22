@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-08-22 — TUI left nav sidebar (Bonito style)
+
+**Change**: Moved the horizontal `1. Chat │ 2. Status │ …` tab bar into a left framed sidebar (title **AI Hero**, `>` active marker, `alt+1-5` footer). Applied Bonito dark palette hex tokens in `styles.go`. Layout is `JoinHorizontal(sidebar, content)` above full-width status/footer chrome; sidebar auto-hides below 80 cols. Still Bubble Tea / Lip Gloss v1 (no Charm v2 migration).
+
+**Validation**: `go test ./... -count=1` passed.
+
 ## 2026-08-22 — `/hero-config-update` reloads TUI model labels
 
 **Problem**: Mid-cycle edits to `workflow-config.yml` or `hero.json` were used by Execute (disk reload) but Chat input `Build · model · harness` kept stale `runtimeModelSlug` / boot-time `chatModelSlug`. No poll desired.
