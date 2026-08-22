@@ -11,17 +11,22 @@ import (
 )
 
 type heroStartPrepareDoneMsg struct {
-	slug string
-	err  string
+	requestID   uint64
+	slug        string
+	commandBody string
+	agentBody   string
+	err         string
 }
 
-func (m model) beginHeroStartPrepare(slug string) (model, tea.Cmd) {
+func (m model) beginHeroStartPrepare(requestID uint64, slug, commandBody, agentBody string) (model, tea.Cmd) {
 	m.heroStartPreparing = true
 	m.waitAnimFrame = 0
-	return m, tea.Batch(convWaitTickCmd(), m.heroStartPrepareCmd(slug))
+	ctx, cancel := context.WithCancel(context.Background())
+	m.heroStartCancel = cancel
+	return m, tea.Batch(convWaitTickCmd(), m.heroStartPrepareCmd(ctx, requestID, slug, commandBody, agentBody))
 }
 
-func (m model) heroStartPrepareCmd(slug string) tea.Cmd {
+func (m model) heroStartPrepareCmd(ctx context.Context, requestID uint64, slug, commandBody, agentBody string) tea.Cmd {
 	projectDir := ""
 	var st *store.Store
 	if m.svc != nil {
@@ -30,23 +35,47 @@ func (m model) heroStartPrepareCmd(slug string) tea.Cmd {
 	}
 	return func() tea.Msg {
 		// OpenCode first (existing path), then Codex — each no-ops when unused.
-		if err := opencodeadapter.PrepareHeroStart(context.Background(), projectDir, st); err != nil {
+		if err := opencodeadapter.PrepareHeroStart(ctx, projectDir, st); err != nil {
 			slog.Error("hero-start prepare failed", "harness", "opencode", "error", err)
-			return heroStartPrepareDoneMsg{slug: slug, err: err.Error()}
+			return heroStartPrepareDoneMsg{requestID: requestID, slug: slug, commandBody: commandBody, agentBody: agentBody, err: err.Error()}
 		}
-		if err := codexadapter.PrepareHeroStart(context.Background(), projectDir, st); err != nil {
+		if err := codexadapter.PrepareHeroStart(ctx, projectDir, st); err != nil {
 			slog.Error("hero-start prepare failed", "harness", "codex", "error", err)
-			return heroStartPrepareDoneMsg{slug: slug, err: err.Error()}
+			return heroStartPrepareDoneMsg{requestID: requestID, slug: slug, commandBody: commandBody, agentBody: agentBody, err: err.Error()}
 		}
-		return heroStartPrepareDoneMsg{slug: slug}
+		return heroStartPrepareDoneMsg{requestID: requestID, slug: slug, commandBody: commandBody, agentBody: agentBody}
 	}
 }
 
 func (m model) handleHeroStartPrepareDone(msg heroStartPrepareDoneMsg) (model, tea.Cmd) {
-	m.heroStartPreparing = false
-	if msg.err != "" {
-		m = m.setStatusResult(false, "/hero-start", msg.err)
+	if !m.heroStartPreparing || msg.requestID != m.heroStartRequestID {
 		return m, nil
 	}
-	return m.beginHeroRuntimeConversation("start", msg.slug, heroRuntimeOpts{})
+	m.heroStartPreparing = false
+	m.heroStartCancel = nil
+	if msg.err != "" {
+		m.actionBusy = false
+		m = m.setStatusResult(false, "/hero-start", msg.err)
+		m.convError = msg.err
+		m.chatInputFocused = true
+		return m, nil
+	}
+	return m.beginHeroRuntimeConversation("start", msg.slug, heroRuntimeOpts{
+		preloadedCommandBody: msg.commandBody,
+		preloadedAgentBody:   msg.agentBody,
+		preloadedPrompt:      true,
+	})
+}
+
+func (m model) cancelHeroStartPreparation() (model, tea.Cmd) {
+	if m.heroStartCancel != nil {
+		m.heroStartCancel()
+	}
+	m.heroStartCancel = nil
+	m.heroStartBootstrapping = false
+	m.heroStartPreparing = false
+	m.actionBusy = false
+	m.chatInputFocused = true
+	m = m.setStatusResult(false, "/hero-start", "cancelled")
+	return m, nil
 }

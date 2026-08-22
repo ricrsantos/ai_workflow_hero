@@ -85,49 +85,52 @@ type model struct {
 	inputScrollOffset   int
 	historyScrollOffset int
 	respScrollOffset    int
-	respFollowBottom  bool // auto-stick response to latest lines while streaming
-	waitAnimFrame     int
+	respFollowBottom    bool // auto-stick response to latest lines while streaming
+	waitAnimFrame       int
 
 	// Chat OpenCode-style controls.
-	chatMode               string // harness.ModeBuild | harness.ModePlan
-	chatModelSlug          string
-	chatHarnessID          string
-	modelOptions           []harnessmgr.ModelOption
-	availableModels        []string
-	pickingModel           bool
-	pickingHarness         bool
-	pickingHarnessReset    bool
+	chatMode                 string // harness.ModeBuild | harness.ModePlan
+	chatModelSlug            string
+	chatHarnessID            string
+	modelOptions             []harnessmgr.ModelOption
+	availableModels          []string
+	pickingModel             bool
+	pickingHarness           bool
+	pickingHarnessReset      bool
 	harnessResetAwaitingOpen bool // loading harness list before reset picker is interactive
 	heroStartPreparing       bool // syncing opencode agents before /hero-start orchestration
-	modelPickerHarness     string          // non-empty = /hero-model step 2 (models for this harness)
-	harnessDraft           map[string]bool // checkbox state while /hero-harness is open
-	runtimeCommandName     string          // hero runtime slash body name (e.g. "new") for Chat output normalization
-	runtimeModelSlug       string          // YAML orch/discover slug or /hero-model default for the active runtime slash
-	runtimeAgentName       string          // harness agent name for active runtime slash (e.g. orchestration_agent)
-	orchestrationLive      bool            // /hero-start session: follow-ups resume orchestrator model + session
-	researchLive           bool            // TUI Research: free-text follow-ups resume discover_agent
-	orchestrationSessionID string          // saved orchestrator harness session while Research is live
-	researchSessionID      string          // discover_agent harness session
-	awaitingRejectReason   bool            // Chat is collecting rejection feedback before Runtime Execute
+	heroStartBootstrapping   bool // validating/syncing /hero-start before harness execution
+	heroStartCancel          context.CancelFunc
+	heroStartRequestID       uint64
+	modelPickerHarness       string          // non-empty = /hero-model step 2 (models for this harness)
+	harnessDraft             map[string]bool // checkbox state while /hero-harness is open
+	runtimeCommandName       string          // hero runtime slash body name (e.g. "new") for Chat output normalization
+	runtimeModelSlug         string          // YAML orch/discover slug or /hero-model default for the active runtime slash
+	runtimeAgentName         string          // harness agent name for active runtime slash (e.g. orchestration_agent)
+	orchestrationLive        bool            // /hero-start session: follow-ups resume orchestrator model + session
+	researchLive             bool            // TUI Research: free-text follow-ups resume discover_agent
+	orchestrationSessionID   string          // saved orchestrator harness session while Research is live
+	researchSessionID        string          // discover_agent harness session
+	awaitingRejectReason     bool            // Chat is collecting rejection feedback before Runtime Execute
 
 	// C5 model properties (ADR-042).
-	propsSvc          *modelprops.Service
-	freechatProps     map[string]string // selected freechat property values (status line + execution)
-	freechatSnapshot  modelprops.Snapshot
-	workflowProps     map[string]string // YAML-derived projection during workflow/runtime commands
-	pickingProps      bool              // /hero-model step 3 (property picker open)
-	propsDraftHarness string
-	propsDraftModel   string
-	propsDraft        map[string]string // in-memory property draft (fs/th/ef)
-	propsEdited       map[string]bool   // rows edited this draft session (Enter commit guard)
-	propsSnapshot     modelprops.Snapshot
-	propsValueList    bool   // secondary multi-value list open (th/ef)
-	propsValueKey     string // key whose secondary list is open
-	propsValueIndex   int    // cursor inside the secondary value list
-	propsRefreshBusy  bool   // background refresh in flight (never blocks the picker)
-	propsAwaitingRefresh bool // waiting for refresh before applying model selection
+	propsSvc             *modelprops.Service
+	freechatProps        map[string]string // selected freechat property values (status line + execution)
+	freechatSnapshot     modelprops.Snapshot
+	workflowProps        map[string]string // YAML-derived projection during workflow/runtime commands
+	pickingProps         bool              // /hero-model step 3 (property picker open)
+	propsDraftHarness    string
+	propsDraftModel      string
+	propsDraft           map[string]string // in-memory property draft (fs/th/ef)
+	propsEdited          map[string]bool   // rows edited this draft session (Enter commit guard)
+	propsSnapshot        modelprops.Snapshot
+	propsValueList       bool   // secondary multi-value list open (th/ef)
+	propsValueKey        string // key whose secondary list is open
+	propsValueIndex      int    // cursor inside the secondary value list
+	propsRefreshBusy     bool   // background refresh in flight (never blocks the picker)
+	propsAwaitingRefresh bool   // waiting for refresh before applying model selection
 	propsPendingSelect   *pendingModelSelect
-	propsWarningText  string // yellow C5 warning (missing catalog / stale / invalidated)
+	propsWarningText     string // yellow C5 warning (missing catalog / stale / invalidated)
 
 	slashOverlayIndex     int  // selected row in Chat `/` autocomplete
 	slashOverlayDismissed bool // Esc or insert closed the overlay until the token changes
@@ -316,7 +319,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.waitAnimFrame++
 			return m, convWaitTickCmd()
 		}
-		if m.propsAwaitingRefresh || m.harnessResetAwaitingOpen || m.heroStartPreparing {
+		if m.propsAwaitingRefresh || m.harnessResetAwaitingOpen || m.heroStartPreparing || m.heroStartBootstrapping {
 			m.waitAnimFrame++
 			return m, convWaitTickCmd()
 		}
@@ -333,6 +336,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case heroStartPrepareDoneMsg:
 		return m.handleHeroStartPrepareDone(msg)
+
+	case heroStartBootstrapDoneMsg:
+		return m.handleHeroStartBootstrapDone(msg)
 
 	case confirmResumeMsg:
 		return m.dispatchConfirmedAction(msg.action, msg.actionN)
@@ -356,7 +362,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slog.Debug("tui model props refresh done", "harnesses", len(msg.summaries))
 		return m, nil
 
-	case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg:
+	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg:
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)
@@ -395,7 +401,7 @@ func (m model) View() string {
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "ctrl+q":
-		if m.streaming {
+		if m.streaming || m.heroStartBootstrapping || m.heroStartPreparing {
 			return m.showConfirm(actionQuit, 0, "Agent is running. Quit? [y/N]")
 		}
 		return m, tea.Quit
@@ -608,6 +614,9 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	case actionSelectHarnessReset:
 		return m.applyHarnessReset(item.harnessID)
 	case actionQuit:
+		if m.heroStartBootstrapping || m.heroStartPreparing {
+			m, _ = m.cancelHeroStartPreparation()
+		}
 		return m, tea.Quit
 	case actionRefresh:
 		m = m.closePalette()
@@ -765,7 +774,7 @@ func (m model) beginHeroNew() (model, tea.Cmd) {
 }
 
 func (m model) beginHeroStart() (model, tea.Cmd) {
-	if m.streaming || m.heroStartPreparing {
+	if m.streaming || m.heroStartPreparing || m.heroStartBootstrapping {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
@@ -773,23 +782,110 @@ func (m model) beginHeroStart() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-start", "cycle service unavailable")
 		return m, nil
 	}
-	st, err := m.svc.Status()
-	if err != nil || st.CycleNumber == 0 {
-		m = m.setStatusResult(false, "/hero-start", noActiveCycleForStartMessage())
+
+	// All filesystem and SQLite bootstrap work runs as a tea.Cmd. The Bubble
+	// Tea Update loop must remain available for repaint, navigation, and cancel
+	// while /hero-start validates and synchronizes the cycle.
+	m.screen = screenConversation
+	m.chatInputFocused = false
+	m.heroStartBootstrapping = true
+	m.waitAnimFrame = 0
+	m.actionBusy = true
+	m.statusKind = statusRunning
+	m.statusLabel = "/hero-start"
+	m.statusText = "preparing…"
+	m.statusStarted = time.Now()
+	m.heroStartRequestID++
+	requestID := m.heroStartRequestID
+	ctx, cancel := context.WithCancel(context.Background())
+	m.heroStartCancel = cancel
+	return m, tea.Batch(convWaitTickCmd(), m.heroStartBootstrapCmd(ctx, requestID))
+}
+
+type heroStartBootstrapDoneMsg struct {
+	requestID    uint64
+	slug         string
+	needsPrepare bool
+	commandBody  string
+	agentBody    string
+	err          error
+}
+
+func (m model) heroStartBootstrapCmd(ctx context.Context, requestID uint64) tea.Cmd {
+	svc := m.svc
+	projectDir := ""
+	if svc != nil {
+		projectDir = svc.ProjectDir
+	}
+	return func() tea.Msg {
+		if svc == nil {
+			return heroStartBootstrapDoneMsg{requestID: requestID, err: fmt.Errorf("cycle service unavailable")}
+		}
+		st, err := svc.Status()
+		if err != nil {
+			return heroStartBootstrapDoneMsg{requestID: requestID, err: err}
+		}
+		if st.CycleNumber == 0 {
+			return heroStartBootstrapDoneMsg{requestID: requestID, err: fmt.Errorf("%s", noActiveCycleForStartMessage())}
+		}
+		if err := ctx.Err(); err != nil {
+			return heroStartBootstrapDoneMsg{requestID: requestID, err: err}
+		}
+
+		slug, _ := m.orchestratorModelSlug()
+		if strings.TrimSpace(slug) == "" {
+			return heroStartBootstrapDoneMsg{
+				requestID: requestID,
+				err:       fmt.Errorf("%s", defaultModelRequiredMessage("/hero-start")),
+			}
+		}
+		if err := svc.SyncCycleConfig(); err != nil {
+			return heroStartBootstrapDoneMsg{requestID: requestID, err: err}
+		}
+		if err := ctx.Err(); err != nil {
+			return heroStartBootstrapDoneMsg{requestID: requestID, err: err}
+		}
+
+		commandBody, err := cursoradapter.ReadCommandPrompt(filepath.Join(projectDir, cursoradapter.CommandsDir, "hero-start.md"))
+		if err != nil {
+			return heroStartBootstrapDoneMsg{requestID: requestID, err: fmt.Errorf("read command /hero-start: %w", err)}
+		}
+		agentBody, err := cursoradapter.ReadAgentPrompt(filepath.Join(projectDir, cursoradapter.AgentsDir, "orchestration_agent.md"))
+		if err != nil {
+			return heroStartBootstrapDoneMsg{requestID: requestID, err: fmt.Errorf("read orchestration_agent: %w", err)}
+		}
+
+		return heroStartBootstrapDoneMsg{
+			requestID:    requestID,
+			slug:         slug,
+			needsPrepare: m.heroStartNeedsPrepare(),
+			commandBody:  commandBody,
+			agentBody:    agentBody,
+		}
+	}
+}
+
+func (m model) handleHeroStartBootstrapDone(msg heroStartBootstrapDoneMsg) (model, tea.Cmd) {
+	if !m.heroStartBootstrapping || msg.requestID != m.heroStartRequestID {
 		return m, nil
 	}
-	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-start")
-	if !ok {
-		return m, cmd
-	}
-	if err := m.svc.SyncCycleConfig(); err != nil {
-		m = m.setStatusResult(false, "/hero-start", err.Error())
+	m.heroStartBootstrapping = false
+	m.heroStartCancel = nil
+	if msg.err != nil {
+		m.actionBusy = false
+		m = m.setStatusResult(false, "/hero-start", msg.err.Error())
+		m.convError = msg.err.Error()
+		m.chatInputFocused = true
 		return m, nil
 	}
-	if !m.heroStartNeedsPrepare() {
-		return m.beginHeroRuntimeConversation("start", slug, heroRuntimeOpts{})
+	if msg.needsPrepare {
+		return m.beginHeroStartPrepare(msg.requestID, msg.slug, msg.commandBody, msg.agentBody)
 	}
-	return m.beginHeroStartPrepare(slug)
+	return m.beginHeroRuntimeConversation("start", msg.slug, heroRuntimeOpts{
+		preloadedCommandBody: msg.commandBody,
+		preloadedAgentBody:   msg.agentBody,
+		preloadedPrompt:      true,
+	})
 }
 
 // heroStartNeedsPrepare is true when OpenCode and/or Codex Prepare-on-start must run.
@@ -1284,6 +1380,10 @@ func (m model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.confirmMsg = ""
 
 		if action == actionQuit {
+			if m.heroStartBootstrapping || m.heroStartPreparing {
+				m, _ = m.cancelHeroStartPreparation()
+				return m, tea.Quit
+			}
 			// Cancel the stream first, then quit.
 			return m, tea.Batch(m.cancelStreamCmd(), tea.Quit)
 		}

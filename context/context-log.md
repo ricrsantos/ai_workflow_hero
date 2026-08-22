@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-21 — Responsive `/hero-start` preflight and streaming
+
+**Problem**: `/hero-start` performed SQLite status/config sync, model resolution, prompt reads, and preparation checks synchronously in Bubble Tea `Update`; high-frequency harness deltas then caused repeated full transcript wrapping/rendering.
+
+**Outcome**: Moved `/hero-start` preflight and OpenCode/Codex preparation to cancellable `tea.Cmd` workers with request IDs and visible progress. Added `Ctrl+C`/quit handling during preflight, 25ms/64-event stream batching, and per-message response line wrapping/style caching. Existing stream/cancel/handoff behavior remains covered by TUI tests.
+
+**Validation**: `GOCACHE=/tmp/hero-go-cache go test ./... -count=1 -p 1 -timeout=600s` passed with local-listener permission enabled; the restricted sandbox cannot run the repository's `httptest.NewServer` tests.
+
 ## 2026-08-21 — TUI footer anchoring on short terminals
 
 **Problem**: The navigation footer text was fixed, but `renderFrame` enforced a minimum three-row content area. On short terminals that made the frame taller than the viewport, hiding the final footer hint group (`ctrl+q quit`).

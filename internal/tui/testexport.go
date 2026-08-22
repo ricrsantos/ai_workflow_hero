@@ -227,7 +227,7 @@ func ConversationTranscriptForTest(m model) string {
 
 // IsConversationStreaming reports whether conversation is streaming.
 func IsConversationStreaming(m model) bool {
-	return m.streaming
+	return m.streaming || m.heroStartBootstrapping || m.heroStartPreparing
 }
 
 // HarnessSessionIDForTest returns the in-memory harness session id.
@@ -264,7 +264,7 @@ func RunCmdForTest(cmd tea.Cmd) tea.Msg {
 			for _, nested := range m {
 				walk(nested)
 			}
-		case statusTickMsg, convWaitTickMsg:
+		case statusTickMsg, convWaitTickMsg, harnessHealthProbeMsg:
 			// ignore ticker
 		default:
 			if found == nil {

@@ -46,10 +46,24 @@ type convMessage struct {
 	callID      string
 	interrupted bool
 	failed      bool
+
+	// responseLines caches the expensive wrapping/styling work for a transcript
+	// message. The cache is invalidated whenever the message content/state changes.
+	responseLines        []string
+	responseLinesWidth   int
+	responseLinesRuntime string
+	responseLinesValid   bool
 }
 
 type streamDeltaMsg struct {
 	delta harness.StreamDelta
+}
+
+// conversationBatchMsg keeps a burst of harness events inside one Bubble Tea
+// Update/View cycle. This prevents high-volume /hero-start streams from making
+// the renderer rebuild the transcript once per character-sized delta.
+type conversationBatchMsg struct {
+	messages []tea.Msg
 }
 
 type harnessPermissionRequestMsg struct {
@@ -76,7 +90,7 @@ func convWaitTickCmd() tea.Cmd {
 }
 
 func (m model) conversationExecuteCmds() tea.Cmd {
-	return tea.Batch(waitConvMsg(m.convStreamCh), convWaitTickCmd(), harnessHealthProbeCmd())
+	return tea.Batch(waitConvBatchMsg(m.convStreamCh), convWaitTickCmd(), harnessHealthProbeCmd())
 }
 
 func (m model) harnessAdapter() harness.HarnessAdapter {
@@ -325,10 +339,13 @@ func (m model) resetChatSession() model {
 
 // heroRuntimeOpts carries command-specific context for Runtime Execute preambles.
 type heroRuntimeOpts struct {
-	RejectReason      string
-	ContinueExtra     int // 0 = default 1
-	CancelReason      string
-	ResumeCycleNumber int // 0 = latest non-archived
+	RejectReason         string
+	ContinueExtra        int // 0 = default 1
+	CancelReason         string
+	ResumeCycleNumber    int // 0 = latest non-archived
+	preloadedCommandBody string
+	preloadedAgentBody   string
+	preloadedPrompt      bool
 }
 
 func usesOrchestratorRuntime(cmdName string) bool {
@@ -369,13 +386,17 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	if cmdName == "resume" && opts.ResumeCycleNumber > 0 {
 		label = fmt.Sprintf("/hero-resume %d", opts.ResumeCycleNumber)
 	}
-	cmdPath := filepath.Join(m.svc.ProjectDir, cursoradapter.CommandsDir, "hero-"+cmdName+".md")
-	cmdBody, err := cursoradapter.ReadCommandPrompt(cmdPath)
-	if err != nil {
-		slog.Error("tui hero runtime command read failed", "path", cmdPath, "error", err)
-		m, _ = m.enterConversation()
-		m.convError = fmt.Errorf("read command %s: %w", label, err).Error()
-		return m, nil
+	cmdBody := opts.preloadedCommandBody
+	if !opts.preloadedPrompt {
+		cmdPath := filepath.Join(m.svc.ProjectDir, cursoradapter.CommandsDir, "hero-"+cmdName+".md")
+		var err error
+		cmdBody, err = cursoradapter.ReadCommandPrompt(cmdPath)
+		if err != nil {
+			slog.Error("tui hero runtime command read failed", "path", cmdPath, "error", err)
+			m, _ = m.enterConversation()
+			m.convError = fmt.Errorf("read command %s: %w", label, err).Error()
+			return m, nil
+		}
 	}
 	m, _ = m.enterConversation()
 	m.conversationStage = ""
@@ -393,7 +414,13 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 
 	var executePrompt string
 	if usesOrchestratorRuntime(cmdName) {
-		composite, err := orchestratorRuntimePrompt(m.svc.ProjectDir, cmdBody)
+		var composite string
+		var err error
+		if opts.preloadedPrompt {
+			composite = joinRuntimePromptBodies(opts.preloadedAgentBody, cmdBody)
+		} else {
+			composite, err = orchestratorRuntimePrompt(m.svc.ProjectDir, cmdBody)
+		}
 		if err != nil {
 			slog.Error("tui orchestration runtime prompt failed", "cmd", cmdName, "error", err)
 			m.convError = err.Error()
@@ -415,6 +442,10 @@ func orchestratorRuntimePrompt(projectDir, cmdBody string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read orchestration_agent: %w", err)
 	}
+	return joinRuntimePromptBodies(agentBody, cmdBody), nil
+}
+
+func joinRuntimePromptBodies(agentBody, cmdBody string) string {
 	composite := strings.TrimSpace(agentBody)
 	if body := strings.TrimSpace(cmdBody); body != "" {
 		if composite != "" {
@@ -422,7 +453,7 @@ func orchestratorRuntimePrompt(projectDir, cmdBody string) (string, error) {
 		}
 		composite += body
 	}
-	return composite, nil
+	return composite
 }
 
 func (m model) beginConversationExecute(userLabel, executePrompt string) model {
@@ -462,6 +493,33 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 
 func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s := msg.String()
+
+	if m.heroStartBootstrapping || m.heroStartPreparing {
+		switch s {
+		case "ctrl+c":
+			return m.cancelHeroStartPreparation()
+		case "ctrl+q":
+			return m.showConfirm(actionQuit, 0, "Preparing /hero-start. Quit? [y/N]")
+		case "ctrl+1", "alt+1", "ctrl+2", "alt+2", "ctrl+3", "alt+3",
+			"ctrl+4", "alt+4", "ctrl+5", "alt+5":
+			return m.handleKey(msg)
+		case "up", "ctrl+p":
+			m = m.scrollResponse(-1)
+			return m, nil
+		case "down", "ctrl+n":
+			m = m.scrollResponse(1)
+			return m, nil
+		case "pgup":
+			m = m.scrollResponse(-m.responseVisibleLines(m.contentAreaHeight()))
+			return m, nil
+		case "pgdown":
+			m = m.scrollResponse(m.responseVisibleLines(m.contentAreaHeight()))
+			return m, nil
+		default:
+			// The preflight owns the composer until it completes or is cancelled.
+			return m, nil
+		}
+	}
 
 	if m.streaming {
 		switch s {
@@ -1016,6 +1074,53 @@ func waitConvMsg(ch <-chan tea.Msg) tea.Cmd {
 	}
 }
 
+const (
+	conversationBatchWindow = 25 * time.Millisecond
+	conversationBatchMax    = 64
+)
+
+// waitConvBatchMsg coalesces short bursts of stream deltas into one Update.
+// Harnesses commonly emit many small deltas while the agent is thinking; a
+// 25ms window keeps the terminal responsive without making output feel delayed.
+func waitConvBatchMsg(ch <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		first := <-ch
+		if first == nil {
+			return nil
+		}
+		messages := []tea.Msg{first}
+		if isImmediateConversationMessage(first) {
+			return conversationBatchMsg{messages: messages}
+		}
+
+		timer := time.NewTimer(conversationBatchWindow)
+		defer timer.Stop()
+		for len(messages) < conversationBatchMax {
+			select {
+			case msg := <-ch:
+				if msg != nil {
+					messages = append(messages, msg)
+				}
+				if isImmediateConversationMessage(msg) {
+					return conversationBatchMsg{messages: messages}
+				}
+			case <-timer.C:
+				return conversationBatchMsg{messages: messages}
+			}
+		}
+		return conversationBatchMsg{messages: messages}
+	}
+}
+
+func isImmediateConversationMessage(msg tea.Msg) bool {
+	switch msg.(type) {
+	case executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg:
+		return true
+	default:
+		return false
+	}
+}
+
 func (m model) cancelStreamCmd() tea.Cmd {
 	adapter := m.harnessAdapter()
 	sessionID := m.harnessSessionID
@@ -1039,6 +1144,26 @@ func (m model) cancelStreamCmd() tea.Cmd {
 
 func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case conversationBatchMsg:
+		for _, item := range msg.messages {
+			if item == nil {
+				continue
+			}
+			updated, _ := m.handleConversationMsg(item)
+			next, ok := updated.(model)
+			if !ok {
+				return updated, nil
+			}
+			m = next
+			if !m.streaming {
+				break
+			}
+		}
+		if m.streaming && m.convStreamCh != nil {
+			return m, waitConvBatchMsg(m.convStreamCh)
+		}
+		return m, nil
+
 	case streamDeltaMsg:
 		prevActivity := m.harnessWatchdog.LastActivityAt()
 		m.harnessWatchdog.RecordDelta(msg.delta, time.Now())
@@ -1048,7 +1173,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.appendStreamDelta(msg.delta)
 		m = m.maybeFollowResponseBottom()
 		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvMsg(m.convStreamCh)
+			return m, waitConvBatchMsg(m.convStreamCh)
 		}
 		return m, nil
 
@@ -1059,11 +1184,12 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.harnessPermissionMsg = formatHarnessPermission(msg.req)
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessPermissionMsg})
 		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvMsg(m.convStreamCh)
+			return m, waitConvBatchMsg(m.convStreamCh)
 		}
 		return m, nil
 
 	case executeDoneMsg:
+		heroStartAction := m.actionBusy && m.statusLabel == "/hero-start"
 		m.streaming = false
 		m.convStreamCh = nil
 		m.chatInputFocused = true
@@ -1081,7 +1207,11 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			errText := msg.err.Error()
 			m.convError = errText
-			m = m.setStatusResult(false, "execute", firstStatusLine(errText))
+			statusLabel := "execute"
+			if heroStartAction {
+				statusLabel = "/hero-start"
+			}
+			m = m.setStatusResult(false, statusLabel, firstStatusLine(errText))
 			if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 				existing := strings.TrimSpace(m.transcript[m.agentMsgIndex].content)
 				if existing == "" {
@@ -1090,6 +1220,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.transcript[m.agentMsgIndex].content = existing + "\n✗ " + errText
 				}
 				m.transcript[m.agentMsgIndex].failed = true
+				m.invalidateResponseCache(m.agentMsgIndex)
 			}
 			slog.Error("tui conversation execute failed", "error", msg.err)
 			return m, nil
@@ -1104,6 +1235,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				streamed := m.transcript[m.agentMsgIndex].content
 				if len(msg.result.Output) >= len(streamed) {
 					m.transcript[m.agentMsgIndex].content = msg.result.Output
+					m.invalidateResponseCache(m.agentMsgIndex)
 				}
 			}
 		}
@@ -1122,9 +1254,13 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handoffCmd != nil {
 			return next, tea.Batch(next.refreshCmd(), handoffCmd, convWaitTickCmd())
 		}
+		if heroStartAction {
+			next = next.setStatusResult(true, "/hero-start", "orchestration turn completed")
+		}
 		return next, next.refreshCmd()
 
 	case streamCancelDoneMsg:
+		heroStartAction := m.actionBusy && m.statusLabel == "/hero-start"
 		m.streaming = false
 		m.streamInterrupted = true
 		m.convStreamCh = nil
@@ -1135,6 +1271,10 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.clearHarnessPermission()
 		if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 			m.transcript[m.agentMsgIndex].interrupted = true
+			m.invalidateResponseCache(m.agentMsgIndex)
+		}
+		if heroStartAction {
+			m = m.setStatusResult(false, "/hero-start", "cancelled")
 		}
 		slog.Info("tui conversation interrupted")
 		return m, nil
@@ -1199,6 +1339,7 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 			m.transcript[m.thinkingMsgIndex].role == convRoleThinking &&
 			m.thinkingMsgIndex == m.agentMsgIndex-1 {
 			m.transcript[m.thinkingMsgIndex].content += d.Text
+			m.invalidateResponseCache(m.thinkingMsgIndex)
 			return m
 		}
 		m.thinkingMsgIndex = m.insertBeforeAgent(convMessage{
@@ -1277,7 +1418,7 @@ func (m model) handleHarnessPermissionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.streaming && m.convStreamCh != nil {
-		return m, waitConvMsg(m.convStreamCh)
+		return m, waitConvBatchMsg(m.convStreamCh)
 	}
 	return m, nil
 }
@@ -1339,6 +1480,7 @@ func (m *model) appendAttributed(role convRole, d harness.StreamDelta) {
 		}
 		if msg.role == role && msg.callID == d.CallID {
 			m.transcript[i].content += d.Text
+			m.invalidateResponseCache(i)
 			if role == convRoleThinking {
 				m.thinkingMsgIndex = i
 			}
@@ -1376,6 +1518,15 @@ func (m *model) appendAgentDelta(delta string) {
 		return
 	}
 	m.transcript[m.agentMsgIndex].content += delta
+	m.invalidateResponseCache(m.agentMsgIndex)
+}
+
+func (m *model) invalidateResponseCache(index int) {
+	if index < 0 || index >= len(m.transcript) {
+		return
+	}
+	m.transcript[index].responseLines = nil
+	m.transcript[index].responseLinesValid = false
 }
 
 func (m model) renderConversation(contentH int) string {
@@ -1717,8 +1868,8 @@ func (m model) renderConversationResponse(responseLines int) string {
 }
 
 func (m model) responseContentLines(contentW int) []string {
-	turn := m.latestAgentTurn()
-	if len(turn) == 0 {
+	indices := m.latestAgentTurnIndices()
+	if len(indices) == 0 {
 		if m.streaming {
 			return []string{chatInMuted.Render("Waiting for harness…")}
 		}
@@ -1728,11 +1879,12 @@ func (m model) responseContentLines(contentW int) []string {
 	var out []string
 	prevKey := ""
 	prevWasSub := false
-	for _, msg := range turn {
+	for _, index := range indices {
+		msg := &m.transcript[index]
 		if msg.role == convRoleAgent && strings.TrimSpace(msg.content) == "" && m.streaming && !msg.failed && !msg.interrupted {
 			continue
 		}
-		key := messageAgentKey(msg)
+		key := messageAgentKey(*msg)
 		isSub := strings.TrimSpace(msg.callID) != ""
 		if key != prevKey {
 			if prevKey != "" && prevWasSub {
@@ -1746,47 +1898,7 @@ func (m model) responseContentLines(contentW int) []string {
 			prevKey = key
 			prevWasSub = isSub
 		}
-		switch msg.role {
-		case convRoleThinking:
-			text := formatChatAgentText(m.runtimeCommandName, "Thinking: "+msg.content)
-			for _, line := range splitOutputLines(text, contentW) {
-				out = append(out, chatInThink.Render(line))
-			}
-		case convRoleTool:
-			text := formatChatAgentText(m.runtimeCommandName, "→ "+msg.content)
-			for _, line := range splitOutputLines(text, contentW) {
-				out = append(out, chatInMuted.Render(line))
-			}
-		case convRoleWarning:
-			for _, line := range splitOutputLines(msg.content, contentW) {
-				out = append(out, chatInWarn.Render(line))
-			}
-		case convRoleActivity:
-			text := formatChatAgentText(m.runtimeCommandName, "· "+msg.content)
-			for _, line := range splitOutputLines(text, contentW) {
-				out = append(out, chatInMuted.Render(line))
-			}
-		case convRoleAgent:
-			text := msg.content
-			if msg.interrupted && text == "" {
-				text = "Interrupted"
-			} else if msg.interrupted && text != "" {
-				text += "\n[Interrupted]"
-			}
-			text = formatChatAgentText(m.runtimeCommandName, text)
-			style := chatInOK
-			if msg.failed {
-				style = chatInErr
-			} else if msg.interrupted {
-				style = chatInWarn
-			}
-			if text == "" && m.streaming {
-				continue
-			}
-			for _, line := range splitOutputLines(text, contentW) {
-				out = append(out, style.Render(line))
-			}
-		}
+		out = append(out, m.cachedResponseLines(msg, contentW)...)
 	}
 	if prevWasSub {
 		out = append(out, "")
@@ -1795,6 +1907,60 @@ func (m model) responseContentLines(contentW int) []string {
 		return []string{chatInMuted.Render("Waiting for harness…")}
 	}
 	return out
+}
+
+func (m model) cachedResponseLines(msg *convMessage, contentW int) []string {
+	if msg.responseLinesValid && msg.responseLinesWidth == contentW && msg.responseLinesRuntime == m.runtimeCommandName {
+		return msg.responseLines
+	}
+
+	var lines []string
+	switch msg.role {
+	case convRoleThinking:
+		text := formatChatAgentText(m.runtimeCommandName, "Thinking: "+msg.content)
+		for _, line := range splitOutputLines(text, contentW) {
+			lines = append(lines, chatInThink.Render(line))
+		}
+	case convRoleTool:
+		text := formatChatAgentText(m.runtimeCommandName, "→ "+msg.content)
+		for _, line := range splitOutputLines(text, contentW) {
+			lines = append(lines, chatInMuted.Render(line))
+		}
+	case convRoleWarning:
+		for _, line := range splitOutputLines(msg.content, contentW) {
+			lines = append(lines, chatInWarn.Render(line))
+		}
+	case convRoleActivity:
+		text := formatChatAgentText(m.runtimeCommandName, "· "+msg.content)
+		for _, line := range splitOutputLines(text, contentW) {
+			lines = append(lines, chatInMuted.Render(line))
+		}
+	case convRoleAgent:
+		text := msg.content
+		if msg.interrupted && text == "" {
+			text = "Interrupted"
+		} else if msg.interrupted && text != "" {
+			text += "\n[Interrupted]"
+		}
+		text = formatChatAgentText(m.runtimeCommandName, text)
+		style := chatInOK
+		if msg.failed {
+			style = chatInErr
+		} else if msg.interrupted {
+			style = chatInWarn
+		}
+		if text != "" || !m.streaming {
+			for _, line := range splitOutputLines(text, contentW) {
+				lines = append(lines, style.Render(line))
+			}
+		}
+	}
+
+	msg.responseLines = lines
+	msg.responseLinesWidth = contentW
+	msg.responseLinesRuntime = m.runtimeCommandName
+	msg.responseLinesValid = true
+	return lines
 }
 
 func messageAgentKey(msg convMessage) string {
@@ -1828,6 +1994,30 @@ func (m model) latestAgentTurn() []convMessage {
 		turn = append(turn, msg)
 	}
 	return turn
+}
+
+func (m model) latestAgentTurnIndices() []int {
+	if len(m.transcript) == 0 {
+		return nil
+	}
+	lastUser := -1
+	for i := len(m.transcript) - 1; i >= 0; i-- {
+		if m.transcript[i].role == convRoleUser {
+			lastUser = i
+			break
+		}
+	}
+	start := lastUser + 1
+	if start < 0 {
+		start = 0
+	}
+	indices := make([]int, 0, len(m.transcript)-start)
+	for i := start; i < len(m.transcript); i++ {
+		if m.transcript[i].role != convRoleUser {
+			indices = append(indices, i)
+		}
+	}
+	return indices
 }
 
 func (m model) renderConversationInput() string {

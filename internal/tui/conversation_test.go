@@ -29,6 +29,7 @@ type streamingHarness struct {
 	lastAgentName string
 	lastProps     map[string]string
 	err           error
+	release       chan struct{}
 }
 
 func (h *streamingHarness) Name() string                      { return "streaming" }
@@ -75,6 +76,9 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 			}
 		}
 	}
+	if h.release != nil {
+		<-h.release
+	}
 	if resultSession != "" {
 		return &harness.ExecutionResult{
 			SessionID:  resultSession,
@@ -86,6 +90,13 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 }
 func (h *streamingHarness) Cancel(_ context.Context, sessionID string) error {
 	h.cancelCalled = true
+	if h.release != nil {
+		select {
+		case <-h.release:
+		default:
+			close(h.release)
+		}
+	}
 	if sessionID == "" {
 		return nil
 	}
@@ -215,7 +226,7 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 			case tea.BatchMsg:
 				if got := runConversationCmd(func() tea.Msg { return inner }); got != nil {
 					switch got.(type) {
-					case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
+					case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
 						return got
 					default:
 						if found == nil {
@@ -225,7 +236,7 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 				}
 			case convWaitTickMsg, statusTickMsg, harnessHealthProbeMsg:
 				continue
-			case streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
+			case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
 				return inner
 			case refreshDataMsg:
 				if found == nil {
@@ -243,6 +254,25 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 		return nil
 	default:
 		return msg
+	}
+}
+
+func TestWaitConvBatchGroupsDeltasAndPrioritizesCompletion(t *testing.T) {
+	ch := make(chan tea.Msg, 3)
+	ch <- streamDeltaMsg{delta: harness.StreamDelta{Text: "one"}}
+	ch <- streamDeltaMsg{delta: harness.StreamDelta{Text: "two"}}
+	ch <- executeDoneMsg{}
+
+	msg := waitConvBatchMsg(ch)()
+	batch, ok := msg.(conversationBatchMsg)
+	if !ok {
+		t.Fatalf("message type = %T, want conversationBatchMsg", msg)
+	}
+	if len(batch.messages) != 3 {
+		t.Fatalf("batched messages = %d, want 3", len(batch.messages))
+	}
+	if _, ok := batch.messages[len(batch.messages)-1].(executeDoneMsg); !ok {
+		t.Fatalf("last batched message = %T, want executeDoneMsg", batch.messages[len(batch.messages)-1])
 	}
 }
 
@@ -306,6 +336,7 @@ func TestConversationResumeSession(t *testing.T) {
 func TestConversationCancelDuringStreamWithoutSessionID(t *testing.T) {
 	m, h, _ := newConversationTestModel(t)
 	h.deltas = []string{"partial"}
+	h.release = make(chan struct{})
 
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "wait")
@@ -336,6 +367,7 @@ func TestConversationCancelDuringStreamWithoutSessionID(t *testing.T) {
 func TestConversationCancelDuringStream(t *testing.T) {
 	m, h, _ := newConversationTestModel(t)
 	h.deltas = []string{"partial"}
+	h.release = make(chan struct{})
 
 	m = EnterConversationForTest(m)
 	m = SetConversationInput(m, "wait")
@@ -1075,8 +1107,13 @@ func TestHeroStartRequiresActiveCycle(t *testing.T) {
 	m := NewTestModel(svc)
 	m = OpenPalette(m)
 	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	if cmd == nil {
+		t.Fatal("expected async preflight cmd when no active cycle")
+	}
+	msg := RunCmdForTest(cmd)
+	next, cmd = HandleTestMsg(next, msg)
 	if cmd != nil {
-		t.Fatal("expected no async cmd when no active cycle")
+		t.Fatal("expected preflight to finish without execute cmd when no active cycle")
 	}
 	if StatusKindForTest(next) != "err" {
 		t.Fatalf("expected error status, got %s", StatusKindForTest(next))
@@ -1117,8 +1154,13 @@ stages:
 	m := NewTestModel(svc)
 	m = OpenPalette(m)
 	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	if cmd == nil {
+		t.Fatal("expected async preflight when orchestrator model is missing")
+	}
+	msg := RunCmdForTest(cmd)
+	next, cmd = HandleTestMsg(next, msg)
 	if cmd != nil {
-		t.Fatal("expected no execute when orchestrator model missing")
+		t.Fatal("expected preflight to finish without execute when model is missing")
 	}
 	if StatusKindForTest(next) != "err" {
 		t.Fatalf("expected error status, got %s", StatusKindForTest(next))
