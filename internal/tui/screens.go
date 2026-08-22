@@ -418,8 +418,10 @@ func (m model) renderFrame() string {
 	bottomStr := bottom.String()
 	chrome := countContentLines(topStr) + countContentLines(bottomStr)
 	contentH := m.height - chrome
-	if contentH < 3 {
-		contentH = 3
+	if contentH < 0 {
+		// The footer is fixed chrome. On a short terminal, let the content area
+		// disappear rather than pushing the footer below the visible frame.
+		contentH = 0
 	}
 
 	var content string
@@ -435,8 +437,12 @@ func (m model) renderFrame() string {
 	// more fixed pane chrome than fits in a very short terminal; retain its
 	// bottom rows (composer/status) while trimming the excess instead of
 	// allowing the content to push the footer out of the frame.
-	content = fitContentHeight(content, contentH, m.screen == screenConversation)
-	content += "\n"
+	if contentH > 0 {
+		content = fitContentHeight(content, contentH, m.screen == screenConversation)
+		content += "\n"
+	} else {
+		content = ""
+	}
 
 	return topStr + content + bottomStr
 }
@@ -630,8 +636,8 @@ func (m model) frameContentHeight() int {
 	// Match renderFrame chrome: title+tabs, rule, status rules, status bar, and
 	// the responsive footer (which may occupy more than one line).
 	h := m.height - (2 + 1 + m.statusBarLineCount() + 1 + m.footerLineCount())
-	if h < 3 {
-		h = 3
+	if h < 0 {
+		h = 0
 	}
 	return h
 }

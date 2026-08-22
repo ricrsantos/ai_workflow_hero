@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-21 — TUI footer anchoring on short terminals
+
+**Problem**: The navigation footer text was fixed, but `renderFrame` enforced a minimum three-row content area. On short terminals that made the frame taller than the viewport, hiding the final footer hint group (`ctrl+q quit`).
+
+**Fix**: Content height now may reach zero when fixed chrome consumes the available rows; the footer remains anchored and the rendered frame stays at the terminal height. Added a regression test covering an 80×10 Chat frame and the complete fixed footer.
+
+---
+
 ## 2026-08-21 — TUI fixed navigation footer
 
 **Problem**: The footer hints changed by screen/streaming state and the long line could wrap without reserving its rows, causing incomplete or overwritten navigation instructions.

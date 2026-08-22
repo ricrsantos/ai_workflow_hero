@@ -96,6 +96,30 @@ func TestFooterWrapsWithoutClippingAndReservesRows(t *testing.T) {
 	}
 }
 
+func TestFooterRemainsVisibleWhenContentAreaIsShort(t *testing.T) {
+	const width, height = 80, 10
+	m := SetHeight(SetWidth(NewTestModel(nil), width), height)
+	m = EnterConversationForTest(m)
+
+	viewLines := strings.Split(stripANSI(ViewForTest(m)), "\n")
+	if got := len(viewLines); got != height {
+		t.Fatalf("frame lines=%d want %d\n%s", got, height, strings.Join(viewLines, "\n"))
+	}
+	footerLines := m.footerHintLines()
+	if len(viewLines) < len(footerLines) {
+		t.Fatalf("frame has fewer lines than footer: %d < %d", len(viewLines), len(footerLines))
+	}
+	start := len(viewLines) - len(footerLines)
+	for i, want := range footerLines {
+		if got := viewLines[start+i]; got != want {
+			t.Fatalf("footer line %d=%q want %q\n%s", i, got, want, strings.Join(viewLines, "\n"))
+		}
+	}
+	if got := strings.Join(viewLines[start:], " · "); got != fixedFooterHints {
+		t.Fatalf("footer=%q want %q", got, fixedFooterHints)
+	}
+}
+
 func TestFormatEventTimeLocal(t *testing.T) {
 	ts := "2025-08-13T23:44:32Z"
 	want, err := time.Parse(time.RFC3339, ts)
