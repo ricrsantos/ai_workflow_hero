@@ -99,9 +99,7 @@ func (m model) maybeHandoffAfterExecute() (model, tea.Cmd) {
 	if m.researchLive && agent == agentOrchestration && m.researchStageInteractive() {
 		m.harnessSessionID = m.researchSessionID
 		m = m.withRuntimeAgent(agentDiscover)
-		if slug, _ := m.discoverModelSlug(); slug != "" {
-			m.runtimeModelSlug = slug
-		}
+		m = m.applyAgentRuntimePair(agentDiscover, "")
 	}
 	return m, nil
 }
@@ -129,7 +127,7 @@ func (m model) startDiscoverResearchSession() (model, tea.Cmd) {
 	m.conversationStage = stageResearch
 	m.runtimeCommandName = ""
 	m = m.withRuntimeAgent(agentDiscover)
-	m.runtimeModelSlug = slug
+	m = m.applyAgentRuntimePair(agentDiscover, slug)
 	prompt := tuiDiscoverResearchPreamble() + strings.TrimSpace(agentBody) + "\n"
 	label := "→ Research"
 	if warned {
@@ -145,9 +143,7 @@ func (m model) resumeOrchestratorAfterResearch() (model, tea.Cmd) {
 	m.harnessSessionID = orchID
 	m = m.withRuntimeAgent(agentOrchestration)
 	m.runtimeCommandName = "start"
-	if slug, _ := m.orchestratorModelSlug(); slug != "" {
-		m.runtimeModelSlug = slug
-	}
+	m = m.applyAgentRuntimePair(agentOrchestration, "")
 	if s, err := m.svc.ActiveRunStage(); err == nil {
 		m.conversationStage = s
 	}
@@ -163,9 +159,7 @@ func (m model) prepareDiscoverFollowUp() model {
 	if sid := strings.TrimSpace(m.researchSessionID); sid != "" {
 		m.harnessSessionID = sid
 	}
-	if slug, _ := m.discoverModelSlug(); slug != "" {
-		m.runtimeModelSlug = slug
-	}
+	m = m.applyAgentRuntimePair(agentDiscover, "")
 	m.conversationStage = stageResearch
 	return m
 }
@@ -175,8 +169,6 @@ func (m model) prepareOrchestratorFollowUp() model {
 	if sid := strings.TrimSpace(m.orchestrationSessionID); sid != "" {
 		m.harnessSessionID = sid
 	}
-	if slug, _ := m.orchestratorModelSlug(); slug != "" {
-		m.runtimeModelSlug = slug
-	}
+	m = m.applyAgentRuntimePair(agentOrchestration, "")
 	return m
 }

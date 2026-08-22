@@ -396,6 +396,23 @@ func ChatHarnessIDForTest(m model) string {
 	return m.chatHarnessID
 }
 
+// SetRuntimeHarnessIDForTest sets the active runtime workflow harness id.
+func SetRuntimeHarnessIDForTest(m model, harnessID string) model {
+	m.runtimeHarnessID = harnessID
+	return m
+}
+
+// RuntimeHarnessIDForTest returns the active runtime workflow harness id.
+func RuntimeHarnessIDForTest(m model) string {
+	return m.runtimeHarnessID
+}
+
+// SetRuntimeModelSlugForTest sets the active runtime workflow model slug.
+func SetRuntimeModelSlugForTest(m model, slug string) model {
+	m.runtimeModelSlug = slug
+	return m
+}
+
 // SetAvailableModelsForTest sets Cursor model ids for the picker cache.
 func SetAvailableModelsForTest(m model, models []string) model {
 	m.availableModels = append([]string(nil), models...)

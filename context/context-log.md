@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-21 — Multi-harness TUI labels (model × harness mix)
+
+**Problem**: During multi-harness cycles the Chat speaker/input could show a Cursor model with an OpenCode harness (e.g. `[ORCH - composer-2.5 · opencode]`). Display used freechat `chatHarnessID` while the model came from `runtimeModelSlug` (YAML orch).
+
+**Fix**: Added `runtimeHarnessID` (parallel to `runtimeModelSlug`); `conversationHarnessTool` prefers it; orch/discover/start paths apply `AgentPairFor`; `executePairMsg` updates labels after `ResolveExecutePair` (incl. fallback); `liveAgent`/`convMessage` carry per-agent harness for nested speakers.
+
+**Validation**: `go test ./... -count=1` passed.
+
 ## 2026-08-21 — Responsive `/hero-start` preflight and streaming
 
 **Problem**: `/hero-start` performed SQLite status/config sync, model resolution, prompt reads, and preparation checks synchronously in Bubble Tea `Update`; high-frequency harness deltas then caused repeated full transcript wrapping/rendering.

@@ -31,7 +31,8 @@ func (m model) defaultExecuteModel(actionLabel string) (model, tea.Cmd, string, 
 // orchestratorExecuteModel resolves agents.orchestration_agent (then fallback_model,
 // then /hero-model) for TUI Runtime Execute of orchestrator commands.
 func (m model) orchestratorExecuteModel(actionLabel string) (model, tea.Cmd, string, bool) {
-	if slug, _ := m.orchestratorModelSlug(); strings.TrimSpace(slug) != "" {
+	m = m.applyAgentRuntimePair(agentOrchestration, "")
+	if slug := strings.TrimSpace(m.runtimeModelSlug); slug != "" {
 		return m, nil, slug, true
 	}
 	return m.defaultExecuteModel(actionLabel)

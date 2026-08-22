@@ -12,10 +12,11 @@ const (
 )
 
 type liveAgent struct {
-	CallID string
-	Name   string
-	Label  string
-	Model  string
+	CallID  string
+	Name    string
+	Label   string
+	Model   string
+	Harness string // agent YAML harness when known (UI-C04 multi-harness speaker)
 }
 
 var agentShortLabels = map[string]string{

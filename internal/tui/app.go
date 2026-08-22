@@ -106,6 +106,7 @@ type model struct {
 	harnessDraft             map[string]bool // checkbox state while /hero-harness is open
 	runtimeCommandName       string          // hero runtime slash body name (e.g. "new") for Chat output normalization
 	runtimeModelSlug         string          // YAML orch/discover slug or /hero-model default for the active runtime slash
+	runtimeHarnessID         string          // YAML orch/discover harness (or resolved execute pair); preferred over freechat for labels
 	runtimeAgentName         string          // harness agent name for active runtime slash (e.g. orchestration_agent)
 	orchestrationLive        bool            // /hero-start session: follow-ups resume orchestrator model + session
 	researchLive             bool            // TUI Research: free-text follow-ups resume discover_agent
@@ -362,7 +363,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slog.Debug("tui model props refresh done", "harnesses", len(msg.summaries))
 		return m, nil
 
-	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg:
+	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, executePairMsg:
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)

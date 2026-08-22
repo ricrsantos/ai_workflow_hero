@@ -14,6 +14,7 @@ import (
 	herodebug "github.com/ricrsantos/ai_workflow_hero/internal/common/debug"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
 type convRole string
@@ -43,6 +44,7 @@ type convMessage struct {
 	content     string
 	agentName   string
 	modelSlug   string
+	harnessID   string // agent/session harness for speaker labels (may differ from freechat)
 	callID      string
 	interrupted bool
 	failed      bool
@@ -75,6 +77,13 @@ type executeDoneMsg struct {
 	result    *harness.ExecutionResult
 	err       error
 	harnessID string // harness used for this execute (session binding)
+}
+
+// executePairMsg updates Chat labels to the resolved execute pair (including fallback)
+// before Adapter.Execute starts streaming.
+type executePairMsg struct {
+	harnessID string
+	model     string
 }
 
 type streamCancelDoneMsg struct {
@@ -110,6 +119,9 @@ func (m model) harnessAdapter() harness.HarnessAdapter {
 }
 
 func (m model) conversationHarnessTool() string {
+	if h := strings.TrimSpace(m.runtimeHarnessID); h != "" {
+		return h
+	}
 	if h := strings.TrimSpace(m.chatHarnessID); h != "" {
 		return h
 	}
@@ -127,6 +139,63 @@ func (m model) conversationHarnessTool() string {
 		}
 	}
 	return "cursor"
+}
+
+// applyAgentRuntimePair sets runtimeHarnessID + runtimeModelSlug from workflow-config
+// agents.<agentName> (or leaves harness empty so freechat chatHarnessID is used).
+func (m model) applyAgentRuntimePair(agentName, modelSlugOverride string) model {
+	projectDir := ""
+	if m.svc != nil {
+		projectDir = m.svc.ProjectDir
+	}
+	pair, _, err := workflowconfig.AgentPairFor(projectDir, agentName)
+	if err == nil {
+		if h := strings.TrimSpace(strings.ToLower(pair.Harness)); h != "" {
+			m.runtimeHarnessID = h
+		}
+		if override := strings.TrimSpace(modelSlugOverride); override != "" {
+			m.runtimeModelSlug = override
+		} else if s := strings.TrimSpace(pair.Slug); s != "" {
+			m.runtimeModelSlug = s
+		}
+		return m
+	}
+	if override := strings.TrimSpace(modelSlugOverride); override != "" {
+		m.runtimeModelSlug = override
+	} else if slug := m.defaultHarnessModelSlug(); slug != "" {
+		m.runtimeModelSlug = slug
+	}
+	return m
+}
+
+func (m model) clearRuntimePair() model {
+	m.runtimeModelSlug = ""
+	m.runtimeHarnessID = ""
+	return m
+}
+
+// agentHarnessForName returns the YAML harness for a Hero agent, else the active
+// runtime/freechat harness used for Chat labels.
+func (m model) agentHarnessForName(name string) string {
+	name = strings.TrimSpace(name)
+	if name != "" && m.svc != nil {
+		if pair, _, err := workflowconfig.AgentPairFor(m.svc.ProjectDir, name); err == nil {
+			if h := strings.TrimSpace(strings.ToLower(pair.Harness)); h != "" {
+				return h
+			}
+		}
+	}
+	return m.conversationHarnessTool()
+}
+
+func (m model) harnessForMessage(msg convMessage) string {
+	if h := strings.TrimSpace(msg.harnessID); h != "" {
+		return h
+	}
+	if name := strings.TrimSpace(msg.agentName); name != "" {
+		return m.agentHarnessForName(name)
+	}
+	return m.conversationHarnessTool()
 }
 
 func (m model) syncConversationContext() model {
@@ -264,17 +333,21 @@ func (m model) conversationModelLabel() string {
 	return "not set"
 }
 
-// responseSpeakerHeader is the green-pane origin label: [QA - composer-2.5], [HARN - grok-4.6].
+// responseSpeakerHeader is the green-pane origin label: [QA - composer-2.5 · opencode], [HARN - grok-4.6 · cursor].
 func (m model) responseSpeakerHeader() string {
 	name := strings.TrimSpace(m.runtimeAgentName)
 	model := m.conversationModelSlug()
+	harnessID := m.conversationHarnessTool()
 	if n := len(m.liveAgents); n > 0 {
 		a := m.liveAgents[n-1]
 		name = a.Name
 		if slug := strings.TrimSpace(a.Model); slug != "" {
 			model = slug
 		}
-		return formatAgentHeader(name, model, m.conversationHarnessTool())
+		if h := strings.TrimSpace(a.Harness); h != "" {
+			harnessID = h
+		}
+		return formatAgentHeader(name, model, harnessID)
 	}
 	turn := m.latestAgentTurn()
 	for i := len(turn) - 1; i >= 0; i-- {
@@ -288,9 +361,14 @@ func (m model) responseSpeakerHeader() string {
 		if slug := strings.TrimSpace(msg.modelSlug); slug != "" {
 			model = slug
 		}
+		if h := strings.TrimSpace(msg.harnessID); h != "" {
+			harnessID = h
+		} else if name != "" {
+			harnessID = m.agentHarnessForName(name)
+		}
 		break
 	}
-	return formatAgentHeader(name, model, m.conversationHarnessTool())
+	return formatAgentHeader(name, model, harnessID)
 }
 
 func (m model) enterConversation() (model, tea.Cmd) {
@@ -312,7 +390,7 @@ func (m model) resetChatSession() model {
 	m.researchSessionID = ""
 	m.awaitingRejectReason = false
 	m.runtimeCommandName = ""
-	m.runtimeModelSlug = ""
+	m = m.clearRuntimePair()
 	m.runtimeAgentName = ""
 	m.liveAgents = nil
 	m.convError = ""
@@ -404,6 +482,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	m.harnessSessionHarnessID = ""
 	m.runtimeCommandName = cmdName
 	m.runtimeModelSlug = strings.TrimSpace(modelSlug)
+	m.runtimeHarnessID = ""
 	m.runtimeAgentName = ""
 	m.orchestrationLive = cmdName == "start"
 	if cmdName == "start" {
@@ -428,6 +507,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 		}
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite, opts)
 		m = m.withRuntimeAgent(agentOrchestration)
+		m = m.applyAgentRuntimePair(agentOrchestration, modelSlug)
 	} else {
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody, opts)
 	}
@@ -468,10 +548,12 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	m = m.resetHarnessWatchdog(executePrompt)
 	parentName := strings.TrimSpace(m.runtimeAgentName)
 	parentModel := m.conversationModelSlug()
+	parentHarness := m.conversationHarnessTool()
 	m.liveAgents = []liveAgent{{
-		Name:  parentName,
-		Label: agentShortLabel(parentName),
-		Model: parentModel,
+		Name:    parentName,
+		Label:   agentShortLabel(parentName),
+		Model:   parentModel,
+		Harness: parentHarness,
 	}}
 	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: userLabel})
 	m.transcript = append(m.transcript, convMessage{
@@ -479,6 +561,7 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 		content:   "",
 		agentName: parentName,
 		modelSlug: parentModel,
+		harnessID: parentHarness,
 	})
 	m.agentMsgIndex = len(m.transcript) - 1
 	m.thinkingMsgIndex = -1
@@ -837,8 +920,12 @@ func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
 				m.runtimeModelSlug = slug
 			}
 		}
+		if strings.TrimSpace(m.runtimeHarnessID) == "" && m.workflowAgentActive() {
+			m = m.applyAgentRuntimePair(m.runtimeAgentName, m.runtimeModelSlug)
+		}
 		if m.runtimeAgentName == "" {
 			m.runtimeAgentName = agentOrchestration
+			m = m.applyAgentRuntimePair(agentOrchestration, m.runtimeModelSlug)
 		}
 	} else {
 		var cmd tea.Cmd
@@ -1011,6 +1098,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			ch <- executeDoneMsg{err: fmt.Errorf("harness adapter unavailable")}
 			return
 		}
+		ch <- executePairMsg{harnessID: pair.HarnessID, model: pair.Model}
 		sessionID := m.harnessSessionIDForPair(stageName, pair.HarnessID)
 		if resolved.warning != "" {
 			ch <- streamDeltaMsg{delta: harness.StreamDelta{Kind: harness.StreamKindText, Text: resolved.warning + "\n\n"}}
@@ -1114,7 +1202,7 @@ func waitConvBatchMsg(ch <-chan tea.Msg) tea.Cmd {
 
 func isImmediateConversationMessage(msg tea.Msg) bool {
 	switch msg.(type) {
-	case executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg:
+	case executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, executePairMsg:
 		return true
 	default:
 		return false
@@ -1177,6 +1265,13 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case executePairMsg:
+		m = m.applyExecutePair(msg.harnessID, msg.model)
+		if m.streaming && m.convStreamCh != nil {
+			return m, waitConvBatchMsg(m.convStreamCh)
+		}
+		return m, nil
+
 	case harnessPermissionRequestMsg:
 		m.harnessPermissionPending = true
 		m.harnessPermissionReq = msg.req
@@ -1200,7 +1295,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.harnessHealthStatus = harness.HealthHealthy
 		m = m.clearHarnessPermission()
 		if !m.orchestrationLive {
-			m.runtimeModelSlug = ""
+			m = m.clearRuntimePair()
 			m.runtimeAgentName = ""
 			m.workflowProps = nil
 		}
@@ -1347,6 +1442,7 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 			content:   d.Text,
 			agentName: d.AgentName,
 			modelSlug: d.Model,
+			harnessID: m.agentHarnessForName(d.AgentName),
 		})
 		return m
 	case harness.StreamKindTool:
@@ -1355,6 +1451,7 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 			content:   d.Text,
 			agentName: d.AgentName,
 			modelSlug: d.Model,
+			harnessID: m.agentHarnessForName(d.AgentName),
 			callID:    d.CallID,
 		})
 		return m
@@ -1423,6 +1520,41 @@ func (m model) handleHarnessPermissionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) applyExecutePair(harnessID, model string) model {
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	model = strings.TrimSpace(model)
+	if harnessID != "" {
+		m.runtimeHarnessID = harnessID
+	}
+	if model != "" {
+		m.runtimeModelSlug = model
+	}
+	if len(m.liveAgents) > 0 {
+		a := m.liveAgents[0]
+		if strings.TrimSpace(a.CallID) == "" {
+			if model != "" {
+				a.Model = model
+			}
+			if harnessID != "" {
+				a.Harness = harnessID
+			}
+			m.liveAgents[0] = a
+		}
+	}
+	if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
+		msg := m.transcript[m.agentMsgIndex]
+		if model != "" {
+			msg.modelSlug = model
+		}
+		if harnessID != "" {
+			msg.harnessID = harnessID
+		}
+		m.transcript[m.agentMsgIndex] = msg
+		m.invalidateResponseCache(m.agentMsgIndex)
+	}
+	return m
+}
+
 func (m model) addLiveAgent(d harness.StreamDelta) model {
 	callID := strings.TrimSpace(d.CallID)
 	if callID == "" {
@@ -1440,10 +1572,11 @@ func (m model) addLiveAgent(d harness.StreamDelta) model {
 		return m
 	}
 	m.liveAgents = append(m.liveAgents, liveAgent{
-		CallID: callID,
-		Name:   name,
-		Label:  agentShortLabel(name),
-		Model:  strings.TrimSpace(d.Model),
+		CallID:  callID,
+		Name:    name,
+		Label:   agentShortLabel(name),
+		Model:   strings.TrimSpace(d.Model),
+		Harness: m.agentHarnessForName(name),
 	})
 	return m
 }
@@ -1492,6 +1625,7 @@ func (m *model) appendAttributed(role convRole, d harness.StreamDelta) {
 		content:   d.Text,
 		agentName: d.AgentName,
 		modelSlug: d.Model,
+		harnessID: m.agentHarnessForName(d.AgentName),
 		callID:    d.CallID,
 	})
 	if role == convRoleThinking {
@@ -1893,7 +2027,7 @@ func (m model) responseContentLines(contentW int) []string {
 			if isSub {
 				out = append(out, "")
 			}
-			header := formatAgentHeader(msg.agentName, msg.modelSlug, m.conversationHarnessTool())
+			header := formatAgentHeader(msg.agentName, msg.modelSlug, m.harnessForMessage(*msg))
 			out = append(out, chatInAgent.Render(header))
 			prevKey = key
 			prevWasSub = isSub
@@ -2249,7 +2383,7 @@ func (m model) responsePlainText() string {
 			if isSub {
 				parts = append(parts, "")
 			}
-			header := formatAgentHeader(msg.agentName, msg.modelSlug, m.conversationHarnessTool())
+			header := formatAgentHeader(msg.agentName, msg.modelSlug, m.harnessForMessage(msg))
 			parts = append(parts, header)
 			prevKey = key
 			prevWasSub = isSub

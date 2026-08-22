@@ -226,7 +226,7 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 			case tea.BatchMsg:
 				if got := runConversationCmd(func() tea.Msg { return inner }); got != nil {
 					switch got.(type) {
-					case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
+					case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, executePairMsg:
 						return got
 					default:
 						if found == nil {
@@ -236,7 +236,7 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 				}
 			case convWaitTickMsg, statusTickMsg, harnessHealthProbeMsg:
 				continue
-			case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg:
+			case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, executePairMsg:
 				return inner
 			case refreshDataMsg:
 				if found == nil {
@@ -2396,6 +2396,92 @@ func TestConversationCodexSpeakerAndInputStatus(t *testing.T) {
 	}
 	if !strings.Contains(view, "Build") || !strings.Contains(view, "gpt-5.4") || !strings.Contains(view, "codex") {
 		t.Fatalf("expected input status Build · gpt-5.4 · codex: %q", view)
+	}
+}
+
+// UI-C04: freechat harness must not leak into ORCH speaker/input when runtime pair differs.
+func TestConversationOrchSpeakerIgnoresMismatchedFreechatHarness(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 28)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "opencode-go/deepseek-v4-pro")
+	m = SetChatHarnessIDForTest(m, "opencode")
+	m = SetRuntimeModelSlugForTest(m, "composer-2.5")
+	m = SetRuntimeHarnessIDForTest(m, "cursor")
+	m.runtimeAgentName = "orchestration_agent"
+	m.streaming = true
+	m.liveAgents = []liveAgent{
+		{Name: "orchestration_agent", Label: "ORCH", Model: "composer-2.5", Harness: "cursor"},
+	}
+	view := ViewForTest(m)
+	if !strings.Contains(view, "[ORCH - composer-2.5 · cursor]") {
+		t.Fatalf("expected ORCH speaker from runtime pair: %q", view)
+	}
+	if strings.Contains(view, "composer-2.5 · opencode") {
+		t.Fatalf("must not mix Cursor model with freechat OpenCode harness: %q", view)
+	}
+	if !strings.Contains(view, "Build") || !strings.Contains(view, "composer-2.5") || !strings.Contains(view, "cursor") {
+		t.Fatalf("expected input status Build · composer-2.5 · cursor: %q", view)
+	}
+}
+
+// UI-C04: nested QA speaker uses agent harness on liveAgent, not freechat.
+func TestConversationQASpeakerUsesAgentHarnessNotFreechat(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 28)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m = SetChatHarnessIDForTest(m, "cursor")
+	m = SetRuntimeModelSlugForTest(m, "composer-2.5")
+	m = SetRuntimeHarnessIDForTest(m, "cursor")
+	m.runtimeAgentName = "orchestration_agent"
+	m.streaming = true
+	m.liveAgents = []liveAgent{
+		{Name: "orchestration_agent", Label: "ORCH", Model: "composer-2.5", Harness: "cursor"},
+		{Name: "qa_agent", Label: "QA", Model: "anthropic/claude-sonnet-4", CallID: "t1", Harness: "opencode"},
+	}
+	view := ViewForTest(m)
+	if !strings.Contains(view, "[QA - anthropic/claude-sonnet-4 · opencode]") {
+		t.Fatalf("expected QA speaker with OpenCode harness: %q", view)
+	}
+	if strings.Contains(view, "[QA - anthropic/claude-sonnet-4 · cursor]") {
+		t.Fatalf("QA must not use freechat Cursor harness: %q", view)
+	}
+}
+
+func TestConversationExecutePairMsgUpdatesLabels(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 28)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m = SetChatHarnessIDForTest(m, "cursor")
+	m = SetRuntimeModelSlugForTest(m, "composer-2.5")
+	m = SetRuntimeHarnessIDForTest(m, "cursor")
+	m.runtimeAgentName = "orchestration_agent"
+	m.streaming = true
+	m.convStreamCh = make(chan tea.Msg, 1)
+	m.liveAgents = []liveAgent{
+		{Name: "orchestration_agent", Label: "ORCH", Model: "composer-2.5", Harness: "cursor"},
+	}
+	m.transcript = []convMessage{{
+		role:      convRoleAgent,
+		agentName: "orchestration_agent",
+		modelSlug: "composer-2.5",
+		harnessID: "cursor",
+	}}
+	m.agentMsgIndex = 0
+
+	next, _ := m.Update(executePairMsg{harnessID: "opencode", model: "anthropic/claude-sonnet-4"})
+	nm := next.(model)
+	if RuntimeHarnessIDForTest(nm) != "opencode" {
+		t.Fatalf("runtimeHarness=%q want opencode", RuntimeHarnessIDForTest(nm))
+	}
+	view := ViewForTest(nm)
+	if !strings.Contains(view, "[ORCH - anthropic/claude-sonnet-4 · opencode]") {
+		t.Fatalf("expected fallback pair on speaker: %q", view)
 	}
 }
 
