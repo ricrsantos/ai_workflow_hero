@@ -1753,8 +1753,10 @@ func (m model) buildConversation(responseLines int) string {
 		responseLines = 0
 	}
 	var b strings.Builder
-	b.WriteString(m.renderConversationHeader())
-	b.WriteByte('\n')
+	if header := m.renderConversationHeader(); header != "" {
+		b.WriteString(header)
+		b.WriteByte('\n')
+	}
 
 	b.WriteString(m.renderConversationHistory())
 	b.WriteByte('\n')
@@ -1770,67 +1772,22 @@ func (m model) buildConversation(responseLines int) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// renderConversationHeader returns narrow-terminal fallback chrome only. Harness
+// and cycle context live in the sidebar and composer; the old "Chat · harness"
+// row is intentionally omitted.
 func (m model) renderConversationHeader() string {
-	stage := m.conversationStage
-	tool := m.conversationHarnessTool()
-	var left strings.Builder
-	if stage == "" {
-		left.WriteString(headerStyle.Render(fmt.Sprintf("Chat · harness %s", tool)))
-		if m.harnessSessionID != "" {
-			left.WriteString(mutedStyle.Render(" │ "))
-			left.WriteString(mutedStyle.Render("session: " + truncateSessionID(m.harnessSessionID)))
-		}
-	} else {
-		iter := ""
-		want := stageNameKey(stage)
-		for _, st := range m.status.Stages {
-			if stageNameKey(st.Name) == want {
-				iter = st.Iteration
-				break
-			}
-		}
-		left.WriteString(headerStyle.Render(fmt.Sprintf("Cycle C%d — %s · iter %s", m.status.CycleNumber, stage, iter)))
-		if m.harnessSessionID != "" {
-			left.WriteString(mutedStyle.Render(" │ "))
-			left.WriteString(mutedStyle.Render("session: " + truncateSessionID(m.harnessSessionID)))
-		}
+	if m.sidebarVisible() {
+		return ""
 	}
-	right := m.renderAgentsBox()
-	gap := 1
-	cw := m.contentWidth()
-	leftW := cw - agentsBoxWidth - gap
-	if cw <= 0 || leftW < 20 {
-		return left.String() + "\n" + right
-	}
-	leftBlock := lipgloss.NewStyle().Width(leftW).MaxWidth(leftW).Render(left.String())
-	return lipgloss.JoinHorizontal(lipgloss.Top, leftBlock, right)
-}
-
-// stageNameKey normalizes SQLite slugs (qa_end_to_end) and status display names
-// ("Qa End To End") so the Chat header can look up iteration counts.
-func stageNameKey(name string) string {
-	s := strings.ToLower(strings.TrimSpace(name))
-	s = strings.ReplaceAll(s, " ", "_")
-	s = strings.ReplaceAll(s, "-", "_")
-	return s
+	return m.renderAgentsBox()
 }
 
 func (m model) renderAgentsBox() string {
-	n := len(m.liveAgents)
-	labels := make([]string, 0, n)
-	for _, a := range m.liveAgents {
-		labels = append(labels, a.Label)
-	}
 	innerW := agentsBoxWidth - chatBoxStyle.GetHorizontalFrameSize()
 	if innerW < 8 {
 		innerW = 8
 	}
-	line1 := fmt.Sprintf("agents: %d", n)
-	line2 := wrapAgentLabels(labels, innerW)
-	body := line1
-	if line2 != "" {
-		body += "\n" + line2
-	}
+	body := strings.Join(m.agentsSidebarLines(innerW), "\n")
 	return chatBoxStyle.Width(innerW).Render(body)
 }
 

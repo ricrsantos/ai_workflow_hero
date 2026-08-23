@@ -6,6 +6,16 @@
 
 ---
 
+**Change**: Removed the chat-pane top row (`Chat · harness …`, cycle title, inline session id). Harness/model context stays in the composer and sidebar; cycle etapa hint stays in the status bar.
+
+**Validation**: `go test ./internal/tui/ -count=1` passed.
+
+## 2026-08-22 — Sidebar agents panel
+
+**Change**: Moved the live agents summary (`agents: N` + label row) from the chat header box into the left nav sidebar between two full-width `colorBorder` rules (below **AI Hero**, above screen nav). Reserves 2 rows for agent labels. Header agents box remains only when the sidebar is hidden (narrow terminal).
+
+**Validation**: `go test ./internal/tui/ -count=1` passed.
+
 ## 2026-08-22 — TUI chrome polish (borders, footer, rules)
 
 **Fixes**: Chat/agents boxes overflowed by 2 cols (lipgloss `Width` is inner; borders add outside) so bottom borders wrapped — sized sidebar/chat boxes with `GetHorizontalFrameSize()`. Removed footer hint `alt+n screens`. Dropped the rule above the status area; the rule between status and footer now uses `colorBorder` (same as box borders).

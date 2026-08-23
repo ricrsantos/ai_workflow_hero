@@ -431,16 +431,17 @@ func TestConversationResponsePaneLayout(t *testing.T) {
 	}
 }
 
-func TestConversationSessionInlineWithHeader(t *testing.T) {
+func TestConversationSessionNotInChatHeader(t *testing.T) {
 	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
 	m = EnterConversationForTest(m)
 	m.harnessSessionID = "37e8feb2abcdcc44"
-	view := ViewForTest(m)
-	if !strings.Contains(view, "Chat · harness") {
-		t.Fatalf("missing freechat header: %q", view)
+	view := stripANSI(ViewForTest(m))
+	if strings.Contains(view, "Chat · harness") {
+		t.Fatalf("freechat harness header removed: %q", view)
 	}
-	if !strings.Contains(view, "│") || !strings.Contains(view, "session:") {
-		t.Fatalf("expected session inline with pipe: %q", view)
+	if strings.Contains(view, "session:") {
+		t.Fatalf("session id must not appear in chat header: %q", view)
 	}
 }
 
@@ -1118,8 +1119,8 @@ func TestHeroStartRuntimeConversation(t *testing.T) {
 		t.Fatalf("stored session=%q", stored)
 	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "session:") {
-		t.Fatalf("header missing session id: %q", view)
+	if strings.Contains(stripANSI(view), "session:") {
+		t.Fatalf("session id must not appear in chat header: %q", view)
 	}
 
 	h.deltas = []string{"continuing"}
@@ -2363,7 +2364,7 @@ func TestConversationAgentsBoxIdle(t *testing.T) {
 	}
 }
 
-func TestConversationHeaderMatchesDisplayStageName(t *testing.T) {
+func TestConversationCycleInfoNotInChatHeader(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 100)
 	m = SetHeight(m, 24)
@@ -2375,12 +2376,16 @@ func TestConversationHeaderMatchesDisplayStageName(t *testing.T) {
 			{Name: "Qa End To End", Iteration: "1/3"},
 		},
 	}
-	view := ViewForTest(m)
-	if !strings.Contains(view, "iter 1/3") {
-		t.Fatalf("header should resolve display stage name to slug iter: %q", view)
+	view := stripANSI(ViewForTest(m))
+	if strings.Contains(view, "Cycle C1") || strings.Contains(view, "iter 1/3") {
+		t.Fatalf("cycle header removed from chat pane: %q", view)
 	}
-	if !strings.Contains(view, "qa_end_to_end") {
-		t.Fatalf("header missing stage slug: %q", view)
+	historyStart := strings.Index(view, "Submit a message")
+	if historyStart < 0 {
+		historyStart = len(view)
+	}
+	if strings.Contains(view[:historyStart], "qa_end_to_end") {
+		t.Fatalf("stage slug must not appear above chat history: %q", view[:historyStart])
 	}
 }
 

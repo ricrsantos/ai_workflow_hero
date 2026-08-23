@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -17,6 +18,9 @@ var navScreens = []struct {
 	{screenCosts, "Costs"},
 	{screenEvents, "Events"},
 }
+
+// navSidebarAgentRows is the minimum body rows reserved for live agent labels.
+const navSidebarAgentRows = 2
 
 // sidebarVisible reports whether the left nav frame fits beside the main pane.
 func (m model) sidebarVisible() bool {
@@ -38,7 +42,38 @@ func (m model) contentWidth() int {
 	return w
 }
 
-// renderNavSidebar draws the left "AI Hero" frame with screen entries.
+// agentsSidebarLines returns the agents summary (count + label row). Always
+// navSidebarAgentRows lines so the sidebar section keeps a stable height.
+func (m model) agentsSidebarLines(innerW int) []string {
+	n := len(m.liveAgents)
+	labels := make([]string, 0, n)
+	for _, a := range m.liveAgents {
+		labels = append(labels, a.Label)
+	}
+	line1 := fmt.Sprintf("agents: %d", n)
+	line2 := wrapAgentLabels(labels, innerW)
+	if line2 != "" {
+		if idx := strings.Index(line2, "\n"); idx >= 0 {
+			line2 = line2[:idx]
+		}
+		line2 = truncateNavText(line2, innerW)
+	}
+	out := make([]string, navSidebarAgentRows)
+	out[0] = line1
+	if line2 != "" {
+		out[1] = line2
+	}
+	return out
+}
+
+func navSidebarSeparator(innerW int) string {
+	if innerW < 1 {
+		innerW = 1
+	}
+	return navSidebarSepStyle.Render(strings.Repeat("─", innerW))
+}
+
+// renderNavSidebar draws the left "AI Hero" frame with agents + screen entries.
 // Height is the middle band (above the full-width bottom chrome).
 func (m model) renderNavSidebar(height int) string {
 	if !m.sidebarVisible() || height <= 0 {
@@ -55,41 +90,34 @@ func (m model) renderNavSidebar(height int) string {
 		innerH = 1
 	}
 
-	var b strings.Builder
-	b.WriteString(navSidebarTitleStyle.Render(truncateNavText(" AI Hero", innerW)))
-	b.WriteByte('\n')
-
-	// title + footer consume two rows of the inner area.
-	bodyLines := innerH - 2
-	if bodyLines < 0 {
-		bodyLines = 0
+	var lines []string
+	lines = append(lines, navSidebarTitleStyle.Render(truncateNavText(" AI Hero", innerW)))
+	lines = append(lines, navSidebarSeparator(innerW))
+	for _, agentLine := range m.agentsSidebarLines(innerW) {
+		lines = append(lines, navSidebarItemStyle.Render(truncateNavText(agentLine, innerW)))
 	}
-	for i, item := range navScreens {
-		if i >= bodyLines {
-			break
-		}
+	lines = append(lines, navSidebarSeparator(innerW))
+
+	for _, item := range navScreens {
 		marker := "  "
 		rowStyle := navSidebarItemStyle
 		if item.screen == m.screen {
 			marker = "> "
 			rowStyle = navSidebarActiveStyle
 		}
-		b.WriteString(rowStyle.Render(truncateNavText(marker+item.label, innerW)))
-		b.WriteByte('\n')
-	}
-	// Pad remaining body rows so the footer sits at the bottom of the box.
-	writtenBody := len(navScreens)
-	if writtenBody > bodyLines {
-		writtenBody = bodyLines
-	}
-	for i := writtenBody; i < bodyLines; i++ {
-		b.WriteByte('\n')
+		lines = append(lines, rowStyle.Render(truncateNavText(marker+item.label, innerW)))
 	}
 
 	footer := navSidebarFooterStyle.Render(truncateNavText(" alt+1-5", innerW))
-	body := strings.TrimSuffix(b.String(), "\n") + "\n" + footer
-	// Width/Height are content-box sizes; borders are added outside (lipgloss v1).
-	return box.Width(innerW).Height(innerH).Render(body)
+	for len(lines) < innerH-1 {
+		lines = append(lines, strings.Repeat(" ", innerW))
+	}
+	if len(lines) > innerH-1 {
+		lines = lines[:innerH-1]
+	}
+	lines = append(lines, footer)
+
+	return box.Width(innerW).Height(innerH).Render(strings.Join(lines, "\n"))
 }
 
 // truncateNavText shortens s to at most width columns (ANSI-aware via lipgloss).

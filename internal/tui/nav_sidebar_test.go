@@ -55,3 +55,47 @@ func TestNavSidebarHighlightsStatus(t *testing.T) {
 		t.Fatalf("Chat must not stay active on Status screen: %q", plain)
 	}
 }
+
+func TestNavSidebarShowsAgentsSection(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m.liveAgents = []liveAgent{
+		{Name: "orchestration_agent", Label: "ORCH"},
+		{Name: "backend_agent", Label: "BACK"},
+	}
+	plain := stripANSI(ViewForTest(m))
+	if !strings.Contains(plain, "agents: 2") {
+		t.Fatalf("expected agents count in sidebar: %q", plain)
+	}
+	if !strings.Contains(plain, "ORCH") {
+		t.Fatalf("expected agent labels in sidebar: %q", plain)
+	}
+	hero := strings.Index(plain, "AI Hero")
+	agents := strings.Index(plain, "agents: 2")
+	chatNav := strings.Index(plain, "> Chat")
+	if hero < 0 || agents < 0 || chatNav < 0 || !(hero < agents && agents < chatNav) {
+		t.Fatalf("expected AI Hero → agents → nav order: %q", plain)
+	}
+	// Separators (dim rules) between title/agents and agents/nav.
+	if strings.Count(plain, strings.Repeat("─", 10)) < 2 {
+		t.Fatalf("expected separator rules in sidebar: %q", plain)
+	}
+}
+
+func TestNavSidebarAgentsHiddenFromChatHeader(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	view := ViewForTest(m)
+	plain := stripANSI(view)
+	// Agents live in the sidebar box, not as a separate chat-header box.
+	if strings.Count(plain, "agents: 0") != 1 {
+		t.Fatalf("agents summary should appear once in sidebar: %q", plain)
+	}
+	if strings.Contains(plain, "Chat · harness") {
+		t.Fatalf("chat harness header removed when sidebar visible: %q", plain)
+	}
+}

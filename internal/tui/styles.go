@@ -90,6 +90,7 @@ var (
 
 	// Nav sidebar styles (SESSIONS-like frame).
 	navSidebarTitleStyle  = lipgloss.NewStyle().Foreground(colorTextPri).Bold(true)
+	navSidebarSepStyle    = lipgloss.NewStyle().Foreground(colorBorder)
 	navSidebarItemStyle   = lipgloss.NewStyle().Foreground(colorTextPri)
 	navSidebarActiveStyle = lipgloss.NewStyle().Foreground(colorAccentUser).Bold(true)
 	navSidebarFooterStyle = lipgloss.NewStyle().Foreground(colorTextDim)
