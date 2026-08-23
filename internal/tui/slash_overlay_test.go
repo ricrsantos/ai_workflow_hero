@@ -38,8 +38,8 @@ func TestChatSlashDoesNotOpenPalette(t *testing.T) {
 	if !strings.Contains(view, "/new-chat") {
 		t.Fatalf("overlay missing /new-chat: %q", view)
 	}
-	if !strings.Contains(view, "/hero-model") {
-		t.Fatalf("overlay missing /hero-model: %q", view)
+	if !strings.Contains(view, "/model") {
+		t.Fatalf("overlay missing /model: %q", view)
 	}
 }
 
@@ -170,7 +170,7 @@ func TestChatSlashEnterHeroNewExecutesNotInserts(t *testing.T) {
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
 	}
-	if !strings.Contains(StatusTextForTest(next), "/hero-model") {
+	if !strings.Contains(StatusTextForTest(next), "/model") {
 		t.Fatalf("expected palette-style execute (model required), status=%q", StatusTextForTest(next))
 	}
 }

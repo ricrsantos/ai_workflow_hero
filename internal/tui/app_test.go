@@ -94,7 +94,7 @@ func TestHeroPaletteSlashLabels(t *testing.T) {
 		"/hero-new", "/hero-start", "/hero-sync", "/hero-status",
 		"/hero-approve", "/hero-reject", "/hero-continue", "/hero-back",
 		"/hero-cancel", "/hero-finish", "/hero-archive", "/hero-resume",
-		"/hero-cycles", "/hero-todos", "/hero-model", "/hero-config-update", "/hero-harness", "/harness-reset", "/hero-help",
+		"/hero-cycles", "/hero-todos", "/model", "/hero-config-update", "/harness", "/harness-reset", "/hero-help",
 	}
 	labels := map[string]bool{}
 	for _, item := range PaletteItemsForTest(m) {
@@ -123,14 +123,14 @@ func TestEmptyCycleHintMentionsHeroNew(t *testing.T) {
 func TestHeroModelPaletteHint(t *testing.T) {
 	m := NewTestModel(nil)
 	for _, item := range PaletteItemsForTest(m) {
-		if item.Label == "/hero-model" {
+		if item.Label == "/model" {
 			if item.Hint != "select default model" {
 				t.Fatalf("hint=%q want select default model", item.Hint)
 			}
 			return
 		}
 	}
-	t.Fatal("missing /hero-model in palette")
+	t.Fatal("missing /model in palette")
 }
 
 func TestImportedCommandsInPalette(t *testing.T) {
@@ -868,10 +868,10 @@ stages:
 		t.Fatal("expected harness submenu first")
 	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "/hero-model · select harness") || !strings.Contains(view, "Cursor") || !strings.Contains(view, "OpenCode") {
+	if !strings.Contains(view, "/model · select harness") || !strings.Contains(view, "Cursor") || !strings.Contains(view, "OpenCode") {
 		t.Fatalf("harness submenu view=%q", view)
 	}
-	if strings.Contains(view, "auto") && strings.Contains(view, "/hero-model · select harness") {
+	if strings.Contains(view, "auto") && strings.Contains(view, "/model · select harness") {
 		t.Fatalf("models must not appear before harness select: %q", view)
 	}
 	next = SetPaletteIndexForTest(next, 0)
@@ -880,7 +880,7 @@ stages:
 		t.Fatalf("harness=%q", ModelPickerHarnessForTest(next))
 	}
 	view = ViewForTest(next)
-	if !strings.Contains(view, "/hero-model · Cursor") || !strings.Contains(view, "auto") {
+	if !strings.Contains(view, "/model · Cursor") || !strings.Contains(view, "auto") {
 		t.Fatalf("model list view=%q", view)
 	}
 	next = SetPaletteFilter(next, "auto")
@@ -1044,7 +1044,7 @@ func TestHeroModelPickerListsOpenCodeModels(t *testing.T) {
 		t.Fatalf("harness=%q", ModelPickerHarnessForTest(next))
 	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "/hero-model · OpenCode") {
+	if !strings.Contains(view, "/model · OpenCode") {
 		t.Fatalf("title=%q", view)
 	}
 	if !strings.Contains(view, "anthropic/claude-sonnet-4") || !strings.Contains(view, "xai/grok-4") {

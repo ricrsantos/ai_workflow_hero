@@ -10,7 +10,7 @@ func (m model) hasDefaultModel() bool {
 	return m.defaultHarnessModelSlug() != ""
 }
 
-// ensureDefaultModel blocks harness commands until the user picks /hero-model once.
+// ensureDefaultModel blocks harness commands until the user picks /model once.
 func (m model) ensureDefaultModel(actionLabel string) (model, tea.Cmd, bool) {
 	if m.hasDefaultModel() {
 		return m, nil, true
@@ -19,7 +19,7 @@ func (m model) ensureDefaultModel(actionLabel string) (model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-// defaultExecuteModel requires /hero-model and returns that slug for TUI Execute.
+// defaultExecuteModel requires /model and returns that slug for TUI Execute.
 func (m model) defaultExecuteModel(actionLabel string) (model, tea.Cmd, string, bool) {
 	m, cmd, ok := m.ensureDefaultModel(actionLabel)
 	if !ok {
@@ -29,7 +29,7 @@ func (m model) defaultExecuteModel(actionLabel string) (model, tea.Cmd, string, 
 }
 
 // orchestratorExecuteModel resolves agents.orchestration_agent (then fallback_model,
-// then /hero-model) for TUI Runtime Execute of orchestrator commands.
+// then /model) for TUI Runtime Execute of orchestrator commands.
 func (m model) orchestratorExecuteModel(actionLabel string) (model, tea.Cmd, string, bool) {
 	m = m.applyAgentRuntimePair(agentOrchestration, "")
 	if slug := strings.TrimSpace(m.runtimeModelSlug); slug != "" {
@@ -41,13 +41,13 @@ func (m model) orchestratorExecuteModel(actionLabel string) (model, tea.Cmd, str
 func defaultModelRequiredMessage(actionLabel string) string {
 	switch actionLabel {
 	case "/hero-new":
-		return "Select a default model with /hero-model first, then run /hero-new again."
+		return "Select a default model with /model first, then run /hero-new again."
 	case "chat":
-		return "Select a default model with /hero-model first, then send your message again."
+		return "Select a default model with /model first, then send your message again."
 	default:
 		if strings.HasPrefix(actionLabel, "/hero-") {
-			return "Select a default model with /hero-model first, then run " + actionLabel + " again."
+			return "Select a default model with /model first, then run " + actionLabel + " again."
 		}
-		return "Select a default model with /hero-model before continuing."
+		return "Select a default model with /model before continuing."
 	}
 }

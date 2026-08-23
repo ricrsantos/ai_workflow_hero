@@ -6,7 +6,7 @@ func TestDefaultHeroPaletteOrder(t *testing.T) {
 	items := defaultHeroPaletteItems()
 	want := []string{
 		"/new-chat",
-		"/hero-model",
+		"/model",
 		"/hero-new",
 		"/hero-start",
 		"/hero-approve",
@@ -22,15 +22,15 @@ func TestDefaultHeroPaletteOrder(t *testing.T) {
 		"/hero-todos",
 		"/hero-sync",
 		"/hero-config-update",
-		"/hero-harness",
+		"/harness",
 		"/harness-reset",
 		"/hero-help",
+		"/hero-refresh",
 		"Go to - Chat",
 		"Go to - Status",
 		"Go to - Artifacts",
 		"Go to - Costs",
 		"Go to - Events",
-		"Refresh",
 		"Quit",
 	}
 	if len(items) != len(want) {
@@ -41,4 +41,25 @@ func TestDefaultHeroPaletteOrder(t *testing.T) {
 			t.Fatalf("index %d: got %q want %q", i, items[i].label, label)
 		}
 	}
+}
+
+func TestFreeChatPaletteFilter(t *testing.T) {
+	items := filterFreeChatPaletteItems(defaultHeroPaletteItems())
+	want := []string{"/new-chat", "/model", "/harness", "/harness-reset", "Quit"}
+	if len(items) != len(want) {
+		t.Fatalf("len=%d want %d labels=%v", len(items), len(want), labelsOf(items))
+	}
+	for i, label := range want {
+		if items[i].label != label {
+			t.Fatalf("index %d: got %q want %q", i, items[i].label, label)
+		}
+	}
+}
+
+func labelsOf(items []paletteItem) []string {
+	out := make([]string, len(items))
+	for i, item := range items {
+		out[i] = item.label
+	}
+	return out
 }

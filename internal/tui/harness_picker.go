@@ -19,12 +19,12 @@ func (m model) openHarnessPicker() (model, tea.Cmd) {
 		projectDir = m.svc.ProjectDir
 	}
 	if projectDir == "" {
-		m = m.setStatusResult(false, "/hero-harness", "project unavailable")
+		m = m.setStatusResult(false, slashHarness, "project unavailable")
 		return m, nil
 	}
 	hero, err := install.LoadHeroJSON(projectDir)
 	if err != nil {
-		m = m.setStatusResult(false, "/hero-harness", err.Error())
+		m = m.setStatusResult(false, slashHarness, err.Error())
 		return m, nil
 	}
 
@@ -76,13 +76,13 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 	}
 	if projectDir == "" {
 		m = m.closePalette()
-		m = m.setStatusResult(false, "/hero-harness", "project unavailable")
+		m = m.setStatusResult(false, slashHarness, "project unavailable")
 		return m, nil
 	}
 	hero, err := install.LoadHeroJSON(projectDir)
 	if err != nil {
 		m = m.closePalette()
-		m = m.setStatusResult(false, "/hero-harness", err.Error())
+		m = m.setStatusResult(false, slashHarness, err.Error())
 		return m, nil
 	}
 
@@ -93,7 +93,7 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 		}
 	}
 	if enabledCount == 0 {
-		m = m.setStatusResult(false, "/hero-harness", "Select at least one harness.")
+		m = m.setStatusResult(false, slashHarness, "Select at least one harness.")
 		return m, nil
 	}
 
@@ -102,9 +102,15 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 		want := m.harnessDraft[id]
 		have := install.IsHarnessEnabled(hero, id)
 		if want && !have {
-			if err := install.EnableHarnessWithProjection(projectDir, id, assets.FS); err != nil {
+			if m.freeChatMode {
+				if err := install.SetHarnessEnabled(projectDir, id, true); err != nil {
+					m = m.closePalette()
+					m = m.setStatusResult(false, slashHarness, err.Error())
+					return m, nil
+				}
+			} else if err := install.EnableHarnessWithProjection(projectDir, id, assets.FS); err != nil {
 				m = m.closePalette()
-				m = m.setStatusResult(false, "/hero-harness", err.Error())
+				m = m.setStatusResult(false, slashHarness, err.Error())
 				return m, nil
 			}
 			enabledNames = append(enabledNames, harnessDisplayName(id))
@@ -113,7 +119,7 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 	hero, err = install.LoadHeroJSON(projectDir)
 	if err != nil {
 		m = m.closePalette()
-		m = m.setStatusResult(false, "/hero-harness", err.Error())
+		m = m.setStatusResult(false, slashHarness, err.Error())
 		return m, nil
 	}
 	for _, id := range install.SupportedHarnessIDs {
@@ -127,7 +133,7 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 					msg = fmt.Sprintf("Cannot disable the last enabled harness (%s).\n\n  Suggestion: enable another harness first, then disable %s.", name, name)
 				}
 				m = m.closePalette()
-				m = m.setStatusResult(false, "/hero-harness", msg)
+				m = m.setStatusResult(false, slashHarness, msg)
 				return m, nil
 			}
 			if id == "opencode" {
@@ -158,24 +164,26 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 
 	m = m.closePalette()
 	if len(enabledNames) == 0 && len(disabledNames) == 0 {
-		m = m.setStatusResult(true, "/hero-harness", "Harness selection unchanged")
+		m = m.setStatusResult(true, slashHarness, "Harness selection unchanged")
 		return m, nil
 	}
 	var parts []string
 	for _, name := range enabledNames {
 		msg := name + " enabled"
-		switch name {
-		case "OpenCode":
-			msg = "OpenCode enabled (projected .opencode/)"
-		case "Codex":
-			msg = "Codex enabled (projected .codex/)"
+		if !m.freeChatMode {
+			switch name {
+			case "OpenCode":
+				msg = "OpenCode enabled (projected .opencode/)"
+			case "Codex":
+				msg = "Codex enabled (projected .codex/)"
+			}
 		}
 		parts = append(parts, msg)
 	}
 	for _, name := range disabledNames {
 		parts = append(parts, name+" disabled (files kept)")
 	}
-	m = m.setStatusResult(true, "/hero-harness", strings.Join(parts, "; "))
+	m = m.setStatusResult(true, slashHarness, strings.Join(parts, "; "))
 	return m, nil
 }
 

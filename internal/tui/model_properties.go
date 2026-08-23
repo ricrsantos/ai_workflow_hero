@@ -165,7 +165,7 @@ func (m model) isValidatedFreechatValue(key, value string) bool {
 
 // propertyPickerHeader is the C5 property screen header (UI-C05-001 §3).
 func propertyPickerHeader(harnessID string) string {
-	return "/hero-model · " + harnessDisplayName(harnessID) + " · properties"
+	return slashModel + " · " + harnessDisplayName(harnessID) + " · properties"
 }
 
 // friendlyPropertyName maps normalized keys to friendly labels (PRD §4.4.1).
@@ -204,7 +204,7 @@ func (m model) selectChatModelPair(modelSlug, harnessID string) (model, tea.Cmd)
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
 	if modelSlug == "" || harnessID == "" {
 		m = m.closePalette()
-		m = m.setStatusResult(false, "/hero-model", "model and harness required")
+		m = m.setStatusResult(false, "/model", "model and harness required")
 		return m, nil
 	}
 	projectDir := ""
@@ -216,7 +216,7 @@ func (m model) selectChatModelPair(modelSlug, harnessID string) (model, tea.Cmd)
 		m.chatModelSlug = modelSlug
 		m.chatHarnessID = harnessID
 		m = m.closePalette()
-		m = m.setStatusResult(true, "/hero-model", fmt.Sprintf("Model set to %s · %s", modelSlug, harnessID))
+		m = m.setStatusResult(true, "/model", fmt.Sprintf("Model set to %s · %s", modelSlug, harnessID))
 		return m, nil
 	}
 	if m.propsSvc == nil {
@@ -275,7 +275,7 @@ func (m model) finishModelSelection(modelSlug, harnessID string, snap modelprops
 		_, invalidated := modelprops.EffectiveValues(snap, saved)
 		if err := install.CommitModelSelection(projectDir, harnessID, modelSlug, nil); err != nil {
 			m = m.closePalette()
-			m = m.setStatusResult(false, "/hero-model", err.Error())
+			m = m.setStatusResult(false, "/model", err.Error())
 			return m, nil
 		}
 		m.chatModelSlug = modelSlug
@@ -287,7 +287,7 @@ func (m model) finishModelSelection(modelSlug, harnessID string, snap modelprops
 		} else if snap.Warning != "" {
 			m = m.setPropsWarning(snap.Warning)
 		} else {
-			m = m.setStatusResult(true, "/hero-model", fmt.Sprintf("Model set to %s · %s", modelSlug, harnessID))
+			m = m.setStatusResult(true, "/model", fmt.Sprintf("Model set to %s · %s", modelSlug, harnessID))
 		}
 		return m, nil
 	}
@@ -356,19 +356,19 @@ func (m model) commitPropertyDraft() (model, tea.Cmd) {
 	}
 	if projectDir == "" {
 		m = m.closePalette()
-		m = m.setStatusResult(false, "/hero-model", "project unavailable")
+		m = m.setStatusResult(false, "/model", "project unavailable")
 		return m, nil
 	}
 	if err := install.CommitModelSelection(projectDir, m.propsDraftHarness, m.propsDraftModel, m.propsDraft); err != nil {
 		m = m.closePalette()
-		m = m.setStatusResult(false, "/hero-model", err.Error())
+		m = m.setStatusResult(false, "/model", err.Error())
 		return m, nil
 	}
 	m.chatModelSlug = m.propsDraftModel
 	m.chatHarnessID = m.propsDraftHarness
 	m = m.loadFreechatProps()
 	m = m.closePalette()
-	m = m.setStatusResult(true, "/hero-model",
+	m = m.setStatusResult(true, "/model",
 		fmt.Sprintf("Model set to %s · %s", m.propsDraftModel, m.propsDraftHarness))
 	return m, nil
 }
@@ -385,7 +385,7 @@ func (m model) cancelPropertyDraft() (model, tea.Cmd) {
 	m.propsDraftHarness = ""
 	m = m.clearPropsPendingSelect()
 	m = m.closePalette()
-	m = m.setStatusResult(true, "/hero-model", "Selection cancelled — no changes saved.")
+	m = m.setStatusResult(true, "/model", "Selection cancelled — no changes saved.")
 	return m, nil
 }
 
@@ -395,7 +395,7 @@ func (m model) setPropsWarning(text string) model {
 	m.propsWarningText = strings.TrimSpace(text)
 	m.statusKind = statusWarn
 	if m.statusLabel == "" {
-		m.statusLabel = "/hero-model"
+		m.statusLabel = "/model"
 	}
 	m.statusText = strings.TrimSpace(text)
 	m.actionBusy = false

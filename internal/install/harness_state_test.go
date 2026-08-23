@@ -14,7 +14,7 @@ func TestToolsFlagRemovedMessage(t *testing.T) {
 	if !strings.Contains(install.ToolsFlagRemovedMsg, "--tools is not supported") {
 		t.Fatalf("msg=%q", install.ToolsFlagRemovedMsg)
 	}
-	if !strings.Contains(install.ToolsFlagRemovedSuggestion, "/hero-harness") {
+	if !strings.Contains(install.ToolsFlagRemovedSuggestion, "/harness") {
 		t.Fatalf("suggestion=%q", install.ToolsFlagRemovedSuggestion)
 	}
 }

@@ -41,6 +41,13 @@ const (
 	actionConfigUpdate
 )
 
+// TUI slash labels (chat-oriented commands use non-/hero names).
+const (
+	slashModel   = "/model"
+	slashHarness = "/harness"
+	slashRefresh = "/hero-refresh"
+)
+
 type paletteItem struct {
 	label        string
 	hint         string
@@ -55,7 +62,7 @@ type paletteItem struct {
 func defaultHeroPaletteItems() []paletteItem {
 	heroSlashes := []paletteItem{
 		{label: "/new-chat", hint: "clear session", action: actionNewChat},
-		{label: "/hero-model", hint: "select default model", action: actionModel},
+		{label: slashModel, hint: "select default model", action: actionModel},
 		{label: "/hero-new", hint: "create cycle", action: actionNew},
 		{label: "/hero-start", hint: "start workflow", action: actionStart},
 		{label: "/hero-approve", hint: "pending approval", action: actionApprove},
@@ -71,9 +78,10 @@ func defaultHeroPaletteItems() []paletteItem {
 		{label: "/hero-todos", hint: "pending items", action: actionTodos},
 		{label: "/hero-sync", hint: "sync project", action: actionSync},
 		{label: "/hero-config-update", hint: "reload model from config", action: actionConfigUpdate},
-		{label: "/hero-harness", hint: "manage harnesses", action: actionHarness},
+		{label: slashHarness, hint: "manage harnesses", action: actionHarness},
 		{label: "/harness-reset", hint: "restart harness connection", action: actionHarnessReset},
 		{label: "/hero-help", hint: "workflow guide", action: actionHelp},
+		{label: slashRefresh, hint: "reload from store", action: actionRefresh},
 	}
 	goTo := []paletteItem{
 		{label: "Go to - Chat", hint: "conversation", action: actionGoScreen, screen: screenConversation},
@@ -83,7 +91,6 @@ func defaultHeroPaletteItems() []paletteItem {
 		{label: "Go to - Events", hint: "event log", action: actionGoScreen, screen: screenEvents},
 	}
 	rest := []paletteItem{
-		{label: "Refresh", hint: "reload from store", action: actionRefresh},
 		{label: "Quit", hint: "exit TUI", action: actionQuit},
 	}
 	items := make([]paletteItem, 0, len(heroSlashes)+len(goTo)+len(rest))
@@ -118,6 +125,28 @@ func buildPaletteItemsWithHome(projectDir, userHome string) []paletteItem {
 		})
 	}
 	return items
+}
+
+func filterFreeChatPaletteItems(items []paletteItem) []paletteItem {
+	out := make([]paletteItem, 0, len(items))
+	for _, item := range items {
+		if !isFreeChatPaletteItem(item) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func isFreeChatPaletteItem(item paletteItem) bool {
+	label := strings.TrimSpace(item.label)
+	if strings.HasPrefix(label, "/hero") {
+		return false
+	}
+	if strings.HasPrefix(label, "Go to -") {
+		return false
+	}
+	return true
 }
 
 func sourceHint(source cursor.CommandSource) string {

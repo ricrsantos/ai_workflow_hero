@@ -19,7 +19,7 @@ type listModelsMsg struct {
 func (m model) openModelPicker() (model, tea.Cmd) {
 	enabled := m.enabledHarnessIDs()
 	if len(enabled) == 0 {
-		m = m.setStatusResult(false, "/hero-model", "Enable a harness with /hero-harness first.")
+		m = m.setStatusResult(false, "/model", "Enable a harness with /harness first.")
 		return m, nil
 	}
 	// Apply any cache/catalog result completed since the previous opening before
@@ -104,20 +104,20 @@ func (m model) enabledHarnessIDs() []string {
 func (m model) pickModelHarness(harnessID string) (model, tea.Cmd) {
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
 	if harnessID == "" {
-		m = m.setStatusResult(false, "/hero-model", "harness required")
+		m = m.setStatusResult(false, "/model", "harness required")
 		return m, nil
 	}
 	if !m.harnessEnabled(harnessID) {
 		name := harnessDisplayName(harnessID)
-		m = m.setStatusResult(false, "/hero-model",
-			fmt.Sprintf("%s is not enabled — use /hero-harness first.", name))
+		m = m.setStatusResult(false, "/model",
+			fmt.Sprintf("%s is not enabled — use /harness first.", name))
 		return m, nil
 	}
 	cached := m.modelsForHarness(harnessID)
 	if len(cached) > 0 {
 		return m.showModelList(harnessID, cached), nil
 	}
-	m = m.setStatusRunning("/hero-model")
+	m = m.setStatusRunning("/model")
 	return m, m.listModelsForHarnessCmd(harnessID)
 }
 
@@ -163,13 +163,13 @@ func (m model) handleListModelsMsg(msg listModelsMsg) (model, tea.Cmd) {
 	}
 	if msg.err != nil {
 		m.actionBusy = false
-		m = m.setStatusResult(false, "/hero-model",
+		m = m.setStatusResult(false, "/model",
 			fmt.Sprintf("Could not list %s models: %s", harnessDisplayName(msg.harnessID), msg.err.Error()))
 		return m, nil
 	}
 	if len(msg.models) == 0 {
 		m.actionBusy = false
-		m = m.setStatusResult(false, "/hero-model",
+		m = m.setStatusResult(false, "/model",
 			fmt.Sprintf("No models available for %s", harnessDisplayName(msg.harnessID)))
 		return m, nil
 	}

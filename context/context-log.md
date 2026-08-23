@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-08-22 — `hero chat` free-chat mode
+
+**Change**: Added CLI `hero chat` for a Chat-only TUI that does not require project install or git. Config/model/harness prefs live under `~/.workflow-hero/`; Execute workspace is cwd. Navbar shows only Chat; etapa/cycle hints hidden. Palette renames (global): `/hero-model`→`/model`, `/hero-harness`→`/harness`, `Refresh`→`/hero-refresh` (before Go to). Free-chat palette keeps only non-`/hero` items (no Go to). `/harness` in free chat toggles flags without projecting `.cursor`/`.opencode`/`.codex` into cwd.
+
+**Validation**: `go test ./...` passed.
+
+## 2026-08-22 — GitHub release v2.6.0
+
+**Outcome**: `go test ./...` green → tag `v2.6.0` on `main` (`d9a9d48`) → pushed → `scripts/release.sh` → GitHub Release with 4 binaries + `checksums.txt`. URL: https://github.com/ricrsantos/ai_workflow_hero/releases/tag/v2.6.0
+
+**Notes**: Minor bump from 2.5.0 — TUI redesign/layout polish, `/hero-update-config`, Codex stream/token fixes, harness status bar corrections.
+
 ## 2026-08-22 — Linear chat transcript
 
 **Change**: Merged the separate You + green response chat boxes into one borderless linear transcript (full session history) with thin `│` accent bars per actor (user violet / agent green), Hero labels preserved (`You`, `[LABEL - model · harness]`). Composer stays bordered with solid accent. Unified `transcriptScrollOffset` + auto-follow; ↑↓ scrolls input then transcript. Updated UI-C03 / UI-C05 wording. Follow-up: composer content rows `2 → 3`.

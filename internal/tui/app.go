@@ -33,10 +33,11 @@ const (
 )
 
 type model struct {
-	svc    *cycle.Service
-	width  int
-	height int
-	screen screen
+	svc          *cycle.Service
+	freeChatMode bool // hero chat: Chat-only, no cycle chrome
+	width        int
+	height       int
+	screen       screen
 
 	status    cycle.StatusView
 	metrics   cycle.MetricsView
@@ -233,8 +234,21 @@ func (m model) reloadPaletteItems() model {
 	if m.svc != nil {
 		projectDir = m.svc.ProjectDir
 	}
-	m.paletteItems = buildPaletteItems(projectDir)
+	items := buildPaletteItems(projectDir)
+	if m.freeChatMode {
+		// Free chat: no project slash discovery; only non-/hero chat commands.
+		items = filterFreeChatPaletteItems(defaultHeroPaletteItems())
+	}
+	m.paletteItems = items
 	return m
+}
+
+// executeDir is the harness Execute workspace (cwd in free chat, else project).
+func (m model) executeDir() string {
+	if m.svc == nil {
+		return ""
+	}
+	return m.svc.ExecuteDir()
 }
 
 func (m model) Init() tea.Cmd {
@@ -420,16 +434,31 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m = m.reloadPaletteItems()
 		return m, nil
 	case "ctrl+r", "f5":
+		if m.freeChatMode {
+			return m, nil
+		}
 		return m, m.refreshCmd()
 	case "ctrl+1", "alt+1":
 		return m.enterConversation()
 	case "ctrl+2", "alt+2":
+		if m.freeChatMode {
+			return m, nil
+		}
 		return m.goListScreen(screenStatus)
 	case "ctrl+3", "alt+3":
+		if m.freeChatMode {
+			return m, nil
+		}
 		return m.goListScreen(screenArtifacts)
 	case "ctrl+4", "alt+4":
+		if m.freeChatMode {
+			return m, nil
+		}
 		return m.goListScreen(screenCosts)
 	case "ctrl+5", "alt+5":
+		if m.freeChatMode {
+			return m, nil
+		}
 		return m.goListScreen(screenEvents)
 	case "up", "ctrl+p":
 		if m.screenHasContentScroll() {
@@ -482,7 +511,7 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.propsAwaitingRefresh {
 			m = m.clearPropsPendingSelect()
 			m = m.closePalette()
-			m = m.setStatusResult(true, "/hero-model", "Selection cancelled — no changes saved.")
+			m = m.setStatusResult(true, "/model", "Selection cancelled — no changes saved.")
 			return m, nil
 		}
 		if m.pickingModel && m.modelPickerHarness != "" {
@@ -687,6 +716,9 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 }
 
 func (m model) goListScreen(s screen) (model, tea.Cmd) {
+	if m.freeChatMode && s != screenConversation {
+		return m, nil
+	}
 	m.chatInputFocused = false
 	if m.screen != s {
 		m.contentOffset = 0
@@ -696,6 +728,9 @@ func (m model) goListScreen(s screen) (model, tea.Cmd) {
 }
 
 func (m model) refreshCmd() tea.Cmd {
+	if m.freeChatMode {
+		return nil
+	}
 	svc := m.svc
 	if svc == nil {
 		return nil

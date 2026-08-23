@@ -17,7 +17,7 @@ import (
 const ToolsFlagRemovedMsg = "Flag --tools is not supported in Hero 2.0."
 
 // ToolsFlagRemovedSuggestion is the follow-up hint for --tools removal.
-const ToolsFlagRemovedSuggestion = "run `hero install` and select harnesses interactively,\nor enable them later in the TUI with /hero-harness."
+const ToolsFlagRemovedSuggestion = "run `hero install` and select harnesses interactively,\nor enable them later in the TUI with /harness."
 
 // NewCommand creates the `hero install` cobra command.
 func NewCommand(version string, assetsFS fs.FS) *cobra.Command {

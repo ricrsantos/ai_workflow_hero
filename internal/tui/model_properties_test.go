@@ -112,7 +112,7 @@ func TestPropertyPickerOpensWhenSelectable(t *testing.T) {
 	}
 	view := ViewForTest(m)
 	for _, want := range []string{
-		"/hero-model · Cursor · properties",
+		"/model · Cursor · properties",
 		"Fast Mode:",
 		"Thinking:",
 		"Reasoning effort:",
@@ -575,7 +575,7 @@ func TestWorkflowExecutionSendsYAMLProjection(t *testing.T) {
 func TestPropertyPickerEscapeRestoresChatSlashOverlay(t *testing.T) {
 	m, _ := newPickerTestModel(t)
 	m = EnterConversationForTest(m)
-	m = typeChat(t, m, "/hero-model")
+	m = typeChat(t, m, "/model")
 	m, _ = HandleTestKey(m, "enter")
 	if CurrentScreen(m) != ScreenPalette {
 		t.Fatalf("screen=%v want palette", CurrentScreen(m))
@@ -598,7 +598,7 @@ func TestPropertyPickerEscapeRestoresChatSlashOverlay(t *testing.T) {
 			len(FilteredChatSlashForTest(m)))
 	}
 	view := ViewForTest(m)
-	if !strings.Contains(view, "/hero-model") {
-		t.Fatalf("overlay missing /hero-model: %q", view)
+	if !strings.Contains(view, "/model") {
+		t.Fatalf("overlay missing /model: %q", view)
 	}
 }

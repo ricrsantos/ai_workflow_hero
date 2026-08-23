@@ -66,7 +66,7 @@ func TestHeroModelPickerIncludesCodexWhenEnabled(t *testing.T) {
 		t.Fatal("expected harness submenu when multiple harnesses enabled")
 	}
 	view := ViewForTest(m)
-	if !strings.Contains(view, "/hero-model · select harness") {
+	if !strings.Contains(view, "/model · select harness") {
 		t.Fatalf("title missing: %q", view)
 	}
 	for _, name := range []string{"Cursor", "OpenCode", "Codex"} {
@@ -129,7 +129,7 @@ func TestHeroModelPickerListsCodexNativeModels(t *testing.T) {
 		t.Fatalf("harness=%q want codex", ModelPickerHarnessForTest(m))
 	}
 	view := ViewForTest(m)
-	if !strings.Contains(view, "/hero-model · Codex") {
+	if !strings.Contains(view, "/model · Codex") {
 		t.Fatalf("step 2 title=%q", view)
 	}
 	if !strings.Contains(view, "gpt-5.4") || !strings.Contains(view, "gpt-5.3-codex") {
@@ -236,10 +236,10 @@ func TestHeroModelPickerEscFromCodexReturnsToHarnessList(t *testing.T) {
 		t.Fatalf("Esc must return to harness list, got harness=%q", ModelPickerHarnessForTest(m))
 	}
 	if !PickingModelForTest(m) {
-		t.Fatal("still in /hero-model after Esc")
+		t.Fatal("still in /model after Esc")
 	}
 	view := ViewForTest(m)
-	if !strings.Contains(view, "/hero-model · select harness") {
+	if !strings.Contains(view, "/model · select harness") {
 		t.Fatalf("expected harness list title: %q", view)
 	}
 	if !strings.Contains(view, "Codex") {
@@ -340,7 +340,7 @@ func TestHeroModelPickerCodexPropertySubmenuUnchanged(t *testing.T) {
 	}
 	view := ViewForTest(m)
 	for _, want := range []string{
-		"/hero-model · Codex · properties",
+		"/model · Codex · properties",
 		"Fast Mode:",
 		"Thinking:",
 		"Reasoning effort:",

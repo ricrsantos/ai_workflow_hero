@@ -48,7 +48,7 @@ func TestHarnessPickerCheckboxesShowAvailability(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = svc.Close() })
-	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
 	if !tui.PickingHarnessForTest(next) {
 		t.Fatal("expected harness picker")
 	}
@@ -79,7 +79,7 @@ func TestHarnessPickerEnableOpenCodeSuccessLine(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 
-	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
 	if !tui.PickingHarnessForTest(next) {
 		t.Fatal("expected harness picker")
 	}
@@ -122,7 +122,7 @@ func TestHarnessPickerEnableCodexSuccessLine(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 
-	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
 	if !tui.PickingHarnessForTest(next) {
 		t.Fatal("expected harness picker")
 	}
@@ -179,7 +179,7 @@ func TestHarnessPickerDisableSuccessLine(t *testing.T) {
 	})
 	t.Cleanup(func() { tui.SetStopOpenCodeServeFnForTest(prev) })
 
-	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
 	items := tui.FilteredPalette(next)
 	idx := paletteIndexByLabel(items, "OpenCode")
 	next = tui.SetPaletteIndexForTest(next, idx)
@@ -226,7 +226,7 @@ func TestHarnessPickerDisableCodexStopsAppServer(t *testing.T) {
 	})
 	t.Cleanup(func() { tui.SetStopCodexAppServerFnForTest(prev) })
 
-	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
 	items := tui.FilteredPalette(next)
 	idx := paletteIndexByLabel(items, "Codex")
 	if idx < 0 {
@@ -268,7 +268,7 @@ func TestHarnessPickerLastHarnessError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 
-	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
 	items := tui.FilteredPalette(next)
 	idx := paletteIndexByLabel(items, "Cursor")
 	next = tui.SetPaletteIndexForTest(next, idx)
@@ -297,7 +297,7 @@ func TestHarnessPickerLastHarnessError_CodexOnly(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 
-	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/hero-harness")
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
 	items := tui.FilteredPalette(next)
 	idx := paletteIndexByLabel(items, "Codex")
 	if idx < 0 {

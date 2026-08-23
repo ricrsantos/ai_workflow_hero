@@ -99,6 +99,9 @@ func (m model) renderNavSidebar(height int) string {
 	lines = append(lines, navSidebarSeparator(innerW))
 
 	for _, item := range navScreens {
+		if m.freeChatMode && item.screen != screenConversation {
+			continue
+		}
 		marker := "  "
 		rowStyle := navSidebarItemStyle
 		if item.screen == m.screen {
@@ -108,7 +111,12 @@ func (m model) renderNavSidebar(height int) string {
 		lines = append(lines, rowStyle.Render(truncateNavText(marker+item.label, innerW)))
 	}
 
-	footer := navSidebarFooterStyle.Render(truncateNavText(" alt+1-5", innerW))
+	footer := ""
+	if !m.freeChatMode {
+		footer = navSidebarFooterStyle.Render(truncateNavText(" alt+1-5", innerW))
+	} else {
+		footer = navSidebarFooterStyle.Render(truncateNavText(" chat", innerW))
+	}
 	for len(lines) < innerH-1 {
 		lines = append(lines, strings.Repeat(" ", innerW))
 	}

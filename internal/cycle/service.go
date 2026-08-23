@@ -20,8 +20,11 @@ import (
 // Service is the shared façade used by CLI commands and the TUI.
 type Service struct {
 	ProjectDir string
-	Store      *store.Store
-	Engine     *engine.Engine
+	// WorkDir is the Execute workspace for free-chat (`hero chat`). Empty means
+	// use ProjectDir (normal project TUI).
+	WorkDir string
+	Store   *store.Store
+	Engine  *engine.Engine
 	// Harness is optional; defaults to the Cursor adapter for hero run.
 	Harness harness.HarnessAdapter
 	// Registry resolves multi-harness adapters for TUI (Hero 2.0).
@@ -30,6 +33,17 @@ type Service struct {
 	OpenspecRunner OpenspecRunner
 	// OpenspecExec configures LookPath/exec for the default OpenspecRunner when OpenspecRunner is nil.
 	OpenspecExec OpenspecExec
+}
+
+// ExecuteDir returns the workspace directory for harness Execute calls.
+func (s *Service) ExecuteDir() string {
+	if s == nil {
+		return ""
+	}
+	if strings.TrimSpace(s.WorkDir) != "" {
+		return s.WorkDir
+	}
+	return s.ProjectDir
 }
 
 // OpenService discovers the project root (or uses projectDir), ensures the

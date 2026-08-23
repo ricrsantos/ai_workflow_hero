@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **2.5.0** (C6 Codex adapter native complete). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
+> **Status:** reflects codebase at Hero **2.6.0** (C6 Codex adapter + TUI redesign). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -189,7 +189,7 @@ Global flags: `--verbose`, `--debug` (registered; not fully wired to stack trace
 
 ## Level 3 — Hero TUI (ADR-015, ADR-017, ADR-026)
 
-Default entry: `hero` / `hero tui`. Requires a TTY; uses Bubble Tea + lipgloss.
+Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero/`). Free-chat entry: `hero chat` (Chat-only; no project install/git; config under `~/.workflow-hero/`; Execute workspace = cwd). Requires a TTY; uses Bubble Tea + lipgloss.
 
 ```
   `hero` (default) / `hero tui`
@@ -210,7 +210,7 @@ Default entry: `hero` / `hero tui`. Requires a TTY; uses Bubble Tea + lipgloss.
          hero.db mutations                              cursor-agent CLI
 ```
 
-**Screens** (`alt+1` … `alt+5`): Chat, Status, Artifacts, Costs, Events. Approvals are handled in Chat via `/hero-approve` / `/hero-reject` (no separate Approvals screen).
+**Screens** (`alt+1` … `alt+5`): Chat, Status, Artifacts, Costs, Events. Approvals are handled in Chat via `/hero-approve` / `/hero-reject` (no separate Approvals screen). `hero chat` shows Chat only.
 
 **TUI modules** (selected):
 

@@ -170,7 +170,7 @@ func (m model) statusBarDisplayLines(width int) []string {
 
 // conversationStatusHint is the second ready-line on the Chat screen (frees header space).
 func (m model) conversationStatusHint() string {
-	if m.screen != screenConversation {
+	if m.screen != screenConversation || m.freeChatMode {
 		return ""
 	}
 	if m.conversationStage == "" {

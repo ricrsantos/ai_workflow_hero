@@ -44,7 +44,7 @@ func TestRootCommand_Help(t *testing.T) {
 func TestRootCommand_AllSubcommandsRegistered(t *testing.T) {
 	root := newRootCommand()
 
-	want := []string{"install", "upgrade", "uninstall", "doctor", "status", "variables", "update-models", "version", "tui"}
+	want := []string{"install", "upgrade", "uninstall", "doctor", "status", "variables", "update-models", "version", "tui", "chat"}
 	registered := make(map[string]bool)
 	for _, cmd := range root.Commands() {
 		registered[cmd.Name()] = true

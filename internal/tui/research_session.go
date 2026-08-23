@@ -131,7 +131,7 @@ func (m model) startDiscoverResearchSession() (model, tea.Cmd) {
 	prompt := tuiDiscoverResearchPreamble() + strings.TrimSpace(agentBody) + "\n"
 	label := "→ Research"
 	if warned {
-		label = "→ Research (model from fallback /hero-model; set agents.discover_agent in workflow-config.yml)"
+		label = "→ Research (model from fallback /model; set agents.discover_agent in workflow-config.yml)"
 	}
 	m = m.beginConversationExecute(label, prompt)
 	return m, m.conversationExecuteCmds()

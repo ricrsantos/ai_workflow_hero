@@ -109,7 +109,7 @@ hero install
 hero install --name "My Project" --summary "Short project summary" --yes --git-init
 ```
 
-After install, manage harnesses in the TUI with `/hero-harness` and pick the default freechat model pair with `/hero-model` (`model · harness`). OpenCode runs via Hero-managed `opencode serve` (started lazily on first TUI Execute). **Codex** is an optional TUI harness (Hero 2.5+): enabling it projects agents/commands/skills into **`.codex/`**; run `codex login` once before Execute (Hero never asks for an API key). Cursor IDE chat Runtime stays Cursor-only and does not start Codex. Upgrade from 2.4.x does **not** auto-enable Codex.
+After install, manage harnesses in the TUI with `/harness` and pick the default freechat model pair with `/model` (`model · harness`). OpenCode runs via Hero-managed `opencode serve` (started lazily on first TUI Execute). **Codex** is an optional TUI harness (Hero 2.5+): enabling it projects agents/commands/skills into **`.codex/`**; run `codex login` once before Execute (Hero never asks for an API key). Cursor IDE chat Runtime stays Cursor-only and does not start Codex. Upgrade from 2.4.x does **not** auto-enable Codex.
 
 Then, in Cursor chat:
 
@@ -125,6 +125,7 @@ Useful CLI commands after install:
 ```bash
 hero                 # open the Hero TUI (default)
 hero tui             # same as default
+hero chat            # free-chat only (no project install)
 hero doctor
 hero status
 hero status --json
@@ -231,7 +232,7 @@ Press `/` to open the palette (filter with typing, Enter to run). Default items:
 | `/hero-resume` | Reactivate an archived cycle |
 | `/hero-cycles` | List all cycles with per-stage metrics |
 | `/hero-todos` | List pending items from `context/current-state.md` |
-| `/hero-model` | Pick the default harness model (Chat + non-agent dispatches; persisted to `hero.json` → `harnesses.<tool>.model`) |
+| `/model` | Pick the default harness model (Chat + non-agent dispatches; persisted to `hero.json` → `harnesses.<tool>.model`) |
 | `/hero-help` | Point to `.workflow-hero/docs/workflow-help.md` |
 | `Refresh` | Reload Status, Costs, Events, and Artifacts from SQLite |
 | `Quit` | Exit the TUI |
@@ -276,7 +277,7 @@ Pick one entry UI per session for control actions; both read and write `.workflo
 | `/hero-status` | Show cycle status in chat |
 | `/hero-cycles` | List all cycles with per-etapa metrics |
 | `/hero-todos` | Show pending items from `context/current-state.md` |
-| `/hero-model` | Select the TUI default harness model (required once per project before Chat or harness dispatches; terminal palette; persisted in `hero.json`) |
+| `/model` | Select the TUI default harness model (required once per project before Chat or harness dispatches; terminal palette; persisted in `hero.json`) |
 | `/hero-help` | List Runtime commands |
 
 ---
@@ -479,7 +480,7 @@ hero install
 hero install --name "Meu Projeto" --summary "Resumo curto do projeto" --yes --git-init
 ```
 
-Depois do install, gerencie harnesses no TUI com `/hero-harness` e escolha o par padrão freechat com `/hero-model`. OpenCode usa `opencode serve` gerenciado pelo Hero. **Codex** é harness TUI opcional (Hero 2.5+): ao habilitar, projeta agentes/comandos/skills em **`.codex/`**; rode `codex login` uma vez antes do Execute (o Hero nunca pede API key). O Runtime do chat Cursor permanece só Cursor e não inicia Codex. Upgrade a partir de 2.4.x **não** habilita Codex automaticamente.
+Depois do install, gerencie harnesses no TUI com `/harness` e escolha o par padrão freechat com `/model`. OpenCode usa `opencode serve` gerenciado pelo Hero. **Codex** é harness TUI opcional (Hero 2.5+): ao habilitar, projeta agentes/comandos/skills em **`.codex/`**; rode `codex login` uma vez antes do Execute (o Hero nunca pede API key). O Runtime do chat Cursor permanece só Cursor e não inicia Codex. Upgrade a partir de 2.4.x **não** habilita Codex automaticamente.
 
 Em seguida, no chat do Cursor:
 
@@ -495,6 +496,7 @@ Comandos CLI úteis após a instalação:
 ```bash
 hero                 # abre a Hero TUI (padrão)
 hero tui             # igual ao padrão
+hero chat            # só free chat (sem install no projeto)
 hero doctor
 hero status
 hero status --json
@@ -601,7 +603,7 @@ Pressione `/` para abrir a palette (digite para filtrar, Enter para executar). I
 | `/hero-resume` | Reativa um ciclo arquivado |
 | `/hero-cycles` | Lista todos os ciclos com métricas por etapa |
 | `/hero-todos` | Lista pendências de `context/current-state.md` |
-| `/hero-model` | Escolhe o modelo default do harness (Chat + dispatches sem agente; persistido em `hero.json` → `harnesses.<tool>.model`) |
+| `/model` | Escolhe o modelo default do harness (Chat + dispatches sem agente; persistido em `hero.json` → `harnesses.<tool>.model`) |
 | `/hero-help` | Aponta para `.workflow-hero/docs/workflow-help.md` |
 | `Refresh` | Recarrega Status, Costs, Events e Artifacts a partir do SQLite |
 | `Quit` | Sai da TUI |
@@ -646,7 +648,7 @@ Escolha uma UI por sessão para ações de controle; ambas leem e escrevem `.wor
 | `/hero-status` | Mostra o status do ciclo no chat |
 | `/hero-cycles` | Lista todos os ciclos com métricas por etapa |
 | `/hero-todos` | Mostra pendências de `context/current-state.md` |
-| `/hero-model` | Seleciona o modelo default do harness na TUI (obrigatório uma vez por projeto antes do Chat ou dispatches; palette no terminal; persistido em `hero.json`) |
+| `/model` | Seleciona o modelo default do harness na TUI (obrigatório uma vez por projeto antes do Chat ou dispatches; palette no terminal; persistido em `hero.json`) |
 | `/hero-help` | Lista os comandos de Runtime |
 
 ---

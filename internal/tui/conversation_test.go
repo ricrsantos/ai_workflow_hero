@@ -983,7 +983,7 @@ func TestHeroNewRequiresDefaultModel(t *testing.T) {
 		t.Fatalf("expected error status, got %s", StatusKindForTest(next))
 	}
 	view := ViewForTest(next)
-	if !strings.Contains(view, "/hero-model") || !strings.Contains(view, "/hero-new again") {
+	if !strings.Contains(view, "/model") || !strings.Contains(view, "/hero-new again") {
 		t.Fatalf("missing default-model hint: %q", view)
 	}
 }
@@ -2106,7 +2106,7 @@ func TestHeroSyncRequiresModel(t *testing.T) {
 	if StatusKindForTest(next) != "err" {
 		t.Fatalf("status=%s", StatusKindForTest(next))
 	}
-	if !strings.Contains(StatusTextForTest(next), "/hero-model") {
+	if !strings.Contains(StatusTextForTest(next), "/model") {
 		t.Fatalf("missing model hint: %q", StatusTextForTest(next))
 	}
 }

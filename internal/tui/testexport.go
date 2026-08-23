@@ -474,7 +474,7 @@ func DeliverRefreshDoneForTest(m model, summaries []modelprops.RefreshSummary) (
 // OpenHeroModelForTest opens /hero-model and completes the background refresh
 // that tests do not run through the tea runtime.
 func OpenHeroModelForTest(m model) model {
-	m, _ = RunPaletteItemForTest(m, "/hero-model")
+	m, _ = RunPaletteItemForTest(m, "/model")
 	m, _ = DeliverRefreshDoneForTest(m, nil)
 	return m
 }

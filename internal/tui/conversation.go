@@ -929,7 +929,35 @@ func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
 }
 
 func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
-	switch strings.ToLower(strings.TrimSpace(text)) {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if m.freeChatMode {
+		switch lower {
+		case slashModel, "/hero-model":
+			m = m.clearChatInput()
+			next, cmd := m.openModelPicker()
+			return next, cmd, true
+		case slashHarness, "/hero-harness":
+			m = m.clearChatInput()
+			next, cmd := m.openHarnessPicker()
+			return next, cmd, true
+		case "/new-chat":
+			m = m.clearChatInput()
+			next, cmd := m.beginNewChat()
+			return next, cmd, true
+		case "/harness-reset":
+			m = m.clearChatInput()
+			next, cmd := m.beginHarnessResetPicker()
+			return next, cmd, true
+		default:
+			if strings.HasPrefix(lower, "/hero") {
+				m = m.clearChatInput()
+				m = m.setStatusResult(false, lower, "not available in free chat")
+				return m, nil, true
+			}
+			return m, nil, false
+		}
+	}
+	switch lower {
 	case "/hero-approve":
 		m = m.clearChatInput()
 		next, cmd := m.beginHeroApprove()
@@ -962,10 +990,17 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 		m = m.clearChatInput()
 		next, cmd := m.beginHeroBack()
 		return next, cmd, true
-	case "/hero-model":
+	case slashModel, "/hero-model":
 		m = m.clearChatInput()
 		next, cmd := m.openModelPicker()
 		return next, cmd, true
+	case slashHarness, "/hero-harness":
+		m = m.clearChatInput()
+		next, cmd := m.openHarnessPicker()
+		return next, cmd, true
+	case slashRefresh:
+		m = m.clearChatInput()
+		return m, m.refreshCmd(), true
 	case "/hero-config-update":
 		m = m.clearChatInput()
 		next, cmd := m.beginHeroConfigUpdate()
@@ -1068,10 +1103,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 	svc := m.svc
 	stageName := m.conversationStage
 	agentName := m.runtimeAgentName
-	projectDir := ""
-	if svc != nil {
-		projectDir = svc.ProjectDir
-	}
+	projectDir := m.executeDir()
 	mode := m.chatMode
 	if mode == "" {
 		mode = harness.ModeBuild

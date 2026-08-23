@@ -55,6 +55,10 @@ func Run(svc *cycle.Service) error {
 
 // RunWithChat launches the TUI with optional harness model catalog from boot.
 func RunWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn string) error {
+	return runTUI(svc, models, modelSlug, harnessID, modelWarn, false)
+}
+
+func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn string, freeChat bool) error {
 	if svc == nil {
 		return fmt.Errorf("cycle service is nil")
 	}
@@ -62,7 +66,11 @@ func RunWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug,
 	restoreLog := redirectSlogForTUI(svc.ProjectDir)
 	defer restoreLog()
 
-	slog.Info("starting hero tui")
+	if freeChat {
+		slog.Info("starting hero free-chat tui", "workDir", svc.WorkDir)
+	} else {
+		slog.Info("starting hero tui")
+	}
 
 	var stopOnce sync.Once
 	stopManaged := func() {
@@ -97,6 +105,10 @@ func RunWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug,
 	}()
 
 	m := newModelWithChat(svc, models, modelSlug, harnessID, modelWarn)
+	m.freeChatMode = freeChat
+	if freeChat {
+		m = m.reloadPaletteItems()
+	}
 	err := opencodeadapter.RunServeWatchdog(context.Background(), svc.ProjectDir, svc.Store, func() error {
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		_, runErr := p.Run()
@@ -192,6 +204,56 @@ func NewCommand() *cobra.Command {
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return RunDefault(cmd.OutOrStdout(), cmd.ErrOrStderr())
+		},
+	}
+}
+
+// RunFreeChat launches a Chat-only TUI without requiring a Hero project install or git.
+func RunFreeChat(stdout, stderr io.Writer) error {
+	if refusal := CanLaunch(stdout); refusal != nil {
+		e := clierr.NewWithSuggestion(refusal.Description, refusal.Suggestion)
+		clierr.Format(stderr, e)
+		return e
+	}
+	svc, err := OpenFreeChatService()
+	if err != nil {
+		e := clierr.New(err.Error())
+		clierr.Format(stderr, e)
+		return e
+	}
+	defer svc.Close()
+
+	adapter, err := bootHarness(context.Background(), stdout, stderr, svc.ProjectDir, svc.Store, defaultHarnessBootDeps())
+	if err != nil {
+		if _, ok := err.(*harnessBootError); ok {
+			return clierr.New("harness validation failed")
+		}
+		e := clierr.New(err.Error())
+		clierr.Format(stderr, e)
+		return e
+	}
+	if adapter.Registry != nil {
+		svc.Registry = adapter.Registry
+	}
+
+	if err := runTUI(svc, adapter.Models, adapter.ModelSlug, adapter.HarnessID, adapter.ModelWarn, true); err != nil {
+		e := clierr.New(err.Error())
+		clierr.Format(stderr, e)
+		return e
+	}
+	return nil
+}
+
+// NewChatCommand returns the `hero chat` free-chat TUI entry.
+func NewChatCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:           "chat",
+		Short:         "Launch a free-chat TUI (no project install required)",
+		Long:          `Open a Chat-only Hero TUI to talk to an AI harness. Does not require hero install or a git repository. Model and harness preferences are stored under ~/.workflow-hero/.`,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return RunFreeChat(cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
 }

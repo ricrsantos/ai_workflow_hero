@@ -19,8 +19,8 @@ import (
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>".
-// Default matches the next release (Hero 2.5.0 / C6 Codex adapter) when untagged.
-var version = "2.5.0"
+// Default matches the latest release (Hero 2.6.0) when untagged.
+var version = "2.6.0"
 
 func main() {
 	root := newRootCommand()
@@ -77,6 +77,7 @@ Stages: Configuration → Research → Planning → Implementation → QA → Ju
 		variables.NewCommand(),
 		update_models.NewCommand(),
 		tui.NewCommand(),
+		tui.NewChatCommand(),
 		newVersionCommand(),
 	)
 	for _, c := range cycle.NewCommands() {
