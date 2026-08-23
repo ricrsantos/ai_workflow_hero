@@ -73,11 +73,17 @@ var (
 	chatInOK    = lipgloss.NewStyle().Foreground(colorOK)
 	chatInWarn  = lipgloss.NewStyle().Foreground(colorAccentFast)
 	chatInErr   = lipgloss.NewStyle().Foreground(colorError)
-	// Solid 1-cell accent bar.
+	// Solid 1-cell accent bar (composer / bordered panes).
 	chatAccentBuild    = lipgloss.NewStyle().Background(colorAccentAI).Foreground(colorAccentAI)
 	chatAccentPlan     = lipgloss.NewStyle().Background(colorAccentFast).Foreground(colorAccentFast)
 	chatAccentUser     = lipgloss.NewStyle().Background(colorAccentUser).Foreground(colorAccentUser)
 	chatAccentResponse = lipgloss.NewStyle().Background(colorOK).Foreground(colorOK)
+	// Thin vertical accent bar for the linear transcript (Bonito-style │).
+	chatBarUser  = lipgloss.NewStyle().Foreground(colorAccentUser)
+	chatBarAgent = lipgloss.NewStyle().Foreground(colorOK)
+	chatBarMuted = lipgloss.NewStyle().Foreground(colorTextDim)
+	chatBarWarn  = lipgloss.NewStyle().Foreground(colorAccentFast)
+	chatBarErr   = lipgloss.NewStyle().Foreground(colorError)
 	// Output panel body: soft readable text (not raw default black/white).
 	outputBodyStyle  = lipgloss.NewStyle().Foreground(colorTextPri)
 	outputCycleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorAccentAI)
@@ -99,6 +105,9 @@ var (
 				BorderForeground(colorBorder).
 				Background(colorBgSurface)
 )
+
+// chatBarGlyph is the per-line transcript accent (thin vertical bar).
+func chatBarGlyph() string { return "│" }
 
 func stageStatusStyle(status string) lipgloss.Style {
 	switch status {

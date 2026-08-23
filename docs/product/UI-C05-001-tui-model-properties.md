@@ -59,7 +59,7 @@ The selector MUST NOT persist a partial selection.
 
 ## 4. Active-property line
 
-When a model is selected, the line below the green response pane appears beside the response scroll hint and context bar. Example:
+When a model is selected, the line below the linear transcript appears beside the context bar. Example:
 
 ```text
 ↑↓ scroll response    [fs-true] [th-max] [ef-high]    ████░░ 12k/200k

@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-08-22 — Linear chat transcript
+
+**Change**: Merged the separate You + green response chat boxes into one borderless linear transcript (full session history) with thin `│` accent bars per actor (user violet / agent green), Hero labels preserved (`You`, `[LABEL - model · harness]`). Composer stays bordered with solid accent. Unified `transcriptScrollOffset` + auto-follow; ↑↓ scrolls input then transcript. Updated UI-C03 / UI-C05 wording. Follow-up: composer content rows `2 → 3`.
+
+**Validation**: `go test ./internal/tui/ -count=1` and `go test ./... -count=1` passed.
+
 **Change**: Removed the chat-pane top row (`Chat · harness …`, cycle title, inline session id). Harness/model context stays in the composer and sidebar; cycle etapa hint stays in the status bar.
 
 **Validation**: `go test ./internal/tui/ -count=1` passed.

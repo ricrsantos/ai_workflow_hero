@@ -375,7 +375,7 @@ func TestStatusLineVisibleInEmptyChat(t *testing.T) {
 	}}
 	m = EnterConversationForTest(m)
 	view := ViewForTest(m)
-	if !strings.Contains(view, "Agent response will appear here.") {
+	if !strings.Contains(view, "Submit a message to start an interação") {
 		t.Skip("empty chat placeholder changed")
 	}
 	if !strings.Contains(view, "[fast-true]") {

@@ -28,13 +28,10 @@ const (
 	convRoleActivity convRole = "activity"
 )
 
-// Visible content rows inside the OpenCode-style chat panes (excluding status row).
+// Visible content rows inside chat panes (excluding status row on composer).
 const (
-	chatInputVisibleLines   = 2
-	chatHistoryVisibleLines = 2
-	chatHistoryMinLines     = 2
-	chatResponseMinLines    = 2
-	chatResponseMaxLines    = 24
+	chatInputVisibleLines  = 3
+	chatTranscriptMinLines = 2
 )
 
 var waitAnimFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -333,7 +330,7 @@ func (m model) conversationModelLabel() string {
 	return "not set"
 }
 
-// responseSpeakerHeader is the green-pane origin label: [QA - composer-2.5 · opencode], [HARN - grok-4.6 · cursor].
+// responseSpeakerHeader is the live origin label: [QA - composer-2.5 · opencode], [HARN - grok-4.6 · cursor].
 func (m model) responseSpeakerHeader() string {
 	name := strings.TrimSpace(m.runtimeAgentName)
 	model := m.conversationModelSlug()
@@ -397,9 +394,8 @@ func (m model) resetChatSession() model {
 	m.streamInterrupted = false
 	m.agentMsgIndex = -1
 	m.thinkingMsgIndex = -1
-	m.respScrollOffset = 0
-	m.historyScrollOffset = 0
-	m.respFollowBottom = true
+	m.transcriptScrollOffset = 0
+	m.transcriptFollowBottom = true
 	m.waitAnimFrame = 0
 	m.contextUsedTokens = 0
 	m = m.clearChatInput()
@@ -541,9 +537,8 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	m.convError = ""
 	m.streaming = true
 	m.waitAnimFrame = 0
-	m.respFollowBottom = true
-	m.respScrollOffset = 0
-	m.historyScrollOffset = 0
+	m.transcriptFollowBottom = true
+	m.transcriptScrollOffset = 0
 	m.chatInputFocused = false
 	m = m.resetHarnessWatchdog(executePrompt)
 	parentName := strings.TrimSpace(m.runtimeAgentName)
@@ -587,16 +582,16 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			"ctrl+4", "alt+4", "ctrl+5", "alt+5":
 			return m.handleKey(msg)
 		case "up", "ctrl+p":
-			m = m.scrollResponse(-1)
+			m = m.scrollTranscript(-1)
 			return m, nil
 		case "down", "ctrl+n":
-			m = m.scrollResponse(1)
+			m = m.scrollTranscript(1)
 			return m, nil
 		case "pgup":
-			m = m.scrollResponse(-m.responseVisibleLines(m.contentAreaHeight()))
+			m = m.scrollTranscript(-m.transcriptVisibleLines(m.contentAreaHeight()))
 			return m, nil
 		case "pgdown":
-			m = m.scrollResponse(m.responseVisibleLines(m.contentAreaHeight()))
+			m = m.scrollTranscript(m.transcriptVisibleLines(m.contentAreaHeight()))
 			return m, nil
 		default:
 			// The preflight owns the composer until it completes or is cancelled.
@@ -621,16 +616,16 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "alt+i":
 			return m.copyChatInput()
 		case "up", "ctrl+p":
-			m = m.scrollResponse(-1)
+			m = m.scrollTranscript(-1)
 			return m, nil
 		case "down", "ctrl+n":
-			m = m.scrollResponse(1)
+			m = m.scrollTranscript(1)
 			return m, nil
 		case "pgup":
-			m = m.scrollResponse(-m.responseVisibleLines(m.contentAreaHeight()))
+			m = m.scrollTranscript(-m.transcriptVisibleLines(m.contentAreaHeight()))
 			return m, nil
 		case "pgdown":
-			m = m.scrollResponse(m.responseVisibleLines(m.contentAreaHeight()))
+			m = m.scrollTranscript(m.transcriptVisibleLines(m.contentAreaHeight()))
 			return m, nil
 		default:
 			// Other keys are ignored while waiting for the agent.
@@ -707,11 +702,7 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputScrollOffset--
 			return m, nil
 		}
-		if m.historyScrollOffset > 0 {
-			m.historyScrollOffset--
-			return m, nil
-		}
-		m = m.scrollResponse(-1)
+		m = m.scrollTranscript(-1)
 		return m, nil
 	case "down", "ctrl+n":
 		maxIn := m.maxInputScroll()
@@ -719,18 +710,13 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputScrollOffset++
 			return m, nil
 		}
-		maxHist := m.maxHistoryScroll()
-		if m.historyScrollOffset < maxHist {
-			m.historyScrollOffset++
-			return m, nil
-		}
-		m = m.scrollResponse(1)
+		m = m.scrollTranscript(1)
 		return m, nil
 	case "pgup":
-		m = m.scrollResponse(-m.responseVisibleLines(m.contentAreaHeight()))
+		m = m.scrollTranscript(-m.transcriptVisibleLines(m.contentAreaHeight()))
 		return m, nil
 	case "pgdown":
-		m = m.scrollResponse(m.responseVisibleLines(m.contentAreaHeight()))
+		m = m.scrollTranscript(m.transcriptVisibleLines(m.contentAreaHeight()))
 		return m, nil
 	case "left":
 		if m.inputCursor > 0 {
@@ -1150,7 +1136,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 }
 
 // streamDeltaMustDeliver is true for transcript-critical events. Dropping them
-// truncates the green response pane mid-sentence under TUI backpressure.
+// truncates the live transcript mid-sentence under TUI backpressure.
 func streamDeltaMustDeliver(kind harness.StreamKind) bool {
 	switch kind {
 	case harness.StreamKindText, harness.StreamKindThinking, harness.StreamKindWarning, harness.StreamKindSession:
@@ -1283,7 +1269,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.clearHarnessHealthWarnings()
 		}
 		m = m.appendStreamDelta(msg.delta)
-		m = m.maybeFollowResponseBottom()
+		m = m.maybeFollowTranscriptBottom()
 		if m.streaming && m.convStreamCh != nil {
 			return m, waitConvBatchMsg(m.convStreamCh)
 		}
@@ -1375,7 +1361,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				slog.Error("tui prepare cycle after hero-new failed", "error", err)
 			}
 		}
-		m = m.maybeFollowResponseBottom()
+		m = m.maybeFollowTranscriptBottom()
 		slog.Info("tui conversation execute complete", "stage", m.conversationStage)
 		next, handoffCmd := m.maybeHandoffAfterExecute()
 		if handoffCmd != nil {
@@ -1722,20 +1708,22 @@ func (m *model) invalidateResponseCache(index int) {
 }
 
 func (m model) renderConversation(contentH int) string {
-	n := m.responseVisibleLines(contentH)
+	n := m.transcriptVisibleLines(contentH)
 	s := m.buildConversation(n)
-	// The response pane has a display cap, but that cap can still exceed the
-	// available frame after the header, history, input, and status rows are
-	// measured. Reduce only the response rows first so the frame never has to
-	// discard the header/agents box or the composer.
+	// The transcript pane absorbs leftover height after header, status hint,
+	// input, and error rows. Shrink first so the frame never discards chrome.
 	for countContentLines(s) > contentH && n > 0 {
 		n--
 		s = m.buildConversation(n)
 	}
-	// Absorb measurement drift so leftover rows go into the response pane.
-	for countContentLines(s) < contentH && n < chatResponseMaxLines {
+	// Grow into unused rows so the composer stays pinned to the bottom.
+	for countContentLines(s) < contentH {
+		prev := countContentLines(s)
 		n++
 		s = m.buildConversation(n)
+		if countContentLines(s) <= prev {
+			break
+		}
 	}
 	return s
 }
@@ -1748,9 +1736,9 @@ func countContentLines(s string) int {
 	return strings.Count(s, "\n") + 1
 }
 
-func (m model) buildConversation(responseLines int) string {
-	if responseLines < 0 {
-		responseLines = 0
+func (m model) buildConversation(transcriptLines int) string {
+	if transcriptLines < 0 {
+		transcriptLines = 0
 	}
 	var b strings.Builder
 	if header := m.renderConversationHeader(); header != "" {
@@ -1758,9 +1746,7 @@ func (m model) buildConversation(responseLines int) string {
 		b.WriteByte('\n')
 	}
 
-	b.WriteString(m.renderConversationHistory())
-	b.WriteByte('\n')
-	b.WriteString(m.renderConversationResponse(responseLines))
+	b.WriteString(m.renderConversationTranscript(transcriptLines))
 
 	if m.convError != "" && !m.latestAgentFailed() {
 		b.WriteByte('\n')
@@ -1819,31 +1805,17 @@ func (m model) renderWrappedConvError() string {
 	return b.String()
 }
 
-// renderConversationHistory shows the latest user turn in a scrollable OpenCode-style box.
-func (m model) renderConversationHistory() string {
-	contentW := m.chatContentWidth()
-	innerW := m.chatInnerWidth()
-	accent := chatAccentUser
-	visible := m.chatHistoryVisibleLines()
-
-	var b strings.Builder
-
-	users := 0
-	for _, msg := range m.transcript {
-		if msg.role == convRoleUser {
-			users++
-		}
+// renderConversationTranscript renders the full session as a linear, borderless
+// scrollable chat with a thin │ accent bar per actor (Bonito-inspired).
+func (m model) renderConversationTranscript(visibleLines int) string {
+	rowW := m.transcriptRowWidth()
+	contentW := m.transcriptTextWidth()
+	lines := m.transcriptContentLines(contentW)
+	visible := visibleLines
+	if visible < 0 {
+		visible = 0
 	}
-	maxShown := 1
-	earlier := 0
-	if users > maxShown {
-		earlier = users - maxShown
-		b.WriteString(mutedStyle.Render(fmt.Sprintf("… %d earlier", earlier)))
-		b.WriteByte('\n')
-	}
-
-	lines := m.historyContentLines(contentW)
-	offset := m.historyScrollOffset
+	offset := m.transcriptScrollOffset
 	maxOff := len(lines) - visible
 	if maxOff < 0 {
 		maxOff = 0
@@ -1855,67 +1827,151 @@ func (m model) renderConversationHistory() string {
 		offset = maxOff
 	}
 
-	rows := make([]string, 0, visible+1)
+	var b strings.Builder
 	for i := 0; i < visible; i++ {
 		idx := offset + i
-		var cell string
 		if idx < len(lines) {
-			cell = lines[idx]
+			b.WriteString(padDisplayWidth(lines[idx], rowW))
+		} else {
+			b.WriteString(strings.Repeat(" ", rowW))
 		}
-		rows = append(rows, chatAccentRow(accent, cell, innerW))
+		b.WriteByte('\n')
 	}
-
-	statusContent := chatInUser.Render("You")
-	if len(lines) > visible {
-		statusContent += chatInMuted.Render(fmt.Sprintf(" · %d–%d/%d", offset+1, minInt(offset+visible, len(lines)), len(lines)))
+	if hint := m.renderScrollHintLine(); hint != "" {
+		b.WriteString(hint)
+		b.WriteByte('\n')
 	}
-	rows = append(rows, chatAccentRow(accent, statusContent, innerW))
-
-	b.WriteString(chatBoxStyle.Width(m.chatBoxWidth()).Render(strings.Join(rows, "\n")))
-	return strings.TrimRight(b.String(), "\n")
+	return b.String()
 }
 
-func (m model) historyContentLines(contentW int) []string {
-	content := m.latestUserContent()
-	if strings.TrimSpace(content) == "" {
-		return []string{chatInMuted.Render("Submit a message to start an interação.")}
+func (m model) transcriptRowWidth() int {
+	w := m.contentWidth()
+	if w <= 0 {
+		w = 72
 	}
+	if w < 28 {
+		w = 28
+	}
+	return w
+}
+
+// transcriptTextWidth is columns after the thin bar + gap.
+func (m model) transcriptTextWidth() int {
+	w := m.transcriptRowWidth() - 2
+	if w < 8 {
+		w = 8
+	}
+	return w
+}
+
+func (m model) transcriptContentLines(contentW int) []string {
+	rowW := m.transcriptRowWidth()
+	if len(m.transcript) == 0 {
+		if m.streaming || len(m.liveAgents) > 0 {
+			header := m.responseSpeakerHeader()
+			out := []string{chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW)}
+			if m.streaming {
+				frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
+				pending := chatInText.Render(frame) + chatInMuted.Render(" Waiting for harness…")
+				out = append(out, chatThinBarRow(chatBarAgent, pending, rowW))
+			}
+			return out
+		}
+		return []string{chatThinBarRow(chatBarMuted, chatInMuted.Render("Submit a message to start an interação."), rowW)}
+	}
+
 	var out []string
-	for _, line := range splitOutputLines(content, contentW) {
-		out = append(out, chatInText.Render(line))
+	for i := range m.transcript {
+		msg := &m.transcript[i]
+		if msg.role == convRoleAgent && strings.TrimSpace(msg.content) == "" && m.streaming && !msg.failed && !msg.interrupted {
+			// Keep a pending agent slot visible with spinner while waiting for text.
+			if i == m.agentMsgIndex {
+				bar, label := m.transcriptMessageChrome(*msg)
+				out = append(out, chatThinBarRow(bar, label, rowW))
+				frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
+				pending := chatInText.Render(frame) + chatInMuted.Render(" Waiting for harness…")
+				out = append(out, chatThinBarRow(bar, pending, rowW))
+				if i < len(m.transcript)-1 {
+					out = append(out, "")
+				}
+			}
+			continue
+		}
+		bar, label := m.transcriptMessageChrome(*msg)
+		out = append(out, chatThinBarRow(bar, label, rowW))
+		body := m.transcriptMessageBody(msg, contentW)
+		for _, line := range body {
+			out = append(out, chatThinBarRow(bar, line, rowW))
+		}
+		if i < len(m.transcript)-1 {
+			out = append(out, "")
+		}
+	}
+	if len(out) == 0 && m.streaming {
+		header := m.responseSpeakerHeader()
+		frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
+		pending := chatInText.Render(frame) + chatInMuted.Render(" Waiting for harness…")
+		return []string{
+			chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW),
+			chatThinBarRow(chatBarAgent, pending, rowW),
+		}
 	}
 	return out
 }
 
-func (m model) latestUserContent() string {
-	for i := len(m.transcript) - 1; i >= 0; i-- {
-		if m.transcript[i].role == convRoleUser {
-			return m.transcript[i].content
+func (m model) transcriptMessageChrome(msg convMessage) (lipgloss.Style, string) {
+	switch msg.role {
+	case convRoleUser:
+		return chatBarUser, chatInUser.Render("You")
+	case convRoleThinking:
+		header := formatAgentHeader(msg.agentName, msg.modelSlug, m.harnessForMessage(msg))
+		return chatBarMuted, chatInThink.Render(header)
+	case convRoleTool, convRoleActivity:
+		header := formatAgentHeader(msg.agentName, msg.modelSlug, m.harnessForMessage(msg))
+		return chatBarMuted, chatInMuted.Render(header)
+	case convRoleWarning:
+		header := formatAgentHeader(msg.agentName, msg.modelSlug, m.harnessForMessage(msg))
+		return chatBarWarn, chatInWarn.Render(header)
+	default:
+		header := formatAgentHeader(msg.agentName, msg.modelSlug, m.harnessForMessage(msg))
+		style := chatInAgent
+		bar := chatBarAgent
+		if msg.failed {
+			style = chatInErr
+			bar = chatBarErr
+		} else if msg.interrupted {
+			style = chatInWarn
+			bar = chatBarWarn
 		}
+		return bar, style.Render(header)
 	}
-	return ""
 }
 
-func (m model) historyLineCount() int {
-	// Fixed box: visible content rows + status row inside bordered pane.
-	return m.chatHistoryVisibleLines() + 1
+func (m model) transcriptMessageBody(msg *convMessage, contentW int) []string {
+	if msg.role == convRoleUser {
+		var out []string
+		for _, line := range splitOutputLines(msg.content, contentW) {
+			out = append(out, chatInText.Render(line))
+		}
+		if len(out) == 0 {
+			out = append(out, "")
+		}
+		return out
+	}
+	return m.cachedResponseLines(msg, contentW)
 }
 
-// Short terminals still need to show the Chat header and composer so the
-// footer does not force the frame to discard those controls. The two scroll
-// panes give up one content row each before the outer frame trims anything.
-func (m model) chatHistoryVisibleLines() int {
-	if m.frameContentHeight() < 18 {
-		return 1
+// transcriptVisibleLines sizes the linear transcript so it absorbs leftover height.
+func (m model) transcriptVisibleLines(contentH int) int {
+	if contentH <= 0 {
+		contentH = m.contentAreaHeight()
 	}
-	return chatHistoryVisibleLines
-}
-
-func (m model) chatInputVisibleLines() int {
-	if m.frameContentHeight() < 18 {
-		return 1
+	base := countContentLines(m.buildConversation(0))
+	n := contentH - base
+	if n < chatTranscriptMinLines {
+		return chatTranscriptMinLines
 	}
-	return chatInputVisibleLines
+	return n
 }
 
 func (m model) chatBoxWidth() int {
@@ -1944,7 +2000,7 @@ func (m model) chatInnerWidth() int {
 	return inner
 }
 
-// chatContentWidth is text columns after the accent bar + gap.
+// chatContentWidth is text columns after the accent bar + gap (composer).
 func (m model) chatContentWidth() int {
 	w := m.chatInnerWidth() - 2
 	if w < 8 {
@@ -1953,123 +2009,11 @@ func (m model) chatContentWidth() int {
 	return w
 }
 
-// responseVisibleLines sizes the agent pane so it alone absorbs leftover terminal height.
-// Measures a 0-row probe so growth goes into the response box, not gaps between panes.
-func (m model) responseVisibleLines(contentH int) int {
-	if contentH <= 0 {
-		contentH = m.contentAreaHeight()
+func (m model) chatInputVisibleLines() int {
+	if m.frameContentHeight() < 18 {
+		return 1
 	}
-	base := countContentLines(m.buildConversation(0))
-	n := contentH - base
-	if n < chatResponseMinLines {
-		return chatResponseMinLines
-	}
-	if n > chatResponseMaxLines {
-		return chatResponseMaxLines
-	}
-	return n
-}
-
-func (m model) renderConversationResponse(responseLines int) string {
-	contentW := m.chatContentWidth()
-	innerW := m.chatInnerWidth()
-	accent := chatAccentResponse
-
-	lines := m.responseContentLines(contentW)
-	visible := responseLines
-	if visible < 0 {
-		visible = 0
-	}
-	offset := m.respScrollOffset
-	maxOff := len(lines) - visible
-	if maxOff < 0 {
-		maxOff = 0
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > maxOff {
-		offset = maxOff
-	}
-
-	rows := make([]string, 0, visible+1)
-	for i := 0; i < visible; i++ {
-		idx := offset + i
-		var cell string
-		if idx < len(lines) {
-			cell = lines[idx]
-		}
-		rows = append(rows, chatAccentRow(accent, cell, innerW))
-	}
-
-	statusContent := ""
-	if m.streaming {
-		frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
-		statusContent = chatInText.Render(frame) + chatInMuted.Render(" ")
-	}
-	statusContent += chatInAgent.Render(m.responseSpeakerHeader())
-	if visible > 0 && len(lines) > visible {
-		end := minInt(offset+visible, len(lines))
-		statusContent += chatInMuted.Render(fmt.Sprintf(" · %d–%d/%d", offset+1, end, len(lines)))
-		if offset > 0 {
-			statusContent += chatInMuted.Render(" · ↑ more")
-		}
-		if end < len(lines) {
-			statusContent += chatInMuted.Render(" · ↓ more")
-		}
-	}
-	rows = append(rows, chatAccentRow(accent, statusContent, innerW))
-
-	var b strings.Builder
-	b.WriteString(chatBoxStyle.Width(m.chatBoxWidth()).Render(strings.Join(rows, "\n")))
-	if hint := m.renderScrollHintLine(); hint != "" {
-		b.WriteByte('\n')
-		b.WriteString(hint)
-	}
-	b.WriteByte('\n')
-	return b.String()
-}
-
-func (m model) responseContentLines(contentW int) []string {
-	indices := m.latestAgentTurnIndices()
-	if len(indices) == 0 {
-		if m.streaming {
-			return []string{chatInMuted.Render("Waiting for harness…")}
-		}
-		return []string{chatInMuted.Render("Agent response will appear here.")}
-	}
-
-	var out []string
-	prevKey := ""
-	prevWasSub := false
-	for _, index := range indices {
-		msg := &m.transcript[index]
-		if msg.role == convRoleAgent && strings.TrimSpace(msg.content) == "" && m.streaming && !msg.failed && !msg.interrupted {
-			continue
-		}
-		key := messageAgentKey(*msg)
-		isSub := strings.TrimSpace(msg.callID) != ""
-		if key != prevKey {
-			if prevKey != "" && prevWasSub {
-				out = append(out, "")
-			}
-			if isSub {
-				out = append(out, "")
-			}
-			header := formatAgentHeader(msg.agentName, msg.modelSlug, m.harnessForMessage(*msg))
-			out = append(out, chatInAgent.Render(header))
-			prevKey = key
-			prevWasSub = isSub
-		}
-		out = append(out, m.cachedResponseLines(msg, contentW)...)
-	}
-	if prevWasSub {
-		out = append(out, "")
-	}
-	if len(out) == 0 && m.streaming {
-		return []string{chatInMuted.Render("Waiting for harness…")}
-	}
-	return out
+	return chatInputVisibleLines
 }
 
 func (m model) cachedResponseLines(msg *convMessage, contentW int) []string {
@@ -2181,6 +2125,15 @@ func (m model) latestAgentTurnIndices() []int {
 		}
 	}
 	return indices
+}
+
+func (m model) latestUserContent() string {
+	for i := len(m.transcript) - 1; i >= 0; i-- {
+		if m.transcript[i].role == convRoleUser {
+			return m.transcript[i].content
+		}
+	}
+	return ""
 }
 
 func (m model) renderConversationInput() string {
@@ -2309,7 +2262,7 @@ func (m model) inputLinesWithCaret(contentW int) []string {
 	return lines
 }
 
-// chatAccentRow paints accent + gap + content to exactly innerW cells (no nested Background).
+// chatAccentRow paints solid accent + gap + content to exactly innerW cells (composer).
 func chatAccentRow(accent lipgloss.Style, content string, innerW int) string {
 	if innerW < 3 {
 		innerW = 3
@@ -2326,6 +2279,39 @@ func chatAccentRow(accent lipgloss.Style, content string, innerW int) string {
 	}
 	bar := accent.Width(1).Render(" ")
 	return bar + " " + content + strings.Repeat(" ", pad)
+}
+
+// chatThinBarRow paints a thin │ accent + gap + content to exactly rowW cells.
+func chatThinBarRow(barStyle lipgloss.Style, content string, rowW int) string {
+	if rowW < 3 {
+		rowW = 3
+	}
+	contentW := rowW - 2
+	content = strings.ReplaceAll(content, "\n", " ")
+	content = strings.ReplaceAll(content, "\r", "")
+	if lipgloss.Width(content) > contentW {
+		content = truncateDisplayWidth(content, contentW)
+	}
+	pad := contentW - lipgloss.Width(content)
+	if pad < 0 {
+		pad = 0
+	}
+	return barStyle.Render(chatBarGlyph()) + " " + content + strings.Repeat(" ", pad)
+}
+
+// padDisplayWidth right-pads a (possibly styled) line to exactly width cells.
+func padDisplayWidth(s string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	w := lipgloss.Width(s)
+	if w > width {
+		return truncateDisplayWidth(s, width)
+	}
+	if w == width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
 }
 
 // truncateDisplayWidth clips styled/plain text to maxCells, appending "…" when clipped.
@@ -2367,24 +2353,33 @@ func (m model) contentAreaHeight() int {
 	return h
 }
 
-func (m model) maxHistoryScroll() int {
-	lines := len(m.historyContentLines(m.chatContentWidth()))
-	maxOff := lines - m.chatHistoryVisibleLines()
+func (m model) maxTranscriptScroll() int {
+	lines := len(m.transcriptContentLines(m.transcriptTextWidth()))
+	maxOff := lines - m.transcriptVisibleLines(m.contentAreaHeight())
 	if maxOff < 0 {
 		return 0
 	}
 	return maxOff
 }
 
-func (m model) scrollHistory(delta int) model {
-	m.historyScrollOffset += delta
-	maxOff := m.maxHistoryScroll()
-	if m.historyScrollOffset < 0 {
-		m.historyScrollOffset = 0
+func (m model) scrollTranscript(delta int) model {
+	m.transcriptScrollOffset += delta
+	maxOff := m.maxTranscriptScroll()
+	if m.transcriptScrollOffset < 0 {
+		m.transcriptScrollOffset = 0
 	}
-	if m.historyScrollOffset > maxOff {
-		m.historyScrollOffset = maxOff
+	if m.transcriptScrollOffset > maxOff {
+		m.transcriptScrollOffset = maxOff
 	}
+	m.transcriptFollowBottom = m.transcriptScrollOffset >= maxOff
+	return m
+}
+
+func (m model) maybeFollowTranscriptBottom() model {
+	if !m.transcriptFollowBottom {
+		return m
+	}
+	m.transcriptScrollOffset = m.maxTranscriptScroll()
 	return m
 }
 
@@ -2474,36 +2469,6 @@ func (m model) maxInputScroll() int {
 		return 0
 	}
 	return maxOff
-}
-
-func (m model) maxResponseScroll() int {
-	lines := len(m.responseContentLines(m.chatContentWidth()))
-	maxOff := lines - m.responseVisibleLines(m.contentAreaHeight())
-	if maxOff < 0 {
-		return 0
-	}
-	return maxOff
-}
-
-func (m model) scrollResponse(delta int) model {
-	m.respScrollOffset += delta
-	maxOff := m.maxResponseScroll()
-	if m.respScrollOffset < 0 {
-		m.respScrollOffset = 0
-	}
-	if m.respScrollOffset > maxOff {
-		m.respScrollOffset = maxOff
-	}
-	m.respFollowBottom = m.respScrollOffset >= maxOff
-	return m
-}
-
-func (m model) maybeFollowResponseBottom() model {
-	if !m.respFollowBottom {
-		return m
-	}
-	m.respScrollOffset = m.maxResponseScroll()
-	return m
 }
 
 func (m model) ensureInputCaretVisible() model {

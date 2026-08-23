@@ -81,12 +81,11 @@ type model struct {
 	convStreamCh            chan tea.Msg
 	chatInputFocused        bool
 
-	// OpenCode-style chat panes: scroll offsets + wait animation.
-	inputScrollOffset   int
-	historyScrollOffset int
-	respScrollOffset    int
-	respFollowBottom    bool // auto-stick response to latest lines while streaming
-	waitAnimFrame       int
+	// Chat panes: composer scroll + linear transcript scroll/follow.
+	inputScrollOffset      int
+	transcriptScrollOffset int
+	transcriptFollowBottom bool // auto-stick transcript to latest lines while streaming
+	waitAnimFrame          int
 
 	// Chat OpenCode-style controls.
 	chatMode                 string // harness.ModeBuild | harness.ModePlan
@@ -183,7 +182,7 @@ func newModel(svc *cycle.Service) model {
 		chatMode:         harness.ModeBuild,
 		agentMsgIndex:    -1,
 		thinkingMsgIndex: -1,
-		respFollowBottom: true,
+		transcriptFollowBottom: true,
 		chatInputFocused: true,
 	}
 	projectDir := ""
@@ -255,8 +254,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.rebuildOutputLines()
 		}
 		if m.screen == screenConversation {
-			m = m.scrollResponse(0) // clamp to new response viewport
-			m = m.scrollHistory(0)
+			m = m.scrollTranscript(0) // clamp to new transcript viewport
 			m = m.ensureInputCaretVisible()
 		}
 		m = m.clampContentOffset()

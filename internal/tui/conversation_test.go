@@ -406,11 +406,11 @@ func TestConversationResponsePaneLayout(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	view := ViewForTest(m)
-	if !strings.Contains(view, "Agent response will appear here") {
-		t.Fatalf("expected empty response pane: %q", view)
+	if !strings.Contains(view, "Submit a message to start an interação") {
+		t.Fatalf("expected empty transcript placeholder: %q", view)
 	}
-	if !strings.Contains(view, "[HARN]") {
-		t.Fatalf("expected HARN speaker label: %q", view)
+	if !strings.Contains(view, "│") {
+		t.Fatalf("expected thin transcript accent bar: %q", view)
 	}
 	if !strings.Contains(view, "↑↓ scroll") {
 		t.Fatalf("expected scroll hint: %q", view)
@@ -423,9 +423,6 @@ func TestConversationResponsePaneLayout(t *testing.T) {
 		t.Fatalf("expected ready + etapa hint in status: %q", view)
 	}
 	headerEnd := strings.Index(view, "Submit a message")
-	if headerEnd < 0 {
-		headerEnd = strings.Index(view, "Agent response")
-	}
 	if headerEnd > 0 && strings.Contains(view[:headerEnd], "No active etapa") {
 		t.Fatalf("etapa hint must not sit in chat header: %q", view[:headerEnd])
 	}
@@ -454,20 +451,21 @@ func TestConversationViewWhileStreaming(t *testing.T) {
 	if !strings.Contains(view, "Waiting for harness") {
 		t.Fatalf("view missing wait placeholder: %q", view)
 	}
+	if !strings.Contains(view, "You") {
+		t.Fatalf("view missing You label: %q", view)
+	}
 	if !strings.Contains(view, "[HARN - composer-2.5 · cursor]") {
 		t.Fatalf("view missing response speaker label: %q", view)
 	}
 	foundSpinner := false
 	for _, frame := range waitAnimFrames {
-		if strings.Contains(view, frame+" Waiting") {
-			t.Fatalf("wait spinner must not sit beside Waiting for harness: %q", view)
-		}
 		if strings.Contains(view, frame) {
 			foundSpinner = true
+			break
 		}
 	}
 	if !foundSpinner {
-		t.Fatalf("wait spinner must sit on the speaker status line: %q", view)
+		t.Fatalf("wait spinner must appear while streaming: %q", view)
 	}
 }
 
@@ -589,72 +587,99 @@ func TestDeliverStreamDeltaTextBlocksUntilAccepted(t *testing.T) {
 	}
 }
 
-func TestResponseVisibleLinesScalesWithHeight(t *testing.T) {
+func TestTranscriptVisibleLinesScalesWithHeight(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetHeight(m, 20)
 	m = SetWidth(m, 80)
 	contentH := m.contentAreaHeight()
-	if got := m.responseVisibleLines(contentH); got < chatResponseMinLines {
+	if got := m.transcriptVisibleLines(contentH); got < chatTranscriptMinLines {
 		t.Fatalf("short terminal: got %d", got)
 	}
 	m = SetHeight(m, 50)
-	tall := m.responseVisibleLines(m.contentAreaHeight())
+	tall := m.transcriptVisibleLines(m.contentAreaHeight())
 	m = SetHeight(m, 30)
-	short := m.responseVisibleLines(m.contentAreaHeight())
+	short := m.transcriptVisibleLines(m.contentAreaHeight())
 	if tall <= short {
-		t.Fatalf("taller terminal should grow response pane: tall=%d short=%d", tall, short)
+		t.Fatalf("taller terminal should grow transcript: tall=%d short=%d", tall, short)
 	}
 }
 
-func TestHistoryBoxScrollsLongPrompt(t *testing.T) {
+func TestTranscriptScrollsLongPrompt(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 80)
-	m = SetHeight(m, 40)
+	m = SetHeight(m, 24)
 	m = EnterConversationForTest(m)
-	longPrompt := strings.Repeat("word ", 200)
+	longPrompt := strings.Repeat("word ", 800)
 	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: longPrompt})
 
-	if m.maxHistoryScroll() == 0 {
-		t.Fatal("long prompt should require history scroll")
+	if m.maxTranscriptScroll() == 0 {
+		t.Fatal("long prompt should require transcript scroll")
 	}
-	hist := m.renderConversationHistory()
-	if strings.Contains(hist, longPrompt) {
-		t.Fatal("history box must not render full unwrapped prompt")
+	visible := m.transcriptVisibleLines(m.contentAreaHeight())
+	view := m.renderConversationTranscript(visible)
+	if strings.Contains(view, longPrompt) {
+		t.Fatal("transcript must not render full unwrapped prompt")
 	}
-	if !strings.Contains(hist, "You") {
-		t.Fatalf("history box missing You label: %q", hist)
+	if !strings.Contains(view, "You") {
+		t.Fatalf("transcript missing You label: %q", view)
 	}
 }
 
-func TestHistoryScrollChainBeforeResponse(t *testing.T) {
+func TestTranscriptScrollUnified(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m.transcript = append(m.transcript,
+		convMessage{role: convRoleUser, content: strings.Repeat("line ", 400)},
+		convMessage{role: convRoleAgent, content: strings.Repeat("reply ", 400), modelSlug: "composer-2.5", harnessID: "cursor"},
+	)
+	if m.maxTranscriptScroll() < 2 {
+		t.Fatalf("expected scrollable transcript, max=%d", m.maxTranscriptScroll())
+	}
+	m.inputScrollOffset = 0
+	m.transcriptScrollOffset = 2
+	m.transcriptFollowBottom = false
+
+	next, _ := HandleTestKey(m, "up")
+	if next.transcriptScrollOffset != 1 {
+		t.Fatalf("transcript offset = %d want 1", next.transcriptScrollOffset)
+	}
+
+	next, _ = HandleTestKey(next, "up")
+	if next.transcriptScrollOffset != 0 {
+		t.Fatalf("transcript offset = %d want 0", next.transcriptScrollOffset)
+	}
+}
+
+func TestLinearTranscriptShowsUserAndAgent(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 80)
 	m = SetHeight(m, 40)
 	m = EnterConversationForTest(m)
-	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: strings.Repeat("line ", 120)})
-	m.inputScrollOffset = 0
-	m.historyScrollOffset = 2
-	m.respScrollOffset = 1
-
-	next, _ := HandleTestKey(m, "up")
-	if next.historyScrollOffset != 1 {
-		t.Fatalf("history offset = %d want 1", next.historyScrollOffset)
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "hello there"},
+		{role: convRoleAgent, content: "hi back", modelSlug: "composer-2.5", harnessID: "cursor"},
 	}
-	if next.respScrollOffset != 1 {
-		t.Fatalf("response offset changed before history exhausted: %d", next.respScrollOffset)
+	view := stripANSI(ViewForTest(m))
+	if !strings.Contains(view, "You") {
+		t.Fatalf("missing You: %q", view)
 	}
-
-	next, _ = HandleTestKey(next, "up")
-	if next.historyScrollOffset != 0 {
-		t.Fatalf("history offset = %d want 0", next.historyScrollOffset)
+	if !strings.Contains(view, "hello there") {
+		t.Fatalf("missing user text: %q", view)
 	}
-	if next.respScrollOffset != 1 {
-		t.Fatalf("response offset should stay until history at top: %d", next.respScrollOffset)
+	if !strings.Contains(view, "[HARN - composer-2.5 · cursor]") {
+		t.Fatalf("missing agent header: %q", view)
 	}
-
-	next, _ = HandleTestKey(next, "up")
-	if next.respScrollOffset != 0 {
-		t.Fatalf("response offset = %d want 0", next.respScrollOffset)
+	if !strings.Contains(view, "hi back") {
+		t.Fatalf("missing agent text: %q", view)
+	}
+	if !strings.Contains(view, "│") {
+		t.Fatalf("missing thin bar: %q", view)
+	}
+	// Composer remains a bordered box; transcript does not use the old dual panes.
+	if !strings.Contains(view, "Build") {
+		t.Fatalf("missing composer Build label: %q", view)
 	}
 }
 
