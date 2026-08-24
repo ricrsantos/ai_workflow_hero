@@ -23,22 +23,22 @@
     },
     "opencode": {
       "enabled": true,
-      "model": "opencode/muse-spark-1.2-contributor-free",
+      "model": "opencode-go/deepseek-v4-pro",
       "enable_fast_model": false
     }
   },
   "freechat_default": {
-    "harness": "codex",
-    "model": "gpt-5.6-luna"
+    "harness": "opencode",
+    "model": "opencode-go/deepseek-v4-pro"
   },
   "model_properties": {
     "codex": {
       "gpt-5.6-luna": {
-        "ef": "max",
+        "ef": "high",
         "th": "off"
       },
       "gpt-5.6-terra": {
-        "ef": "high",
+        "ef": "xhigh",
         "th": "off"
       }
     },

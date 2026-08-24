@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-08-24 — Chat wait spinner during thinking
+
+**Change**: `transcriptContentLines` always draws `⠋ Waiting for harness…` at the end of the transcript while `streaming` is true (muted bar). The spinner no longer disappears after the first green agent text, so Codex/OpenCode/Cursor turns that continue with gray thinking or tools still show that Execute is in flight. Hidden on `executeDone` / cancel / failed-or-interrupted parent bubble.
+
+**Validation**: `go test ./...` passed.
+
+## 2026-08-24 — V2.8 TUI cycle configuration screen (idea consensus)
+
+**Decision**: Add a future **Config** sidebar screen only while a cycle is active. It edits the existing `workflow-config.yml`; the Cursor IDE configuration flow remains unchanged. The screen is editable when no agent is running, progressively reveals stage/agent controls, selects harness → model → supported properties interactively, and saves atomically with a round-trip-safe YAML patch. Each save syncs title/objective and still-open stage budgets to SQLite.
+
+**Artifact**: `docs/idea/v2_8_config/config-screen.md`.
+
 ## 2026-08-24 — Release v2.7.0 (local only)
 
 **Outcome**: `go test ./...` green → version bump commit → tag `v2.7.0` on `main` → pushed tag (no GitHub Release). `scripts/release.sh` run locally for `dist/` artifacts.

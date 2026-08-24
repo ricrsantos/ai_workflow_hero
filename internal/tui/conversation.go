@@ -95,6 +95,25 @@ func convWaitTickCmd() tea.Cmd {
 	})
 }
 
+func (m model) showHarnessWait() bool {
+	if !m.streaming {
+		return false
+	}
+	if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
+		msg := m.transcript[m.agentMsgIndex]
+		if msg.failed || msg.interrupted {
+			return false
+		}
+	}
+	return true
+}
+
+func (m model) waitingForHarnessLine(rowW int) string {
+	frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
+	pending := chatInText.Render(frame) + chatInMuted.Render(" Waiting for harness…")
+	return chatThinBarRow(chatBarMuted, pending, rowW)
+}
+
 func (m model) conversationExecuteCmds() tea.Cmd {
 	return tea.Batch(waitConvBatchMsg(m.convStreamCh), convWaitTickCmd(), harnessHealthProbeCmd())
 }
@@ -1902,10 +1921,8 @@ func (m model) transcriptContentLines(contentW int) []string {
 		if m.streaming || len(m.liveAgents) > 0 {
 			header := m.responseSpeakerHeader()
 			out := []string{chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW)}
-			if m.streaming {
-				frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
-				pending := chatInText.Render(frame) + chatInMuted.Render(" Waiting for harness…")
-				out = append(out, chatThinBarRow(chatBarAgent, pending, rowW))
+			if m.showHarnessWait() {
+				out = append(out, m.waitingForHarnessLine(rowW))
 			}
 			return out
 		}
@@ -1916,13 +1933,10 @@ func (m model) transcriptContentLines(contentW int) []string {
 	for i := range m.transcript {
 		msg := &m.transcript[i]
 		if msg.role == convRoleAgent && strings.TrimSpace(msg.content) == "" && m.streaming && !msg.failed && !msg.interrupted {
-			// Keep a pending agent slot visible with spinner while waiting for text.
+			// Keep a pending agent slot visible (header only) while waiting for text.
 			if i == m.agentMsgIndex {
 				bar, label := m.transcriptMessageChrome(*msg)
 				out = append(out, chatThinBarRow(bar, label, rowW))
-				frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
-				pending := chatInText.Render(frame) + chatInMuted.Render(" Waiting for harness…")
-				out = append(out, chatThinBarRow(bar, pending, rowW))
 				if i < len(m.transcript)-1 {
 					out = append(out, "")
 				}
@@ -1939,14 +1953,12 @@ func (m model) transcriptContentLines(contentW int) []string {
 			out = append(out, "")
 		}
 	}
-	if len(out) == 0 && m.streaming {
-		header := m.responseSpeakerHeader()
-		frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
-		pending := chatInText.Render(frame) + chatInMuted.Render(" Waiting for harness…")
-		return []string{
-			chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW),
-			chatThinBarRow(chatBarAgent, pending, rowW),
+	if m.showHarnessWait() {
+		if len(out) == 0 {
+			header := m.responseSpeakerHeader()
+			out = []string{chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW)}
 		}
+		out = append(out, m.waitingForHarnessLine(rowW))
 	}
 	return out
 }

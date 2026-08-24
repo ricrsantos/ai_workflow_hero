@@ -469,6 +469,86 @@ func TestConversationViewWhileStreaming(t *testing.T) {
 	}
 }
 
+func viewHasWaitSpinner(view string) bool {
+	if !strings.Contains(view, "Waiting for harness") {
+		return false
+	}
+	for _, frame := range waitAnimFrames {
+		if strings.Contains(view, frame) {
+			return true
+		}
+	}
+	return false
+}
+
+func streamingTranscriptModel(agentText string, extra ...convMessage) model {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetStreamingForTest(m, true)
+	transcript := []convMessage{{role: convRoleUser, content: "hi"}}
+	transcript = append(transcript, extra...)
+	transcript = append(transcript, convMessage{
+		role:      convRoleAgent,
+		content:   agentText,
+		agentName: "orchestration_agent",
+		modelSlug: "composer-2.5",
+	})
+	m.transcript = transcript
+	m.agentMsgIndex = len(m.transcript) - 1
+	for i := range m.transcript {
+		if m.transcript[i].role == convRoleThinking {
+			m.thinkingMsgIndex = i
+		}
+	}
+	return m
+}
+
+func TestConversationWaitSpinnerPersistsAfterAgentText(t *testing.T) {
+	m := streamingTranscriptModel("Hello from the agent.")
+	view := ViewForTest(m)
+	if !strings.Contains(view, "Hello from the agent.") {
+		t.Fatalf("view missing agent text: %q", view)
+	}
+	if !viewHasWaitSpinner(view) {
+		t.Fatalf("wait spinner must remain after agent text while streaming: %q", view)
+	}
+}
+
+func TestConversationWaitSpinnerPersistsAfterThinking(t *testing.T) {
+	m := streamingTranscriptModel("Hello from the agent.", convMessage{
+		role:    convRoleThinking,
+		content: "Let me inspect the parser.",
+	})
+	view := ViewForTest(m)
+	if !strings.Contains(view, "Thinking:") || !strings.Contains(view, "Let me inspect the parser.") {
+		t.Fatalf("view missing thinking: %q", view)
+	}
+	if !strings.Contains(view, "Hello from the agent.") {
+		t.Fatalf("view missing agent text: %q", view)
+	}
+	if !viewHasWaitSpinner(view) {
+		t.Fatalf("wait spinner must remain after thinking while streaming: %q", view)
+	}
+}
+
+func TestConversationWaitSpinnerClearsOnExecuteDone(t *testing.T) {
+	m := streamingTranscriptModel("Hello from the agent.")
+	updated, _ := m.Update(executeDoneMsg{
+		result: &harness.ExecutionResult{Output: "Hello from the agent.", StreamDone: true},
+	})
+	next := updated.(model)
+	if IsConversationStreaming(next) {
+		t.Fatal("expected streaming stopped after executeDone")
+	}
+	view := ViewForTest(next)
+	if viewHasWaitSpinner(view) {
+		t.Fatalf("wait spinner must disappear after executeDone: %q", view)
+	}
+	if !strings.Contains(view, "Hello from the agent.") {
+		t.Fatalf("view missing agent text after executeDone: %q", view)
+	}
+}
+
 func TestChatAccentRowIsSingleLine(t *testing.T) {
 	long := strings.Repeat("abcdefghij", 20)
 	styled := chatInOK.Render(long)
