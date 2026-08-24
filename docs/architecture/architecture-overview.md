@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **2.6.0** (C6 Codex adapter + TUI redesign). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
+> **Status:** reflects codebase at Hero **2.7.0** (free-chat mode + C6 Codex adapter). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 

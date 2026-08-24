@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-08-24 — Release v2.7.0 (local only)
+
+**Outcome**: `go test ./...` green → version bump commit → tag `v2.7.0` on `main` → pushed tag (no GitHub Release). `scripts/release.sh` run locally for `dist/` artifacts.
+
+**Notes**: Minor bump from 2.6.0 — `hero chat` free-chat mode; C6 Codex adapter idea archived.
+
 ## 2026-08-22 — `hero chat` free-chat mode
 
 **Change**: Added CLI `hero chat` for a Chat-only TUI that does not require project install or git. Config/model/harness prefs live under `~/.workflow-hero/`; Execute workspace is cwd. Navbar shows only Chat; etapa/cycle hints hidden. Palette renames (global): `/hero-model`→`/model`, `/hero-harness`→`/harness`, `Refresh`→`/hero-refresh` (before Go to). Free-chat palette keeps only non-`/hero` items (no Go to). `/harness` in free chat toggles flags without projecting `.cursor`/`.opencode`/`.codex` into cwd.

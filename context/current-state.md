@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **2.6.0** released (tag `v2.6.0` on GitHub). TUI redesign + mid-cycle config update; C6 Codex shipped; QA/Judge next for cycle archive. |
+| **Phase** | Hero **2.7.0** released (tag `v2.7.0`). Free-chat mode (`hero chat`); C6 Codex idea archived. |
 
 ## Technology Stack
 
@@ -68,7 +68,7 @@
 - **`/hero-harness`** / **`/hero-model`**: Codex enable→`.codex/` projection; model step lists native ids (Codex may start app-server); C5 property submenu; Chat `[LABEL - model · harness]` / `Build · model · harness` follow the **active execute pair** (`runtimeHarnessID` + `runtimeModelSlug` from agent YAML / `ResolveExecutePair`), not a cross-mix with freechat; UI-C06-001 §6 goldens.
 - Embedded Runtime: Cursor + `assets/opencode/` + `assets/codex/` (no AGENTS.md / no Codex config template).
 - C5 model properties: `internal/harness` + `internal/modelprops`; catalogs carry `properties` for Cursor base + OpenCode 27 + Codex ids.
-- `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **2.6.0**; integration tests include C6 Codex path.
+- `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **2.7.0**; integration tests include C6 Codex path.
 - Test strategy in [docs/testing/TESTING.md](docs/testing/TESTING.md); bilingual README.
 
 ## Pending Features
@@ -100,7 +100,7 @@
 
 ## Next Steps
 
-1. C6 QA → Judge (Browser UI / E2E skipped by scope); **v2.6.0** already published on GitHub Releases.
+1. C6 QA → Judge (Browser UI / E2E skipped by scope); **v2.7.0** tagged locally (no GitHub Release).
 2. Archive C6 with `/hero-archive` when ready (OpenSpec `codex-adapter`).
 
 ---
