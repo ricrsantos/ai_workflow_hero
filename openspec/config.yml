@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   Project: AI Workflow Hero (Hero) — the Hero CLI + Runtime assets themselves.
   This is Hero's own source code repository, not a project that consumes Hero.
-  Phase: Cycle C6 — Codex Adapter (Hero 2.5.0).
+  Phase: Cycle C7 — TUI Cycle Configuration Screen.
 
   Authoritative baseline sources — read before planning or writing any artifact:
     - AGENTS.md (project summary, doc map, reference lookup order, testing loop, ambiguity policy)
@@ -14,6 +14,7 @@ context: |
     - docs/testing/TESTING.md (testing strategy and `go test ./...`)
     - context/current-state.md (current implementation status and architecture summary)
     - context/context-log.md (recent decisions and session history)
+    - docs/idea/v2_8_config/config-screen.md (product idea source; yields to C7 PRD/UI/ADR on divergence)
 
   Registered documents below are generated from `.workflow-hero/config/documents.json`.
   The registry is the source of truth for the cycle-document list; do not hand-maintain it here:
@@ -39,34 +40,45 @@ context: |
     - [C06 PRD] docs/product/PRD-C06-001-codex-adapter.md — Codex Adapter (Hero 2.5.0)
     - [C06 ADR] docs/architecture/ADR-C06-001-codex-adapter.md — Codex Adapter (ADR-043–048)
     - [C06 UI] docs/product/UI-C06-001-tui-codex-adapter.md — TUI Codex Adapter (Hero 2.5.0)
+    - [C07 PRD] docs/product/PRD-C07-001-tui-cycle-config.md — TUI Cycle Configuration Screen
+    - [C07 ADR] docs/architecture/ADR-C07-001-tui-cycle-config.md — TUI Cycle Configuration and Failed-Stage Retry
+    - [C07 UI] docs/product/UI-C07-001-tui-cycle-config.md — TUI Cycle Configuration Screen
 
   Terminology: **etapa** = workflow stage; **interação** = one conversational round within an etapa;
   **enabled** = user selected harness in hero.json; **available** = adapter IsAvailable true;
-  **native model id** = harness-specific model string (Cursor slug, OpenCode provider/model, Codex native id).
+  **native model id** = harness-specific model string (Cursor slug, OpenCode provider/model, Codex native id);
+  **managed field** = YAML path owned by the Config screen (PRD-C07-001 §4.2); all other YAML is unmanaged.
 
-  Behavioral template: `internal/adapters/opencode/` (OpenCodeAdapter wins over idea file on divergence).
-  Do not invent requirements. Preserve C4/C5 Cursor/OpenCode behavior, Cursor IDE Runtime, checksum upgrade,
+  Authoritative C7 sources: PRD-C07-001, UI-C07-001, ADR-049–053. The idea file yields on divergence.
+  External-edit UX is ADR-050 (no reload/merge/cancel dialog): Save loads the latest valid file and applies
+  the TUI draft only to managed paths. Existing `internal/workflowconfig` Document scaffolding must be
+  aligned to that rule (current revision-mismatch rejection is not the approved behavior).
+
+  Do not invent requirements. Preserve Cursor IDE Runtime, C4/C5/C6 harness behavior, checksum upgrade,
   dual-entry, lazy harness boot, C5 model properties, and deterministic engine. No hero serve daemon.
-  Scope: native=true (generic_agent). Browser UI Validation and QA End-to-End are disabled for C6.
+  Scope: native=true (generic_agent). Browser UI Validation and QA End-to-End are disabled for C7.
 
-  Stack: Go, Cobra, embed.FS, Feature Based + Vertical Slice, huh + Bubble Tea, SQLite (ADR-013).
-  Test command: `go test ./...`. Active OpenSpec change: `codex-adapter`.
+  Stack: Go, Cobra, embed.FS, Feature Based + Vertical Slice, huh + Bubble Tea (existing charmbracelet/bubbletea import; do not migrate to v2), SQLite (ADR-013).
+  Test command: `go test ./...`. Active OpenSpec change: `tui-cycle-config`.
+  TUI skill: golang-tui Elm Architecture — WindowSizeMsg, key.Matches, tea.Cmd for I/O, strings.Builder, Lip Gloss/ANSI width.
 
 rules:
   proposal:
-    - Reference PRD-C06-001 sections; cite ADR-043–048 and UI-C06-001
-    - State in/out of scope; OpenCodeAdapter is the behavioral spec; idea file yields on divergence
-    - Classify CLI vs Runtime per ADR-003; Cursor IDE stays Cursor-only (ADR-043)
-    - Include dedicated Codex model catalog and `.codex/` projection tasks
+    - Reference PRD-C07-001 sections; cite ADR-049–053 and UI-C07-001
+    - State in/out of scope; idea file yields to PRD/UI/ADR; ADR-050 supersedes idea-file conflict dialog
+    - Classify CLI vs Runtime per ADR-003; Cursor IDE stays unchanged
+    - Reuse internal/workflowconfig, modelprops, harnessmgr; do not write cycle config to hero.json
 
   specs:
     - Use WHEN/THEN acceptance scenarios (exactly 4 hashtags for `#### Scenario:`)
-    - Align with PRD-C06-001, UI-C06-001, and ADR-043–048
+    - Align with PRD-C07-001, UI-C07-001, and ADR-049–053
 
   design:
-    - Follow ADR-002, ADR-003, ADR-043–048; Codex JSON-RPC stays inside `internal/adapters/codex`
+    - Follow ADR-002, ADR-003, ADR-049–053; YAML node merge stays in internal/workflowconfig
+    - Config is an Elm Architecture child screen; I/O never blocks Update (ADR-053)
+    - Reuse C5 catalogs/capability snapshots; persist properties to YAML agent blocks only
 
   tasks:
     - Atomic checklist; `go test ./...`; mark PARALLEL vs SERIES
     - Scope native → generic_agent; colocated _test.go per package touched
-    - Keep Codex catalog/projection work standalone; do not fold into UI-only tasks
+    - Keep document merge, engine retry, and TUI form as standalone tracks after the document API

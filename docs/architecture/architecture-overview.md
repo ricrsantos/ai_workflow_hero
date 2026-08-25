@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **2.7.0** (free-chat mode + C6 Codex adapter). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
+> **Status:** reflects codebase at Hero **2.8.0 development** (C7 configuration screen). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -198,7 +198,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
               │
     ┌─────────┼─────────┬──────────┬──────────┬──────────────┐
     │         │         │          │          │              │
-  Chat    Status   Artifacts    Costs     Events      (palette)
+  Chat    Config   Status   Artifacts    Costs     Events (palette)
     │         │         │          │          │              │
     └─────────┴─────────┴──────────┴──────────┘              │
               │                                              │
@@ -210,7 +210,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
          hero.db mutations                              cursor-agent CLI
 ```
 
-**Screens** (`alt+1` … `alt+5`): Chat, Status, Artifacts, Costs, Events. Approvals are handled in Chat via `/hero-approve` / `/hero-reject` (no separate Approvals screen). `hero chat` shows Chat only.
+**Screens** (`alt+1` … `alt+5`): Chat, Config (project cycles only), Status, Artifacts, Costs, Events. Approvals are handled in Chat via `/hero-approve` / `/hero-reject` (no separate Approvals screen). `hero chat` shows Chat only. Config is unavailable without an active cycle.
 
 **TUI modules** (selected):
 
@@ -224,6 +224,8 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 | `harness_boot.go` / `model_gate.go` | Harness availability, model picker at boot |
 | `agentlabels.go` / `chat_format.go` | Live agents box and `[LABEL - model]` transcript |
 | `contextbar.go` | Token usage bar from `result.usage` vs `models/*.yml` |
+| `config_screen.go` | Active-cycle YAML-backed form, progressive disclosure, save states, and failed-stage retry |
+| `internal/workflowconfig` document layer | Latest-file YAML node merge, managed projection/diff, validation, and atomic write |
 | `output_view.go` | Shared scrollable output for Status/Costs/Events |
 
 **Design principles:**
@@ -234,6 +236,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 - **Orchestrator vs Research**: TUI Execute for control slashes uses `agents.orchestration_agent` from `workflow-config.yml`; Research uses a separate `discover_agent` session (`research_session.go`); Cursor IDE chat keeps grilling in the orchestrator session.
 - **Boot** validates harness availability (`IsAvailable`); may prompt for harness selection when `cli.tools` is empty (ADR-027).
 - **Default harness model** is stored in `hero.json` → `harnesses.<tool>` (ADR-030); per-cycle agent models live in `workflow-config.yml`. Freechat and `/hero-new` use the harness default; orchestrator slashes use YAML `orchestration_agent` (then `fallback_model`, then `/hero-model`).
+- **Cycle Config (C7)**: the TUI edits only managed YAML nodes; the latest file supplies unmanaged comments/unknown keys during Save. Successful Save calls cycle sync; completed stages remain protected, and a changed failed stage can be explicitly requeued through `cycle.Service.RetryFailedStage`.
 
 ---
 
@@ -534,7 +537,7 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/harnessmgr` | Adapter registry (cursor + opencode + codex), fallback chain, boot ListModels skip for lazy children |
 | `internal/tui` | Bubble Tea terminal UI |
 | `internal/todos` | `## Pending` section parser in `current-state.md` |
-| `internal/workflowconfig` | `workflow-config.yml` load/normalize |
+| `internal/workflowconfig` | `workflow-config.yml` load/normalize; C7 managed node document, validation, merge, and atomic write |
 | `internal/integration` | Cross-feature integration tests (test-only) |
 | `internal/common/template` | `{{path.key}}` substitution (ADR-006) |
 | `internal/common/clierr` | Formatted CLI errors with suggestions |

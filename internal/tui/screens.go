@@ -12,6 +12,8 @@ import (
 
 func (m model) renderContent() string {
 	switch m.screen {
+	case screenConfig:
+		return m.renderConfig()
 	case screenStatus:
 		return m.renderStatus()
 	case screenArtifacts:
@@ -607,7 +609,7 @@ func max(a, b int) int {
 
 func (m model) screenHasContentScroll() bool {
 	switch m.screen {
-	case screenStatus, screenArtifacts, screenCosts, screenEvents:
+	case screenConfig, screenStatus, screenArtifacts, screenCosts, screenEvents:
 		return true
 	default:
 		return false

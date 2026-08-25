@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-08-25 — C7 implementation (`tui-cycle-config`)
+
+**Change**: Added active-cycle Config navigation and an asynchronous TUI Config screen with keyboard focus/editing for identity, scope, stages, agent harness/model/properties, and save/retry actions. Agent model choices are constrained to the selected enabled harness via the existing cache/catalog model list; C5 property visibility uses `modelprops` capability snapshots, with unknown-capability warnings preserving YAML values. Nested subagent model choices use the parent harness. `workflowconfig.Document.Write` now loads the latest valid YAML, applies only managed values, validates, and atomically replaces the file without a revision-conflict dialog. Added managed diffs and `Engine`/`cycle.Service` failed-stage retry with an append-only `stage_retried` event.
+
+**Validation**: `go test ./...` passed.
+
+## 2026-08-25 — C7 QA remediation (`tui-cycle-config`)
+
+**Change**: Config save validation and operational errors now preserve the visible draft and show field-level feedback. Agent controls are associated with their owning stage, so completed-stage controls are read-only. Added nested `same_of_agent` and subagent property controls, validation against known model/capability metadata, focused-field scrolling, and deferred dirty-exit navigation after Save or Discard. Failed-stage retry eligibility now uses the managed diff for that exact stage; retry always transitions Failed to Waiting even when the newly saved stage is disabled.
+
+**Validation**: Added TUI interaction, workflow-config atomic failure, engine disabled-retry, and cycle service retry coverage; `go test ./... -count=1 -timeout=10m` passed.
+
+## 2026-08-25 — C7 Planning SDD (`tui-cycle-config`)
+
+**Decision**: OpenSpec change `tui-cycle-config` created from PRD/UI/ADR-C07-001. YAML remains source of truth. Save uses ADR-050 latest-file managed-node merge (idea-file reload/merge/cancel dialog out of scope). Retry is an engine Failed→Waiting transition with no new CLI command. Scope native → `generic_agent`. `openspec/config.yml` context regenerated from `documents.json` including C07 docs.
+
+**Outcome**: SDD at `openspec/changes/tui-cycle-config/` (36 tasks). Persist slug with `hero cycle openspec-change tui-cycle-config`.
+
 ## 2026-08-25 — `/hero-start` blocked after finished `/hero-resume`
 
 **Problem**: `/hero-resume` set `actionBusy` for the status timer but `executeDone` only called `setStatusResult` when the label was `/hero-start`. The palette then reported `busy — wait for /hero-resume to finish` even after the chat turn completed.
@@ -223,3 +241,15 @@
 - **C5 archived** (`model-properties-tui`); Judge approved without formal SDD verify (judge_agent empty in opencode harness).
 
 ---
+
+## 2026-08-25 — C7 Research: TUI cycle configuration screen
+
+**Outcome**: Completed interactive requirements grilling for the active-cycle Config screen described in `docs/idea/v2_8_config/config-screen.md`. Confirmed YAML remains the single source of truth; TUI precedence applies only to managed fields during parallel edits; unmanaged latest-file content is preserved; invalid/missing YAML is never replaced; completed stages are read-only; failed stages support explicit stage-specific retry after a saved configuration change, with fresh attempt counters and preserved events/metrics; chat language is non-empty free text; active stage timeout and iteration budgets remain positive.
+
+**Artifacts**: `docs/product/PRD-C07-001-tui-cycle-config.md`, `docs/product/UI-C07-001-tui-cycle-config.md`, and proposed `docs/architecture/ADR-C07-001-tui-cycle-config.md`, all registered in `.workflow-hero/config/documents.json`. `PRD.md`, `UI.md`, `ADR.md`, `architecture-overview.md`, `TESTING.md`, and context state were updated.
+
+---
+
+## 2026-08-25 — C7 Config judge gaps
+
+**Outcome**: Config asynchronously checks every enabled harness and renders a yellow warning with the availability cause. `browser_ui_agent` fields now require both frontend scope and Browser UI Validation. Missing capability metadata is flagged beside every visible parent/subagent and `fallback_model` model field, while keeping configured property values intact.

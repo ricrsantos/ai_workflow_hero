@@ -25,6 +25,20 @@ func TestRuntimeAssets_StageOrder(t *testing.T) {
 	}
 }
 
+// The C7 Config screen is native TUI code. Cursor Runtime continues to edit
+// workflow-config.yml directly and must not acquire a Config-screen command.
+func TestRuntimeAssets_C7DoesNotAddConfigScreenAsset(t *testing.T) {
+	entries, err := fs.Glob(assets.FS, "cursor/**/*config*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range entries {
+		if strings.Contains(path, "config-screen") || strings.Contains(path, "config_screen") {
+			t.Fatalf("Cursor Runtime must not contain a TUI Config asset: %s", path)
+		}
+	}
+}
+
 // TestRuntimeAssets_ApproveRejectCancelFinish verifies control loop commands are documented.
 func TestRuntimeAssets_ApproveRejectCancelFinish(t *testing.T) {
 	keywords := []string{

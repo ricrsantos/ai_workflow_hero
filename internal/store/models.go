@@ -31,6 +31,7 @@ const (
 	EventFinished        = "finished"
 	EventContinued       = "continued"
 	EventEscalated       = "escalated"
+	EventStageRetried    = "stage_retried"
 	EventHarnessInvoked  = "harness_invoked"
 	EventLegacyImported  = "legacy_imported"
 )

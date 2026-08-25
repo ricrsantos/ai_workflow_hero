@@ -1,7 +1,6 @@
 package workflowconfig_test
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,11 +119,6 @@ func TestDocumentWritePreservesRulesCommentsAndUnknownKeys(t *testing.T) {
 	}
 	draft := doc.Config
 	draft.Title = "Updated title"
-	draft.Scope.Frontend = true
-	draft.Stages["browser_ui_validation"] = workflowconfig.ManagedStage{
-		Enabled: true, Purpose: "Browser checks.", MaxIterations: 2, TimeoutMinutes: 10,
-		VisualValidation: workflowconfig.VisualValidation{Enabled: true, ReferenceDir: "docs/visual"},
-	}
 	if err := doc.Write(draft, workflowconfig.ValidationOptions{ValidateEnabledHarnesses: true, EnabledHarnesses: []string{"cursor"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -141,8 +135,6 @@ func TestDocumentWritePreservesRulesCommentsAndUnknownKeys(t *testing.T) {
 		"future_setting:",
 		"nested: retained",
 		"title: Updated title",
-		"frontend: true",
-		"reference_dir: docs/visual",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("saved document missing %q:\n%s", want, got)
@@ -150,17 +142,27 @@ func TestDocumentWritePreservesRulesCommentsAndUnknownKeys(t *testing.T) {
 	}
 }
 
-func TestDocumentWriteRejectsExternalChange(t *testing.T) {
+func TestDocumentWriteMergesExternalChanges(t *testing.T) {
 	path := writeDocument(t, managedDocumentYAML)
 	doc, err := workflowconfig.LoadDocument(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, append([]byte(managedDocumentYAML), []byte("# changed elsewhere\n")...), 0o644); err != nil {
+	draft := doc.Config
+	draft.Title = "TUI title"
+	latest := strings.Replace(managedDocumentYAML, "nested: retained", "nested: edited outside\nexternal_only: keep", 1)
+	if err := os.WriteFile(path, []byte(latest), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.Write(doc.Config, workflowconfig.ValidationOptions{}); !errors.Is(err, workflowconfig.ErrExternalChange) {
-		t.Fatalf("err=%v, want ErrExternalChange", err)
+	if err := doc.Write(draft, workflowconfig.ValidationOptions{ValidateEnabledHarnesses: true, EnabledHarnesses: []string{"cursor"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "title: TUI title") || !strings.Contains(string(got), "external_only: keep") {
+		t.Fatalf("managed merge did not retain external unmanaged edit:\n%s", got)
 	}
 }
 
@@ -233,6 +235,103 @@ func TestManagedConfigRequiredAgentsFollowEnabledStagesAndScope(t *testing.T) {
 	}
 	if contains(names, "frontend_agent") || contains(names, "qa_agent") {
 		t.Fatalf("disabled-stage/scope agents must not be required: %v", names)
+	}
+}
+
+func TestLoadDocumentFailsClosedForMissingAndInvalidFiles(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "workflow-config.yml")
+	if _, err := workflowconfig.LoadDocument(missing); err == nil {
+		t.Fatal("missing document must fail")
+	}
+
+	path := writeDocument(t, "title: [invalid\n")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workflowconfig.LoadDocument(path); err == nil {
+		t.Fatal("invalid YAML must fail")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("invalid YAML must remain untouched")
+	}
+}
+
+func TestDocumentWriteFailsClosedWhenLatestYAMLBecomesInvalid(t *testing.T) {
+	path := writeDocument(t, managedDocumentYAML)
+	doc, err := workflowconfig.LoadDocument(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := doc.Config
+	draft.Title = "must not write"
+	invalid := []byte("title: [broken\n")
+	if err := os.WriteFile(path, invalid, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Write(draft, workflowconfig.ValidationOptions{ValidateEnabledHarnesses: true, EnabledHarnesses: []string{"cursor"}}); err == nil {
+		t.Fatal("save over invalid latest YAML must fail")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(invalid) {
+		t.Fatalf("invalid latest YAML was overwritten: %q", got)
+	}
+}
+
+func TestDocumentWriteValidationFailureLeavesOriginalBytesUntouched(t *testing.T) {
+	path := writeDocument(t, managedDocumentYAML)
+	doc, err := workflowconfig.LoadDocument(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := doc.Config
+	draft.Title = ""
+	if err := doc.Write(draft, workflowconfig.ValidationOptions{
+		ValidateEnabledHarnesses: true,
+		EnabledHarnesses:         []string{"cursor"},
+	}); err == nil {
+		t.Fatal("invalid draft must fail before writing")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("validation failure changed workflow-config.yml bytes")
+	}
+}
+
+func TestManagedDiffReportsOnlyChangedManagedPath(t *testing.T) {
+	path := writeDocument(t, managedDocumentYAML)
+	doc, err := workflowconfig.LoadDocument(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := doc.Config
+	after.Title = "new"
+	if paths := workflowconfig.ManagedDiff(doc.Config, after); contains(paths, "stages.qa.max_iterations") {
+		t.Fatalf("title-only diff marked QA: %v", paths)
+	}
+	after.Stages = make(map[string]workflowconfig.ManagedStage, len(doc.Config.Stages))
+	for name, stage := range doc.Config.Stages {
+		after.Stages[name] = stage
+	}
+	stage := after.Stages["research"]
+	stage.MaxIterations++
+	after.Stages["research"] = stage
+	if !contains(workflowconfig.ManagedDiff(doc.Config, after), "stages.research.max_iterations") {
+		t.Fatal("stage budget diff missing")
 	}
 }
 

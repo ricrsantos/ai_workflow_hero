@@ -1,6 +1,6 @@
 # Architecture Decision Records — AI Workflow Hero
 
-> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md). **C3 ADRs (024–030):** [ADR-C03-001-cursor-harness-tui-autonomy.md](ADR-C03-001-cursor-harness-tui-autonomy.md). **C4 ADRs (031–037):** [ADR-C04-001-multi-harness.md](ADR-C04-001-multi-harness.md). **C5 ADRs (038–042):** [ADR-C05-001-model-properties-tui.md](ADR-C05-001-model-properties-tui.md). **C6 ADRs (043–048):** [ADR-C06-001-codex-adapter.md](ADR-C06-001-codex-adapter.md).
+> Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md). **C3 ADRs (024–030):** [ADR-C03-001-cursor-harness-tui-autonomy.md](ADR-C03-001-cursor-harness-tui-autonomy.md). **C4 ADRs (031–037):** [ADR-C04-001-multi-harness.md](ADR-C04-001-multi-harness.md). **C5 ADRs (038–042):** [ADR-C05-001-model-properties-tui.md](ADR-C05-001-model-properties-tui.md). **C6 ADRs (043–048):** [ADR-C06-001-codex-adapter.md](ADR-C06-001-codex-adapter.md). **C7 proposed ADRs (049–053):** [ADR-C07-001-tui-cycle-config.md](ADR-C07-001-tui-cycle-config.md).
 >
 > **Architecture overview** (high-level diagrams and package map; non-normative): [architecture-overview.md](architecture-overview.md).
 
@@ -54,6 +54,11 @@
 | [ADR-046](ADR-C06-001-codex-adapter.md#adr-046-codex-projection-assets-codex-to-codex) | Codex projection: `assets/codex/` → `.codex/`; enable provisions; disable keeps files | Accepted |
 | [ADR-047](ADR-C06-001-codex-adapter.md#adr-047-chatgpt-login-outside-tui-no-api-key-no-cli-version-pin) | ChatGPT login outside TUI; no API key; no CLI version pin | Accepted |
 | [ADR-048](ADR-C06-001-codex-adapter.md#adr-048-hero-250-opt-in-codex-minor) | Hero 2.5.0: opt-in Codex minor | Accepted |
+| [ADR-049](ADR-C07-001-tui-cycle-config.md#adr-049-config-is-a-tui-editor-over-the-active-yaml-document) | Config is a TUI editor over the active YAML document | Proposed |
+| [ADR-050](ADR-C07-001-tui-cycle-config.md#adr-050-managed-node-merge-preserves-unmanaged-yaml-content) | Managed-node merge preserves unmanaged YAML content | Proposed |
+| [ADR-051](ADR-C07-001-tui-cycle-config.md#adr-051-cycle-sync-remains-the-boundary-between-yaml-and-sqlite) | Cycle sync remains the YAML/SQLite boundary | Proposed |
+| [ADR-052](ADR-C07-001-tui-cycle-config.md#adr-052-failed-stage-retry-is-an-explicit-engine-transition) | Failed-stage retry is an explicit engine transition | Proposed |
+| [ADR-053](ADR-C07-001-tui-cycle-config.md#adr-053-tui-elm-architecture-keeps-file-and-harness-work-off-update) | TUI Elm Architecture keeps I/O off `Update` | Proposed |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 

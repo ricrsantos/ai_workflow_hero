@@ -464,6 +464,17 @@ func (s *Service) StartStage(name string) error {
 	return s.Engine.StartStage(c.ID, name)
 }
 
+// RetryFailedStage explicitly requeues a failed stage after configuration has
+// been saved and synchronized. It is intentionally a service API only; no
+// free-form Cobra command is exposed.
+func (s *Service) RetryFailedStage(name string) error {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	return s.Engine.RetryFailedStage(c.ID, name)
+}
+
 // CloseStage closes a running stage (used by Runtime / tests).
 func (s *Service) CloseStage(name string, summary string, metricsJSON string, failed bool) error {
 	c, err := s.Store.GetActiveCycle()

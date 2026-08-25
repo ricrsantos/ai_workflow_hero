@@ -138,6 +138,55 @@ func (e *Engine) StartStage(cycleID int64, stageName string) error {
 	return err
 }
 
+// RetryFailedStage requeues one failed stage using its current YAML settings.
+// It intentionally preserves historical events, metric rows, and harness
+// bindings; only the next attempt's counters and timing are reset.
+func (e *Engine) RetryFailedStage(cycleID int64, stageName string) error {
+	st, err := e.Store.GetStage(cycleID, stageName)
+	if err != nil {
+		return err
+	}
+	if st.Status != store.StageFailed {
+		return fmt.Errorf("stage %s is %s, only Failed stages can be retried", stageName, st.Status)
+	}
+	c, err := e.Store.GetCycle(cycleID)
+	if err != nil {
+		return err
+	}
+	var cfg WorkflowConfig
+	if err := yaml.Unmarshal([]byte(c.ConfigSnapshotJSON), &cfg); err != nil {
+		return fmt.Errorf("cycle workflow-config snapshot: %w", err)
+	}
+	settings, ok := cfg.Stages[stageName]
+	if !ok {
+		return fmt.Errorf("workflow-config.yml: stage %q is missing", stageName)
+	}
+	st.Iteration = 0
+	st.StartedAt = ""
+	st.CompletedAt = ""
+	st.MaxIterations = settings.MaxIterations
+	if st.MaxIterations <= 0 {
+		st.MaxIterations = 1
+	}
+	st.TimeoutMinutes = settings.TimeoutMinutes
+	st.RequireHumanApproval = settings.RequireHumanApproval
+	// A retry is an explicit Failed → Waiting transition. The current config's
+	// enabled value is applied to the retried stage settings, but it must not
+	// turn this user-requested retry into a skipped stage.
+	st.Status = store.StageWaiting
+	if err := e.Store.UpdateStage(st); err != nil {
+		return err
+	}
+	_, err = e.Store.AppendEvent(store.Event{
+		CycleID: cycleID, Type: store.EventStageRetried,
+		PayloadJSON: fmt.Sprintf(`{"stage":%q}`, stageName),
+	})
+	if err == nil {
+		e.Logger.Info("failed stage retried", "cycle_id", cycleID, "stage", stageName)
+	}
+	return err
+}
+
 // CloseStage completes a running stage into PendingApproval or Completed/Failed.
 func (e *Engine) CloseStage(cycleID int64, stageName string, in StageCloseInput) error {
 	st, err := e.Store.GetStage(cycleID, stageName)

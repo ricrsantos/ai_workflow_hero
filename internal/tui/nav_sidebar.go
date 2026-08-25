@@ -13,6 +13,7 @@ var navScreens = []struct {
 	label  string
 }{
 	{screenConversation, "Chat"},
+	{screenConfig, "Config"},
 	{screenStatus, "Status"},
 	{screenArtifacts, "Artifacts"},
 	{screenCosts, "Costs"},
@@ -102,6 +103,9 @@ func (m model) renderNavSidebar(height int) string {
 		if m.freeChatMode && item.screen != screenConversation {
 			continue
 		}
+		if item.screen == screenConfig && !m.hasActiveCycle() {
+			continue
+		}
 		marker := "  "
 		rowStyle := navSidebarItemStyle
 		if item.screen == m.screen {
@@ -113,7 +117,11 @@ func (m model) renderNavSidebar(height int) string {
 
 	footer := ""
 	if !m.freeChatMode {
-		footer = navSidebarFooterStyle.Render(truncateNavText(" alt+1-5", innerW))
+		hint := " alt+1-5"
+		if m.hasActiveCycle() {
+			hint = " alt+1-5 · events palette"
+		}
+		footer = navSidebarFooterStyle.Render(truncateNavText(hint, innerW))
 	} else {
 		footer = navSidebarFooterStyle.Render(truncateNavText(" chat", innerW))
 	}

@@ -1,19 +1,14 @@
 package workflowconfig
 
 import (
-	"crypto/sha256"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
-
-// ErrExternalChange reports that workflow-config.yml changed after the TUI
-// loaded it. Callers may reload or explicitly reapply their draft.
-var ErrExternalChange = errors.New("workflow-config.yml changed outside the TUI")
 
 // ManagedConfig is the workflow-config.yml subset owned by the TUI Config
 // screen. Fields outside this type, including workflow_rules and comments,
@@ -61,14 +56,13 @@ type VisualValidation struct {
 	ReferenceDir string `yaml:"reference_dir"`
 }
 
-// Document retains the parsed YAML node tree and revision read by the Config
-// screen. The node tree enables targeted edits without discarding comments,
-// mapping order, workflow_rules, or future keys.
+// Document retains the parsed YAML node tree read by the Config screen. Save
+// always reloads the latest document before applying managed fields, so the
+// tree is useful for inspection while the file remains the source of truth.
 type Document struct {
-	path     string
-	revision [sha256.Size]byte
-	root     yaml.Node
-	Config   ManagedConfig
+	path   string
+	root   yaml.Node
+	Config ManagedConfig
 }
 
 // Path returns the source workflow-config.yml path.
@@ -98,10 +92,9 @@ func LoadDocument(path string) (*Document, error) {
 	}
 	ensureManagedMaps(&cfg)
 	return &Document{
-		path:     path,
-		revision: sha256.Sum256(raw),
-		root:     root,
-		Config:   cfg,
+		path:   path,
+		root:   root,
+		Config: cfg,
 	}, nil
 }
 
@@ -137,6 +130,9 @@ func (c ManagedConfig) Validate(opts ValidationOptions) error {
 	if strings.TrimSpace(c.Objective) == "" {
 		return fmt.Errorf("objective is required")
 	}
+	if strings.TrimSpace(c.WorkflowConfig.UserPreferredLanguage) == "" {
+		return fmt.Errorf("workflow_config.user_preferred_language is required")
+	}
 	for name, stage := range c.Stages {
 		if !stage.Enabled {
 			continue
@@ -163,11 +159,11 @@ func (c ManagedConfig) Validate(opts ValidationOptions) error {
 		if !ok {
 			return fmt.Errorf("agents.%s is required", name)
 		}
-		if err := validateAgent("agents."+name, agent, opts); err != nil {
+		if err := validateAgent("agents."+name, agent, true, opts); err != nil {
 			return err
 		}
 	}
-	return validateAgent("fallback_model", c.FallbackModel, opts)
+	return validateAgent("fallback_model", c.FallbackModel, false, opts)
 }
 
 // RequiredAgentNames returns exactly the agent blocks required by the current
@@ -212,7 +208,7 @@ func stageEnabled(c ManagedConfig, name string) bool {
 	return ok && stage.Enabled
 }
 
-func validateAgent(path string, agent AgentModelConfig, opts ValidationOptions) error {
+func validateAgent(path string, agent AgentModelConfig, validateSubagent bool, opts ValidationOptions) error {
 	harnessID := strings.TrimSpace(strings.ToLower(agent.Harness))
 	if harnessID == "" {
 		return fmt.Errorf("%s.harness is required", path)
@@ -229,7 +225,7 @@ func validateAgent(path string, agent AgentModelConfig, opts ValidationOptions) 
 	if err := validateProperties(path, harnessID, agent.Model, agent.ReasoningEffort, agent.Thinking, agent.EnableFastModel, opts); err != nil {
 		return err
 	}
-	if agent.Subagent.SameOfAgent {
+	if !validateSubagent || agent.Subagent.SameOfAgent {
 		return nil
 	}
 	if strings.TrimSpace(agent.Subagent.Model) == "" {
@@ -277,8 +273,9 @@ func validateProperty(path, harnessID, modelID, key, value string, opts Validati
 	return fmt.Errorf("%s value %q is not supported by %s · %s", path, value, harnessID, modelID)
 }
 
-// Write saves draft atomically only when the source revision still matches.
-// It updates only TUI-managed nodes in the original YAML node tree.
+// Write merges draft-managed values onto the latest valid on-disk document and
+// atomically replaces it. Unmanaged nodes always come from the latest file;
+// there is intentionally no revision-conflict flow.
 func (d *Document) Write(draft ManagedConfig, opts ValidationOptions) error {
 	if d == nil {
 		return fmt.Errorf("workflow document is nil")
@@ -286,14 +283,11 @@ func (d *Document) Write(draft ManagedConfig, opts ValidationOptions) error {
 	if err := draft.Validate(opts); err != nil {
 		return err
 	}
-	raw, err := os.ReadFile(d.path)
+	latest, err := LoadDocument(d.path)
 	if err != nil {
-		return fmt.Errorf("read workflow-config.yml before save: %w", err)
+		return fmt.Errorf("load latest workflow-config.yml before save: %w", err)
 	}
-	if sha256.Sum256(raw) != d.revision {
-		return ErrExternalChange
-	}
-	updated, err := applyDraft(d.root, draft)
+	updated, err := applyDraft(latest.root, draft)
 	if err != nil {
 		return err
 	}
@@ -307,18 +301,128 @@ func (d *Document) Write(draft ManagedConfig, opts ValidationOptions) error {
 	return nil
 }
 
-// Reapply writes draft over the latest on-disk document. It is the explicit
-// conflict-resolution path: unknown keys and comments from the latest version
-// are retained, while managed fields take the draft values.
+// Reapply is retained as a compatibility alias for Write. Save always applies
+// draft-managed values over the latest valid document.
 func (d *Document) Reapply(draft ManagedConfig, opts ValidationOptions) error {
-	if d == nil {
-		return fmt.Errorf("workflow document is nil")
+	return d.Write(draft, opts)
+}
+
+// ManagedDiff lists managed YAML paths that differ between two form drafts.
+// It deliberately excludes workflow_rules, comments, ordering, and unknown
+// YAML keys because Config does not own them.
+func ManagedDiff(before, after ManagedConfig) []string {
+	var paths []string
+	add := func(path string, changed bool) {
+		if changed {
+			paths = append(paths, path)
+		}
 	}
-	latest, err := LoadDocument(d.path)
-	if err != nil {
-		return err
+	add("title", before.Title != after.Title)
+	add("objective", before.Objective != after.Objective)
+	add("workflow_config.user_preferred_language",
+		before.WorkflowConfig.UserPreferredLanguage != after.WorkflowConfig.UserPreferredLanguage)
+	for _, field := range []struct {
+		name string
+		a, b bool
+	}{
+		{"backend", before.Scope.Backend, after.Scope.Backend},
+		{"frontend", before.Scope.Frontend, after.Scope.Frontend},
+		{"native", before.Scope.Native, after.Scope.Native},
+		{"script", before.Scope.Script, after.Scope.Script},
+		{"infrastructure", before.Scope.Infrastructure, after.Scope.Infrastructure},
+	} {
+		add("scope."+field.name, field.a != field.b)
 	}
-	return latest.Write(draft, opts)
+	for _, name := range managedStageNames {
+		b, bok := before.Stages[name]
+		a, aok := after.Stages[name]
+		if bok != aok {
+			paths = append(paths, "stages."+name)
+			continue
+		}
+		if !bok {
+			continue
+		}
+		add("stages."+name+".enabled", b.Enabled != a.Enabled)
+		add("stages."+name+".purpose", b.Purpose != a.Purpose)
+		add("stages."+name+".max_iterations", b.MaxIterations != a.MaxIterations)
+		add("stages."+name+".timeout_minutes", b.TimeoutMinutes != a.TimeoutMinutes)
+		add("stages."+name+".require_human_approval", b.RequireHumanApproval != a.RequireHumanApproval)
+		if name == "browser_ui_validation" {
+			add("stages."+name+".visual_validation.enabled", b.VisualValidation.Enabled != a.VisualValidation.Enabled)
+			add("stages."+name+".visual_validation.reference_dir", b.VisualValidation.ReferenceDir != a.VisualValidation.ReferenceDir)
+		}
+		if name == "qa_end_to_end" {
+			add("stages."+name+".use_playwright", b.UsePlaywright != a.UsePlaywright)
+		}
+	}
+	for _, name := range managedAgentNamesUnion(before, after) {
+		b, bok := before.Agents[name]
+		a, aok := after.Agents[name]
+		if bok != aok {
+			paths = append(paths, "agents."+name)
+		} else if bok {
+			appendAgentDiff(&paths, "agents."+name, b, a)
+		}
+	}
+	appendAgentDiff(&paths, "fallback_model", before.FallbackModel, after.FallbackModel)
+	return paths
+}
+
+func managedAgentNamesUnion(before, after ManagedConfig) []string {
+	seen := make(map[string]bool)
+	for _, name := range managedAgentNames(before) {
+		seen[name] = true
+	}
+	for _, name := range managedAgentNames(after) {
+		seen[name] = true
+	}
+	out := make([]string, 0, len(seen))
+	for _, name := range []string{"orchestration_agent", "discover_agent", "planning_agent", "context_agent", "backend_agent", "frontend_agent", "generic_agent", "qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent"} {
+		if seen[name] {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func appendAgentDiff(paths *[]string, prefix string, before, after AgentModelConfig) {
+	for _, field := range []struct {
+		name string
+		a, b any
+	}{
+		{"harness", before.Harness, after.Harness},
+		{"model", before.Model, after.Model},
+		{"enable_fast_model", before.EnableFastModel, after.EnableFastModel},
+		{"thinking", before.Thinking, after.Thinking},
+		{"reasoning_effort", before.ReasoningEffort, after.ReasoningEffort},
+		{"subagent", before.Subagent, after.Subagent},
+	} {
+		if !reflect.DeepEqual(field.a, field.b) {
+			if field.name == "subagent" {
+				appendSubagentDiff(paths, prefix+".subagent", before.Subagent, after.Subagent)
+			} else {
+				*paths = append(*paths, prefix+"."+field.name)
+			}
+		}
+	}
+}
+
+func appendSubagentDiff(paths *[]string, prefix string, before, after SubagentConfig) {
+	for _, field := range []struct {
+		name string
+		a, b any
+	}{
+		{"same_of_agent", before.SameOfAgent, after.SameOfAgent},
+		{"model", before.Model, after.Model},
+		{"enable_fast_model", before.EnableFastModel, after.EnableFastModel},
+		{"thinking", before.Thinking, after.Thinking},
+		{"reasoning_effort", before.ReasoningEffort, after.ReasoningEffort},
+	} {
+		if !reflect.DeepEqual(field.a, field.b) {
+			*paths = append(*paths, prefix+"."+field.name)
+		}
+	}
 }
 
 func applyDraft(root yaml.Node, draft ManagedConfig) (yaml.Node, error) {

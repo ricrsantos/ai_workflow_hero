@@ -211,6 +211,42 @@ func TestServiceRunRecordsHarnessInvokedFallback(t *testing.T) {
 	}
 }
 
+func TestServiceRetryFailedStage(t *testing.T) {
+	dir := setupProject(t)
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("qa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CloseStage("qa", "failed", "", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RetryFailedStage("qa"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := svc.Store.GetStage(c.ID, "qa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stage.Status != store.StageWaiting || stage.Iteration != 0 {
+		t.Fatalf("retried stage=%+v", stage)
+	}
+	events, err := svc.Events(store.EventStageRetried, 5)
+	if err != nil || len(events.Events) != 1 {
+		t.Fatalf("retry events=%+v err=%v", events, err)
+	}
+}
+
 func TestFindProjectRoot(t *testing.T) {
 	dir := setupProject(t)
 	nested := filepath.Join(dir, "pkg", "x")

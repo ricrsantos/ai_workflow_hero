@@ -195,6 +195,95 @@ func TestTransitionsApproveRejectCancelFinishContinue(t *testing.T) {
 	}
 }
 
+func TestRetryFailedStageResetsCountersUsesSnapshotAndPreservesHistory(t *testing.T) {
+	e, s := openTestEngine(t)
+	snapshot := `title: Retry
+objective: Retry QA
+stages:
+  qa:
+    enabled: true
+    max_iterations: 5
+    timeout_minutes: 45
+    require_human_approval: true
+`
+	cycleID, err := s.CreateCycle(store.Cycle{
+		Number: 1, Title: "Retry", Objective: "Retry QA", Status: store.CycleStatusActive,
+		ConfigSnapshotJSON: snapshot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateStages([]store.Stage{
+		{CycleID: cycleID, Name: "research", Status: store.StageCompleted, MaxIterations: 2, Iteration: 2, SortOrder: 0},
+		{CycleID: cycleID, Name: "qa", Status: store.StageFailed, MaxIterations: 1, Iteration: 3, TimeoutMinutes: 10, StartedAt: "2026-08-01T00:00:00Z", CompletedAt: "2026-08-01T01:00:00Z", SortOrder: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AppendEvent(store.Event{CycleID: cycleID, Type: store.EventStageCompleted, PayloadJSON: `{"stage":"qa","status":"Failed"}`}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertMetric(store.Metric{CycleID: cycleID, StageName: "qa", Agent: "qa_agent", InputTokens: 11}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.RetryFailedStage(cycleID, "qa"); err != nil {
+		t.Fatal(err)
+	}
+	qa, err := s.GetStage(cycleID, "qa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qa.Status != store.StageWaiting || qa.Iteration != 0 || qa.StartedAt != "" || qa.CompletedAt != "" || qa.MaxIterations != 5 || qa.TimeoutMinutes != 45 || !qa.RequireHumanApproval {
+		t.Fatalf("retried stage=%+v", qa)
+	}
+	research, _ := s.GetStage(cycleID, "research")
+	if research.Status != store.StageCompleted || research.Iteration != 2 {
+		t.Fatalf("unrelated stage changed: %+v", research)
+	}
+	events, err := s.ListEvents(cycleID, "", 10)
+	if err != nil || len(events) != 2 || events[1].Type != store.EventStageRetried {
+		t.Fatalf("events=%+v err=%v", events, err)
+	}
+	metrics, err := s.ListMetrics(cycleID)
+	if err != nil || len(metrics) != 1 || metrics[0].InputTokens != 11 {
+		t.Fatalf("metrics=%+v err=%v", metrics, err)
+	}
+	if err := e.RetryFailedStage(cycleID, "qa"); err == nil {
+		t.Fatal("retrying a Waiting stage must fail")
+	}
+}
+
+func TestRetryFailedStageQueuesDisabledConfiguration(t *testing.T) {
+	e, s := openTestEngine(t)
+	cycleID, err := s.CreateCycle(store.Cycle{
+		Number: 1, Title: "Retry", Objective: "Retry QA", Status: store.CycleStatusActive,
+		ConfigSnapshotJSON: `stages:
+  qa:
+    enabled: false
+    max_iterations: 2
+    timeout_minutes: 10
+    require_human_approval: false
+`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateStages([]store.Stage{{
+		CycleID: cycleID, Name: "qa", Status: store.StageFailed, MaxIterations: 1, SortOrder: 0,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.RetryFailedStage(cycleID, "qa"); err != nil {
+		t.Fatal(err)
+	}
+	stage, err := s.GetStage(cycleID, "qa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stage.Status != store.StageWaiting {
+		t.Fatalf("disabled failed retry status=%s, want Waiting", stage.Status)
+	}
+}
+
 func TestCreateCycleFromConfig(t *testing.T) {
 	dir := t.TempDir()
 	cycleDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")

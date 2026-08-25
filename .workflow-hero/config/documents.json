@@ -175,6 +175,30 @@
       "slug": "tui-codex-adapter",
       "path": "docs/product/UI-C06-001-tui-codex-adapter.md",
       "title": "TUI Codex Adapter (Hero 2.5.0)"
+    },
+    {
+      "category": "PRD",
+      "cycle": "C07",
+      "seq": 1,
+      "slug": "tui-cycle-config",
+      "path": "docs/product/PRD-C07-001-tui-cycle-config.md",
+      "title": "TUI Cycle Configuration Screen"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C07",
+      "seq": 1,
+      "slug": "tui-cycle-config",
+      "path": "docs/architecture/ADR-C07-001-tui-cycle-config.md",
+      "title": "TUI Cycle Configuration and Failed-Stage Retry"
+    },
+    {
+      "category": "UI",
+      "cycle": "C07",
+      "seq": 1,
+      "slug": "tui-cycle-config",
+      "path": "docs/product/UI-C07-001-tui-cycle-config.md",
+      "title": "TUI Cycle Configuration Screen"
     }
   ]
 }

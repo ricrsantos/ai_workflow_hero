@@ -73,7 +73,7 @@
 
 ## Pending Features
 
-- **TUI cycle configuration screen (v2.8 idea)** — planned guided editor for the active cycle's `workflow-config.yml`; preserves the YAML as source of truth, uses existing harness/model capability discovery, and leaves the Cursor IDE workflow unchanged. A valid explicit UI property choice takes precedence over catalog/harness defaults. See `docs/idea/v2_8_config/config-screen.md`.
+- **TUI cycle configuration screen (v2.8 / C7)** — Implemented in `internal/tui`, `internal/workflowconfig`, `internal/engine`, and `internal/cycle`. Config is a TUI editor over the active YAML (ADR-049–053): latest-file managed-node merge (no conflict dialog), field-level save validation that preserves the in-memory draft, completed-stage agent protection, viewport focus scrolling, explicit per-stage failed retry, and Save and start reuses `/hero-start`. See PRD/UI/ADR-C07-001.
 - **Windows CLI** — out of scope for Hero 2.0; planned for a future major (PRD §7; DEPLOY.md).
 - **CI/CD release automation and GPG-signed artifacts** — no GitHub Actions / GoReleaser pipeline in 2.0; manual `scripts/release.sh` only (ADR-010; PRD §7).
 - **Additional harness adapters** — Claude Code, VS Code, and other IDEs remain deferred (Codex shipped in C6 / 2.5.0).
@@ -82,7 +82,10 @@
 
 ## Recent Decisions
 
+- **2026-08-25 — C7 Implementation: TUI cycle configuration**: Added conditional Config navigation and asynchronous YAML-backed Config state. Managed Save now merges against the latest YAML while retaining unmanaged nodes, validates before atomic replacement, keeps invalid drafts visible with field-level errors, syncs the cycle, and offers an explicit stage-specific Failed→Waiting retry that preserves events and metrics. Config warns for enabled PATH/auth-unavailable harnesses, hides `browser_ui_agent` unless frontend Browser UI Validation is active, and flags missing capability metadata for every visible agent/fallback pair.
+- **2026-08-25 — C7 Planning: TUI cycle configuration SDD**: OpenSpec change `tui-cycle-config` created (36 tasks, native/`generic_agent`). Idea-file reload/merge/cancel dialog superseded by ADR-050 latest-file managed merge. `openspec/config.yml` context regenerated from `documents.json` including C07 docs.
 - **2026-08-25 — `/hero-start` after `/hero-resume`**: Execute done/error/cancel clears `actionBusy` for the current status label (not only `/hero-start`), so the palette no longer treats a finished resume as still running.
+- **2026-08-25 — C7 Research: TUI cycle configuration**: Requirements confirmed for a Config screen backed by the active YAML. The TUI wins only on managed fields during parallel edits; completed stages are read-only; failed stages support explicit stage-specific retry after a saved config change, with fresh attempt counters and preserved history/metrics. Proposed specs are registered as PRD/UI/ADR-C07-001; implementation remains pending approval and Planning.
 - **2026-08-25 — `/hero-start` / `/hero-resume` chat wait**: Preflight shows `Preparing /hero-start…` in the transcript (status timer unchanged); `/hero-start` clears leftover chat; Execute follows the bottom instead of jumping to offset 0; `/hero-resume` keeps history and shows `Waiting for harness…` with a running status timer.
 - **2026-08-25 — Mixed-harness Research resume**: Discover persist now records `harnessSessionHarnessID`; `/hero-start` Prepare resets the registry Codex/OpenCode adapter; Codex `thread/resume` of an unloaded id starts a new thread.
 - **2026-08-24 — Chat wait spinner**: Shown at the transcript end for the whole Execute, not only while the green agent bubble is empty (thinking/tools no longer hide it).
@@ -106,8 +109,8 @@
 
 ## Next Steps
 
-1. C6 QA → Judge (Browser UI / E2E skipped by scope); **v2.7.0** tagged locally (no GitHub Release).
-2. Archive C6 with `/hero-archive` when ready (OpenSpec `codex-adapter`).
+1. C7 Implementation of OpenSpec change `tui-cycle-config` after `/hero-approve` (native/`generic_agent`; Browser UI / E2E skipped by scope).
+2. Archive C6 when ready (OpenSpec `codex-adapter`); **v2.7.0** tagged locally (no GitHub Release).
 
 ---
 

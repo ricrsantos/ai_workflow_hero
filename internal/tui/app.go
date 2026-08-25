@@ -24,6 +24,7 @@ type screen int
 
 const (
 	screenConversation screen = iota
+	screenConfig
 	screenStatus
 	screenArtifacts
 	screenCosts
@@ -44,6 +45,7 @@ type model struct {
 	events    cycle.EventsView
 	artifacts cycle.ArtifactsView
 	approvals cycle.ApprovalsView
+	config    configScreen
 
 	contentOffset int // scroll for Status/Artifacts/Costs/Events
 
@@ -235,6 +237,16 @@ func (m model) reloadPaletteItems() model {
 		projectDir = m.svc.ProjectDir
 	}
 	items := buildPaletteItems(projectDir)
+	if m.hasActiveCycle() {
+		for i, item := range items {
+			if item.label == "Go to - Status" {
+				items = append(items, paletteItem{})
+				copy(items[i+1:], items[i:])
+				items[i] = paletteItem{label: "Go to - Config", hint: "cycle configuration", action: actionGoScreen, screen: screenConfig}
+				break
+			}
+		}
+	}
 	if m.freeChatMode {
 		// Free chat: no project slash discovery; only non-/hero chat commands.
 		items = filterFreeChatPaletteItems(defaultHeroPaletteItems())
@@ -288,6 +300,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.clampContentOffset()
 		slog.Debug("tui data refreshed", "cycle", m.status.CycleNumber)
 		return m, nil
+
+	case configLoadedMsg, configSavedMsg, configRetryMsg:
+		return m.handleConfigMsg(msg)
 
 	case actionResultMsg:
 		m.actionBusy = false
@@ -403,6 +418,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == screenConversation {
 			return m.handleConversationKey(msg)
 		}
+		if m.screen == screenConfig {
+			return m.handleConfigKey(msg)
+		}
 		return m.handleKey(msg)
 	}
 	return m, nil
@@ -448,20 +466,32 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.freeChatMode {
 			return m, nil
 		}
+		if m.hasActiveCycle() {
+			return m.openConfig()
+		}
 		return m.goListScreen(screenStatus)
 	case "ctrl+3", "alt+3":
 		if m.freeChatMode {
 			return m, nil
+		}
+		if m.hasActiveCycle() {
+			return m.goListScreen(screenStatus)
 		}
 		return m.goListScreen(screenArtifacts)
 	case "ctrl+4", "alt+4":
 		if m.freeChatMode {
 			return m, nil
 		}
+		if m.hasActiveCycle() {
+			return m.goListScreen(screenArtifacts)
+		}
 		return m.goListScreen(screenCosts)
 	case "ctrl+5", "alt+5":
 		if m.freeChatMode {
 			return m, nil
+		}
+		if m.hasActiveCycle() {
+			return m.goListScreen(screenCosts)
 		}
 		return m.goListScreen(screenEvents)
 	case "up", "ctrl+p":
@@ -729,6 +759,10 @@ func (m model) goListScreen(s screen) (model, tea.Cmd) {
 	}
 	m.screen = s
 	return m, m.refreshCmd()
+}
+
+func (m model) hasActiveCycle() bool {
+	return !m.freeChatMode && m.status.CycleNumber > 0
 }
 
 func (m model) refreshCmd() tea.Cmd {
