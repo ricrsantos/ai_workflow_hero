@@ -55,7 +55,8 @@ type convMessage struct {
 }
 
 type streamDeltaMsg struct {
-	delta harness.StreamDelta
+	executeID string
+	delta     harness.StreamDelta
 }
 
 // conversationBatchMsg keeps a burst of harness events inside one Bubble Tea
@@ -71,6 +72,7 @@ type harnessPermissionRequestMsg struct {
 }
 
 type executeDoneMsg struct {
+	executeID string
 	result    *harness.ExecutionResult
 	err       error
 	harnessID string // harness used for this execute (session binding)
@@ -79,6 +81,7 @@ type executeDoneMsg struct {
 // executePairMsg updates Chat labels to the resolved execute pair (including fallback)
 // before Adapter.Execute starts streaming.
 type executePairMsg struct {
+	executeID string
 	harnessID string
 	model     string
 }
@@ -432,6 +435,11 @@ func (m model) resetChatSession() model {
 	m = m.clearRuntimePair()
 	m.runtimeAgentName = ""
 	m.liveAgents = nil
+	m.executes = nil
+	m.stageHandoffLive = false
+	m.stageHandoffStage = ""
+	m.stageHandoffOutputs = nil
+	m.stageHandoffDoneKey = ""
 	m.convError = ""
 	m.streamInterrupted = false
 	m.agentMsgIndex = -1
@@ -575,6 +583,21 @@ func joinRuntimePromptBodies(agentBody, cmdBody string) string {
 }
 
 func (m model) beginConversationExecute(userLabel, executePrompt string) model {
+	m.executes = nil
+	m.convStreamCh = nil
+	return m.startTaggedExecute(userLabel, executePrompt, true)
+}
+
+func (m model) appendConversationExecute(userLabel, executePrompt string) model {
+	return m.startTaggedExecute(userLabel, executePrompt, false)
+}
+
+func (m model) nextExecuteID() (model, string) {
+	m.executeSeq++
+	return m, fmt.Sprintf("ex-%d", m.executeSeq)
+}
+
+func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) model {
 	m.streamInterrupted = false
 	m.convError = ""
 	m.streaming = true
@@ -585,12 +608,20 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	parentName := strings.TrimSpace(m.runtimeAgentName)
 	parentModel := m.conversationModelSlug()
 	parentHarness := m.conversationHarnessTool()
-	m.liveAgents = []liveAgent{{
+	m, executeID := m.nextExecuteID()
+	if reset || m.executes == nil {
+		m.executes = make(map[string]convExecute)
+	}
+	if reset {
+		m.liveAgents = nil
+	}
+	m.liveAgents = append(m.liveAgents, liveAgent{
+		CallID:  executeID,
 		Name:    parentName,
 		Label:   agentShortLabel(parentName),
 		Model:   parentModel,
 		Harness: parentHarness,
-	}}
+	})
 	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: userLabel})
 	m.transcript = append(m.transcript, convMessage{
 		role:      convRoleAgent,
@@ -601,12 +632,21 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	})
 	m.agentMsgIndex = len(m.transcript) - 1
 	m.thinkingMsgIndex = -1
+	if m.executes == nil {
+		m.executes = make(map[string]convExecute)
+	}
+	m.executes[executeID] = convExecute{
+		ID:            executeID,
+		AgentName:     parentName,
+		HarnessID:     parentHarness,
+		AgentMsgIndex: m.agentMsgIndex,
+	}
 
-	// Large buffer absorbs Codex/OpenCode delta bursts so OnStreamDelta rarely
-	// blocks the harness reader (stdio/SSE backpressure → stall).
-	ch := make(chan tea.Msg, 512)
-	m.convStreamCh = ch
-	m.startConversationExecute(executePrompt, ch)
+	if m.convStreamCh == nil {
+		ch := make(chan tea.Msg, 512)
+		m.convStreamCh = ch
+	}
+	m.startConversationExecute(executeID, executePrompt, m.convStreamCh)
 	return m.maybeFollowTranscriptBottom()
 }
 
@@ -1140,7 +1180,7 @@ func parseHeroResumeInline(text string) (int, bool) {
 	return n, true
 }
 
-func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
+func (m model) startConversationExecute(executeID, prompt string, ch chan<- tea.Msg) {
 	svc := m.svc
 	stageName := m.conversationStage
 	agentName := m.runtimeAgentName
@@ -1153,18 +1193,18 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 		ctx := context.Background()
 		resolved, err := m.resolveExecuteResolution(ctx)
 		if err != nil {
-			ch <- executeDoneMsg{err: err}
+			ch <- executeDoneMsg{executeID: executeID, err: err}
 			return
 		}
 		pair := resolved.pair
 		if pair.Adapter == nil {
-			ch <- executeDoneMsg{err: fmt.Errorf("harness adapter unavailable")}
+			ch <- executeDoneMsg{executeID: executeID, err: fmt.Errorf("harness adapter unavailable")}
 			return
 		}
-		ch <- executePairMsg{harnessID: pair.HarnessID, model: pair.Model}
+		ch <- executePairMsg{executeID: executeID, harnessID: pair.HarnessID, model: pair.Model}
 		sessionID := m.harnessSessionIDForPair(stageName, pair.HarnessID)
 		if resolved.warning != "" {
-			ch <- streamDeltaMsg{delta: harness.StreamDelta{Kind: harness.StreamKindText, Text: resolved.warning + "\n\n"}}
+			ch <- streamDeltaMsg{executeID: executeID, delta: harness.StreamDelta{Kind: harness.StreamKindText, Text: resolved.warning + "\n\n"}}
 		}
 		if svc != nil && strings.TrimSpace(stageName) != "" {
 			if err := svc.SetStageHarnessID(stageName, pair.HarnessID); err != nil {
@@ -1185,7 +1225,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 			// Chat//hero-new, YAML-derived for workflow commands; ADR-041/042).
 			Properties: resolved.props,
 			OnStreamDelta: func(delta harness.StreamDelta) {
-				deliverStreamDelta(ch, delta)
+				deliverStreamDelta(ch, executeID, delta)
 			},
 			OnPermissionRequest: func(ctx context.Context, perm harness.PermissionRequest) (harness.PermissionResponse, error) {
 				respCh := make(chan harness.PermissionResponse, 1)
@@ -1204,7 +1244,7 @@ func (m model) startConversationExecute(prompt string, ch chan<- tea.Msg) {
 		}
 		req = harness.NormalizeExecuteRequest(req)
 		res, err := pair.Adapter.Execute(ctx, req)
-		ch <- executeDoneMsg{result: res, err: err, harnessID: pair.HarnessID}
+		ch <- executeDoneMsg{executeID: executeID, result: res, err: err, harnessID: pair.HarnessID}
 	}()
 }
 
@@ -1222,8 +1262,8 @@ func streamDeltaMustDeliver(kind harness.StreamKind) bool {
 // deliverStreamDelta sends a harness delta to the conversation channel.
 // Text/thinking/warning/session block until accepted; tool/activity may drop
 // after a short wait so high-volume progress cannot stall the harness forever.
-func deliverStreamDelta(ch chan<- tea.Msg, delta harness.StreamDelta) {
-	msg := streamDeltaMsg{delta: delta}
+func deliverStreamDelta(ch chan<- tea.Msg, executeID string, delta harness.StreamDelta) {
+	msg := streamDeltaMsg{executeID: executeID, delta: delta}
 	if streamDeltaMustDeliver(delta.Kind) {
 		ch <- msg
 		return
@@ -1293,17 +1333,38 @@ func isImmediateConversationMessage(msg tea.Msg) bool {
 }
 
 func (m model) cancelStreamCmd() tea.Cmd {
-	adapter := m.harnessAdapter()
-	sessionID := m.harnessSessionID
 	ch := m.convStreamCh
+	executes := make([]convExecute, 0, len(m.executes))
+	for _, ex := range m.executes {
+		executes = append(executes, ex)
+	}
+	fallbackAdapter := m.harnessAdapter()
+	fallbackSession := m.harnessSessionID
+	svc := m.svc
 	return func() tea.Msg {
 		var err error
-		if adapter != nil {
-			// Session ID is empty until Execute returns (e.g. /hero-start). Still
-			// cancel the in-flight process via the adapter's pending track key.
-			err = adapter.Cancel(context.Background(), sessionID)
-			if err != nil {
-				slog.Error("tui stream cancel failed", "error", err)
+		if len(executes) == 0 {
+			if fallbackAdapter != nil {
+				err = fallbackAdapter.Cancel(context.Background(), fallbackSession)
+			}
+		}
+		for _, ex := range executes {
+			adapter := fallbackAdapter
+			if svc != nil && svc.Harness == nil && svc.Registry != nil && strings.TrimSpace(ex.HarnessID) != "" {
+				if a, aerr := svc.Registry.Adapter(ex.HarnessID); aerr == nil && a != nil {
+					adapter = a
+				}
+			}
+			if adapter == nil {
+				continue
+			}
+			sid := strings.TrimSpace(ex.SessionID)
+			if sid == "" {
+				sid = fallbackSession
+			}
+			if cerr := adapter.Cancel(context.Background(), sid); cerr != nil {
+				slog.Error("tui stream cancel failed", "execute", ex.ID, "error", cerr)
+				err = cerr
 			}
 		}
 		if ch != nil {
@@ -1336,6 +1397,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case streamDeltaMsg:
+		m = m.bindExecuteView(msg.executeID)
 		prevActivity := m.harnessWatchdog.LastActivityAt()
 		m.harnessWatchdog.RecordDelta(msg.delta, time.Now())
 		if m.harnessWatchdog.LastActivityAt().After(prevActivity) {
@@ -1349,7 +1411,14 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case executePairMsg:
+		m = m.bindExecuteView(msg.executeID)
 		m = m.applyExecutePair(msg.harnessID, msg.model)
+		if ex, ok := m.executes[msg.executeID]; ok && msg.executeID != "" {
+			if msg.harnessID != "" {
+				ex.HarnessID = msg.harnessID
+			}
+			m.executes[msg.executeID] = ex
+		}
 		if m.streaming && m.convStreamCh != nil {
 			return m, waitConvBatchMsg(m.convStreamCh)
 		}
@@ -1367,22 +1436,48 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case executeDoneMsg:
+		m = m.bindExecuteView(msg.executeID)
 		stageForMetrics := strings.TrimSpace(m.conversationStage)
 		agentForMetrics := strings.TrimSpace(m.runtimeAgentName)
 		modelForMetrics := m.conversationModelSlug()
-		m.streaming = false
-		m.convStreamCh = nil
-		m.chatInputFocused = true
-		m.liveAgents = nil
-		m.confirmPending = false
-		m.confirmMsg = ""
-		m.harnessHealthInFlight = false
-		m.harnessHealthStatus = harness.HealthHealthy
-		m = m.clearHarnessPermission()
-		if !m.orchestrationLive {
-			m = m.clearRuntimePair()
-			m.runtimeAgentName = ""
-			m.workflowProps = nil
+		if ex, ok := m.executes[msg.executeID]; ok {
+			if strings.TrimSpace(ex.AgentName) != "" {
+				agentForMetrics = ex.AgentName
+			}
+			if msg.result != nil && strings.TrimSpace(msg.result.SessionID) != "" {
+				ex.SessionID = msg.result.SessionID
+				m.executes[msg.executeID] = ex
+			}
+		}
+		if m.stageHandoffLive && msg.result != nil {
+			if out := strings.TrimSpace(msg.result.Output); out != "" {
+				label := agentForMetrics
+				if label == "" {
+					label = "agent"
+				}
+				m.stageHandoffOutputs = append(m.stageHandoffOutputs, label+":\n"+out)
+			}
+		}
+		if msg.executeID != "" {
+			delete(m.executes, msg.executeID)
+			m = m.removeLiveAgent(msg.executeID)
+		}
+		siblingsRemain := len(m.executes) > 0
+		if !siblingsRemain {
+			m.streaming = false
+			m.convStreamCh = nil
+			m.chatInputFocused = true
+			m.liveAgents = nil
+			m.confirmPending = false
+			m.confirmMsg = ""
+			m.harnessHealthInFlight = false
+			m.harnessHealthStatus = harness.HealthHealthy
+			m = m.clearHarnessPermission()
+			if !m.orchestrationLive {
+				m = m.clearRuntimePair()
+				m.runtimeAgentName = ""
+				m.workflowProps = nil
+			}
 		}
 		if msg.err != nil {
 			errText := msg.err.Error()
@@ -1391,7 +1486,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.actionBusy && strings.TrimSpace(m.statusLabel) != "" {
 				label = m.statusLabel
 			}
-			m = m.setStatusResult(false, label, firstStatusLine(errText))
+			if !siblingsRemain {
+				m = m.setStatusResult(false, label, firstStatusLine(errText))
+			}
 			if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 				existing := strings.TrimSpace(m.transcript[m.agentMsgIndex].content)
 				if existing == "" {
@@ -1403,6 +1500,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.invalidateResponseCache(m.agentMsgIndex)
 			}
 			slog.Error("tui conversation execute failed", "error", msg.err)
+			if siblingsRemain && m.convStreamCh != nil {
+				return m, waitConvBatchMsg(m.convStreamCh)
+			}
 			return m, nil
 		}
 		if msg.result != nil {
@@ -1415,11 +1515,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 					slog.Debug("tui accumulate stage metrics failed", "error", err)
 				}
 			}
-			if msg.result.SessionID != "" {
+			if msg.result.SessionID != "" && !m.stageHandoffLive {
 				m = m.persistHarnessSession(msg.result.SessionID, msg.harnessID)
 			}
-			// Prefer canonical result text when it supersedes streamed deltas
-			// (repairs TUI drops / Codex incomplete live deltas). Parent slot only.
 			if msg.result.Output != "" {
 				m = m.reconcileParentAgentOutput(msg.result.Output)
 			}
@@ -1427,14 +1525,20 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if agentResponseEmpty(m, msg) {
 			m = m.warnEmptyAgentResponse()
 		}
-		if m.runtimeCommandName == "new" && msg.err == nil && m.svc != nil {
+		if m.runtimeCommandName == "new" && msg.err == nil && m.svc != nil && !siblingsRemain {
 			if _, err := m.svc.PrepareCycle(); err != nil {
 				m.convError = err.Error()
 				slog.Error("tui prepare cycle after hero-new failed", "error", err)
 			}
 		}
 		m = m.maybeFollowTranscriptBottom()
-		slog.Info("tui conversation execute complete", "stage", m.conversationStage)
+		slog.Info("tui conversation execute complete", "stage", m.conversationStage, "remaining", len(m.executes))
+		if siblingsRemain {
+			if m.convStreamCh != nil {
+				return m, waitConvBatchMsg(m.convStreamCh)
+			}
+			return m, nil
+		}
 		next, handoffCmd := m.maybeHandoffAfterExecute()
 		if handoffCmd != nil {
 			return next, tea.Batch(next.refreshCmd(), handoffCmd, convWaitTickCmd())
@@ -1448,6 +1552,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.convStreamCh = nil
 		m.chatInputFocused = true
 		m.liveAgents = nil
+		m.executes = nil
+		m.stageHandoffLive = false
+		m.stageHandoffDoneKey = ""
 		m.confirmPending = false
 		m.confirmMsg = ""
 		m = m.clearHarnessPermission()
@@ -1462,6 +1569,25 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) bindExecuteView(executeID string) model {
+	executeID = strings.TrimSpace(executeID)
+	if executeID == "" {
+		return m
+	}
+	ex, ok := m.executes[executeID]
+	if !ok {
+		return m
+	}
+	m.agentMsgIndex = ex.AgentMsgIndex
+	if strings.TrimSpace(ex.AgentName) != "" {
+		m.runtimeAgentName = ex.AgentName
+	}
+	if strings.TrimSpace(ex.HarnessID) != "" {
+		m.runtimeHarnessID = ex.HarnessID
+	}
+	return m
+}
+
 func (m model) appendStreamDelta(d harness.StreamDelta) model {
 	if d.Phase == harness.StreamPhaseStarted {
 		m = m.addLiveAgent(d)
@@ -1473,6 +1599,22 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 		}
 	}
 	if d.Phase == harness.StreamPhaseStarted && d.Kind == harness.StreamKindTool {
+		text := strings.TrimSpace(d.Text)
+		if text == "" {
+			name := strings.TrimSpace(d.AgentName)
+			if name == "" {
+				name = "task"
+			}
+			text = "Task " + name
+		}
+		m.insertBeforeAgent(convMessage{
+			role:      convRoleTool,
+			content:   text,
+			agentName: d.AgentName,
+			modelSlug: d.Model,
+			harnessID: m.agentHarnessForName(d.AgentName),
+			callID:    d.CallID,
+		})
 		return m
 	}
 	switch d.Kind {
@@ -1615,15 +1757,30 @@ func (m model) applyExecutePair(harnessID, model string) model {
 		m.runtimeModelSlug = model
 	}
 	if len(m.liveAgents) > 0 {
-		a := m.liveAgents[0]
-		if strings.TrimSpace(a.CallID) == "" {
-			if model != "" {
-				a.Model = model
+		updated := false
+		for i, a := range m.liveAgents {
+			if ex, ok := m.executes[a.CallID]; ok && ex.AgentMsgIndex == m.agentMsgIndex {
+				if model != "" {
+					a.Model = model
+				}
+				if harnessID != "" {
+					a.Harness = harnessID
+				}
+				m.liveAgents[i] = a
+				updated = true
 			}
-			if harnessID != "" {
-				a.Harness = harnessID
+		}
+		if !updated {
+			a := m.liveAgents[0]
+			if strings.TrimSpace(a.CallID) == "" {
+				if model != "" {
+					a.Model = model
+				}
+				if harnessID != "" {
+					a.Harness = harnessID
+				}
+				m.liveAgents[0] = a
 			}
-			m.liveAgents[0] = a
 		}
 	}
 	if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
@@ -1651,9 +1808,16 @@ func (m model) addLiveAgent(d harness.StreamDelta) model {
 		}
 	}
 	name := strings.TrimSpace(d.AgentName)
-	if !isKnownHeroAgent(name) {
-		// Nested generic Tasks (explore, generalPurpose, …) must not chip HARN.
-		// HARN is only the parent session when no Hero agent is bound.
+	if name == "" {
+		return m
+	}
+	switch {
+	case isKnownHeroAgent(name):
+		if strings.TrimSpace(d.Text) != "" && !looksLikeTaskTool(d.Text) {
+			return m
+		}
+	case harness.IsGenericTaskType(name), looksLikeTaskTool(d.Text):
+	default:
 		return m
 	}
 	m.liveAgents = append(m.liveAgents, liveAgent{
@@ -1744,16 +1908,34 @@ func (m *model) appendAttributed(role convRole, d harness.StreamDelta) {
 	}
 }
 
+func looksLikeTaskTool(text string) bool {
+	t := strings.ToLower(strings.TrimSpace(text))
+	if t == "" {
+		return false
+	}
+	return strings.HasPrefix(t, "task ") || t == "task" || harness.IsTaskToolName(t)
+}
+
 // insertBeforeAgent inserts msg just before the agent answer bubble and returns its index.
 func (m *model) insertBeforeAgent(msg convMessage) int {
 	if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 		idx := m.agentMsgIndex
 		m.transcript = append(m.transcript[:idx], append([]convMessage{msg}, m.transcript[idx:]...)...)
+		m.shiftExecuteIndexes(idx)
 		m.agentMsgIndex++
 		return idx
 	}
 	m.transcript = append(m.transcript, msg)
 	return len(m.transcript) - 1
+}
+
+func (m *model) shiftExecuteIndexes(insertedAt int) {
+	for id, ex := range m.executes {
+		if ex.AgentMsgIndex >= insertedAt {
+			ex.AgentMsgIndex++
+			m.executes[id] = ex
+		}
+	}
 }
 
 func (m *model) appendAgentDelta(delta string) {

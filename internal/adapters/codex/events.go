@@ -360,12 +360,42 @@ func (a *Adapter) handleItemLifecycle(method string, params map[string]any, sess
 				SessionID:   sessionID,
 			})
 		}
-	case "commandExecution", "mcpToolCall", "dynamicToolCall", "webSearch", "collabToolCall":
+	case "commandExecution", "mcpToolCall", "dynamicToolCall", "webSearch":
 		summary := itemType
 		if cmd := stringField(item, "command", "tool", "query"); cmd != "" {
 			summary = itemType + ": " + cmd
 		}
 		emit(harness.StreamDelta{Kind: harness.StreamKindTool, Text: summary, HarnessType: method, SessionID: sessionID})
+	case "collabToolCall":
+		agentName := firstNonEmpty(
+			harness.HeroAgentFromLabel(stringField(item, "agent", "name", "title", "description")),
+			stringField(item, "agent", "name", "title"),
+			"task",
+		)
+		if harness.HeroAgentFromLabel(agentName) != "" {
+			agentName = harness.HeroAgentFromLabel(agentName)
+		}
+		model := stringField(item, "model")
+		callID := firstNonEmpty(stringField(item, "id", "itemId", "callId"), stringField(params, "itemId"))
+		if callID == "" {
+			callID = "collab:" + agentName
+		}
+		phase := harness.StreamPhaseStarted
+		label := "Task " + agentName
+		if method == "item/completed" {
+			phase = harness.StreamPhaseCompleted
+			label += " (completed)"
+		}
+		emit(harness.StreamDelta{
+			Kind:        harness.StreamKindTool,
+			Text:        label,
+			AgentName:   agentName,
+			Model:       model,
+			CallID:      callID,
+			Phase:       phase,
+			HarnessType: method,
+			SessionID:   sessionID,
+		})
 	case "fileChange":
 		emit(harness.ActivityDelta(method, "file change", sessionID))
 	case "plan":

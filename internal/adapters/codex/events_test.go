@@ -265,3 +265,69 @@ func TestNotifyMustDeliver(t *testing.T) {
 		t.Fatal("command output is best-effort")
 	}
 }
+
+func TestCollabToolCallStartedAttributesGenericTask(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var got []harness.StreamDelta
+	req := harness.ExecuteRequest{
+		OnStreamDelta: func(d harness.StreamDelta) {
+			got = append(got, d)
+		},
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"item": map[string]any{
+			"type":  "collabToolCall",
+			"id":    "c-explore",
+			"agent": "explore",
+			"model": "gpt-5.4",
+		},
+	})
+	if out := a.handleNotification(context.Background(), "item/started", payload, "thr", req, nil, st); out.err != nil {
+		t.Fatal(out.err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("deltas=%d want 1: %+v", len(got), got)
+	}
+	d := got[0]
+	if d.Kind != harness.StreamKindTool || d.Phase != harness.StreamPhaseStarted {
+		t.Fatalf("kind/phase=%s %s", d.Kind, d.Phase)
+	}
+	if d.CallID != "c-explore" {
+		t.Fatalf("callID=%q", d.CallID)
+	}
+	if d.AgentName != "explore" {
+		t.Fatalf("agent=%q want explore", d.AgentName)
+	}
+}
+
+func TestCollabToolCallStartedAttributesNamedAgent(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var got []harness.StreamDelta
+	req := harness.ExecuteRequest{
+		OnStreamDelta: func(d harness.StreamDelta) {
+			got = append(got, d)
+		},
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"item": map[string]any{
+			"type":  "collabToolCall",
+			"id":    "c-plan",
+			"name":  "Task planning_agent",
+			"model": "gpt-5.4",
+		},
+	})
+	if out := a.handleNotification(context.Background(), "item/started", payload, "thr", req, nil, st); out.err != nil {
+		t.Fatal(out.err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("deltas=%d want 1", len(got))
+	}
+	d := got[0]
+	if d.AgentName != "planning_agent" || d.CallID != "c-plan" || d.Phase != harness.StreamPhaseStarted {
+		t.Fatalf("delta=%+v", d)
+	}
+}

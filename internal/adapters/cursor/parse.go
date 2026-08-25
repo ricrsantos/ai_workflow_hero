@@ -508,22 +508,6 @@ func taskInfoFromArgs(args map[string]any) taskInfo {
 	}
 }
 
-// heroTaskAgentNames is the Cursor Task identity for named Hero agents.
-// Prefer these over generic subagent_type values such as generalPurpose.
-var heroTaskAgentNames = []string{
-	"orchestration_agent",
-	"discover_agent",
-	"planning_agent",
-	"context_agent",
-	"backend_agent",
-	"frontend_agent",
-	"generic_agent",
-	"qa_agent",
-	"judge_agent",
-	"browser_ui_agent",
-	"end2end_qa_agent",
-}
-
 func heroAgentFromTaskArgs(args map[string]any) string {
 	candidates := []string{
 		firstArgString(args, "subagent_type"),
@@ -545,31 +529,11 @@ func heroAgentFromTaskArgs(args map[string]any) string {
 }
 
 func extractHeroAgentName(s string) string {
-	key := strings.ToLower(strings.TrimSpace(s))
-	key = strings.TrimPrefix(key, "task ")
-	key = strings.ReplaceAll(key, "-", "_")
-	key = strings.ReplaceAll(key, " ", "_")
-	if key == "" {
-		return ""
-	}
-	for _, known := range heroTaskAgentNames {
-		if key == known || strings.Contains(key, known) {
-			return known
-		}
-	}
-	return ""
+	return harness.HeroAgentFromLabel(s)
 }
 
 func isGenericTaskType(s string) bool {
-	key := strings.ToLower(strings.TrimSpace(s))
-	key = strings.ReplaceAll(key, "-", "_")
-	switch key {
-	case "generalpurpose", "general_purpose", "explore", "shell", "bash",
-		"best_of_n_runner", "bestofn":
-		return true
-	default:
-		return false
-	}
+	return harness.IsGenericTaskType(s)
 }
 
 func firstArgString(args map[string]any, keys ...string) string {

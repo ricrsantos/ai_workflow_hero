@@ -6,6 +6,12 @@
 
 ---
 
+## 2026-08-25 — C8 TUI-direct stage Execute
+
+**Change**: After `/hero-start`, ORCH starts a stage then STOPs. The TUI Executes named stage agents (`planning_agent`, scope Implementation agents, QA, Judge, Browser UI, E2E) on their YAML harness+model pair, then resumes ORCH. Nested Task fan-out remains inside the parent harness. Chat multiplexes tagged concurrent Executes; navbar chips named 4-letter codes plus generic `TASK`; Task **started** inserts a `[LABEL - model · harness]` launch line. Codex `collabToolCall` and OpenCode Task/`session.next.tool` events now set `AgentName`, `CallID`, and `Phase`.
+
+**Validation**: Colocated TUI + adapter tests for Planning handoff, parallel Implementation, TASK vs CTX chips, sibling `executeDone`, and Task parse.
+
 ## 2026-08-25 — C7 implementation (`tui-cycle-config`)
 
 **Change**: Added active-cycle Config navigation and an asynchronous TUI Config screen with keyboard focus/editing for identity, scope, stages, agent harness/model/properties, and save/retry actions. Agent model choices are constrained to the selected enabled harness via the existing cache/catalog model list; C5 property visibility uses `modelprops` capability snapshots, with unknown-capability warnings preserving YAML values. Nested subagent model choices use the parent harness. `workflowconfig.Document.Write` now loads the latest valid YAML, applies only managed values, validates, and atomically replaces the file without a revision-conflict dialog. Added managed diffs and `Engine`/`cycle.Service` failed-stage retry with an append-only `stage_retried` event.

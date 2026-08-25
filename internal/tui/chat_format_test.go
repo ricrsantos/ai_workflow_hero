@@ -89,12 +89,12 @@ func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
 		t.Fatalf("missing command body: %q", got)
 	}
 	for _, kw := range []string{
-		"run_in_background",
 		"hero stage start",
 		"require_human_approval",
 		"/hero-approve",
 		"Do NOT grill",
 		"discover_agent",
+		"then STOP",
 	} {
 		if !strings.Contains(got, kw) {
 			t.Fatalf("start preamble missing %q: %q", kw, got)
@@ -118,9 +118,27 @@ func TestTUIDiscoverResearchPreamble(t *testing.T) {
 
 func TestTUIHeroStartContinueAfterResearchPreamble(t *testing.T) {
 	got := tuiHeroStartContinueAfterResearchPreamble()
-	for _, kw := range []string{"Research grilling is done", "Do NOT re-run Research", "dispatch the next enabled stage"} {
+	for _, kw := range []string{"Research grilling is done", "Do NOT re-run Research", "hero stage start"} {
 		if !strings.Contains(got, kw) {
 			t.Fatalf("continue-after-research preamble missing %q: %q", kw, got)
+		}
+	}
+}
+
+func TestTUIStageAgentPreamble(t *testing.T) {
+	got := tuiStageAgentPreamble("planning", "planning_agent")
+	for _, kw := range []string{"planning_agent", "nested Task", "Do NOT start, close, or dispatch other workflow stages"} {
+		if !strings.Contains(got, kw) {
+			t.Fatalf("stage agent preamble missing %q: %q", kw, got)
+		}
+	}
+}
+
+func TestTUIHeroStartContinueAfterStagePreamble(t *testing.T) {
+	got := tuiHeroStartContinueAfterStagePreamble("implementation")
+	for _, kw := range []string{"implementation", "Do NOT re-run the stage agents", "hero stage start"} {
+		if !strings.Contains(got, kw) {
+			t.Fatalf("continue-after-stage preamble missing %q: %q", kw, got)
 		}
 	}
 }

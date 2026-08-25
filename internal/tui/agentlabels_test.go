@@ -16,8 +16,9 @@ func TestAgentShortLabel(t *testing.T) {
 		"browser_ui_agent":    "BUI",
 		"end2end_qa_agent":    "E2E",
 		"":                    "HARN",
-		"explore":             "HARN",
-		"bash":                "HARN",
+		"explore":             "TASK",
+		"generalPurpose":      "TASK",
+		"bash":                "TASK",
 		"Task qa_agent":       "QA",
 	}
 	for name, want := range cases {
@@ -49,8 +50,8 @@ func TestFormatAgentHeader(t *testing.T) {
 	if got := formatAgentHeader("", "grok-4.6", "cursor"); got != "[HARN - grok-4.6 · cursor]" {
 		t.Fatalf("freechat=%q", got)
 	}
-	if got := formatAgentHeader("explore", "composer-2.5", ""); got != "[HARN - composer-2.5]" {
-		t.Fatalf("harness-native=%q", got)
+	if got := formatAgentHeader("explore", "composer-2.5", ""); got != "[TASK - composer-2.5]" {
+		t.Fatalf("nested generic=%q", got)
 	}
 	if got := formatAgentHeader("backend_agent", "", ""); got != "[BACK]" {
 		t.Fatalf("no model=%q", got)

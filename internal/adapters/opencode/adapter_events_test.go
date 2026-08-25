@@ -148,6 +148,63 @@ func TestProcessSSEEventToolAndWarning(t *testing.T) {
 	}
 }
 
+func TestProcessSSEEventTaskStartAttributesAgent(t *testing.T) {
+	state := newStreamState()
+	var got []harness.StreamDelta
+	a := &Adapter{ProjectDir: t.TempDir()}
+	req := harness.ExecuteRequest{
+		OnStreamDelta: func(d harness.StreamDelta) {
+			got = append(got, d)
+		},
+	}
+
+	called := map[string]any{
+		"type": "tool.execute.before",
+		"properties": map[string]any{
+			"sessionID": "sess-1",
+			"callID":    "t-qa",
+			"tool":      "task",
+			"input": map[string]any{
+				"subagent_type": "qa_agent",
+				"model":         "composer-2.5",
+			},
+		},
+	}
+	if out := a.processSSEEvent(context.Background(), called, "sess-1", state, req, nil); out.err != nil {
+		t.Fatal(out.err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("deltas=%d want 1: %+v", len(got), got)
+	}
+	d := got[0]
+	if d.AgentName != "qa_agent" || d.CallID != "t-qa" || d.Phase != harness.StreamPhaseStarted {
+		t.Fatalf("named Task start=%+v", d)
+	}
+
+	got = nil
+	explore := map[string]any{
+		"type": "session.next.tool.called",
+		"properties": map[string]any{
+			"sessionID": "sess-1",
+			"callID":    "t-explore",
+			"tool":      "task",
+			"input": map[string]any{
+				"subagent_type": "explore",
+			},
+		},
+	}
+	if out := a.processSSEEvent(context.Background(), explore, "sess-1", state, req, nil); out.err != nil {
+		t.Fatal(out.err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("explore deltas=%d want 1", len(got))
+	}
+	d = got[0]
+	if d.AgentName != "explore" || d.CallID != "t-explore" || d.Phase != harness.StreamPhaseStarted {
+		t.Fatalf("generic Task start=%+v", d)
+	}
+}
+
 func TestProcessSSEEventSessionNextTextDelta(t *testing.T) {
 	a := &Adapter{}
 	state := newStreamState()
@@ -244,7 +301,7 @@ func TestProcessSSEEventPermission(t *testing.T) {
 	state := newStreamState()
 	asked := false
 	req := harness.ExecuteRequest{
-		ProjectDir: t.TempDir(),
+		ProjectDir:    t.TempDir(),
 		OnStreamDelta: func(d harness.StreamDelta) {},
 		OnPermissionRequest: func(_ context.Context, pr harness.PermissionRequest) (harness.PermissionResponse, error) {
 			asked = true
@@ -300,7 +357,7 @@ func TestProcessSSEEventPermissionExternalDirectoryV2(t *testing.T) {
 	a.baseURL = srv.URL
 	state := newStreamState()
 	req := harness.ExecuteRequest{
-		ProjectDir: t.TempDir(),
+		ProjectDir:    t.TempDir(),
 		OnStreamDelta: func(d harness.StreamDelta) {},
 		OnPermissionRequest: func(_ context.Context, pr harness.PermissionRequest) (harness.PermissionResponse, error) {
 			if pr.Title != "external_directory" {

@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
 const (
 	agentLabelHARN = "HARN"
+	agentLabelTASK = "TASK"
 	agentsBoxWidth = 26
 )
 
@@ -75,7 +78,10 @@ func agentShortLabel(name string) string {
 	if label, ok := agentShortLabels[key]; ok {
 		return label
 	}
-	return agentLabelHARN
+	if harness.IsGenericTaskType(name) || harness.IsGenericTaskType(key) {
+		return agentLabelTASK
+	}
+	return agentLabelTASK
 }
 
 func formatAgentHeader(name, model, harnessID string) string {

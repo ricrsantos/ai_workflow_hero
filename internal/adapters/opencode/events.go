@@ -53,53 +53,53 @@ type streamOutcome struct {
 
 // opencodeActivityEvents lists known non-streaming OpenCode events (EventManifest.Definitions).
 var opencodeActivityEvents = map[string]struct{}{
-	"catalog.updated":                  {},
-	"command.executed":                 {},
-	"file.edited":                      {},
-	"file.watcher.updated":             {},
-	"ide.installed":                    {},
-	"installation.updated":             {},
-	"installation.update-available":    {},
-	"integration.updated":              {},
-	"integration.connection.updated":   {},
-	"lsp.updated":                      {},
-	"mcp.browser.open.failed":          {},
-	"mcp.tools.changed":                {},
-	"message.removed":                  {},
-	"message.part.removed":             {},
-	"permission.replied":               {},
-	"permission.v2.replied":            {},
-	"plugin.added":                     {},
-	"project.updated":                  {},
-	"project.directories.updated":      {},
-	"pty.created":                      {},
-	"pty.updated":                      {},
-	"pty.exited":                       {},
-	"pty.deleted":                      {},
-	"question.asked":                   {},
-	"question.replied":                 {},
-	"question.rejected":                {},
-	"question.v2.asked":                {},
-	"question.v2.replied":              {},
-	"question.v2.rejected":             {},
-	"reference.updated":                {},
-	"session.created":                  {},
-	"session.updated":                  {},
-	"session.deleted":                  {},
-	"session.compacted":                {},
-	"session.diff":                     {},
-	"todo.updated":                     {},
-	"tui.prompt.append":                {},
-	"tui.command.execute":              {},
-	"tui.toast.show":                   {},
-	"tui.session.select":               {},
-	"vcs.branch.updated":               {},
-	"workspace.ready":                  {},
-	"workspace.status":                 {},
-	"workspace.failed":                 {},
-	"worktree.ready":                   {},
-	"worktree.failed":                  {},
-	"global.disposed":                  {},
+	"catalog.updated":                {},
+	"command.executed":               {},
+	"file.edited":                    {},
+	"file.watcher.updated":           {},
+	"ide.installed":                  {},
+	"installation.updated":           {},
+	"installation.update-available":  {},
+	"integration.updated":            {},
+	"integration.connection.updated": {},
+	"lsp.updated":                    {},
+	"mcp.browser.open.failed":        {},
+	"mcp.tools.changed":              {},
+	"message.removed":                {},
+	"message.part.removed":           {},
+	"permission.replied":             {},
+	"permission.v2.replied":          {},
+	"plugin.added":                   {},
+	"project.updated":                {},
+	"project.directories.updated":    {},
+	"pty.created":                    {},
+	"pty.updated":                    {},
+	"pty.exited":                     {},
+	"pty.deleted":                    {},
+	"question.asked":                 {},
+	"question.replied":               {},
+	"question.rejected":              {},
+	"question.v2.asked":              {},
+	"question.v2.replied":            {},
+	"question.v2.rejected":           {},
+	"reference.updated":              {},
+	"session.created":                {},
+	"session.updated":                {},
+	"session.deleted":                {},
+	"session.compacted":              {},
+	"session.diff":                   {},
+	"todo.updated":                   {},
+	"tui.prompt.append":              {},
+	"tui.command.execute":            {},
+	"tui.toast.show":                 {},
+	"tui.session.select":             {},
+	"vcs.branch.updated":             {},
+	"workspace.ready":                {},
+	"workspace.status":               {},
+	"workspace.failed":               {},
+	"worktree.ready":                 {},
+	"worktree.failed":                {},
+	"global.disposed":                {},
 	// Legacy events kept for older OpenCode builds.
 	"lsp.client.diagnostics": {},
 	"shell.env":              {},
@@ -472,44 +472,13 @@ func (h *streamHandler) handleSessionNext(evtType string, props map[string]any) 
 		h.emitAuthoritativeThinking(key, stringPropRaw(props, "text"), evtType)
 
 	case "session.next.tool.input.started", "session.next.tool.called":
-		callID := stringProp(props, "callID")
-		h.state.callID = callID
-		label := toolLabelFromProps(props)
-		h.emit(harness.StreamDelta{
-			Kind:        harness.StreamKindTool,
-			Text:        label,
-			AgentName:   h.state.agentName,
-			CallID:      callID,
-			Phase:       harness.StreamPhaseStarted,
-			HarnessType: evtType,
-			SessionID:   h.sessionID,
-		})
+		return h.emitToolPhase(props, harness.StreamPhaseStarted, evtType, "")
 
 	case "session.next.tool.success":
-		callID := stringProp(props, "callID")
-		label := toolLabelFromProps(props)
-		h.emit(harness.StreamDelta{
-			Kind:        harness.StreamKindTool,
-			Text:        label + " (completed)",
-			AgentName:   h.state.agentName,
-			CallID:      callID,
-			Phase:       harness.StreamPhaseCompleted,
-			HarnessType: evtType,
-			SessionID:   h.sessionID,
-		})
+		return h.emitToolPhase(props, harness.StreamPhaseCompleted, evtType, " (completed)")
 
 	case "session.next.tool.failed":
-		callID := stringProp(props, "callID")
-		label := toolLabelFromProps(props)
-		h.emit(harness.StreamDelta{
-			Kind:        harness.StreamKindTool,
-			Text:        label + " (failed)",
-			AgentName:   h.state.agentName,
-			CallID:      callID,
-			Phase:       harness.StreamPhaseCompleted,
-			HarnessType: evtType,
-			SessionID:   h.sessionID,
-		})
+		return h.emitToolPhase(props, harness.StreamPhaseCompleted, evtType, " (failed)")
 
 	case "session.next.shell.started":
 		callID := stringProp(props, "callID")
@@ -540,20 +509,84 @@ func (h *streamHandler) handleSessionNext(evtType string, props map[string]any) 
 func (h *streamHandler) emitToolPhase(props map[string]any, phase, evtType, suffix string) streamOutcome {
 	callID := toolCallID(props)
 	h.state.callID = callID
-	label := toolLabel(props, phase)
+	toolName := toolNameFromProps(props)
+	label := toolLabelByName(toolName)
+	agentName := h.state.agentName
+	model := ""
+	if harness.IsTaskToolName(toolName) {
+		taskName, taskModel := taskInfoFromProps(props)
+		if taskName != "" {
+			agentName = taskName
+		}
+		model = taskModel
+		if taskName != "" {
+			label = "Task " + taskName
+		} else {
+			label = "Task " + toolName
+		}
+	}
 	if suffix != "" {
 		label += suffix
 	}
 	h.emit(harness.StreamDelta{
 		Kind:        harness.StreamKindTool,
 		Text:        label,
-		AgentName:   h.state.agentName,
+		AgentName:   agentName,
+		Model:       model,
 		CallID:      callID,
 		Phase:       phase,
 		HarnessType: evtType,
 		SessionID:   h.sessionID,
 	})
 	return streamOutcome{}
+}
+
+func toolNameFromProps(props map[string]any) string {
+	name := stringProp(props, "tool", "name")
+	if name == "" {
+		if tool, ok := props["tool"].(map[string]any); ok {
+			name = stringProp(tool, "name", "type", "permission")
+		}
+	}
+	return name
+}
+
+func taskInfoFromProps(props map[string]any) (name, model string) {
+	args := map[string]any{}
+	for _, key := range []string{"input", "args", "arguments"} {
+		if m, ok := props[key].(map[string]any); ok {
+			args = m
+			break
+		}
+	}
+	if tool, ok := props["tool"].(map[string]any); ok {
+		if m, ok := tool["input"].(map[string]any); ok && len(args) == 0 {
+			args = m
+		}
+	}
+	candidates := []string{
+		stringProp(args, "subagent_type", "agent", "name", "description", "prompt"),
+		stringProp(props, "subagent_type", "agent", "description"),
+	}
+	for _, c := range candidates {
+		if n := harness.HeroAgentFromLabel(c); n != "" {
+			name = n
+			break
+		}
+		if c != "" && !harness.IsGenericTaskType(c) {
+			name = c
+			break
+		}
+		if harness.IsGenericTaskType(c) {
+			name = c
+			break
+		}
+	}
+	model = stringProp(args, "model")
+	if model == "" {
+		model = stringProp(props, "model")
+	}
+	return name, model
 }
 
 func (h *streamHandler) emitPartTextGrowth(key, delta, evtType string) {

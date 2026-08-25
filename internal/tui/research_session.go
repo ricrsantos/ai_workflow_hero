@@ -85,26 +85,6 @@ func (m model) orchestratorModelSlug() (slug string, warned bool) {
 	return slug, false
 }
 
-func (m model) maybeHandoffAfterExecute() (model, tea.Cmd) {
-	if !m.orchestrationLive || m.svc == nil {
-		return m, nil
-	}
-	agent := strings.TrimSpace(m.runtimeAgentName)
-	if agent == agentOrchestration && !m.researchLive && m.researchStageInteractive() {
-		return m.startDiscoverResearchSession()
-	}
-	if m.researchLive && (agent == agentDiscover || agent == "") && m.researchStageClosedOrMovedOn() {
-		return m.resumeOrchestratorAfterResearch()
-	}
-	if m.researchLive && agent == agentOrchestration && m.researchStageInteractive() {
-		m.harnessSessionID = m.researchSessionID
-		m = m.withRuntimeAgent(agentDiscover)
-		m = m.applyAgentRuntimePair(agentDiscover, "")
-		m = m.bindSessionToRuntimeHarness()
-	}
-	return m, nil
-}
-
 // bindSessionToRuntimeHarness records which harness owns harnessSessionID so
 // mixed orchestrator/discover pairs (e.g. cursor + codex) can resume.
 func (m model) bindSessionToRuntimeHarness() model {
@@ -169,7 +149,7 @@ func (m model) resumeOrchestratorAfterResearch() (model, tea.Cmd) {
 		m.conversationStage = ""
 	}
 	prompt := tuiHeroStartContinueAfterResearchPreamble() +
-		"Research closed. Continue the cycle: dispatch the next enabled stage via Task with Model Resolution from workflow-config.yml. Do not grill or re-run Research.\n"
+		"Research closed. Continue the cycle: start the next enabled stage then STOP so the TUI Executes named stage agents. Do not grill or re-run Research.\n"
 	m = m.beginConversationExecute("→ Research closed", prompt)
 	return m, m.conversationExecuteCmds()
 }

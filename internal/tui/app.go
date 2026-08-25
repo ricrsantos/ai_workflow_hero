@@ -115,6 +115,12 @@ type model struct {
 	orchestrationSessionID   string          // saved orchestrator harness session while Research is live
 	researchSessionID        string          // discover_agent harness session
 	awaitingRejectReason     bool            // Chat is collecting rejection feedback before Runtime Execute
+	executeSeq               int             // monotonic id for tagged concurrent Executes
+	executes                 map[string]convExecute
+	stageHandoffLive         bool
+	stageHandoffStage        string
+	stageHandoffOutputs      []string
+	stageHandoffDoneKey      string // "stage:iteration" already TUI-executed this session
 
 	// C5 model properties (ADR-042).
 	propsSvc             *modelprops.Service

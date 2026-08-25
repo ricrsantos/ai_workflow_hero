@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **2.8.0 development** (C7 configuration screen). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
+> **Status:** reflects codebase at Hero **2.8.0 development** (C7 configuration screen + C8 TUI-direct stage Execute). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -87,7 +87,7 @@ Runtime markdown for consumers is **not** edited under `.cursor/` in the framewo
   doctor · status · variables           `.cursor/agents/`     (specialized agents)
   update-models                         `.cursor/skills/`     (workflow-hero, grilling)
   metrics · events · approve · …        orchestration agent   (main session)
-  cycle · run · tui                     Task tool → subagents (isolated sessions)
+  cycle · run · tui                     TUI Execute → named stage agents; Task → nested fan-out
         │                                      │
         │  persistence via `hero …`            │  reasoning + agent dispatch
         └──────────────────┬───────────────────┘
@@ -217,8 +217,9 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 | Module | Role |
 |---|---|
 | `app.go` / `screens.go` | Bubble Tea model, screen routing, keybindings |
-| `conversation.go` | Chat transcript, harness streaming, Execute lifecycle |
+| `conversation.go` | Chat transcript, multiplexed harness Executes, Execute lifecycle |
 | `research_session.go` | Dedicated `discover_agent` session during Research |
+| `stage_handoff.go` | TUI-direct Execute of named stage agents after ORCH `hero stage start` then STOP |
 | `herocmd.go` | `/hero-*` slash dispatch and orchestrator prompt assembly |
 | `palette.go` / `slash_overlay.go` | Command palette and Chat `/` autocomplete |
 | `harness_boot.go` / `model_gate.go` | Harness availability, model picker at boot |
@@ -234,6 +235,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 - **Harness conversations** use `HarnessAdapter.Execute` with streaming (`stream-json`), not IDE chat injection (ADR-026).
 - **Dual OpenCode-style panes** on Chat: composer + response area; session IDs for harness runs are held in TUI memory and/or SQLite `stages.harness_session_id` (schema v3).
 - **Orchestrator vs Research**: TUI Execute for control slashes uses `agents.orchestration_agent` from `workflow-config.yml`; Research uses a separate `discover_agent` session (`research_session.go`); Cursor IDE chat keeps grilling in the orchestrator session.
+- **TUI-direct stage Execute (C8)**: after ORCH starts a stage and STOPs, the TUI Executes named stage agents on their YAML harness+model pair (`stage_handoff.go`). Nested Task fan-out stays inside the parent harness; generic Tasks chip `TASK`. Implementation may run BACK/FRNT/GEN concurrently. Cursor IDE Runtime still uses Task for every subagent (ADR-005 / ADR-054).
 - **Boot** validates harness availability (`IsAvailable`); may prompt for harness selection when `cli.tools` is empty (ADR-027).
 - **Default harness model** is stored in `hero.json` → `harnesses.<tool>` (ADR-030); per-cycle agent models live in `workflow-config.yml`. Freechat and `/hero-new` use the harness default; orchestrator slashes use YAML `orchestration_agent` (then `fallback_model`, then `/hero-model`).
 - **Cycle Config (C7)**: the TUI edits only managed YAML nodes; the latest file supplies unmanaged comments/unknown keys during Save. Successful Save calls cycle sync; completed stages remain protected, and a changed failed stage can be explicitly requeued through `cycle.Service.RetryFailedStage`.
@@ -247,9 +249,12 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
         │
   Slash commands (hero-*.md assets)
         │
-  orchestration_agent  ← continuous cycle session
+  orchestration_agent  ← continuous cycle session (IDE Task; TUI start-then-STOP)
         │
-        ├─► Task (clean session per subagent, ADR-005)
+        ├─► TUI-direct Execute (named stage agents, YAML pair; ADR-054)
+        │         nested Task fan-out stays in the parent harness
+        │
+        ├─► Task (Cursor IDE Runtime only — clean session per subagent, ADR-005)
         │         │
         │    discover · planning · context · backend · frontend
         │    generic · qa · judge · browser_ui · end2end_qa
@@ -413,7 +418,7 @@ There is **no** standalone `internal/conversation` package. Conversation appears
 
 | Layer | Where | Lifetime |
 |---|---|---|
-| **TUI Chat UI** | `internal/tui/conversation.go` — transcript in memory, streaming via harness | Process lifetime; optional resume via harness session id |
+| **TUI Chat UI** | `internal/tui/conversation.go` + `stage_handoff.go` — transcript in memory; one or more tagged Executes multiplexed on one channel | Process lifetime; optional resume via harness session id |
 | **IDE Runtime** | Cursor chat + Task sessions | IDE session / Task isolation (ADR-005) |
 | **SQLite `conversation` table** | `internal/store` | Persisted messages; **not** wired as the TUI chat transcript SoT in V1 |
 

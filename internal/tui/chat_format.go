@@ -44,14 +44,42 @@ func tuiHeroStartPreamble() string {
 		"- Do NOT depend on prior chat history from /hero-new — bootstrap from disk and CLI state.\n" +
 		"- Do NOT run `hero cycle new` — the cycle was prepared during /hero-new.\n" +
 		"- The TUI runs hero cycle sync-config before this session; do not ask the user to run it manually.\n" +
-		"- Run full orchestration: validate workflow-config, dispatch Task subagents, persist via hero CLI with metrics.\n" +
+		"- Run full orchestration: validate workflow-config, start stages, persist via hero CLI with metrics.\n" +
 		"- Stay inside this project root (the directory that contains .workflow-hero/). Do not read, grep, glob, or search parent directories, sibling folders, or any Hero framework/source tree.\n" +
 		"- Invoke `hero` from PATH via the Shell tool (e.g. `hero status`). Do not hunt the filesystem for the binary. If Shell fails, stop and tell the user — do not reverse-engineer Hero internals.\n" +
-		"- Call `hero stage start --name <stage>` before dispatching that stage's agent.\n" +
-		"- After Configuration, if Research is enabled: call `hero stage start --name research` then STOP. Do NOT grill in this orchestrator session. Do NOT dispatch Task discover_agent. The TUI continues Research as discover_agent.\n" +
+		tuiOrchStageHandoffRules() +
 		"- If research is disabled, skip Research and continue orchestration as usual.\n" +
-		"- After every Task dispatch: set run_in_background to false, wait until the Task returns, then post that agent's Output Format summary in chat. Nested Task work does not stream here. Do not end your turn after launching Task. Do not start the next stage until the current Task has returned.\n" +
-		"- Read require_human_approval for the stage that just finished (not the next one). If false: auto-close via CLI and dispatch the next stage in the same turn — never ask yes/no to proceed. If true: close as PendingApproval, list /hero-approve /hero-reject /hero-cancel /hero-finish, and STOP.\n" +
+		"- Read require_human_approval for the stage that just finished (not the next one). If false: auto-close via CLI and start the next stage in the same turn — never ask yes/no to proceed. If true: close as PendingApproval, list /hero-approve /hero-reject /hero-cancel /hero-finish, and STOP.\n" +
+		"- Tell the user to use /hero-approve, /hero-reject, /hero-cancel, or /hero-finish in the Hero TUI (not Cursor chat handoff).\n\n" +
+		"---\n\n"
+}
+
+func tuiOrchStageHandoffRules() string {
+	return "- Call `hero stage start --name <stage>` then STOP. Do NOT grill in this orchestrator session. Do NOT dispatch Task for discover_agent, planning_agent, backend_agent, frontend_agent, generic_agent, qa_agent, judge_agent, browser_ui_agent, or end2end_qa_agent. The TUI Executes those named stage agents on their workflow-config.yml harness+model pair.\n" +
+		"- After the TUI resumes you with a stage-agent Output Format: apply Stage Close Sequence, then start the next enabled stage and STOP again.\n" +
+		"- Nested Task fan-out inside a TUI-executed agent is that agent's job, not yours.\n"
+}
+
+func tuiStageAgentPreamble(stageName, agentName string) string {
+	stageName = strings.TrimSpace(stageName)
+	agentName = strings.TrimSpace(agentName)
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are running the " + stageName + " stage inside the Hero TUI as " + agentName + ". Follow the agent file with these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
+		"- You MAY launch nested Task subagents (including parallel generic fan-out). Apply Model Resolution from workflow-config.yml.\n" +
+		"- Do NOT start, close, or dispatch other workflow stages. Emit the agent's Output Format and STOP.\n" +
+		"- Tell the user to use /hero-approve, /hero-reject, /hero-cancel, or /hero-finish in the Hero TUI when human approval is required.\n\n" +
+		"---\n\n"
+}
+
+func tuiHeroStartContinueAfterStagePreamble(stageName string) string {
+	stageName = strings.TrimSpace(stageName)
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are the orchestration agent resuming after the TUI finished " + stageName + " stage agent(s). Follow these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
+		"- Do NOT re-run the stage agents; their Output Format is included below.\n" +
+		"- Apply Stage Close Sequence (metrics + hero CLI) for this stage.\n" +
+		tuiOrchStageHandoffRules() +
 		"- Tell the user to use /hero-approve, /hero-reject, /hero-cancel, or /hero-finish in the Hero TUI (not Cursor chat handoff).\n\n" +
 		"---\n\n"
 }
@@ -73,8 +101,7 @@ func tuiHeroStartContinueAfterResearchPreamble() string {
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
 		"- Research grilling is done. Do NOT re-run Research or grill again.\n" +
 		"- If Research is PendingApproval, list /hero-approve /hero-reject /hero-cancel /hero-finish and STOP.\n" +
-		"- Otherwise dispatch the next enabled stage via Task with Model Resolution from workflow-config.yml.\n" +
-		"- After every Task dispatch: set run_in_background to false, wait until the Task returns, then post that agent's Output Format summary.\n" +
+		tuiOrchStageHandoffRules() +
 		"- Tell the user to use /hero-approve, /hero-reject, /hero-cancel, or /hero-finish in the Hero TUI (not Cursor chat handoff).\n\n" +
 		"---\n\n"
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,7 +16,15 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
+type streamingCall struct {
+	Agent     string
+	Model     string
+	Prompt    string
+	SessionID string
+}
+
 type streamingHarness struct {
+	mu            sync.Mutex
 	deltas        []string
 	events        []harness.StreamDelta
 	sessionIDs    []string
@@ -31,6 +40,8 @@ type streamingHarness struct {
 	lastProps     map[string]string
 	err           error
 	release       chan struct{}
+	skipRelease   int // wait on release only after this many Executes
+	calls         []streamingCall
 }
 
 func (h *streamingHarness) Name() string                      { return "streaming" }
@@ -40,6 +51,7 @@ func (h *streamingHarness) CreateSession(context.Context, harness.SessionRequest
 }
 func (h *streamingHarness) ResumeSession(context.Context, string) error { return nil }
 func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest) (*harness.ExecutionResult, error) {
+	h.mu.Lock()
 	h.lastPrompt = req.Prompt
 	h.lastSessionID = req.SessionID
 	h.lastModel = req.Model
@@ -48,6 +60,12 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 	h.lastAgentName = req.AgentName
 	h.lastProps = harness.CloneProperties(req.Properties)
 	h.executeCount++
+	h.calls = append(h.calls, streamingCall{
+		Agent:     req.AgentName,
+		Model:     req.Model,
+		Prompt:    req.Prompt,
+		SessionID: req.SessionID,
+	})
 	resultSession := h.sessionID
 	if n := len(h.sessionIDs); n > 0 {
 		idx := h.executeCount - 1
@@ -56,12 +74,19 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 		}
 		resultSession = h.sessionIDs[idx]
 	}
-	if h.err != nil {
-		return nil, h.err
+	count := h.executeCount
+	skip := h.skipRelease
+	execErr := h.err
+	events := h.events
+	deltas := h.deltas
+	release := h.release
+	h.mu.Unlock()
+	if execErr != nil {
+		return nil, execErr
 	}
 	out := ""
-	if len(h.events) > 0 {
-		for _, ev := range h.events {
+	if len(events) > 0 {
+		for _, ev := range events {
 			if ev.Kind == harness.StreamKindText || ev.Kind == "" {
 				out += ev.Text
 			}
@@ -70,15 +95,15 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 			}
 		}
 	} else {
-		for _, d := range h.deltas {
+		for _, d := range deltas {
 			out += d
 			if req.OnStreamDelta != nil {
 				req.OnStreamDelta(harness.StreamDelta{Kind: harness.StreamKindText, Text: d})
 			}
 		}
 	}
-	if h.release != nil {
-		<-h.release
+	if release != nil && (skip <= 0 || count > skip) {
+		<-release
 	}
 	if resultSession != "" {
 		return &harness.ExecutionResult{
@@ -90,12 +115,15 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 	return &harness.ExecutionResult{Output: out, StreamDone: true}, nil
 }
 func (h *streamingHarness) Cancel(_ context.Context, sessionID string) error {
+	h.mu.Lock()
 	h.cancelCalled = true
-	if h.release != nil {
+	release := h.release
+	h.mu.Unlock()
+	if release != nil {
 		select {
-		case <-h.release:
+		case <-release:
 		default:
-			close(h.release)
+			close(release)
 		}
 	}
 	if sessionID == "" {
@@ -111,6 +139,32 @@ func (h *streamingHarness) CheckHealth(context.Context, string) (harness.Harness
 }
 func (h *streamingHarness) Dispatch(context.Context, harness.DispatchRequest) (harness.DispatchResult, error) {
 	return harness.DispatchResult{Dispatched: true}, nil
+}
+
+func (h *streamingHarness) Calls() []streamingCall {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]streamingCall, len(h.calls))
+	copy(out, h.calls)
+	return out
+}
+
+func (h *streamingHarness) ExecuteCount() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.executeCount
+}
+
+func (h *streamingHarness) LastAgentName() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.lastAgentName
+}
+
+func (h *streamingHarness) CancelCalled() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.cancelCalled
 }
 
 func newConversationTestService(t *testing.T) (*cycle.Service, *streamingHarness) {
@@ -207,6 +261,37 @@ func drainConversationStream(t *testing.T, m model, cmd tea.Cmd) model {
 		}
 	}
 	return next
+}
+
+func pumpConversationUntil(t *testing.T, m model, cmd tea.Cmd, timeout time.Duration, pred func(model) bool) (model, tea.Cmd) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	next := m
+	for !pred(next) {
+		if time.Now().After(deadline) {
+			t.Fatal("timeout waiting for conversation predicate")
+		}
+		if cmd == nil {
+			if !IsConversationStreaming(next) {
+				t.Fatal("streaming ended before predicate")
+			}
+			time.Sleep(5 * time.Millisecond)
+			continue
+		}
+		msg := runConversationCmd(cmd)
+		if msg == nil {
+			if next.convStreamCh != nil {
+				cmd = waitConvBatchMsg(next.convStreamCh)
+			} else {
+				time.Sleep(5 * time.Millisecond)
+			}
+			continue
+		}
+		next2, nextCmd := next.Update(msg)
+		next = next2.(model)
+		cmd = nextCmd
+	}
+	return next, cmd
 }
 
 // runConversationCmd executes a tea.Cmd, expanding BatchMsg and skipping wait ticks.
@@ -360,7 +445,7 @@ func TestConversationCancelDuringStreamWithoutSessionID(t *testing.T) {
 	if IsConversationStreaming(next) {
 		t.Fatal("expected streaming stopped")
 	}
-	if !h.cancelCalled {
+	if !h.CancelCalled() {
 		t.Fatal("expected harness Cancel even without session id")
 	}
 }
@@ -393,7 +478,7 @@ func TestConversationCancelDuringStream(t *testing.T) {
 	if IsConversationStreaming(next) {
 		t.Fatal("expected streaming stopped")
 	}
-	if !h.cancelCalled {
+	if !h.CancelCalled() {
 		t.Fatal("expected harness Cancel")
 	}
 	view := ViewForTest(next)
@@ -763,7 +848,7 @@ func TestDeliverStreamDeltaTextBlocksUntilAccepted(t *testing.T) {
 	ch := make(chan tea.Msg) // unbuffered — would drop under old timeout path
 	done := make(chan struct{})
 	go func() {
-		deliverStreamDelta(ch, harness.StreamDelta{Kind: harness.StreamKindText, Text: "hello"})
+		deliverStreamDelta(ch, "ex-1", harness.StreamDelta{Kind: harness.StreamKindText, Text: "hello"})
 		close(done)
 	}()
 	select {
@@ -2659,12 +2744,145 @@ func TestConversationAgentsBoxAddsHeroTaskNotGenericHARN(t *testing.T) {
 		Phase:     harness.StreamPhaseStarted,
 	}})
 	got = LiveAgentsForTest(next.(model))
-	if len(got) != 2 {
-		t.Fatalf("nested explore must not chip HARN: %+v", got)
+	if len(got) != 3 {
+		t.Fatalf("nested explore should chip TASK: %+v", got)
+	}
+	labels = got[0].Label + " " + got[1].Label + " " + got[2].Label
+	if !strings.Contains(labels, "TASK") {
+		t.Fatalf("labels=%q want TASK", labels)
 	}
 	view := ViewForTest(next.(model))
 	if strings.Contains(view, "HARN") {
 		t.Fatalf("agents box must not show HARN for nested generic Task: %q", view)
+	}
+}
+
+func TestConversationContextAgentChipsCTXNotTASK(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m.runtimeAgentName = "orchestration_agent"
+	m.liveAgents = []liveAgent{{Name: "orchestration_agent", Label: "ORCH", Model: "gpt-5.3-codex-medium"}}
+	m.streaming = true
+
+	next, _ := m.Update(streamDeltaMsg{delta: harness.StreamDelta{
+		Kind:      harness.StreamKindTool,
+		AgentName: "context_agent",
+		Model:     "composer-2.5",
+		CallID:    "t-ctx",
+		Phase:     harness.StreamPhaseStarted,
+	}})
+	got := LiveAgentsForTest(next.(model))
+	if len(got) != 2 {
+		t.Fatalf("live agents=%+v want ORCH+CTX", got)
+	}
+	labels := got[0].Label + " " + got[1].Label
+	if !strings.Contains(labels, "CTX") {
+		t.Fatalf("labels=%q want CTX", labels)
+	}
+	if strings.Contains(labels, "TASK") {
+		t.Fatalf("named context_agent must not chip TASK: %q", labels)
+	}
+}
+
+func TestConversationTaskStartRendersLaunchLine(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 28)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m = SetChatHarnessIDForTest(m, "cursor")
+	m.runtimeAgentName = "planning_agent"
+	m.streaming = true
+	m.transcript = []convMessage{{
+		role:      convRoleAgent,
+		content:   "",
+		agentName: "planning_agent",
+		modelSlug: "composer-2.5",
+		harnessID: "cursor",
+	}}
+	m.agentMsgIndex = 0
+	m.liveAgents = []liveAgent{{Name: "planning_agent", Label: "PLAN", Model: "composer-2.5", Harness: "cursor"}}
+
+	next, _ := m.Update(streamDeltaMsg{delta: harness.StreamDelta{
+		Kind:      harness.StreamKindTool,
+		Text:      "Task explore",
+		AgentName: "explore",
+		Model:     "composer-2.5",
+		CallID:    "t-explore",
+		Phase:     harness.StreamPhaseStarted,
+	}})
+	nm := next.(model)
+	view := ViewForTest(nm)
+	if !strings.Contains(view, "Task explore") {
+		t.Fatalf("expected Task start in transcript: %q", view)
+	}
+	if !strings.Contains(view, "[TASK - composer-2.5") {
+		t.Fatalf("expected TASK launch header: %q", view)
+	}
+	if !strings.Contains(view, "Waiting for harness") {
+		t.Fatalf("spinner should remain while Execute is live: %q", view)
+	}
+}
+
+func TestConversationSiblingExecuteDoneKeepsOtherStream(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 32)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m = SetChatHarnessIDForTest(m, "cursor")
+	m.streaming = true
+	m.orchestrationLive = true
+	m.convStreamCh = make(chan tea.Msg, 8)
+	m.executes = map[string]convExecute{
+		"ex-1": {ID: "ex-1", AgentName: "backend_agent", HarnessID: "cursor", AgentMsgIndex: 1},
+		"ex-2": {ID: "ex-2", AgentName: "frontend_agent", HarnessID: "codex", AgentMsgIndex: 3},
+	}
+	m.liveAgents = []liveAgent{
+		{CallID: "ex-1", Name: "backend_agent", Label: "BACK", Model: "composer-2.5", Harness: "cursor"},
+		{CallID: "ex-2", Name: "frontend_agent", Label: "FRNT", Model: "gpt-5.4", Harness: "codex"},
+	}
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "→ implementation (BACK)"},
+		{role: convRoleAgent, content: "back working", agentName: "backend_agent", modelSlug: "composer-2.5", harnessID: "cursor"},
+		{role: convRoleUser, content: "→ implementation (FRNT)"},
+		{role: convRoleAgent, content: "frnt working", agentName: "frontend_agent", modelSlug: "gpt-5.4", harnessID: "codex"},
+	}
+	m.agentMsgIndex = 3
+	m.runtimeAgentName = "frontend_agent"
+
+	next, _ := m.Update(executeDoneMsg{
+		executeID: "ex-1",
+		result:    &harness.ExecutionResult{Output: "back done", StreamDone: true},
+		harnessID: "cursor",
+	})
+	nm := next.(model)
+	if !IsConversationStreaming(nm) {
+		t.Fatal("first child executeDone must keep streaming while sibling is live")
+	}
+	got := LiveAgentsForTest(nm)
+	if len(got) != 1 || got[0].Label != "FRNT" {
+		t.Fatalf("live agents after first done=%+v want FRNT", got)
+	}
+	if _, ok := nm.executes["ex-2"]; !ok {
+		t.Fatal("sibling execute must remain")
+	}
+	if nm.transcript[1].content != "back working" && !strings.Contains(nm.transcript[1].content, "back") {
+		t.Fatalf("sibling transcript wiped: %+v", nm.transcript)
+	}
+
+	next, _ = nm.Update(streamDeltaMsg{
+		executeID: "ex-2",
+		delta:     harness.StreamDelta{Kind: harness.StreamKindText, Text: " more"},
+	})
+	nm = next.(model)
+	if !strings.Contains(nm.transcript[3].content, "frnt working more") {
+		t.Fatalf("sibling stream should continue: %q", nm.transcript[3].content)
+	}
+	if strings.Contains(nm.transcript[1].content, " more") {
+		t.Fatalf("first child bubble must not receive sibling deltas: %q", nm.transcript[1].content)
 	}
 }
 
@@ -2901,6 +3119,9 @@ func TestConversationSubagentTranscriptLabels(t *testing.T) {
 	}
 	if strings.Contains(view, "Task qa_agent (completed)") {
 		t.Fatalf("task lifecycle should not render as tool line: %q", view)
+	}
+	if !strings.Contains(view, "Task qa_agent") {
+		t.Fatalf("task start should render as a launch line: %q", view)
 	}
 }
 

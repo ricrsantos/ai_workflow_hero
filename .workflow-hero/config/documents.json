@@ -199,6 +199,30 @@
       "slug": "tui-cycle-config",
       "path": "docs/product/UI-C07-001-tui-cycle-config.md",
       "title": "TUI Cycle Configuration Screen"
+    },
+    {
+      "category": "PRD",
+      "cycle": "C08",
+      "seq": 1,
+      "slug": "tui-stage-execute",
+      "path": "docs/product/PRD-C08-001-tui-stage-execute.md",
+      "title": "TUI-Direct Stage Execute"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C08",
+      "seq": 1,
+      "slug": "tui-stage-execute",
+      "path": "docs/architecture/ADR-C08-001-tui-stage-execute.md",
+      "title": "TUI-Direct Stage Execute (ADR-054–057)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C08",
+      "seq": 1,
+      "slug": "tui-stage-execute",
+      "path": "docs/product/UI-C08-001-tui-stage-execute.md",
+      "title": "TUI-Direct Stage Execute"
     }
   ]
 }
