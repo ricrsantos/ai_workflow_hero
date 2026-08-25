@@ -108,10 +108,25 @@ func (m model) showHarnessWait() bool {
 	return true
 }
 
-func (m model) waitingForHarnessLine(rowW int) string {
+func (m model) showChatWait() bool {
+	if m.heroStartBootstrapping || m.heroStartPreparing {
+		return true
+	}
+	return m.showHarnessWait()
+}
+
+func (m model) chatWaitLine(rowW int) string {
 	frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
-	pending := chatInText.Render(frame) + chatInMuted.Render(" Waiting for harness…")
+	text := " Waiting for harness…"
+	if m.heroStartBootstrapping || m.heroStartPreparing {
+		text = " Preparing /hero-start…"
+	}
+	pending := chatInText.Render(frame) + chatInMuted.Render(text)
 	return chatThinBarRow(chatBarMuted, pending, rowW)
+}
+
+func (m model) waitingForHarnessLine(rowW int) string {
+	return m.chatWaitLine(rowW)
 }
 
 func (m model) conversationExecuteCmds() tea.Cmd {
@@ -565,7 +580,6 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	m.streaming = true
 	m.waitAnimFrame = 0
 	m.transcriptFollowBottom = true
-	m.transcriptScrollOffset = 0
 	m.chatInputFocused = false
 	m = m.resetHarnessWatchdog(executePrompt)
 	parentName := strings.TrimSpace(m.runtimeAgentName)
@@ -593,7 +607,7 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	ch := make(chan tea.Msg, 512)
 	m.convStreamCh = ch
 	m.startConversationExecute(executePrompt, ch)
-	return m
+	return m.maybeFollowTranscriptBottom()
 }
 
 func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1929,10 +1943,13 @@ func (m model) transcriptContentLines(contentW int) []string {
 		if m.streaming || len(m.liveAgents) > 0 {
 			header := m.responseSpeakerHeader()
 			out := []string{chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW)}
-			if m.showHarnessWait() {
-				out = append(out, m.waitingForHarnessLine(rowW))
+			if m.showChatWait() {
+				out = append(out, m.chatWaitLine(rowW))
 			}
 			return out
+		}
+		if m.showChatWait() {
+			return []string{m.chatWaitLine(rowW)}
 		}
 		return []string{chatThinBarRow(chatBarMuted, chatInMuted.Render("Submit a message to start an interação."), rowW)}
 	}
@@ -1961,12 +1978,12 @@ func (m model) transcriptContentLines(contentW int) []string {
 			out = append(out, "")
 		}
 	}
-	if m.showHarnessWait() {
+	if m.showChatWait() {
 		if len(out) == 0 {
 			header := m.responseSpeakerHeader()
 			out = []string{chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW)}
 		}
-		out = append(out, m.waitingForHarnessLine(rowW))
+		out = append(out, m.chatWaitLine(rowW))
 	}
 	return out
 }

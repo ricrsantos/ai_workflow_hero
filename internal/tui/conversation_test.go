@@ -481,6 +481,121 @@ func viewHasWaitSpinner(view string) bool {
 	return false
 }
 
+func TestHeroStartPreflightShowsPreparingAndClearsTranscript(t *testing.T) {
+	svc := newTestServiceWithRunningResearch(t)
+	m := withDefaultChatModel(NewTestModel(svc))
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 40)
+	m = EnterConversationForTest(m)
+	m.transcript = []convMessage{{role: convRoleUser, content: "old grill answer"}}
+	m.transcriptScrollOffset = 3
+	m.transcriptFollowBottom = false
+
+	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	if cmd == nil {
+		t.Fatal("expected preflight cmd")
+	}
+	if len(next.transcript) != 0 {
+		t.Fatalf("transcript should be cleared, got %d msgs", len(next.transcript))
+	}
+	if StatusKindForTest(next) != "running" {
+		t.Fatalf("status=%s want running", StatusKindForTest(next))
+	}
+	view := stripANSI(ViewForTest(next))
+	if strings.Contains(view, "old grill answer") {
+		t.Fatalf("old transcript still visible: %q", view)
+	}
+	if strings.Contains(view, "Submit a message") {
+		t.Fatalf("placeholder should not show during preflight: %q", view)
+	}
+	if !strings.Contains(view, "Preparing /hero-start") {
+		t.Fatalf("missing preparing line: %q", view)
+	}
+	if !strings.Contains(view, "running") {
+		t.Fatalf("missing status timer chrome: %q", view)
+	}
+	foundSpinner := false
+	for _, frame := range waitAnimFrames {
+		if strings.Contains(view, frame) {
+			foundSpinner = true
+			break
+		}
+	}
+	if !foundSpinner {
+		t.Fatalf("preflight spinner missing: %q", view)
+	}
+}
+
+func TestBeginConversationExecuteFollowsTranscriptBottom(t *testing.T) {
+	m, _, _ := newConversationTestModel(t)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: strings.Repeat("line ", 400)},
+		{role: convRoleAgent, content: strings.Repeat("reply ", 400), modelSlug: "composer-2.5", harnessID: "cursor"},
+	}
+	m.transcriptScrollOffset = 0
+	m.transcriptFollowBottom = false
+	if m.maxTranscriptScroll() < 2 {
+		t.Fatalf("need scrollable history, max=%d", m.maxTranscriptScroll())
+	}
+
+	next := m.beginConversationExecute("follow-up", "ping")
+	if !next.transcriptFollowBottom {
+		t.Fatal("expected follow bottom")
+	}
+	if next.transcriptScrollOffset != next.maxTranscriptScroll() {
+		t.Fatalf("offset=%d want max=%d", next.transcriptScrollOffset, next.maxTranscriptScroll())
+	}
+	if next.transcriptScrollOffset == 0 {
+		t.Fatal("must not jump to top of history")
+	}
+}
+
+func TestHeroResumeKeepsTranscriptAndShowsWait(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-resume.md"), []byte("# /hero-resume\n\nRESUME_RUNTIME"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH_RESUME"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := newTestServiceInstalledNoCycle(t, dir)
+	h := &streamingHarness{deltas: []string{"resuming"}}
+	svc.Harness = h
+
+	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 40)
+	m = EnterConversationForTest(m)
+	m.transcript = []convMessage{{role: convRoleUser, content: "prior grill"}}
+
+	next, cmd := BeginHeroResumeExecuteForTest(m, 0)
+	if cmd == nil {
+		t.Fatal("expected resume execute cmd")
+	}
+	if len(next.transcript) < 1 || next.transcript[0].content != "prior grill" {
+		t.Fatal("resume must keep prior transcript")
+	}
+	if StatusKindForTest(next) != "running" {
+		t.Fatalf("status=%s want running", StatusKindForTest(next))
+	}
+	view := stripANSI(ViewForTest(next))
+	if !strings.Contains(view, "Waiting for harness") {
+		t.Fatalf("missing wait line: %q", view)
+	}
+	if !strings.Contains(view, "/hero-resume") || !strings.Contains(view, "running") {
+		t.Fatalf("missing resume status timer: %q", view)
+	}
+	if !strings.Contains(view, "prior grill") {
+		t.Fatalf("prior transcript not visible: %q", view)
+	}
+}
+
 func streamingTranscriptModel(agentText string, extra ...convMessage) model {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)

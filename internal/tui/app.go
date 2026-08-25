@@ -177,14 +177,14 @@ type actionResultMsg struct {
 
 func newModel(svc *cycle.Service) model {
 	m := model{
-		svc:              svc,
-		screen:           screenConversation,
-		prevScreen:       screenConversation,
-		chatMode:         harness.ModeBuild,
-		agentMsgIndex:    -1,
-		thinkingMsgIndex: -1,
+		svc:                    svc,
+		screen:                 screenConversation,
+		prevScreen:             screenConversation,
+		chatMode:               harness.ModeBuild,
+		agentMsgIndex:          -1,
+		thinkingMsgIndex:       -1,
 		transcriptFollowBottom: true,
-		chatInputFocused: true,
+		chatInputFocused:       true,
 	}
 	projectDir := ""
 	if svc != nil {
@@ -330,10 +330,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case convWaitTickMsg:
 		if m.streaming {
 			m.waitAnimFrame++
+			m = m.maybeFollowTranscriptBottom()
 			return m, convWaitTickCmd()
 		}
 		if m.propsAwaitingRefresh || m.harnessResetAwaitingOpen || m.heroStartPreparing || m.heroStartBootstrapping {
 			m.waitAnimFrame++
+			if m.heroStartPreparing || m.heroStartBootstrapping {
+				m = m.maybeFollowTranscriptBottom()
+			}
 			return m, convWaitTickCmd()
 		}
 		return m, nil
@@ -822,10 +826,13 @@ func (m model) beginHeroStart() (model, tea.Cmd) {
 	// All filesystem and SQLite bootstrap work runs as a tea.Cmd. The Bubble
 	// Tea Update loop must remain available for repaint, navigation, and cancel
 	// while /hero-start validates and synchronizes the cycle.
-	m.screen = screenConversation
+	m, _ = m.enterConversation()
+	m = m.resetChatSession()
 	m.chatInputFocused = false
 	m.heroStartBootstrapping = true
 	m.waitAnimFrame = 0
+	m.transcriptFollowBottom = true
+	m = m.maybeFollowTranscriptBottom()
 	m.actionBusy = true
 	m.statusKind = statusRunning
 	m.statusLabel = "/hero-start"
@@ -835,7 +842,7 @@ func (m model) beginHeroStart() (model, tea.Cmd) {
 	requestID := m.heroStartRequestID
 	ctx, cancel := context.WithCancel(context.Background())
 	m.heroStartCancel = cancel
-	return m, tea.Batch(convWaitTickCmd(), m.heroStartBootstrapCmd(ctx, requestID))
+	return m, tea.Batch(convWaitTickCmd(), statusTickCmd(), m.heroStartBootstrapCmd(ctx, requestID))
 }
 
 type heroStartBootstrapDoneMsg struct {
@@ -1044,7 +1051,9 @@ func (m model) beginHeroResumeExecute(cycleN int) (model, tea.Cmd) {
 		}
 		return m, cmd
 	}
-	return m.beginHeroRuntimeConversation("resume", slug, heroRuntimeOpts{ResumeCycleNumber: cycleN})
+	m = m.setStatusRunning("/hero-resume")
+	next, execCmd := m.beginHeroRuntimeConversation("resume", slug, heroRuntimeOpts{ResumeCycleNumber: cycleN})
+	return next, tea.Batch(execCmd, statusTickCmd())
 }
 
 func (m model) validateHeroRejectPreconditions() (errMsg string) {

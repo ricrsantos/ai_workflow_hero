@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-25 — `/hero-start` / `/hero-resume` visible wait in Chat
+
+**Problem**: Preflight ran with a status timer but no in-chat spinner (`streaming` was false). Leftover grill history stayed on screen and Execute set `transcriptScrollOffset = 0`, so the viewport jumped to the top and `Waiting for harness…` was off-screen — looked frozen.
+
+**Change**: `/hero-start` clears the transcript and shows `Preparing /hero-start…` during bootstrap/prepare. Execute follows the transcript bottom. `/hero-resume` keeps history, follows bottom, and sets status running with a timer.
+
+**Validation**: `go test ./internal/tui/` passed.
+
 ## 2026-08-25 — Mixed-harness grill-me session resume
 
 **Problem**: TUI Research with orchestrator Cursor + `discover_agent` Codex started a new Codex thread on every user answer. `persistHarnessSession` for discover never set `harnessSessionHarnessID`, so `harnessSessionIDForPair` treated the leftover Cursor id as a cross-harness resume and dropped the thread. Same TUI bug for OpenCode when harnesses differ.
