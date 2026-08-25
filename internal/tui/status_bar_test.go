@@ -8,6 +8,39 @@ import (
 	"time"
 )
 
+func TestCompleteBusyExecuteStatusClearsResumeBusy(t *testing.T) {
+	m := NewTestModel(nil)
+	m = m.setStatusRunning("/hero-resume")
+	m = m.completeBusyExecuteStatus(true, busyExecuteCompletedText(m.statusLabel))
+	if ActionBusyForTest(m) {
+		t.Fatal("expected actionBusy cleared")
+	}
+	if StatusKindForTest(m) != "ok" {
+		t.Fatalf("kind=%s", StatusKindForTest(m))
+	}
+	if StatusTextForTest(m) != "turn completed" {
+		t.Fatalf("text=%q", StatusTextForTest(m))
+	}
+}
+
+func TestCompleteBusyExecuteStatusNoopWhenIdle(t *testing.T) {
+	m := NewTestModel(nil)
+	m = m.setStatusResult(true, "/hero-sync", "done")
+	next := m.completeBusyExecuteStatus(true, "turn completed")
+	if StatusTextForTest(next) != "done" {
+		t.Fatalf("must not overwrite idle result: %q", StatusTextForTest(next))
+	}
+}
+
+func TestBusyExecuteCompletedText(t *testing.T) {
+	if got := busyExecuteCompletedText("/hero-start"); got != "orchestration turn completed" {
+		t.Fatalf("start text=%q", got)
+	}
+	if got := busyExecuteCompletedText("/hero-resume"); got != "turn completed" {
+		t.Fatalf("resume text=%q", got)
+	}
+}
+
 func TestStatusBarReadyAndRunning(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 80)

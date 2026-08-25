@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-25 — `/hero-start` blocked after finished `/hero-resume`
+
+**Problem**: `/hero-resume` set `actionBusy` for the status timer but `executeDone` only called `setStatusResult` when the label was `/hero-start`. The palette then reported `busy — wait for /hero-resume to finish` even after the chat turn completed.
+
+**Change**: Any busy Execute (resume, start without handoff, cancel, error) now clears `actionBusy` via `completeBusyExecuteStatus`. `/hero-start` → discover handoff still keeps the timer until the discover turn ends.
+
+**Validation**: `go test ./internal/tui/` passed. `go test ./...` failed only in unrelated WIP `internal/workflowconfig` document tests.
+
 ## 2026-08-25 — `/hero-start` / `/hero-resume` visible wait in Chat
 
 **Problem**: Preflight ran with a status timer but no in-chat spinner (`streaming` was false). Leftover grill history stayed on screen and Execute set `transcriptScrollOffset = 0`, so the viewport jumped to the top and `Waiting for harness…` was off-screen — looked frozen.

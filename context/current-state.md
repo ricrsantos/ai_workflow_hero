@@ -82,6 +82,7 @@
 
 ## Recent Decisions
 
+- **2026-08-25 — `/hero-start` after `/hero-resume`**: Execute done/error/cancel clears `actionBusy` for the current status label (not only `/hero-start`), so the palette no longer treats a finished resume as still running.
 - **2026-08-25 — `/hero-start` / `/hero-resume` chat wait**: Preflight shows `Preparing /hero-start…` in the transcript (status timer unchanged); `/hero-start` clears leftover chat; Execute follows the bottom instead of jumping to offset 0; `/hero-resume` keeps history and shows `Waiting for harness…` with a running status timer.
 - **2026-08-25 — Mixed-harness Research resume**: Discover persist now records `harnessSessionHarnessID`; `/hero-start` Prepare resets the registry Codex/OpenCode adapter; Codex `thread/resume` of an unloaded id starts a new thread.
 - **2026-08-24 — Chat wait spinner**: Shown at the transcript end for the whole Execute, not only while the green agent bubble is empty (thinking/tools no longer hide it).

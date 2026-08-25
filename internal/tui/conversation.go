@@ -1367,7 +1367,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case executeDoneMsg:
-		heroStartAction := m.actionBusy && m.statusLabel == "/hero-start"
 		stageForMetrics := strings.TrimSpace(m.conversationStage)
 		agentForMetrics := strings.TrimSpace(m.runtimeAgentName)
 		modelForMetrics := m.conversationModelSlug()
@@ -1388,11 +1387,11 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			errText := msg.err.Error()
 			m.convError = errText
-			statusLabel := "execute"
-			if heroStartAction {
-				statusLabel = "/hero-start"
+			label := "execute"
+			if m.actionBusy && strings.TrimSpace(m.statusLabel) != "" {
+				label = m.statusLabel
 			}
-			m = m.setStatusResult(false, statusLabel, firstStatusLine(errText))
+			m = m.setStatusResult(false, label, firstStatusLine(errText))
 			if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 				existing := strings.TrimSpace(m.transcript[m.agentMsgIndex].content)
 				if existing == "" {
@@ -1440,13 +1439,10 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if handoffCmd != nil {
 			return next, tea.Batch(next.refreshCmd(), handoffCmd, convWaitTickCmd())
 		}
-		if heroStartAction {
-			next = next.setStatusResult(true, "/hero-start", "orchestration turn completed")
-		}
+		next = next.completeBusyExecuteStatus(true, busyExecuteCompletedText(next.statusLabel))
 		return next, next.refreshCmd()
 
 	case streamCancelDoneMsg:
-		heroStartAction := m.actionBusy && m.statusLabel == "/hero-start"
 		m.streaming = false
 		m.streamInterrupted = true
 		m.convStreamCh = nil
@@ -1459,9 +1455,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.transcript[m.agentMsgIndex].interrupted = true
 			m.invalidateResponseCache(m.agentMsgIndex)
 		}
-		if heroStartAction {
-			m = m.setStatusResult(false, "/hero-start", "cancelled")
-		}
+		m = m.completeBusyExecuteStatus(false, "cancelled")
 		slog.Info("tui conversation interrupted")
 		return m, nil
 	}

@@ -2455,6 +2455,23 @@ func TestHeroResumeRuntimeConversation(t *testing.T) {
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q", h.lastAgentName)
 	}
+	if ActionBusyForTest(next) {
+		t.Fatal("finished /hero-resume must clear actionBusy")
+	}
+	if StatusKindForTest(next) == "running" {
+		t.Fatal("finished /hero-resume must not leave status running")
+	}
+	if StatusTextForTest(next) != "turn completed" {
+		t.Fatalf("status=%q", StatusTextForTest(next))
+	}
+
+	started, startCmd := RunPaletteItemForTest(OpenPalette(next), "/hero-start")
+	if strings.Contains(StatusTextForTest(started), "wait for /hero-resume") {
+		t.Fatalf("/hero-start blocked as if resume still running: %q", StatusTextForTest(started))
+	}
+	if startCmd == nil && strings.Contains(StatusTextForTest(started), "busy") {
+		t.Fatalf("expected /hero-start to dispatch, got busy status %q", StatusTextForTest(started))
+	}
 }
 
 func TestHeroResumeInlineCycleNumber(t *testing.T) {

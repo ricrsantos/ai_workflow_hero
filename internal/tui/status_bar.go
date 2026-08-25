@@ -83,6 +83,27 @@ func (m model) setStatusResult(ok bool, label, text string) model {
 	return m
 }
 
+func busyExecuteCompletedText(label string) string {
+	if strings.TrimSpace(label) == "/hero-start" {
+		return "orchestration turn completed"
+	}
+	return "turn completed"
+}
+
+// completeBusyExecuteStatus clears a running palette/slash action after Execute
+// finishes. Follow-up chat turns leave the footer unchanged when actionBusy is
+// already false. /hero-start handoff skips this so discover keeps the timer.
+func (m model) completeBusyExecuteStatus(ok bool, text string) model {
+	if !m.actionBusy {
+		return m
+	}
+	label := strings.TrimSpace(m.statusLabel)
+	if label == "" {
+		label = "execute"
+	}
+	return m.setStatusResult(ok, label, text)
+}
+
 // setStatusWarning shows a yellow warning in the footer status area (UI §2.1).
 func (m model) setStatusWarning(label, text string) model {
 	m.actionBusy = false
