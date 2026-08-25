@@ -292,10 +292,18 @@ func (m model) persistHarnessSession(sessionID, harnessID string) model {
 	if agent == agentDiscover {
 		m.researchSessionID = sessionID
 		m.harnessSessionID = sessionID
+		if harnessID != "" {
+			m.harnessSessionHarnessID = harnessID
+		}
 		m.conversationStage = stageResearch
 		if m.svc != nil {
 			if err := m.svc.SetStageHarnessSessionID(stageResearch, sessionID); err != nil {
 				slog.Error("tui persist harness session failed", "error", err)
+			}
+			if harnessID != "" {
+				if err := m.svc.SetStageHarnessID(stageResearch, harnessID); err != nil {
+					slog.Debug("tui persist research harness id failed", "error", err)
+				}
 			}
 		}
 		return m

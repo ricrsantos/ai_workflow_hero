@@ -1,7 +1,9 @@
 ---
-name: judge_agent
 description: Validates SDD requirement coverage during the Judge stage. Does not assess code style.
-model: inherit
+model: opencode-go/deepseek-v4-pro
+name: judge_agent
+reasoningEffort: high
+thinking: "off"
 ---
 
 # judge_agent — SDD Coverage Judge Agent

@@ -12,7 +12,19 @@ import (
 
 // AgentModelConfig is one agent (or fallback_model) block from workflow-config.yml.
 type AgentModelConfig struct {
-	Harness         string `yaml:"harness"`
+	Harness         string         `yaml:"harness"`
+	Model           string         `yaml:"model"`
+	ReasoningEffort string         `yaml:"reasoning_effort"`
+	EnableFastModel bool           `yaml:"enable_fast_model"`
+	Thinking        string         `yaml:"thinking"`
+	Subagent        SubagentConfig `yaml:"subagent"`
+}
+
+// SubagentConfig configures nested Task fan-out for one agent. A subagent
+// always uses its parent's harness; when SameOfAgent is true it also reuses
+// the parent's model and properties.
+type SubagentConfig struct {
+	SameOfAgent     bool   `yaml:"same_of_agent"`
 	Model           string `yaml:"model"`
 	ReasoningEffort string `yaml:"reasoning_effort"`
 	EnableFastModel bool   `yaml:"enable_fast_model"`
@@ -155,6 +167,7 @@ func OrchestratorPair(projectDir string) (AgentPair, error) {
 //   - multiple including Cursor → cursor
 //   - multiple without Cursor → first enabled (stable caller order, e.g. ListEnabledHarnesses)
 //   - never inject a disabled harness (empty enabled list → no injection)
+//
 // Explicit harness values are preserved.
 func InjectHarnessForNew(cfg *ConfigFile, enabledHarnesses []string) {
 	if cfg == nil {

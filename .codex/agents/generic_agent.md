@@ -1,7 +1,9 @@
 ---
-name: generic_agent
 description: Implements native apps, scripts, and infrastructure for native/script/infrastructure scopes.
-model: inherit
+model: gpt-5.6-terra
+name: generic_agent
+reasoningEffort: xhigh
+thinking: "off"
 ---
 
 # generic_agent — Native / Script / Infrastructure Agent

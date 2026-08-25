@@ -3011,6 +3011,131 @@ func TestDiscoverCloseResumesOrchestrator(t *testing.T) {
 	}
 }
 
+func writeMixedDiscoverAgentYAML(t *testing.T, dir string) {
+	t.Helper()
+	heroDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")
+	cfg := []byte(`title: TUI Test
+objective: test
+agents:
+  orchestration_agent:
+    harness: cursor
+    model: composer-2.5
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+  discover_agent:
+    harness: codex
+    model: gpt-5.4
+    reasoning_effort: xhigh
+    enable_fast_model: false
+    thinking: off
+fallback_model:
+  harness: cursor
+  model: composer-2.5
+  reasoning_effort: na
+  enable_fast_model: false
+  thinking: na
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+`)
+	if err := os.WriteFile(filepath.Join(heroDir, "workflow-config.yml"), cfg, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setupMixedHarnessDiscoverStart(t *testing.T) (model, *streamingHarness, *streamingHarness, *cycle.Service) {
+	t.Helper()
+	dir := t.TempDir()
+	setupDiscoverRuntimeFiles(t, dir)
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	writeMixedDiscoverAgentYAML(t, dir)
+	writeHeroJSONHarnesses(t, dir, map[string]bool{"cursor": true, "codex": true})
+	orchH := &streamingHarness{deltas: []string{"ok"}, sessionIDs: []string{"orch-sess"}}
+	discH := &streamingHarness{deltas: []string{"grill"}, sessionIDs: []string{"disc-sess"}}
+	svc.Harness = nil
+	svc.Registry = routingRegistry{adapters: map[string]harness.HarnessAdapter{
+		"cursor": orchH,
+		"codex":  discH,
+	}}
+	m := withDefaultChatModel(NewTestModel(svc))
+	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	next = drainConversationStream(t, next, cmd)
+	return next, orchH, discH, svc
+}
+
+func TestHeroStartMixedHarnessDiscoverFollowUpResumesCodexSession(t *testing.T) {
+	next, orchH, discH, svc := setupMixedHarnessDiscoverStart(t)
+	if orchH.executeCount != 1 {
+		t.Fatalf("orch executes=%d want 1", orchH.executeCount)
+	}
+	if discH.lastAgentName != "discover_agent" {
+		t.Fatalf("agent=%q want discover_agent", discH.lastAgentName)
+	}
+	if discH.lastSessionID != "" {
+		t.Fatalf("discover execute should be a fresh session, got resume %q", discH.lastSessionID)
+	}
+	if discH.lastModel != "gpt-5.4" {
+		t.Fatalf("discover model=%q want gpt-5.4", discH.lastModel)
+	}
+	if ResearchSessionIDForTest(next) != "disc-sess" {
+		t.Fatalf("disc session=%q", ResearchSessionIDForTest(next))
+	}
+	if HarnessSessionHarnessIDForTest(next) != "codex" {
+		t.Fatalf("session harness=%q want codex", HarnessSessionHarnessIDForTest(next))
+	}
+	storedHarness, err := svc.StageHarnessID("research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedHarness != "codex" {
+		t.Fatalf("stored research harness=%q want codex", storedHarness)
+	}
+
+	next = SetConversationInput(next, "continue grilling")
+	next, cmd := SubmitConversationForTest(next)
+	next = drainConversationStream(t, next, cmd)
+	if discH.lastAgentName != "discover_agent" {
+		t.Fatalf("follow-up agent=%q", discH.lastAgentName)
+	}
+	if discH.lastSessionID != "disc-sess" {
+		t.Fatalf("follow-up resume=%q want disc-sess", discH.lastSessionID)
+	}
+	if discH.executeCount != 2 {
+		t.Fatalf("discover executes=%d want 2", discH.executeCount)
+	}
+	if orchH.executeCount != 1 {
+		t.Fatalf("orch should not run follow-up, executes=%d", orchH.executeCount)
+	}
+	_ = next
+}
+
+func TestDiscoverCloseResumesOrchestratorMixedHarness(t *testing.T) {
+	next, orchH, _, svc := setupMixedHarnessDiscoverStart(t)
+	if err := svc.CloseStage("research", "done", `{"agent":"discover_agent","input_tokens":1,"output_tokens":1}`, false); err != nil {
+		t.Fatal(err)
+	}
+
+	next = SetConversationInput(next, "research finished")
+	next, cmd := SubmitConversationForTest(next)
+	next = drainConversationStream(t, next, cmd)
+
+	if orchH.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent after research close", orchH.lastAgentName)
+	}
+	if orchH.lastSessionID != "orch-sess" {
+		t.Fatalf("resume session=%q want orch-sess", orchH.lastSessionID)
+	}
+	if HarnessSessionHarnessIDForTest(next) == "codex" {
+		t.Fatal("orchestrator resume must not stay bound to the Codex research thread")
+	}
+	if orchH.executeCount < 2 {
+		t.Fatalf("orch executes=%d want at least start + resume", orchH.executeCount)
+	}
+}
+
 func TestConversationContextBarShownWhenCatalogHasWindow(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)

@@ -90,7 +90,9 @@ Harness habilitado → modelo nativo daquele harness → propriedades suportadas
 
 - O menu de harness mostra somente harnesses habilitados no projeto; indisponibilidade é apresentada como aviso, não como troca silenciosa.
 - O menu de modelo é filtrado pelo harness escolhido e reutiliza os catálogos/cache e a atualização em background já definidos para `/model`.
+- para o modelo do subagents devem ficar disponíveis apenas modelos do mesmo harness do agente principal
 - As propriedades `fs` (fast), `th` (thinking) e `ef` (reasoning effort) usam as capacidades normalizadas da C5. Somente controles aceitos pelo modelo são exibidos.
+- O valor escolhido explicitamente na UI prevalece sobre o valor padrão informado pelo catálogo ou pelo harness. O padrão só preenche um campo ainda não escolhido; uma atualização de capacidades não pode substituir uma escolha válida.
 - Essas escolhas gravam diretamente `harness`, `model`, `enable_fast_model`, `thinking` e `reasoning_effort` no bloco do YAML em edição. Elas não usam `hero.json.model_properties`, que é reservado ao free chat e `/hero-new`.
 - Metadados de modelo ausentes não bloqueiam a seleção: a tela avisa e preserva os valores compatíveis do YAML (`false`/`na` quando não houver escolha suportada).
 
@@ -106,6 +108,7 @@ O arquivo pode ter comentários, `workflow_rules` e chaves de versões futuras. 
 Validações antes de salvar:
 
 - título e objetivo obrigatórios;
+- modelo selecinado para o subagent deve pertencer ao mesmo harness do modelo principal do agent.
 - `max_iterations > 0` e `timeout_minutes` válido para etapas ativas;
 - pelo menos um escopo ativo quando `implementation.enabled=true`;
 - gates de frontend para Browser UI Validation e Playwright;
@@ -116,6 +119,7 @@ Os erros devem apontar o campo e a regra, sem gravar um estado parcial.
 
 ## Direção de implementação
 
+- Deve ser utilizada a skill `golang-tui`
 - **`internal/tui`**: adicionar `screenConfig`, navegação condicional, estado do formulário, renderização por seções, teclado, mensagens de confirmação e ações Save/Save and start.
 - **`internal/workflowconfig`**: criar um documento editável/round-trip seguro, validação semântica e mutações direcionadas por caminho YAML. Centralizar aqui as regras para que a TUI não conheça detalhes de serialização.
 - **`internal/modelprops` e `internal/harnessmgr`**: reutilizar descoberta, cache e capability snapshots da C5 para os menus de modelo/propriedades; a tela persiste o resultado no draft de workflow, não em `hero.json`.

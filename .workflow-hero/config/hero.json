@@ -28,13 +28,13 @@
     }
   },
   "freechat_default": {
-    "harness": "opencode",
-    "model": "opencode-go/deepseek-v4-pro"
+    "harness": "codex",
+    "model": "gpt-5.6-luna"
   },
   "model_properties": {
     "codex": {
       "gpt-5.6-luna": {
-        "ef": "high",
+        "ef": "xhigh",
         "th": "off"
       },
       "gpt-5.6-terra": {

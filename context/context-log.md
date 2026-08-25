@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-25 — Mixed-harness grill-me session resume
+
+**Problem**: TUI Research with orchestrator Cursor + `discover_agent` Codex started a new Codex thread on every user answer. `persistHarnessSession` for discover never set `harnessSessionHarnessID`, so `harnessSessionIDForPair` treated the leftover Cursor id as a cross-harness resume and dropped the thread. Same TUI bug for OpenCode when harnesses differ.
+
+**Change**: Bind discover (and orchestrator follow-up/close) to the runtime harness; `/hero-start` Prepare resets the registry adapter; Codex `thread/resume` failure on an unloaded id starts a new thread; `StopAppServer` clears session maps.
+
+**Validation**: `go test ./internal/tui/ ./internal/adapters/codex/ ./internal/adapters/opencode/ ./internal/harnessmgr/` passed. `go test ./...` failed only in unrelated WIP `internal/workflowconfig` document tests (`document_test.go`), not in this change.
+
 ## 2026-08-24 — Chat wait spinner during thinking
 
 **Change**: `transcriptContentLines` always draws `⠋ Waiting for harness…` at the end of the transcript while `streaming` is true (muted bar). The spinner no longer disappears after the first green agent text, so Codex/OpenCode/Cursor turns that continue with gray thinking or tools still show that Execute is in flight. Hidden on `executeDone` / cancel / failed-or-interrupted parent bubble.
@@ -17,6 +25,8 @@
 **Decision**: Add a future **Config** sidebar screen only while a cycle is active. It edits the existing `workflow-config.yml`; the Cursor IDE configuration flow remains unchanged. The screen is editable when no agent is running, progressively reveals stage/agent controls, selects harness → model → supported properties interactively, and saves atomically with a round-trip-safe YAML patch. Each save syncs title/objective and still-open stage budgets to SQLite.
 
 **Artifact**: `docs/idea/v2_8_config/config-screen.md`.
+
+**Decision (2026-08-25)**: For the planned TUI cycle configuration screen, an explicit property value selected in the UI takes precedence over a catalog or harness default. Defaults only initialize an untouched field; capability refresh must preserve a still-valid user choice.
 
 ## 2026-08-24 — Release v2.7.0 (local only)
 

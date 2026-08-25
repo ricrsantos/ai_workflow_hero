@@ -219,11 +219,25 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 			return nil, err
 		}
 		sessionID = sess.ID
-	} else {
-		// Load thread into memory when resuming across app-server restarts.
-		// Already-loaded threads may error; turn/start still proceeds.
-		if err := a.ResumeSession(ctx, sessionID); err != nil {
+	} else if err := a.ResumeSession(ctx, sessionID); err != nil {
+		// Already-loaded threads may reject thread/resume; turn/start can proceed.
+		// A missing thread after app-server restart must not reuse a dead id.
+		a.mu.Lock()
+		_, loaded := a.sessions[sessionID]
+		a.mu.Unlock()
+		if loaded {
 			a.log().Debug("codex thread resume skipped", "thread_id", sessionID, "error", err)
+		} else {
+			a.log().Warn("codex thread resume failed; starting new thread", "thread_id", sessionID, "error", err)
+			sess, cerr := a.CreateSession(ctx, harness.SessionRequest{
+				ProjectDir: req.ProjectDir,
+				StageName:  req.StageName,
+				AgentName:  req.AgentName,
+			})
+			if cerr != nil {
+				return nil, cerr
+			}
+			sessionID = sess.ID
 		}
 	}
 

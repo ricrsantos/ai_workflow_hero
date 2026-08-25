@@ -55,11 +55,11 @@ func (ExecRunner) Start(ctx context.Context, dir, name string, args ...string) (
 	return h, nil
 }
 
-func (h *execStdioHandle) PID() int              { return h.cmd.Process.Pid }
-func (h *execStdioHandle) Stdin() WriteCloser    { return h.stdin }
-func (h *execStdioHandle) Stdout() ReadCloser    { return h.stdout }
-func (h *execStdioHandle) Wait() error           { return h.cmd.Wait() }
-func (h *execStdioHandle) Kill() error           { return h.cmd.Process.Kill() }
+func (h *execStdioHandle) PID() int           { return h.cmd.Process.Pid }
+func (h *execStdioHandle) Stdin() WriteCloser { return h.stdin }
+func (h *execStdioHandle) Stdout() ReadCloser { return h.stdout }
+func (h *execStdioHandle) Wait() error        { return h.cmd.Wait() }
+func (h *execStdioHandle) Kill() error        { return h.cmd.Process.Kill() }
 
 // IsManagedCodexAppServer reports whether pid looks like a Hero-eligible
 // `codex app-server` child. Never kills foreign processes that fail this check.
@@ -318,6 +318,9 @@ func (a *Adapter) stopAppServerState(ctx context.Context) error {
 	a.appHandle = nil
 	a.appPID = 0
 	a.rpc = nil
+	a.sessions = make(map[string]*sessionState)
+	a.cancels = make(map[string]context.CancelFunc)
+	a.activeTurn = make(map[string]string)
 	a.mu.Unlock()
 
 	if rpc != nil {

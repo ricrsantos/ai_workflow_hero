@@ -100,8 +100,22 @@ func (m model) maybeHandoffAfterExecute() (model, tea.Cmd) {
 		m.harnessSessionID = m.researchSessionID
 		m = m.withRuntimeAgent(agentDiscover)
 		m = m.applyAgentRuntimePair(agentDiscover, "")
+		m = m.bindSessionToRuntimeHarness()
 	}
 	return m, nil
+}
+
+// bindSessionToRuntimeHarness records which harness owns harnessSessionID so
+// mixed orchestrator/discover pairs (e.g. cursor + codex) can resume.
+func (m model) bindSessionToRuntimeHarness() model {
+	if h := strings.TrimSpace(strings.ToLower(m.runtimeHarnessID)); h != "" {
+		m.harnessSessionHarnessID = h
+		return m
+	}
+	if h := strings.TrimSpace(strings.ToLower(m.agentHarnessForName(m.runtimeAgentName))); h != "" {
+		m.harnessSessionHarnessID = h
+	}
+	return m
 }
 
 func (m model) startDiscoverResearchSession() (model, tea.Cmd) {
@@ -124,6 +138,7 @@ func (m model) startDiscoverResearchSession() (model, tea.Cmd) {
 	m.researchLive = true
 	m.researchSessionID = ""
 	m.harnessSessionID = ""
+	m.harnessSessionHarnessID = ""
 	m.conversationStage = stageResearch
 	m.runtimeCommandName = ""
 	m = m.withRuntimeAgent(agentDiscover)
@@ -144,8 +159,14 @@ func (m model) resumeOrchestratorAfterResearch() (model, tea.Cmd) {
 	m = m.withRuntimeAgent(agentOrchestration)
 	m.runtimeCommandName = "start"
 	m = m.applyAgentRuntimePair(agentOrchestration, "")
+	m = m.bindSessionToRuntimeHarness()
 	if s, err := m.svc.ActiveRunStage(); err == nil {
 		m.conversationStage = s
+	}
+	// Research may still be the last stored stage after close; do not use its
+	// discover harness id to gate the orchestrator Cursor/OpenCode session.
+	if strings.EqualFold(m.conversationStage, stageResearch) && m.researchStageClosedOrMovedOn() {
+		m.conversationStage = ""
 	}
 	prompt := tuiHeroStartContinueAfterResearchPreamble() +
 		"Research closed. Continue the cycle: dispatch the next enabled stage via Task with Model Resolution from workflow-config.yml. Do not grill or re-run Research.\n"
@@ -160,6 +181,7 @@ func (m model) prepareDiscoverFollowUp() model {
 		m.harnessSessionID = sid
 	}
 	m = m.applyAgentRuntimePair(agentDiscover, "")
+	m = m.bindSessionToRuntimeHarness()
 	m.conversationStage = stageResearch
 	return m
 }
@@ -170,5 +192,6 @@ func (m model) prepareOrchestratorFollowUp() model {
 		m.harnessSessionID = sid
 	}
 	m = m.applyAgentRuntimePair(agentOrchestration, "")
+	m = m.bindSessionToRuntimeHarness()
 	return m
 }

@@ -42,12 +42,15 @@ type mockStdioPeer struct {
 	stdoutR *io.PipeReader
 	stdoutW *io.PipeWriter
 
-	mu       sync.Mutex
-	authNil  bool
-	models   []string
-	turnProp map[string]any
-	onTurn   func(params map[string]any)
+	mu             sync.Mutex
+	authNil        bool
+	models         []string
+	turnProp       map[string]any
+	onTurn         func(params map[string]any)
 	injectApproval bool
+	resumeFail     bool
+	threadStarts   int
+	lastTurnThread string
 }
 
 func newMockPeer() *mockStdioPeer {
@@ -76,9 +79,9 @@ type pipeHandle struct {
 }
 
 func (h *pipeHandle) PID() int                 { return h.pid }
-func (h *pipeHandle) Stdin() codex.WriteCloser  { return h.peer.stdinW }
-func (h *pipeHandle) Stdout() codex.ReadCloser  { return h.peer.stdoutR }
-func (h *pipeHandle) Wait() error               { return nil }
+func (h *pipeHandle) Stdin() codex.WriteCloser { return h.peer.stdinW }
+func (h *pipeHandle) Stdout() codex.ReadCloser { return h.peer.stdoutR }
+func (h *pipeHandle) Wait() error              { return nil }
 func (h *pipeHandle) Kill() error {
 	_ = h.peer.stdinR.Close()
 	_ = h.peer.stdoutW.Close()
@@ -119,11 +122,14 @@ func (m *mockStdioPeer) serve() {
 				}})
 			} else {
 				m.write(map[string]any{"id": id, "result": map[string]any{
-					"account": map[string]any{"type": "chatgpt", "email": "u@example.com"},
+					"account":            map[string]any{"type": "chatgpt", "email": "u@example.com"},
 					"requiresOpenaiAuth": true,
 				}})
 			}
 		case "thread/start":
+			m.mu.Lock()
+			m.threadStarts++
+			m.mu.Unlock()
 			m.write(map[string]any{"id": id, "result": map[string]any{
 				"thread": map[string]any{"id": "thr_test_1"},
 			}})
@@ -131,6 +137,12 @@ func (m *mockStdioPeer) serve() {
 				"thread": map[string]any{"id": "thr_test_1"},
 			}})
 		case "thread/resume":
+			if m.resumeFail {
+				m.write(map[string]any{"id": id, "error": map[string]any{
+					"code": -32000, "message": "thread not found",
+				}})
+				break
+			}
 			m.write(map[string]any{"id": id, "result": map[string]any{
 				"thread": map[string]any{"id": paramsString(params, "threadId")},
 			}})
@@ -145,6 +157,7 @@ func (m *mockStdioPeer) serve() {
 		case "turn/start":
 			m.mu.Lock()
 			m.turnProp = params
+			m.lastTurnThread = paramsString(params, "threadId")
 			onTurn := m.onTurn
 			m.mu.Unlock()
 			if onTurn != nil {
@@ -322,6 +335,78 @@ func TestExecute_Unauthenticated(t *testing.T) {
 	}
 }
 
+func TestExecute_ResumeFailureStartsNewThread(t *testing.T) {
+	peer := newMockPeer()
+	peer.resumeFail = true
+	a := codex.NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "/mock/codex", nil }
+	a.Runner = peer
+
+	res, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt:    "follow-up",
+		SessionID: "dead-thread",
+		Stream:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SessionID != "thr_test_1" {
+		t.Fatalf("session=%q want thr_test_1", res.SessionID)
+	}
+	peer.mu.Lock()
+	starts := peer.threadStarts
+	turnThread := peer.lastTurnThread
+	peer.mu.Unlock()
+	if starts != 1 {
+		t.Fatalf("thread/start count=%d want 1", starts)
+	}
+	if turnThread != "thr_test_1" {
+		t.Fatalf("turn thread=%q want thr_test_1", turnThread)
+	}
+}
+
+func TestExecute_ResumeFailureKeepsLoadedThread(t *testing.T) {
+	peer := newMockPeer()
+	a := codex.NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "/mock/codex", nil }
+	a.Runner = peer
+
+	res, err := a.Execute(context.Background(), harness.ExecuteRequest{Prompt: "first", Stream: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SessionID != "thr_test_1" {
+		t.Fatalf("session=%q", res.SessionID)
+	}
+
+	peer.mu.Lock()
+	peer.resumeFail = true
+	startsAfterFirst := peer.threadStarts
+	peer.mu.Unlock()
+
+	res, err = a.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt:    "second",
+		SessionID: "thr_test_1",
+		Stream:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SessionID != "thr_test_1" {
+		t.Fatalf("session=%q want loaded thr_test_1", res.SessionID)
+	}
+	peer.mu.Lock()
+	starts := peer.threadStarts
+	turnThread := peer.lastTurnThread
+	peer.mu.Unlock()
+	if starts != startsAfterFirst {
+		t.Fatalf("thread/start count=%d want %d (loaded thread must not restart)", starts, startsAfterFirst)
+	}
+	if turnThread != "thr_test_1" {
+		t.Fatalf("turn thread=%q want thr_test_1", turnThread)
+	}
+}
+
 func TestListModels_NativeIDs(t *testing.T) {
 	peer := newMockPeer()
 	a := codex.NewAdapter(t.TempDir(), nil)
@@ -351,7 +436,7 @@ func TestExecute_PropertyMapping(t *testing.T) {
 			harness.PropertyThink:  "max",
 			harness.PropertyFast:   "true", // unsupported → omitted
 		},
-		Stream: true,
+		Stream:        true,
 		OnStreamDelta: func(harness.StreamDelta) {},
 	})
 	if err != nil {
@@ -473,7 +558,7 @@ type brokenHandle struct {
 	stdin  discardWC
 }
 
-func (h *brokenHandle) PID() int                { return 1 }
+func (h *brokenHandle) PID() int                 { return 1 }
 func (h *brokenHandle) Stdin() codex.WriteCloser { return h.stdin }
 func (h *brokenHandle) Stdout() codex.ReadCloser { return h.stdout }
 func (h *brokenHandle) Wait() error              { return nil }

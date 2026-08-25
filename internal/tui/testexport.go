@@ -528,6 +528,11 @@ func SetHarnessSessionHarnessIDForTest(m model, harnessID string) model {
 	m.harnessSessionHarnessID = harnessID
 	return m
 }
+
+// HarnessSessionHarnessIDForTest returns the in-memory session harness binding.
+func HarnessSessionHarnessIDForTest(m model) string {
+	return m.harnessSessionHarnessID
+}
 func PickingHarnessForTest(m model) bool {
 	return m.pickingHarness
 }
