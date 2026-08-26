@@ -324,6 +324,22 @@
 
 **Outcome**: Config asynchronously checks every enabled harness and renders a yellow warning with the availability cause. `browser_ui_agent` fields now require both frontend scope and Browser UI Validation. Missing capability metadata is flagged beside every visible parent/subagent and `fallback_model` model field, while keeping configured property values intact.
 
+## 2026-08-26 — Codex project config and Harness trust
+
+**Outcome**: Added `.codex/config.toml` with `approval_policy = "never"`, `sandbox_mode = "workspace-write"`, and `sandbox_workspace_write.network_access = true` for this repository's trusted development workspace.
+
+**Decision**: Project trust is not configured in the project-local file because Codex skips `.codex/` layers while a project is untrusted. For stream/app-server Harnesses, inject `projects."<absolute-project-path>".trust_level = "trusted"` using a startup `-c` override (or a global Codex config) before app-server initialization. The app-server protocol also supports per-thread `approvalPolicy` and sandbox overrides, but no Harness implementation change was made in this task.
+
+**Validation**: `codex-cli 0.149.0` accepted the project config and the trust override syntax with `--strict-config` for both the CLI and `codex app-server`.
+
+## 2026-08-26 — Codex adapter automatic project trust and execution policy
+
+**Outcome**: Updated `internal/adapters/codex` so every Hero-managed app-server starts from an absolute/canonical project path with `projects."<path>".trust_level="trusted"`, `approval_policy="never"`, `sandbox_mode="workspace-write"`, and workspace network access enabled as explicit CLI config overrides. `thread/start` and `turn/start` also carry the app-server-native `approvalPolicy: "never"`, `workspaceWrite` sandbox, project writable root, and network access.
+
+**Decision**: Keep `.codex/config.toml` as the project-local fallback and retain `workspace-write`; do not use `--yolo`/`danger-full-access` or auto-approve residual permission requests. Host/Harness permissions and OS-level listener restrictions remain outside the Codex adapter boundary.
+
+**Validation**: Added adapter tests for startup arguments and JSON-RPC policy payloads. `CC=/usr/bin/gcc GOCACHE=/tmp/hero-go-cache go test ./... -count=1 -p 1 -timeout=600s` passed, including the TUI package; local-listener tests required host permission.
+
 ## 2026-08-25 — Removed `alt+y` copy-prompt shortcut
 
 **Outcome**: The `alt+y` "copy prompt" shortcut was removed from the TUI because the "you" and AI-response panes were unified, making a separate prompt-copy command redundant. Removed the `alt+y` key handling in `handleConversationKey` (streaming + global shortcut), the now-dead `copyChatPrompt` and `latestUserContent` helpers, and updated the fixed footer hint to `alt+r/i copy`. Updated `clipboard_test.go` and `screens_test.go` accordingly. `go test ./...` passes.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -50,6 +51,9 @@ type mockStdioPeer struct {
 	injectApproval bool
 	resumeFail     bool
 	threadStarts   int
+	startDir       string
+	startArgs      []string
+	threadProp     map[string]any
 	lastTurnThread string
 }
 
@@ -65,10 +69,14 @@ func newMockPeer() *mockStdioPeer {
 	}
 }
 
-func (m *mockStdioPeer) Start(_ context.Context, _, _ string, args ...string) (codex.StdioHandle, error) {
+func (m *mockStdioPeer) Start(_ context.Context, dir, _ string, args ...string) (codex.StdioHandle, error) {
 	if len(args) == 0 || args[0] != "app-server" {
 		return nil, errors.New("expected app-server")
 	}
+	m.mu.Lock()
+	m.startDir = dir
+	m.startArgs = append([]string(nil), args...)
+	m.mu.Unlock()
 	go m.serve()
 	return &pipeHandle{peer: m, pid: 4242}, nil
 }
@@ -129,6 +137,7 @@ func (m *mockStdioPeer) serve() {
 		case "thread/start":
 			m.mu.Lock()
 			m.threadStarts++
+			m.threadProp = params
 			m.mu.Unlock()
 			m.write(map[string]any{"id": id, "result": map[string]any{
 				"thread": map[string]any{"id": "thr_test_1"},
@@ -452,6 +461,59 @@ func TestExecute_PropertyMapping(t *testing.T) {
 	}
 	if _, ok := peer.turnProp["fast"]; ok {
 		t.Fatal("fs must not appear in native payload")
+	}
+	if peer.turnProp["approvalPolicy"] != "never" {
+		t.Fatalf("approvalPolicy=%v want never", peer.turnProp["approvalPolicy"])
+	}
+	sandbox, ok := peer.turnProp["sandboxPolicy"].(map[string]any)
+	if !ok {
+		t.Fatalf("sandboxPolicy=%T want map", peer.turnProp["sandboxPolicy"])
+	}
+	if sandbox["type"] != "workspaceWrite" || sandbox["networkAccess"] != true {
+		t.Fatalf("sandboxPolicy=%v", sandbox)
+	}
+	if peer.threadProp["approvalPolicy"] != "never" || peer.threadProp["sandbox"] != "workspaceWrite" {
+		t.Fatalf("thread policy approval=%v sandbox=%v", peer.threadProp["approvalPolicy"], peer.threadProp["sandbox"])
+	}
+}
+
+func TestEnsureAppServerStartsTrustedWithExplicitPolicy(t *testing.T) {
+	dir := t.TempDir()
+	peer := newMockPeer()
+	a := codex.NewAdapter(dir, nil)
+	a.LookPath = func(string) (string, error) { return "/mock/codex", nil }
+	a.Runner = peer
+
+	if _, err := a.ListModels(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	peer.mu.Lock()
+	startDir := peer.startDir
+	args := append([]string(nil), peer.startArgs...)
+	peer.mu.Unlock()
+
+	if startDir != dir {
+		t.Fatalf("start dir=%q want %q", startDir, dir)
+	}
+	wantTrust := fmt.Sprintf(`projects.%q.trust_level="trusted"`, dir)
+	wantOverrides := []string{
+		wantTrust,
+		`approval_policy="never"`,
+		`sandbox_mode="workspace-write"`,
+		"sandbox_workspace_write.network_access=true",
+	}
+	for _, want := range wantOverrides {
+		found := false
+		for _, arg := range args {
+			if arg == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("app-server args=%v missing %q", args, want)
+		}
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +20,13 @@ const (
 	appTerminateTimeout = 5 * time.Second
 	appTerminatePoll    = 100 * time.Millisecond
 	handshakeTimeout    = 30 * time.Second
+
+	// These defaults keep the Codex app-server non-interactive while preserving
+	// the workspace-write boundary. They are also sent through the app-server
+	// protocol so behavior does not depend solely on project config loading.
+	codexApprovalPolicy    = "never"
+	codexSandboxMode       = "workspaceWrite"
+	codexSandboxConfigMode = "workspace-write"
 )
 
 // ExecRunner is the default ProcessRunner using os/exec with stdio pipes.
@@ -255,7 +264,8 @@ func (a *Adapter) ensureAppServer(ctx context.Context) error {
 	if runner == nil {
 		runner = ExecRunner{}
 	}
-	handle, err := runner.Start(ctx, a.ProjectDir, cli, "app-server")
+	projectDir := canonicalProjectDir(a.ProjectDir)
+	handle, err := runner.Start(ctx, projectDir, cli, appServerArgs(projectDir)...)
 	if err != nil {
 		a.log().Error("codex app-server start failed", "error", err)
 		return fmt.Errorf("%w", &AppServerError{
@@ -286,6 +296,47 @@ func (a *Adapter) ensureAppServer(ctx context.Context) error {
 	a.mu.Unlock()
 	a.log().Info("codex app-server started", "pid", pid)
 	return nil
+}
+
+// canonicalProjectDir returns the absolute path Codex should use for both the
+// child working directory and the project trust key. Resolving symlinks keeps
+// the trust entry aligned with the path Codex discovers from its cwd.
+func canonicalProjectDir(projectDir string) string {
+	projectDir = strings.TrimSpace(projectDir)
+	if projectDir == "" {
+		return ""
+	}
+
+	abs, err := filepath.Abs(projectDir)
+	if err != nil {
+		return filepath.Clean(projectDir)
+	}
+	abs = filepath.Clean(abs)
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return filepath.Clean(resolved)
+	}
+	return abs
+}
+
+// appServerArgs starts Codex with explicit project trust and the same
+// non-interactive workspace policy as .codex/config.toml. The trust override
+// must be supplied at process startup because Codex intentionally ignores
+// project-scoped .codex layers until the project is trusted.
+func appServerArgs(projectDir string) []string {
+	args := []string{"app-server"}
+	if projectDir != "" {
+		args = append(args, "-c", fmt.Sprintf(
+			"projects.%s.trust_level=%s",
+			strconv.Quote(projectDir),
+			strconv.Quote("trusted"),
+		))
+	}
+	args = append(args,
+		"-c", fmt.Sprintf("approval_policy=%s", strconv.Quote(codexApprovalPolicy)),
+		"-c", fmt.Sprintf("sandbox_mode=%s", strconv.Quote(codexSandboxConfigMode)),
+		"-c", "sandbox_workspace_write.network_access=true",
+	)
+	return args
 }
 
 func (a *Adapter) handshake(ctx context.Context, rpc *rpcConn) error {

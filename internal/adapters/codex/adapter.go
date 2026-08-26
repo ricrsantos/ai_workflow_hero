@@ -131,11 +131,14 @@ func (a *Adapter) CreateSession(ctx context.Context, req harness.SessionRequest)
 	if err := a.ensureAppServer(ctx); err != nil {
 		return nil, err
 	}
-	params := map[string]any{}
-	if cwd := strings.TrimSpace(req.ProjectDir); cwd != "" {
+	params := map[string]any{
+		"approvalPolicy": codexApprovalPolicy,
+		"sandbox":        codexSandboxMode,
+	}
+	if cwd := canonicalProjectDir(req.ProjectDir); cwd != "" {
 		params["cwd"] = cwd
-	} else if a.ProjectDir != "" {
-		params["cwd"] = a.ProjectDir
+	} else if cwd := canonicalProjectDir(a.ProjectDir); cwd != "" {
+		params["cwd"] = cwd
 	}
 	if name := strings.TrimSpace(req.StageName); name != "" {
 		params["name"] = name
@@ -530,17 +533,24 @@ func truncate(s string, n int) string {
 
 func turnStartParams(threadID string, req harness.ExecuteRequest, projectDir string) map[string]any {
 	params := map[string]any{
-		"threadId": threadID,
+		"threadId":       threadID,
+		"approvalPolicy": codexApprovalPolicy,
+		"sandboxPolicy": map[string]any{
+			"type":          codexSandboxMode,
+			"networkAccess": true,
+		},
 		"input": []map[string]string{
 			{"type": "text", "text": req.Prompt},
 		},
 	}
-	cwd := strings.TrimSpace(req.ProjectDir)
+	cwd := canonicalProjectDir(req.ProjectDir)
 	if cwd == "" {
-		cwd = strings.TrimSpace(projectDir)
+		cwd = canonicalProjectDir(projectDir)
 	}
 	if cwd != "" {
 		params["cwd"] = cwd
+		sandbox, _ := params["sandboxPolicy"].(map[string]any)
+		sandbox["writableRoots"] = []string{cwd}
 	}
 	if model := strings.TrimSpace(req.Model); model != "" {
 		params["model"] = model
