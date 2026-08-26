@@ -158,6 +158,55 @@ func TestExecuteStreamAndCancelHTTP(t *testing.T) {
 	}
 }
 
+func TestExecuteStreamSSEReconnect(t *testing.T) {
+	var eventHits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/session":
+			_ = json.NewEncoder(w).Encode(opencodeSession{ID: "sess-reconnect"})
+		case "/session/sess-reconnect/prompt_async":
+			w.WriteHeader(http.StatusAccepted)
+		case "/event":
+			atomic.AddInt32(&eventHits, 1)
+			w.Header().Set("Content-Type", "text/event-stream")
+			if atomic.LoadInt32(&eventHits) == 1 {
+				_, _ = io.WriteString(w, "data: {\"type\":\"message.updated\",\"properties\":{\"sessionID\":\"sess-reconnect\",\"info\":{\"id\":\"msg-asst\",\"role\":\"assistant\"}}}\n\n")
+				_, _ = io.WriteString(w, "data: {\"type\":\"message.part.updated\",\"properties\":{\"sessionID\":\"sess-reconnect\",\"part\":{\"id\":\"prt-1\",\"type\":\"text\",\"text\":\"partial\",\"messageID\":\"msg-asst\"}}}\n\n")
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				return
+			}
+			_, _ = io.WriteString(w, "data: {\"type\":\"session.idle\",\"properties\":{\"sessionID\":\"sess-reconnect\"}}\n\n")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	a := NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "opencode", nil }
+	a.Runner = &stubRunner{}
+	a.HTTP = srv.Client()
+	a.ResolveServeURL = func(ProcessHandle) (string, int, error) { return srv.URL, 1, nil }
+
+	res, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		SessionID: "sess-reconnect",
+		Prompt:    "stream",
+		Stream:    true,
+		OnStreamDelta: func(harness.StreamDelta) {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Output, "partial") {
+		t.Fatalf("output=%q", res.Output)
+	}
+	if atomic.LoadInt32(&eventHits) < 2 {
+		t.Fatalf("eventHits=%d want >=2", eventHits)
+	}
+}
+
 func TestListModelsHTTP_ObjectShape(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/config/providers" {

@@ -23,13 +23,13 @@
     },
     "opencode": {
       "enabled": true,
-      "model": "opencode-go/deepseek-v4-flash",
+      "model": "opencode-go/deepseek-v4-pro",
       "enable_fast_model": false
     }
   },
   "freechat_default": {
     "harness": "opencode",
-    "model": "opencode-go/deepseek-v4-flash"
+    "model": "opencode-go/deepseek-v4-pro"
   },
   "model_properties": {
     "codex": {

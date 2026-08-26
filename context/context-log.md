@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-26 — OpenCode SSE reconnect on unexpected EOF
+
+**Problem**: Hero Chat with OpenCode harness showed `unexpected EOF` during long tool runs (`go test ./...`). OpenCode kept running (log showed step 11 + bash permissions) but Hero’s per-execute `GET /event` SSE closed before `session.idle`; next user message often failed with socket/connection errors while the session was still busy.
+
+**Change**: Subscribe to `GET /event` **before** `prompt_async` (race on fast completions). SSE reconnect on disconnect. Fallback: `GET /session/{id}/message` when stream ends with no output.
+
+**Validation**: `TestExecuteStreamRecoversFromSessionMessages`, `TestExecuteStreamSSEReconnect`; `go test ./internal/adapters/opencode/...` passed.
+
 ## 2026-08-25 — `/hero-approve` must start the next TUI stage
 
 **Problem**: After Research with `require_human_approval`, `/hero-approve` left Planning `Waiting`. TUI handoff only ran for `Running` stages, and the approve follow-up was just the slash — ORCH asked for `/hero-start` again.
@@ -275,3 +283,11 @@
 ## 2026-08-25 — C7 Config judge gaps
 
 **Outcome**: Config asynchronously checks every enabled harness and renders a yellow warning with the availability cause. `browser_ui_agent` fields now require both frontend scope and Browser UI Validation. Missing capability metadata is flagged beside every visible parent/subagent and `fallback_model` model field, while keeping configured property values intact.
+
+## 2026-08-25 — Removed `alt+y` copy-prompt shortcut
+
+**Outcome**: The `alt+y` "copy prompt" shortcut was removed from the TUI because the "you" and AI-response panes were unified, making a separate prompt-copy command redundant. Removed the `alt+y` key handling in `handleConversationKey` (streaming + global shortcut), the now-dead `copyChatPrompt` and `latestUserContent` helpers, and updated the fixed footer hint to `alt+r/i copy`. Updated `clipboard_test.go` and `screens_test.go` accordingly. `go test ./...` passes.
+
+## 2026-08-25 — `alt+r` copies the whole chat box as plain text
+
+**Outcome**: `alt+r` (copy response) now copies the entire unified chat box (You + every agent turn), not just the latest agent turn. Replaced `responsePlainText` (last-turn only) with `transcriptPlainText`, which walks the full transcript, keeps speaker headers (`[AGENT - model · harness]`, `You`) and thinking/tool markers, and omits the `│` accent bars and right-padding used to decorate the rendered box. Updated `clipboard_test.go` (new whole-conversation and no-decoration tests). `go test ./...` passes.

@@ -314,40 +314,27 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 }
 
 func (a *Adapter) executeStream(ctx context.Context, sessionID string, body []byte, req harness.ExecuteRequest, start time.Time) (*harness.ExecutionResult, error) {
+	// Subscribe before prompt_async so fast completions are not missed on /event.
+	events, err := a.subscribeEvents(ctx, req.ProjectDir)
+	if err != nil {
+		return nil, err
+	}
+
 	resp, err := a.post(ctx, "/session/"+sessionID+"/prompt_async", body)
 	if err != nil {
+		events.Close()
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer resp.Body.Close()
+		events.Close()
 		return nil, rejectionFromBody(resp, strings.TrimSpace(req.Model), req.Properties)
 	}
 	resp.Body.Close()
 
 	var buf strings.Builder
 	state := newStreamState()
-	events, err := a.subscribeEvents(ctx, req.ProjectDir)
-	if err != nil {
-		return nil, err
-	}
-	defer events.Close()
-
-	emitMalformed := func(payload string) {
-		if req.OnStreamDelta != nil {
-			req.OnStreamDelta(harness.WarningDelta(adapterName, "sse.malformed", sessionID, payload))
-		}
-	}
-	err = readSSEEvents(ctx, events, func(evt map[string]any) error {
-		out := a.processSSEEvent(ctx, evt, sessionID, state, req, &buf)
-		if out.err != nil {
-			return out.err
-		}
-		if out.done {
-			return io.EOF
-		}
-		return nil
-	}, emitMalformed)
-	if err != nil && err != io.EOF {
+	if err := a.readExecuteSSE(ctx, sessionID, req.ProjectDir, req, state, &buf, events); err != nil {
 		return nil, err
 	}
 	out := buf.String()

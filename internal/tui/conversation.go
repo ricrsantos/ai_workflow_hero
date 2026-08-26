@@ -690,8 +690,6 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			"ctrl+4", "alt+4", "ctrl+5", "alt+5":
 			// Allow screen navigation while streaming; the goroutine keeps running.
 			return m.handleKey(msg)
-		case "alt+y":
-			return m.copyChatPrompt()
 		case "alt+r":
 			return m.copyChatResponse()
 		case "alt+i":
@@ -723,8 +721,6 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		"alt+1", "alt+2", "alt+3", "alt+4", "alt+5",
 		"ctrl+r", "f5":
 		return m.handleKey(msg)
-	case "alt+y":
-		return m.copyChatPrompt()
 	case "alt+r":
 		return m.copyChatResponse()
 	case "alt+i":
@@ -2379,15 +2375,6 @@ func (m model) latestAgentTurnIndices() []int {
 	return indices
 }
 
-func (m model) latestUserContent() string {
-	for i := len(m.transcript) - 1; i >= 0; i-- {
-		if m.transcript[i].role == convRoleUser {
-			return m.transcript[i].content
-		}
-	}
-	return ""
-}
-
 func (m model) renderConversationInput() string {
 	var b strings.Builder
 	contentW := m.chatContentWidth()
@@ -2635,16 +2622,8 @@ func (m model) maybeFollowTranscriptBottom() model {
 	return m
 }
 
-func (m model) copyChatPrompt() (tea.Model, tea.Cmd) {
-	text := strings.TrimSpace(m.latestUserContent())
-	if text == "" {
-		return m.setStatusResult(false, "copy", "nothing to copy"), nil
-	}
-	return m.setStatusResult(true, "copy", "prompt copied"), copyToClipboardCmd(text)
-}
-
 func (m model) copyChatResponse() (tea.Model, tea.Cmd) {
-	text := strings.TrimSpace(m.responsePlainText())
+	text := strings.TrimSpace(m.transcriptPlainText())
 	if text == "" {
 		return m.setStatusResult(false, "copy", "nothing to copy"), nil
 	}
@@ -2659,19 +2638,36 @@ func (m model) copyChatInput() (tea.Model, tea.Cmd) {
 	return m.setStatusResult(true, "copy", "input copied"), copyToClipboardCmd(text)
 }
 
-func (m model) responsePlainText() string {
-	turn := m.latestAgentTurn()
-	if len(turn) == 0 {
+// transcriptPlainText renders the whole chat box (You + every agent turn) as
+// plain text for clipboard copy. It keeps speaker headers and thinking/tool
+// markers but omits the per-line accent bars and right-padding that decorate
+// the rendered box.
+func (m model) transcriptPlainText() string {
+	if len(m.transcript) == 0 {
 		return ""
 	}
 	var parts []string
 	prevKey := ""
 	prevWasSub := false
-	for _, msg := range turn {
+	for i := range m.transcript {
+		msg := &m.transcript[i]
+		if msg.role == convRoleUser {
+			content := strings.TrimSpace(msg.content)
+			if content == "" {
+				continue
+			}
+			if len(parts) > 0 {
+				parts = append(parts, "")
+			}
+			parts = append(parts, "You", content)
+			prevKey = ""
+			prevWasSub = false
+			continue
+		}
 		if msg.role == convRoleAgent && strings.TrimSpace(msg.content) == "" && m.streaming && !msg.failed && !msg.interrupted {
 			continue
 		}
-		key := messageAgentKey(msg)
+		key := messageAgentKey(*msg)
 		isSub := strings.TrimSpace(msg.callID) != ""
 		if key != prevKey {
 			if prevKey != "" && prevWasSub {
@@ -2680,7 +2676,7 @@ func (m model) responsePlainText() string {
 			if isSub {
 				parts = append(parts, "")
 			}
-			header := formatAgentHeader(msg.agentName, msg.modelSlug, m.harnessForMessage(msg))
+			header := formatAgentHeader(msg.agentName, msg.modelSlug, m.harnessForMessage(*msg))
 			parts = append(parts, header)
 			prevKey = key
 			prevWasSub = isSub
