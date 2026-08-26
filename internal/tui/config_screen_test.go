@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/muesli/termenv"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
@@ -204,6 +205,100 @@ func TestConfigDirtyExitCompletesDiscardAndSaveNavigation(t *testing.T) {
 	updated := next.(model)
 	if updated.screen != screenConversation {
 		t.Fatalf("save must complete requested navigation, got %v", updated.screen)
+	}
+}
+
+func TestConfigFocusedProtectedFieldKeepsSelectionHighlight(t *testing.T) {
+	forceColorProfile(t, termenv.ANSI)
+	m := NewTestModel(nil)
+	m.width, m.height = 120, 40
+
+	focused := m.renderConfigField("QA purpose", "value", true, true)
+	muted := m.renderConfigField("QA purpose", "value", false, true)
+
+	if !strings.Contains(focused, "▸ ") {
+		t.Fatal("focused protected field must show the cursor marker")
+	}
+	normalized := strings.Replace(focused, "▸ ", "  ", 1)
+	if normalized == muted {
+		t.Fatal("focused protected field must keep the selection highlight instead of rendering fully muted")
+	}
+}
+
+func TestConfigEditingRendersBufferAndCaretInFocusedField(t *testing.T) {
+	m := NewTestModel(nil)
+	m.width, m.height = 120, 40
+	m.config.editing = true
+	m.config.editBuffer = "edited title"
+	m.config.editCursor = runeLen(m.config.editBuffer)
+
+	view := stripANSI(m.renderConfigField("Title", "old title", true, false))
+	if !strings.Contains(view, "edited title") {
+		t.Fatalf("editing must render the live buffer in the field: %q", view)
+	}
+	if !strings.Contains(view, "▸ Title:") {
+		t.Fatalf("editing field must retain its focus marker: %q", view)
+	}
+}
+
+func TestConfigFocusedFieldHighlightsOnlyItsLabel(t *testing.T) {
+	forceColorProfile(t, termenv.ANSI)
+	m := NewTestModel(nil)
+	m.width, m.height = 120, 40
+
+	view := m.renderConfigField("Title", "value", true, false)
+	if !strings.Contains(view, configSelectedLabelStyle.Render("Title: ")) {
+		t.Fatalf("focused field must highlight the label: %q", view)
+	}
+	if strings.Contains(view, configSelectedLabelStyle.Render("value")) {
+		t.Fatalf("focused field must not apply the label highlight to its value: %q", view)
+	}
+}
+
+func TestConfigEditKeysUpdateBufferAtCaret(t *testing.T) {
+	m := NewTestModel(nil)
+	m.screen = screenConfig
+	m.config.editing = true
+	m.config.editBuffer = "ac"
+	m.config.editCursor = 1
+
+	next, _ := m.handleConfigEditKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	got := next.(model)
+	if got.config.editBuffer != "abc" || got.config.editCursor != 2 {
+		t.Fatalf("insert buffer=%q cursor=%d, want abc/2", got.config.editBuffer, got.config.editCursor)
+	}
+	next, _ = got.handleConfigEditKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	got = next.(model)
+	if got.config.editBuffer != "ac" || got.config.editCursor != 1 {
+		t.Fatalf("backspace buffer=%q cursor=%d, want ac/1", got.config.editBuffer, got.config.editCursor)
+	}
+}
+
+func TestConfigDirtyLeaveDialogIsVisibleAndAcceptsEnterToSave(t *testing.T) {
+	m := NewTestModel(nil)
+	m.width, m.height = 100, 16
+	m.screen = screenConfig
+	m.config.doc = &workflowconfig.Document{}
+	m.config.dirty = true
+
+	next, _ := m.handleConfigKey(tea.KeyMsg{Type: tea.KeyEsc})
+	got := next.(model)
+	if !got.config.leaveDialog {
+		t.Fatal("escape on a dirty form must open the leave dialog")
+	}
+	view := stripANSI(got.renderFrame())
+	for _, want := range []string{"Unsaved configuration changes", "[enter] Save", "[d] Discard", "[esc] Cancel"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("visible leave dialog missing %q:\n%s", want, view)
+		}
+	}
+	next, cmd := got.handleConfigKey(tea.KeyMsg{Type: tea.KeyEnter})
+	got = next.(model)
+	if cmd != nil || got.config.saving {
+		t.Fatal("Enter must route to normal validation before a save command")
+	}
+	if got.config.err == "" {
+		t.Fatal("Enter must attempt to save instead of leaving the dialog inert")
 	}
 }
 

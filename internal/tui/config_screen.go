@@ -59,6 +59,7 @@ type configScreen struct {
 	focus           int
 	editing         bool
 	editBuffer      string
+	editCursor      int
 	leaveDialog     bool
 	leaveScreen     screen
 	leaveQuit       bool
@@ -215,6 +216,7 @@ func (m model) configFields() []configField {
 		{"scope.script", "Script", "bool", "", ""},
 		{"scope.infrastructure", "Infrastructure", "bool", "", ""},
 	}
+	requiredAgents := m.config.draft.RequiredAgentNames()
 	for _, name := range []string{"research", "planning", "implementation", "qa", "judge", "browser_ui_validation", "qa_end_to_end"} {
 		stage, ok := m.config.draft.Stages[name]
 		if !ok {
@@ -239,15 +241,20 @@ func (m model) configFields() []configField {
 		if name == "qa_end_to_end" && m.config.draft.Scope.Frontend {
 			fields = append(fields, configField{"stages." + name + ".use_playwright", "Use Playwright", "bool", name, ""})
 		}
-	}
-	for _, name := range m.config.draft.RequiredAgentNames() {
-		if name == "browser_ui_agent" {
-			stage := m.config.draft.Stages["browser_ui_validation"]
-			if !m.config.draft.Scope.Frontend || !stage.Enabled {
+		for _, agent := range requiredAgents {
+			if configAgentStage(agent) != name {
 				continue
 			}
+			if agent == "browser_ui_agent" && !m.config.draft.Scope.Frontend {
+				continue
+			}
+			fields = append(fields, m.agentFields(agent, name)...)
 		}
-		fields = append(fields, m.agentFields(name, configAgentStage(name))...)
+	}
+	for _, name := range requiredAgents {
+		if configAgentStage(name) == "" {
+			fields = append(fields, m.agentFields(name, "")...)
+		}
 	}
 	fields = append(fields, m.agentFields("fallback_model", "")...)
 	return fields
@@ -259,8 +266,8 @@ func (m model) agentFields(name, stage string) []configField {
 		prefix = name
 	}
 	fields := []configField{
-		{prefix + ".harness", name + " harness", "harness", stage, name},
-		{prefix + ".model", name + " model", "model", stage, name},
+		{prefix + ".harness", configAgentLabel(name) + " harness", "harness", stage, name},
+		{prefix + ".model", configAgentLabel(name) + " model", "model", stage, name},
 	}
 	agent := m.config.draft.FallbackModel
 	if name != "fallback_model" {
@@ -272,15 +279,15 @@ func (m model) agentFields(name, stage string) []configField {
 		{harness.PropertyEffort, "reasoning_effort"},
 	} {
 		if m.configPropertyVisible(agent, property.key) {
-			fields = append(fields, configField{prefix + "." + property.suffix, name + " " + property.key, "property", stage, name})
+			fields = append(fields, configField{prefix + "." + property.suffix, configAgentLabel(name) + " " + property.key, "property", stage, name})
 		}
 	}
 	if name != "fallback_model" {
-		fields = append(fields, configField{prefix + ".subagent.same_of_agent", name + " subagent same as agent", "bool", stage, name + ":subagent"})
+		fields = append(fields, configField{prefix + ".subagent.same_of_agent", configAgentLabel(name) + " subagent same as agent", "bool", stage, name + ":subagent"})
 	}
 	if name != "fallback_model" && !agent.Subagent.SameOfAgent {
 		fields = append(fields,
-			configField{prefix + ".subagent.model", name + " subagent model", "model", stage, name + ":subagent"},
+			configField{prefix + ".subagent.model", configAgentLabel(name) + " subagent model", "model", stage, name + ":subagent"},
 		)
 		subagent := agent
 		subagent.Model = agent.Subagent.Model
@@ -293,11 +300,15 @@ func (m model) agentFields(name, stage string) []configField {
 			{harness.PropertyEffort, "reasoning_effort"},
 		} {
 			if m.configPropertyVisible(subagent, property.key) {
-				fields = append(fields, configField{prefix + ".subagent." + property.suffix, name + " subagent " + property.key, "property", stage, name + ":subagent"})
+				fields = append(fields, configField{prefix + ".subagent." + property.suffix, configAgentLabel(name) + " subagent " + property.key, "property", stage, name + ":subagent"})
 			}
 		}
 	}
 	return fields
+}
+
+func configAgentLabel(name string) string {
+	return configStageLabel(name)
 }
 
 func configAgentStage(name string) string {
@@ -354,7 +365,10 @@ func (m model) configCapabilityWarning(field configField) string {
 
 func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.config.leaveDialog {
-		if key.Matches(msg, configKeys.Save) {
+		if m.config.saving {
+			return m, nil
+		}
+		if key.Matches(msg, configKeys.Save) || key.Matches(msg, configKeys.Edit) {
 			return m.beginConfigSave(false)
 		}
 		if key.Matches(msg, configKeys.Discard) {
@@ -425,6 +439,7 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.config.editing = true
 		m.config.editBuffer = m.configFieldValue(field)
+		m.config.editCursor = runeLen(m.config.editBuffer)
 		return m.configEnsureFocusVisible(), nil
 	}
 	return m.handleKey(msg)
@@ -472,6 +487,7 @@ func (m model) handleConfigEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, configKeys.Cancel) {
 		m.config.editing = false
 		m.config.editBuffer = ""
+		m.config.editCursor = 0
 		return m, nil
 	}
 	if key.Matches(msg, configKeys.Edit) {
@@ -481,19 +497,52 @@ func (m model) handleConfigEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.config.editing = false
 		m.config.editBuffer = ""
+		m.config.editCursor = 0
 		return m, nil
 	}
-	switch msg.Type {
-	case tea.KeyBackspace:
-		if n := len([]rune(m.config.editBuffer)); n > 0 {
-			m.config.editBuffer = string([]rune(m.config.editBuffer)[:n-1])
+	switch msg.String() {
+	case "left":
+		if m.config.editCursor > 0 {
+			m.config.editCursor--
+		}
+	case "right":
+		if m.config.editCursor < runeLen(m.config.editBuffer) {
+			m.config.editCursor++
+		}
+	case "home":
+		m.config.editCursor = 0
+	case "end":
+		m.config.editCursor = runeLen(m.config.editBuffer)
+	case "backspace":
+		if m.config.editCursor > 0 {
+			runes := []rune(m.config.editBuffer)
+			m.config.editBuffer = string(append(runes[:m.config.editCursor-1], runes[m.config.editCursor:]...))
+			m.config.editCursor--
+		}
+	case "delete":
+		runes := []rune(m.config.editBuffer)
+		if m.config.editCursor < len(runes) {
+			m.config.editBuffer = string(append(runes[:m.config.editCursor], runes[m.config.editCursor+1:]...))
 		}
 	default:
 		if len(msg.Runes) > 0 && !msg.Alt {
-			m.config.editBuffer += string(msg.Runes)
+			runes := []rune(m.config.editBuffer)
+			cursor := m.config.editCursor
+			if cursor < 0 {
+				cursor = 0
+			}
+			if cursor > len(runes) {
+				cursor = len(runes)
+			}
+			out := make([]rune, 0, len(runes)+len(msg.Runes))
+			out = append(out, runes[:cursor]...)
+			out = append(out, msg.Runes...)
+			out = append(out, runes[cursor:]...)
+			m.config.editBuffer = string(out)
+			m.config.editCursor = cursor + len(msg.Runes)
 		}
 	}
-	return m, nil
+	return m.configEnsureFocusVisible(), nil
 }
 
 func (m model) stageProtected(stage string) bool {
@@ -963,39 +1012,27 @@ func (m model) renderConfig() string {
 		b.WriteString(warnStyle.Render("⚠ " + warning))
 		b.WriteByte('\n')
 	}
-	c := m.config.draft
-	b.WriteString("\n" + headerStyle.Render("Identity") + "\n")
-	b.WriteString(m.configSummaryField("Title", c.Title))
-	b.WriteString(m.configSummaryField("Objective", c.Objective))
-	b.WriteString(m.configSummaryField("Chat language", c.WorkflowConfig.UserPreferredLanguage))
-	b.WriteString(headerStyle.Render("Scope") + "\n")
-	b.WriteString(fmt.Sprintf("  Backend:%t  Frontend:%t  Native:%t  Script:%t  Infrastructure:%t\n", c.Scope.Backend, c.Scope.Frontend, c.Scope.Native, c.Scope.Script, c.Scope.Infrastructure))
-	b.WriteString(headerStyle.Render("Stages") + "\n")
-	for _, name := range []string{"research", "planning", "implementation", "qa", "judge", "browser_ui_validation", "qa_end_to_end"} {
-		stage, ok := c.Stages[name]
-		if !ok {
-			continue
-		}
-		b.WriteString(fmt.Sprintf("  %s  enabled:%t", configStageLabel(name), stage.Enabled))
-		if !stage.Enabled {
-			b.WriteString(mutedStyle.Render("  configuration retained"))
-		} else {
-			b.WriteString(fmt.Sprintf("  iterations:%d  timeout:%dm  approval:%t", stage.MaxIterations, stage.TimeoutMinutes, stage.RequireHumanApproval))
-		}
-		b.WriteByte('\n')
+	if m.config.leaveDialog {
+		b.WriteString(m.renderConfigLeaveDialog())
+		return b.String()
 	}
-	b.WriteString(headerStyle.Render("Shared / Advanced") + "\n")
-	for _, name := range []string{"orchestration_agent", "context_agent"} {
-		if agent, ok := c.Agents[name]; ok {
-			b.WriteString(fmt.Sprintf("  %s: %s · %s\n", name, agent.Harness, agent.Model))
-		}
-	}
-	b.WriteString(headerStyle.Render("Form controls") + "\n")
+	b.WriteByte('\n')
 	fields := m.configFields()
+	focus := 0
 	if len(fields) > 0 {
-		m.config.focus %= len(fields)
+		focus = m.config.focus % len(fields)
 	}
+	lastSection := ""
 	for i, field := range fields {
+		section := configFieldSection(field)
+		if section != lastSection {
+			if lastSection != "" {
+				b.WriteByte('\n')
+			}
+			b.WriteString(headerStyle.Render(section))
+			b.WriteByte('\n')
+			lastSection = section
+		}
 		value := m.configFieldValue(field)
 		if field.kind == "bool" || field.kind == "property" && strings.HasSuffix(field.path, ".enable_fast_model") {
 			value = "[ ]"
@@ -1003,7 +1040,10 @@ func (m model) renderConfig() string {
 				value = "[x]"
 			}
 		}
-		line := m.renderConfigField(field.label, value, i == m.config.focus, m.stageProtected(field.stage))
+		line := m.renderConfigField(field.label, value, i == focus, m.stageProtected(field.stage))
+		if field.stage != "" && strings.HasSuffix(field.path, ".enabled") && !configBoolValue(m.config.draft, field) {
+			line += "  " + mutedStyle.Render("configuration retained")
+		}
 		if message, ok := m.config.fieldErrors[field.path]; ok {
 			line += "\n" + errorStyle.Render("    ✗ "+message)
 		}
@@ -1013,21 +1053,42 @@ func (m model) renderConfig() string {
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
-	if m.config.editing {
-		b.WriteString(infoStyle.Render("Editing: " + m.config.editBuffer + "  (enter save field · esc cancel)"))
-		b.WriteByte('\n')
-	}
-	if m.config.leaveDialog {
-		b.WriteString(warnStyle.Render("Unsaved configuration changes — [ctrl+s] Save  [d] Discard  [esc] Cancel"))
-		b.WriteByte('\n')
-	}
 	if len(m.config.retryAllowed) > 0 {
+		b.WriteByte('\n')
 		for stage := range m.config.retryAllowed {
 			b.WriteString(successStyle.Render("  Retry failed stage: [r] " + configStageLabel(stage)))
 			b.WriteByte('\n')
 		}
 	}
-	b.WriteString(mutedStyle.Render("tab/shift+tab focus · space toggle · enter edit/select · ctrl+s save · ctrl+enter save and start · r retry · ctrl+r reload"))
+	return b.String()
+}
+
+func configFieldSection(field configField) string {
+	switch {
+	case strings.HasPrefix(field.path, "title"), strings.HasPrefix(field.path, "objective"), strings.HasPrefix(field.path, "workflow_config."):
+		return "Identity"
+	case strings.HasPrefix(field.path, "scope."):
+		return "Scope"
+	case field.stage != "":
+		return configStageLabel(field.stage)
+	default:
+		return "Shared / Advanced"
+	}
+}
+
+func (m model) renderConfigLeaveDialog() string {
+	var b strings.Builder
+	b.WriteString(warnStyle.Render("Unsaved configuration changes"))
+	b.WriteByte('\n')
+	if m.config.saving {
+		b.WriteString(infoStyle.Render("→ Saving configuration…"))
+		return b.String()
+	}
+	if m.config.err != "" {
+		b.WriteString(errorStyle.Render("✗ " + m.config.err))
+		b.WriteByte('\n')
+	}
+	b.WriteString("[enter] Save  [d] Discard  [esc] Cancel")
 	return b.String()
 }
 
@@ -1040,15 +1101,20 @@ func (m model) configValueWidth() int {
 	return w
 }
 
-// renderConfigField renders a single "label: value" row with the label in a
-// dim color and the input value in the primary color. Text values wrap at the
-// content width, and the focused row is marked with a visible cursor (including
-// protected/inactive fields, which stay muted so the cursor is still traceable).
+// renderConfigField renders a single label/value row. The selection treatment
+// is deliberately limited to the label, leaving values easy to scan. During
+// editing, the current buffer and caret render in place with a subtle value
+// background, so the user never needs to look for input below the viewport.
 func (m model) renderConfigField(label, value string, focused, protected bool) string {
 	prefix := label + ": "
 	valueWidth := m.configValueWidth() - lipgloss.Width("  "+prefix)
 	if valueWidth < 8 {
 		valueWidth = 8
+	}
+	disabled := protected || m.configReadOnly() || m.config.saving
+	editing := focused && m.config.editing
+	if editing {
+		value = configValueWithCaret(m.config.editBuffer, m.config.editCursor)
 	}
 	valueLines := wrapOutputLine(value, valueWidth)
 	if len(valueLines) == 0 {
@@ -1058,17 +1124,34 @@ func (m model) renderConfigField(label, value string, focused, protected bool) s
 	if focused {
 		cursor = "▸ "
 	}
+	labelStyle := configLabelStyle
+	valueStyle := configValueStyle
+	if disabled {
+		labelStyle = configDisabledLabelStyle
+		valueStyle = configDisabledValueStyle
+	}
+	if focused {
+		if disabled {
+			labelStyle = configDisabledSelectedLabelStyle
+		} else {
+			labelStyle = configSelectedLabelStyle
+		}
+	}
 	indent := strings.Repeat(" ", lipgloss.Width(prefix))
 	var b strings.Builder
 	for i, vl := range valueLines {
 		if i == 0 {
 			b.WriteString(cursor)
-			b.WriteString(configLabelStyle.Render(prefix))
+			b.WriteString(labelStyle.Render(prefix))
 		} else {
 			b.WriteString("  ")
-			b.WriteString(configLabelStyle.Render(indent))
+			b.WriteString(labelStyle.Render(indent))
 		}
-		b.WriteString(configValueStyle.Render(vl))
+		if editing {
+			b.WriteString(renderConfigEditingValue(vl, valueStyle))
+		} else {
+			b.WriteString(valueStyle.Render(vl))
+		}
 		if i < len(valueLines)-1 {
 			b.WriteByte('\n')
 		}
@@ -1077,21 +1160,28 @@ func (m model) renderConfigField(label, value string, focused, protected bool) s
 	if protected {
 		line += "  " + mutedStyle.Render("completed stage is protected")
 	}
-	switch {
-	case focused && protected:
-		line = mutedStyle.Render(line)
-	case focused:
-		line = selectedStyle.Render(line)
-	case protected:
-		line = mutedStyle.Render(line)
-	}
 	return line
 }
 
-// configSummaryField renders a read-only summary row (label + value) for the
-// Identity block, sharing the same label/value colors and wrapping.
-func (m model) configSummaryField(label, value string) string {
-	return m.renderConfigField(label, value, false, false) + "\n"
+const configCaretMarker = "\x00"
+
+func configValueWithCaret(value string, cursor int) string {
+	runes := []rune(value)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if cursor > len(runes) {
+		cursor = len(runes)
+	}
+	return string(runes[:cursor]) + configCaretMarker + string(runes[cursor:])
+}
+
+func renderConfigEditingValue(value string, fallback lipgloss.Style) string {
+	parts := strings.SplitN(value, configCaretMarker, 2)
+	if len(parts) != 2 {
+		return fallback.Render(value)
+	}
+	return configEditingValueStyle.Render(parts[0]) + configEditingCaretStyle.Render(" ") + configEditingValueStyle.Render(parts[1])
 }
 
 func configBoolValue(c workflowconfig.ManagedConfig, field configField) bool {

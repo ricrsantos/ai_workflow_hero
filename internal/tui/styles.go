@@ -39,9 +39,22 @@ var (
 	headerStyle   = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(colorTextPri)
 	footerStyle   = lipgloss.NewStyle().Foreground(colorTextDim)
 	successStyle  = lipgloss.NewStyle().Foreground(colorOK)
-	// Config form field label/value separation (label dim, input value primary).
-	configLabelStyle = lipgloss.NewStyle().Foreground(colorTextDim)
-	configValueStyle = lipgloss.NewStyle().Foreground(colorTextPri)
+	// Config form field label/value separation. Labels reuse the blue accent bar
+	// from the Chat composer, while inactive controls remain intentionally muted.
+	configLabelStyle         = lipgloss.NewStyle().Foreground(colorAccentAI)
+	configDisabledLabelStyle = lipgloss.NewStyle().Foreground(colorTextDim)
+	configSelectedLabelStyle = lipgloss.NewStyle().
+					Foreground(colorAccentAI).
+					Background(colorBgSurface2).
+					Bold(true)
+	configDisabledSelectedLabelStyle = lipgloss.NewStyle().
+						Foreground(colorTextDim).
+						Background(colorBgSurface2).
+						Bold(true)
+	configValueStyle         = lipgloss.NewStyle().Foreground(colorTextPri)
+	configDisabledValueStyle = lipgloss.NewStyle().Foreground(colorTextDim)
+	configEditingValueStyle  = lipgloss.NewStyle().Foreground(colorTextPri).Background(colorBgSurface2)
+	configEditingCaretStyle  = lipgloss.NewStyle().Foreground(colorBgSurface2).Background(colorAccentAI).Bold(true)
 	warnStyle     = lipgloss.NewStyle().Foreground(colorAccentFast)
 	errorStyle    = lipgloss.NewStyle().Foreground(colorError)
 	infoStyle     = lipgloss.NewStyle().Foreground(colorAccentAI)

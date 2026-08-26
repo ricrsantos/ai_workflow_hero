@@ -6,6 +6,26 @@
 
 ---
 
+## 2026-08-26 — C7 Config TUI form readability and dirty-leave recovery
+
+**Problem**: Text editing updated only a buffer printed at the bottom of the long Config form, so typed text and its cursor were often off-screen until Enter committed the field. The duplicate static summaries and ungrouped controls made the form difficult to scan. More seriously, pressing Escape with a dirty form captured all input for Save/Discard/Cancel, but that confirmation was rendered below the clipped form; the TUI therefore looked frozen.
+
+**Change**: Text fields now render the live buffer, blue caret, and an editing background in the selected row; left/right, Home/End, Backspace, and Delete work in the field. Labels use the Chat composer blue (`colorAccentAI`), disabled controls use gray, and the selection background applies only to the label. Removed duplicate summaries and reorganized the editable fields into spaced Identity, Scope, per-stage, and Shared/Advanced sections. Dirty leave now replaces the form with an always-visible `[enter] Save  [d] Discard  [esc] Cancel` state, with matching fixed-footer help; Enter follows the normal save/validation path.
+
+**Validation**: Focused Config regressions passed; `go test ./... -count=1` green.
+
+---
+
+## 2026-08-26 — C7 Config TUI navigation/editing fixes
+
+**Problem**: The C7 Config screen had residual UX bugs from its first version: focused read-only (completed-stage) fields rendered fully muted so the cursor highlight was lost while tabbing; the quit shortcut was still `ctrl+q` in one spec doc instead of `alt+q`; and `esc`/`alt+n` could not leave the screen when clean (the non-dirty `Leave` branch was missing). Earlier in this same change `Toggle` was fixed from the literal `"space"` to `" "` and the footer/navbar hint updated to `alt+n events`.
+
+**Change**: `renderConfigField` now applies the selection highlight to any focused field (including protected/inactive ones) instead of falling back to `mutedStyle`. Updated `docs/product/UI-C03-001` footer hint from `alt+y/r/i copy · ↑↓ scroll · alt+n screens · ctrl+q quit` to the current `alt+r/i copy · ↑↓ scroll · alt+q quit`. Added a regression test asserting a focused protected field keeps the selection highlight (color profile forced to ANSI, since non-TTY `go test` strips color).
+
+**Validation**: `go test ./... -count=1` green; `go vet ./internal/tui/` clean.
+
+---
+
 ## 2026-08-26 — OpenCode overnight hang workarounds
 
 **Problem**: TUI stayed `streaming=true` overnight with SSE still open (or silent). OpenCode logs were INFO-only; no `session.idle`. Cause is OpenCode (`opencode-go` / `GET /event` half-open). Hero waited forever, did not persist session id until `executeDone`, `Cancel("")` missed `runCtx`, `/harness-reset` wiped the id, and recovered serve was bound to Execute `runCtx`.

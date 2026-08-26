@@ -466,6 +466,18 @@ func fitContentHeight(content string, height int, keepBottom bool) string {
 const fixedFooterHints = "tab mode · / commands · enter send · alt+enter newline · alt+r/i copy · ↑↓ scroll · alt+q quit"
 
 func (m model) footerHints() string {
+	if m.screen == screenConfig {
+		switch {
+		case m.config.leaveDialog && m.config.saving:
+			return "saving configuration…"
+		case m.config.leaveDialog:
+			return "enter save · d discard · esc cancel"
+		case m.config.editing:
+			return "enter apply · esc cancel · ←→ move · home/end · backspace/delete"
+		default:
+			return "tab/shift+tab focus · space toggle · enter edit/select · ctrl+s save · ctrl+enter save and start · esc leave"
+		}
+	}
 	return fixedFooterHints
 }
 
