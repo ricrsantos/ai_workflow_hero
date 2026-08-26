@@ -19,6 +19,7 @@ type convExecute struct {
 	HarnessID     string
 	SessionID     string
 	AgentMsgIndex int
+	relay         *conversationStreamRelay
 }
 
 const (

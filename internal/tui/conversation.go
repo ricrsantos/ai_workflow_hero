@@ -646,7 +646,11 @@ func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) m
 		ch := make(chan tea.Msg, 512)
 		m.convStreamCh = ch
 	}
-	m.startConversationExecute(executeID, executePrompt, m.convStreamCh)
+	relay := newConversationStreamRelay(executeID, m.convStreamCh)
+	execute := m.executes[executeID]
+	execute.relay = relay
+	m.executes[executeID] = execute
+	m.startConversationExecute(executeID, executePrompt, relay)
 	return m.maybeFollowTranscriptBottom()
 }
 
@@ -1183,7 +1187,7 @@ func parseHeroResumeInline(text string) (int, bool) {
 	return n, true
 }
 
-func (m model) startConversationExecute(executeID, prompt string, ch chan<- tea.Msg) {
+func (m model) startConversationExecute(executeID, prompt string, relay *conversationStreamRelay) {
 	svc := m.svc
 	stageName := m.conversationStage
 	agentName := m.runtimeAgentName
@@ -1196,18 +1200,22 @@ func (m model) startConversationExecute(executeID, prompt string, ch chan<- tea.
 		ctx := context.Background()
 		resolved, err := m.resolveExecuteResolution(ctx)
 		if err != nil {
-			ch <- executeDoneMsg{executeID: executeID, err: err}
+			relay.CloseAndWait()
+			relay.SendControl(executeDoneMsg{executeID: executeID, err: err})
 			return
 		}
 		pair := resolved.pair
 		if pair.Adapter == nil {
-			ch <- executeDoneMsg{executeID: executeID, err: fmt.Errorf("harness adapter unavailable")}
+			relay.CloseAndWait()
+			relay.SendControl(executeDoneMsg{executeID: executeID, err: fmt.Errorf("harness adapter unavailable")})
 			return
 		}
-		ch <- executePairMsg{executeID: executeID, harnessID: pair.HarnessID, model: pair.Model}
+		if !relay.SendControl(executePairMsg{executeID: executeID, harnessID: pair.HarnessID, model: pair.Model}) {
+			return
+		}
 		sessionID := m.harnessSessionIDForPair(stageName, pair.HarnessID)
 		if resolved.warning != "" {
-			ch <- streamDeltaMsg{executeID: executeID, delta: harness.StreamDelta{Kind: harness.StreamKindText, Text: resolved.warning + "\n\n"}}
+			relay.Enqueue(harness.StreamDelta{Kind: harness.StreamKindText, Text: resolved.warning + "\n\n"})
 		}
 		if svc != nil && strings.TrimSpace(stageName) != "" {
 			if err := svc.SetStageHarnessID(stageName, pair.HarnessID); err != nil {
@@ -1228,40 +1236,49 @@ func (m model) startConversationExecute(executeID, prompt string, ch chan<- tea.
 			// Chat//hero-new, YAML-derived for workflow commands; ADR-041/042).
 			Properties: resolved.props,
 			OnStreamDelta: func(delta harness.StreamDelta) {
-				deliverStreamDelta(ch, executeID, delta)
+				relay.Enqueue(delta)
 			},
 			OnPermissionRequest: func(ctx context.Context, perm harness.PermissionRequest) (harness.PermissionResponse, error) {
 				respCh := make(chan harness.PermissionResponse, 1)
 				select {
-				case ch <- harnessPermissionRequestMsg{req: perm, respCh: respCh}:
+				case relay.out <- harnessPermissionRequestMsg{req: perm, respCh: respCh}:
 				case <-ctx.Done():
 					return harness.PermissionResponse{}, ctx.Err()
+				case <-relay.ctx.Done():
+					return harness.PermissionResponse{}, context.Canceled
 				}
 				select {
 				case resp := <-respCh:
 					return resp, nil
 				case <-ctx.Done():
 					return harness.PermissionResponse{}, ctx.Err()
+				case <-relay.ctx.Done():
+					return harness.PermissionResponse{}, context.Canceled
 				}
 			},
 			OnQuestionRequest: func(ctx context.Context, qreq harness.QuestionRequest) (harness.QuestionResponse, error) {
 				respCh := make(chan harness.QuestionResponse, 1)
 				select {
-				case ch <- harnessQuestionRequestMsg{req: qreq, respCh: respCh}:
+				case relay.out <- harnessQuestionRequestMsg{req: qreq, respCh: respCh}:
 				case <-ctx.Done():
 					return harness.QuestionResponse{Rejected: true}, ctx.Err()
+				case <-relay.ctx.Done():
+					return harness.QuestionResponse{Rejected: true}, context.Canceled
 				}
 				select {
 				case resp := <-respCh:
 					return resp, nil
 				case <-ctx.Done():
 					return harness.QuestionResponse{Rejected: true}, ctx.Err()
+				case <-relay.ctx.Done():
+					return harness.QuestionResponse{Rejected: true}, context.Canceled
 				}
 			},
 		}
 		req = harness.NormalizeExecuteRequest(req)
 		res, err := pair.Adapter.Execute(ctx, req)
-		ch <- executeDoneMsg{executeID: executeID, result: res, err: err, harnessID: pair.HarnessID}
+		relay.CloseAndWait()
+		relay.SendControl(executeDoneMsg{executeID: executeID, result: res, err: err, harnessID: pair.HarnessID})
 	}()
 }
 
@@ -1280,18 +1297,35 @@ func streamDeltaMustDeliver(kind harness.StreamKind) bool {
 // Text/thinking/warning/session block until accepted; tool/activity may drop
 // after a short wait so high-volume progress cannot stall the harness forever.
 func deliverStreamDelta(ch chan<- tea.Msg, executeID string, delta harness.StreamDelta) {
+	_ = deliverStreamDeltaContext(context.Background(), ch, executeID, delta)
+}
+
+func deliverStreamDeltaContext(ctx context.Context, ch chan<- tea.Msg, executeID string, delta harness.StreamDelta) bool {
 	msg := streamDeltaMsg{executeID: executeID, delta: delta}
 	if streamDeltaMustDeliver(delta.Kind) {
-		ch <- msg
-		return
+		select {
+		case ch <- msg:
+			return true
+		case <-ctx.Done():
+			return false
+		}
 	}
 	select {
 	case ch <- msg:
+		return true
+	case <-ctx.Done():
+		return false
 	default:
+		timer := time.NewTimer(2 * time.Second)
+		defer timer.Stop()
 		select {
 		case ch <- msg:
-		case <-time.After(2 * time.Second):
+			return true
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
 			slog.Warn("tui stream delta dropped under backpressure", "kind", delta.Kind)
+			return false
 		}
 	}
 }
@@ -1350,7 +1384,6 @@ func isImmediateConversationMessage(msg tea.Msg) bool {
 }
 
 func (m model) cancelStreamCmd() tea.Cmd {
-	ch := m.convStreamCh
 	executes := make([]convExecute, 0, len(m.executes))
 	for _, ex := range m.executes {
 		executes = append(executes, ex)
@@ -1366,6 +1399,9 @@ func (m model) cancelStreamCmd() tea.Cmd {
 			}
 		}
 		for _, ex := range executes {
+			// The TUI stops accepting this execution before cancelling the
+			// harness, so a relay blocked on a full chat channel cannot leak.
+			ex.relay.Stop()
 			adapter := fallbackAdapter
 			if svc != nil && svc.Harness == nil && svc.Registry != nil && strings.TrimSpace(ex.HarnessID) != "" {
 				if a, aerr := svc.Registry.Adapter(ex.HarnessID); aerr == nil && a != nil {
@@ -1384,9 +1420,6 @@ func (m model) cancelStreamCmd() tea.Cmd {
 				err = cerr
 			}
 		}
-		if ch != nil {
-			ch <- streamCancelDoneMsg{err: err}
-		}
 		return streamCancelDoneMsg{err: err}
 	}
 }
@@ -1394,8 +1427,14 @@ func (m model) cancelStreamCmd() tea.Cmd {
 func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case conversationBatchMsg:
+		streamChanged := false
 		for _, item := range msg.messages {
 			if item == nil {
+				continue
+			}
+			if delta, ok := item.(streamDeltaMsg); ok {
+				m = m.applyStreamDelta(delta)
+				streamChanged = true
 				continue
 			}
 			updated, _ := m.handleConversationMsg(item)
@@ -1408,30 +1447,18 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 		}
+		if streamChanged {
+			// One scroll calculation per coalesced stream batch avoids walking a
+			// long transcript once for every character-sized delta.
+			m = m.maybeFollowTranscriptBottom()
+		}
 		if m.streaming && m.convStreamCh != nil {
 			return m, waitConvBatchMsg(m.convStreamCh)
 		}
 		return m, nil
 
 	case streamDeltaMsg:
-		m = m.bindExecuteView(msg.executeID)
-		if sid := strings.TrimSpace(msg.delta.SessionID); sid != "" {
-			if ex, ok := m.executes[msg.executeID]; ok {
-				ex.SessionID = sid
-				m.executes[msg.executeID] = ex
-			}
-			hid := ""
-			if ex, ok := m.executes[msg.executeID]; ok {
-				hid = ex.HarnessID
-			}
-			m = m.persistHarnessSession(sid, hid)
-		}
-		prevActivity := m.harnessWatchdog.LastActivityAt()
-		m.harnessWatchdog.RecordDelta(msg.delta, time.Now())
-		if m.harnessWatchdog.LastActivityAt().After(prevActivity) {
-			m = m.clearHarnessHealthWarnings()
-		}
-		m = m.appendStreamDelta(msg.delta)
+		m = m.applyStreamDelta(msg)
 		m = m.maybeFollowTranscriptBottom()
 		if m.streaming && m.convStreamCh != nil {
 			return m, waitConvBatchMsg(m.convStreamCh)
@@ -1590,6 +1617,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, next.refreshCmd()
 
 	case streamCancelDoneMsg:
+		for _, ex := range m.executes {
+			ex.relay.Stop()
+		}
 		m.streaming = false
 		m.streamInterrupted = true
 		m.convStreamCh = nil
@@ -1611,6 +1641,27 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m model) applyStreamDelta(msg streamDeltaMsg) model {
+	m = m.bindExecuteView(msg.executeID)
+	if sid := strings.TrimSpace(msg.delta.SessionID); sid != "" {
+		if ex, ok := m.executes[msg.executeID]; ok {
+			ex.SessionID = sid
+			m.executes[msg.executeID] = ex
+		}
+		hid := ""
+		if ex, ok := m.executes[msg.executeID]; ok {
+			hid = ex.HarnessID
+		}
+		m = m.persistHarnessSession(sid, hid)
+	}
+	prevActivity := m.harnessWatchdog.LastActivityAt()
+	m.harnessWatchdog.RecordDelta(msg.delta, time.Now())
+	if m.harnessWatchdog.LastActivityAt().After(prevActivity) {
+		m = m.clearHarnessHealthWarnings()
+	}
+	return m.appendStreamDelta(msg.delta)
 }
 
 func (m model) bindExecuteView(executeID string) model {

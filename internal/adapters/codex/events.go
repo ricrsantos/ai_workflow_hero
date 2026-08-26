@@ -17,23 +17,89 @@ type streamOutcome struct {
 // turnStreamState tracks text already streamed for a single Execute turn so
 // item/completed can emit only the authoritative suffix (OpenCode pattern).
 type turnStreamState struct {
-	emittedText  map[string]string
-	lastAgentKey string
+	emittedText       map[string]string
+	authoritativeText map[string]string
+	agentTextOrder    []string
+	lastAgentKey      string
 }
 
 func newTurnStreamState() *turnStreamState {
-	return &turnStreamState{emittedText: make(map[string]string)}
+	return &turnStreamState{
+		emittedText:       make(map[string]string),
+		authoritativeText: make(map[string]string),
+	}
 }
 
 func (st *turnStreamState) noteTextDelta(key, delta string) {
 	if st == nil || delta == "" {
 		return
 	}
+	st.noteAgentTextKey(key)
+	st.emittedText[key] += delta
+	st.lastAgentKey = key
+}
+
+// noteAgentTextKey preserves app-server agent-message order. A completed item
+// is authoritative for its own key; this order lets Execute rebuild a complete
+// answer even if live deltas lost a span in the middle of the message.
+func (st *turnStreamState) noteAgentTextKey(key string) {
+	if st == nil || key == "" {
+		return
+	}
 	if st.emittedText == nil {
 		st.emittedText = make(map[string]string)
 	}
-	st.emittedText[key] += delta
-	st.lastAgentKey = key
+	if st.authoritativeText == nil {
+		st.authoritativeText = make(map[string]string)
+	}
+	if _, exists := st.emittedText[key]; !exists {
+		st.agentTextOrder = append(st.agentTextOrder, key)
+		st.emittedText[key] = ""
+	}
+}
+
+func (st *turnStreamState) noteAuthoritativeText(key, text string) {
+	if st == nil || key == "" || text == "" {
+		return
+	}
+	st.noteAgentTextKey(key)
+	st.authoritativeText[key] = text
+}
+
+func (st *turnStreamState) onlyAgentTextKey() (string, bool) {
+	if st == nil || len(st.agentTextOrder) != 1 {
+		return "", false
+	}
+	return st.agentTextOrder[0], true
+}
+
+// output returns the final agent-message snapshots in wire order. fallback
+// retains output from non-agent text events such as plan-only turns.
+func (st *turnStreamState) output(fallback string) string {
+	if st == nil || len(st.agentTextOrder) == 0 {
+		return fallback
+	}
+
+	var out strings.Builder
+	lastEndedNewline := false
+	for _, key := range st.agentTextOrder {
+		text := st.authoritativeText[key]
+		if text == "" {
+			text = st.emittedText[key]
+		}
+		if text == "" {
+			continue
+		}
+		if out.Len() > 0 && !lastEndedNewline && !strings.HasPrefix(text, "\n") {
+			out.WriteByte('\n')
+		}
+		out.WriteString(text)
+		lastEndedNewline = strings.HasSuffix(text, "\n")
+	}
+	if out.Len() == 0 {
+		return fallback
+	}
+	return out.String()
 }
 
 // ensureItemSeparator inserts a newline when Codex starts a new agentMessage
@@ -108,6 +174,7 @@ func (st *turnStreamState) emitAuthoritativeText(key, full, harnessType, session
 	if st.emittedText == nil {
 		st.emittedText = make(map[string]string)
 	}
+	st.noteAuthoritativeText(key, full)
 	emitted := st.emittedText[key]
 	if full == emitted {
 		st.lastAgentKey = key
@@ -122,6 +189,12 @@ func (st *turnStreamState) emitAuthoritativeText(key, full, harnessType, session
 			return
 		}
 	case strings.HasPrefix(emitted, full):
+		st.lastAgentKey = key
+		return
+	default:
+		// A completed item can repair a dropped span in the middle of a live
+		// stream. It cannot be appended safely: that would duplicate the whole
+		// message. Keep the final snapshot for ExecutionResult.Output instead.
 		st.lastAgentKey = key
 		return
 	}
@@ -252,9 +325,15 @@ func (a *Adapter) handleNotification(ctx context.Context, method string, raw jso
 		// when live deltas were dropped under app-server backpressure.
 		if status == "" || status == "completed" || status == "success" {
 			if msg := lastAgentMessageFromTurn(turn, params); msg != "" {
-				key := st.resolveRepairTextKey(sessionID, msg)
-				if st.canRepairFromLastAgentMessage(key, msg) {
+				if key, only := st.onlyAgentTextKey(); only {
+					// With one agent item the completion snapshot is unambiguous,
+					// including when a live delta lost bytes in the middle.
 					st.emitAuthoritativeText(key, msg, method, sessionID, emit)
+				} else {
+					key := st.resolveRepairTextKey(sessionID, msg)
+					if st.canRepairFromLastAgentMessage(key, msg) {
+						st.emitAuthoritativeText(key, msg, method, sessionID, emit)
+					}
 				}
 			}
 		}

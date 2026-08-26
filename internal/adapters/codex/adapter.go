@@ -344,7 +344,10 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		})
 	}
 
-	out := buf.String()
+	// Completed agentMessage snapshots supersede their live deltas. In
+	// particular, this repairs a lost middle span that cannot be reconstructed
+	// by appending a suffix to the streamed text.
+	out := turnState.output(buf.String())
 	a.setStatus(sessionID, harness.StatusCompleted, "")
 	return &harness.ExecutionResult{
 		SessionID:  sessionID,

@@ -355,3 +355,11 @@
 ## 2026-08-25 — `alt+r` copies the whole chat box as plain text
 
 **Outcome**: `alt+r` (copy response) now copies the entire unified chat box (You + every agent turn), not just the latest agent turn. Replaced `responsePlainText` (last-turn only) with `transcriptPlainText`, which walks the full transcript, keeps speaker headers (`[AGENT - model · harness]`, `You`) and thinking/tool markers, and omits the `│` accent bars and right-padding used to decorate the rendered box. Updated `clipboard_test.go` (new whole-conversation and no-decoration tests). `go test ./...` passes.
+
+## 2026-08-26 — Codex chat stream integrity under TUI backpressure
+
+**Problem**: In a long-lived TUI session, Codex responses could lose fragments in the middle of a sentence. The text callback eventually blocked behind the bounded chat channel while the TUI rebuilt a growing transcript; the previous final-output repair only handled a prefix/suffix relationship and therefore retained internal gaps.
+
+**Outcome**: Added a per-Execute ordered/coalescing relay between harness callbacks and Bubble Tea. It makes callbacks return immediately, coalesces adjacent text/thinking deltas, retains transcript-critical events, drains before Execute completion, and is stopped on cancellation. Codex now records final text per `agentMessage` item and constructs `ExecutionResult.Output` from authoritative completed snapshots in wire order. A unique streamed item also accepts `turn/completed.lastAgentMessage` as a final fallback. TUI auto-follow is calculated once per stream batch rather than once per delta.
+
+**Validation**: New Codex gap-repair tests and TUI relay backpressure/cancellation tests pass. `CC=/usr/bin/gcc GOCACHE=/tmp/hero-go-cache go test ./... -count=1 -p 1 -timeout=600s` passed all affected packages (Codex, TUI, Cursor, integration) but the full command still fails in two pre-existing OpenCode local-serve tests: `TestDiscoverModelPropertiesNormalized` and `TestIsManagedOpenCodeServeDetectsSpawnedServe`, both reporting no listening URL from the simulated serve process in this restricted sandbox.

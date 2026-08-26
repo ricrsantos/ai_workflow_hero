@@ -91,6 +91,40 @@ func TestAgentMessageCompletedEmitsSuffixOnly(t *testing.T) {
 	}
 }
 
+func TestAgentMessageCompletedRepairsGapInLiveDeltas(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var streamed string
+	var buf strings.Builder
+	req := harness.ExecuteRequest{
+		OnStreamDelta: func(d harness.StreamDelta) {
+			if d.Kind == harness.StreamKindText {
+				streamed += d.Text
+			}
+		},
+	}
+	partial := "A suíte completa já validou os pacotes; falta a bateria de TUI, que é parte aando."
+	full := "A suíte completa já validou os pacotes; falta a bateria de TUI, que é parte aguardando."
+	payload, _ := json.Marshal(map[string]any{
+		"threadId": "thr", "itemId": "m1", "delta": partial,
+	})
+	_ = a.handleNotification(context.Background(), "item/agentMessage/delta", payload, "thr", req, &buf, st)
+	completed, _ := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"item": map[string]any{
+			"type": "agentMessage", "id": "m1", "text": full,
+		},
+	})
+	_ = a.handleNotification(context.Background(), "item/completed", completed, "thr", req, &buf, st)
+
+	if streamed != partial {
+		t.Fatalf("live text=%q want unchanged partial stream", streamed)
+	}
+	if got := st.output(buf.String()); got != full {
+		t.Fatalf("final output=%q want repaired %q", got, full)
+	}
+}
+
 func TestReasoningLiveDeltaSuppressedCompletedEmits(t *testing.T) {
 	a := NewAdapter(t.TempDir(), nil)
 	st := newTurnStreamState()
@@ -245,6 +279,30 @@ func TestTurnCompletedLastAgentMessageRepairsTruncation(t *testing.T) {
 	}
 	if buf.String() != "Hello world from summary" {
 		t.Fatalf("buf=%q", buf.String())
+	}
+}
+
+func TestTurnCompletedSingleItemRepairsGapInLiveDeltas(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var buf strings.Builder
+	req := harness.ExecuteRequest{OnStreamDelta: func(harness.StreamDelta) {}}
+	partial := "A bateria de TUI está rodando sem falhas parciais."
+	full := "A bateria de TUI está aguardando e rodando sem falhas parciais."
+	payload, _ := json.Marshal(map[string]any{
+		"threadId": "thr", "itemId": "m1", "delta": partial,
+	})
+	_ = a.handleNotification(context.Background(), "item/agentMessage/delta", payload, "thr", req, &buf, st)
+	completed, _ := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"turn": map[string]any{
+			"status": "completed", "lastAgentMessage": full,
+		},
+	})
+	_ = a.handleNotification(context.Background(), "turn/completed", completed, "thr", req, &buf, st)
+
+	if got := st.output(buf.String()); got != full {
+		t.Fatalf("final output=%q want repaired %q", got, full)
 	}
 }
 
