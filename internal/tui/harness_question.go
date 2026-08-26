@@ -15,7 +15,7 @@ type harnessQuestionRequestMsg struct {
 
 func formatHarnessQuestion(req harness.QuestionRequest, index int) string {
 	if len(req.Questions) == 0 {
-		return "Harness question: type answer in composer, Enter confirms, Esc rejects."
+		return "Harness question: type answer in composer, Alt+Enter confirms, Esc rejects."
 	}
 	if index < 0 || index >= len(req.Questions) {
 		index = 0
@@ -51,9 +51,9 @@ func formatHarnessQuestion(req harness.QuestionRequest, index int) string {
 		b.WriteByte('\n')
 	}
 	if q.Multiple {
-		b.WriteString("Multiple: type numbers separated by commas (e.g. 1,3) or text, then Enter. Esc rejects.")
+		b.WriteString("Multiple: type numbers separated by commas (e.g. 1,3) or text, then Alt+Enter. Esc rejects.")
 	} else {
-		b.WriteString("Type option number or text, then Enter. Esc rejects.")
+		b.WriteString("Type option number or text, then Alt+Enter. Esc rejects.")
 	}
 	return strings.TrimSpace(b.String())
 }
@@ -213,19 +213,18 @@ func (m model) handleHarnessQuestionComposer(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		}
 		return m, nil
 	case "enter":
+		return m.insertComposerNewline(), nil
+	case "alt+enter":
 		return m.submitHarnessQuestionAnswer()
 	case "up", "ctrl+p":
-		if m.inputScrollOffset > 0 {
-			m.inputScrollOffset--
-			return m, nil
+		if next, moved := m.moveInputCursorVertical(-1); moved {
+			return next, nil
 		}
 		m = m.scrollTranscript(-1)
 		return m, nil
 	case "down", "ctrl+n":
-		maxIn := m.maxInputScroll()
-		if m.inputScrollOffset < maxIn {
-			m.inputScrollOffset++
-			return m, nil
+		if next, moved := m.moveInputCursorVertical(1); moved {
+			return next, nil
 		}
 		m = m.scrollTranscript(1)
 		return m, nil
@@ -239,12 +238,14 @@ func (m model) handleHarnessQuestionComposer(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		if m.inputCursor > 0 {
 			m.inputCursor--
 		}
+		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "right":
 		if m.inputCursor < runeLen(m.input) {
 			m.inputCursor++
 		}
+		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "backspace":
@@ -260,10 +261,12 @@ func (m model) handleHarnessQuestionComposer(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		return m, nil
 	case "home":
 		m.inputCursor = 0
+		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "end":
 		m.inputCursor = runeLen(m.input)
+		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	default:

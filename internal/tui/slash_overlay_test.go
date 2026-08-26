@@ -74,7 +74,7 @@ func TestChatSlashOverlayInsertThenSend(t *testing.T) {
 		t.Fatalf("filtered items missing /hero-approve: %+v", items)
 	}
 
-	next, _ = HandleTestKey(next, "enter")
+	next, _ = HandleTestKey(next, "tab")
 	if ConversationInputForTest(next) != "/hero-approve" {
 		t.Fatalf("after insert input=%q", ConversationInputForTest(next))
 	}
@@ -127,7 +127,7 @@ func TestChatSlashTabOnGoToDoesNotToggleMode(t *testing.T) {
 	}
 }
 
-func TestChatSlashEnterGoToStatusNavigates(t *testing.T) {
+func TestChatSlashTabGoToStatusNavigates(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	next, _ := HandleTestKey(m, "/")
@@ -147,7 +147,7 @@ func TestChatSlashEnterGoToStatusNavigates(t *testing.T) {
 		next, cmd = HandleTestKey(next, "down")
 		_ = cmd
 	}
-	next, _ = HandleTestKey(next, "enter")
+	next, _ = HandleTestKey(next, "tab")
 	if CurrentScreen(next) != ScreenStatus {
 		t.Fatalf("screen=%v want status", CurrentScreen(next))
 	}
@@ -156,14 +156,14 @@ func TestChatSlashEnterGoToStatusNavigates(t *testing.T) {
 	}
 }
 
-func TestChatSlashEnterHeroNewExecutesNotInserts(t *testing.T) {
+func TestChatSlashTabHeroNewExecutesNotInserts(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	next := typeChat(t, m, "/hero-new")
 	if !ChatSlashOverlayActiveForTest(next) {
 		t.Fatal("overlay should be open for /hero-new")
 	}
-	next, _ = HandleTestKey(next, "enter")
+	next, _ = HandleTestKey(next, "tab")
 	if ConversationInputForTest(next) != "" {
 		t.Fatalf("composer should clear on execute, not insert /hero-new, input=%q", ConversationInputForTest(next))
 	}

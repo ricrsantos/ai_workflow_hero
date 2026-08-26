@@ -6,6 +6,16 @@
 
 ---
 
+## 2026-08-26 — Chat composer and harness wait UX
+
+**Problem**: Chat ↑/↓ scrolled the input/transcript but never moved the caret between composer lines. Enter/Alt+Enter were opposite to the requested interaction. A cancelled turn could leave its status error visible into the next turn, and watchdog health alerts could classify an expected harness permission/question pause as a stall.
+
+**Change**: Composer visual lines are shared by rendering, caret visibility, and vertical movement; ↑/↓ preserve a preferred column and fall back to transcript scrolling at the boundaries. Enter inserts a newline and Alt+Enter submits in normal Chat and harness-question flows; slash overlay selection remains on Tab. Normal turn start/success clears stale status results. Watchdog probes and late probe results are ignored while a harness permission or question is pending. Help text and OpenCode question/rejection prompts were updated.
+
+**Validation**: Focused regressions and full `go test ./internal/tui -count=1` passed (132.5s). Full `go test ./... -count=1` passed all other packages; the two pre-existing OpenCode serve-spawn tests still fail in this environment because the simulated server exits before exposing its listening URL.
+
+---
+
 ## 2026-08-26 — C7 Config TUI form readability and dirty-leave recovery
 
 **Problem**: Text editing updated only a buffer printed at the bottom of the long Config form, so typed text and its cursor were often off-screen until Enter committed the field. The duplicate static summaries and ungrouped controls made the form difficult to scan. More seriously, pressing Escape with a dirty form captured all input for Save/Discard/Cancel, but that confirmation was rendered below the clipped form; the TUI therefore looked frozen.

@@ -77,7 +77,7 @@ func boolProp(m map[string]any, key string) bool {
 
 func formatQuestionPrompt(req harness.QuestionRequest, index int) string {
 	if len(req.Questions) == 0 {
-		return "Harness question: type answer in composer, Enter confirms, Esc rejects."
+		return "Harness question: type answer in composer, Alt+Enter confirms, Esc rejects."
 	}
 	if index < 0 || index >= len(req.Questions) {
 		index = 0
@@ -107,11 +107,11 @@ func formatQuestionPrompt(req harness.QuestionRequest, index int) string {
 		b.WriteByte('\n')
 	}
 	if q.Multiple {
-		b.WriteString("Multiple: type numbers separated by commas (e.g. 1,3) or text, then Enter. Esc rejects.\n")
+		b.WriteString("Multiple: type numbers separated by commas (e.g. 1,3) or text, then Alt+Enter. Esc rejects.\n")
 	} else if q.Custom {
-		b.WriteString("Type option number or custom text, then Enter. Esc rejects.\n")
+		b.WriteString("Type option number or custom text, then Alt+Enter. Esc rejects.\n")
 	} else {
-		b.WriteString("Type option number or text, then Enter. Esc rejects.\n")
+		b.WriteString("Type option number or text, then Alt+Enter. Esc rejects.\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

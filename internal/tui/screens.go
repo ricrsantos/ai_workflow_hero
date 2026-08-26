@@ -463,7 +463,7 @@ func fitContentHeight(content string, height int, keepBottom bool) string {
 	return strings.Join(lines, "\n")
 }
 
-const fixedFooterHints = "tab mode · / commands · enter send · alt+enter newline · alt+r/i copy · ↑↓ scroll · alt+q quit"
+const fixedFooterHints = "tab mode · / commands · enter newline · alt+enter send · alt+r/i copy · ↑↓ scroll · alt+q quit"
 
 func (m model) footerHints() string {
 	if m.screen == screenConfig {
@@ -503,7 +503,7 @@ func (m model) footerHintLines() []string {
 		return []string{""}
 	}
 	// Keep each hint atomic while wrapping. In particular, splitting the
-	// `↑↓ scroll` or `alt+enter newline` pairs makes the fixed footer look
+	// `↑↓ scroll` or `alt+enter send` pairs makes the fixed footer look
 	// incomplete even though all text is technically present.
 	parts := strings.Split(hints, " · ")
 	lines := make([]string, 0, len(parts))

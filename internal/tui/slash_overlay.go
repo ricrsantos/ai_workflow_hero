@@ -87,7 +87,7 @@ func chatSlashOverlayItem(item paletteItem) bool {
 }
 
 // chatComposerControlSlash is true for agent-reply slashes that stay in the
-// composer (insert, then Enter to send). All other overlay items run immediately
+// composer (insert, then Alt+Enter to send). All other overlay items run immediately
 // like the full-screen palette.
 func chatComposerControlSlash(item paletteItem) bool {
 	switch item.action {
@@ -130,6 +130,7 @@ func (m model) insertChatSlashSelection() model {
 	label := items[idx].label
 	m.input = label
 	m.inputCursor = runeLen(label)
+	m.inputVerticalColumnSet = false
 	m.slashOverlayDismissed = true
 	m.slashOverlayIndex = 0
 	return m.ensureInputCaretVisible()
@@ -154,6 +155,8 @@ func (m model) applyChatSlashSelection() (model, tea.Cmd) {
 func (m model) clearChatInput() model {
 	m.input = ""
 	m.inputCursor = 0
+	m.inputVerticalColumn = 0
+	m.inputVerticalColumnSet = false
 	m.inputScrollOffset = 0
 	m.slashOverlayDismissed = false
 	m.slashOverlayIndex = 0

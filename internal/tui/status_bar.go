@@ -69,6 +69,15 @@ func (m model) setStatusRunning(label string) model {
 	return m
 }
 
+func (m model) clearStatus() model {
+	m.statusKind = statusIdle
+	m.statusLabel = ""
+	m.statusText = ""
+	m.statusStarted = time.Time{}
+	m.actionBusy = false
+	return m
+}
+
 func (m model) setStatusResult(ok bool, label, text string) model {
 	m.actionBusy = false
 	if label != "" {

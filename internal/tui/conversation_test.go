@@ -1137,6 +1137,28 @@ func TestConversationSubmitPassesModePlan(t *testing.T) {
 	}
 }
 
+func TestConversationNewTurnClearsPreviousStatusError(t *testing.T) {
+	m, h, _ := newConversationTestModel(t)
+	m = EnterConversationForTest(m)
+	m = m.setStatusResult(false, "execute", "context canceled")
+	m = SetConversationInput(m, "hello")
+
+	next, cmd := SubmitConversationForTest(m)
+	if got := StatusKindForTest(next); got != "idle" {
+		t.Fatalf("status kind while new turn runs=%q want idle", got)
+	}
+	if got := StatusTextForTest(next); got != "" {
+		t.Fatalf("stale status text=%q", got)
+	}
+	next = drainConversationStream(t, next, cmd)
+	if got := StatusKindForTest(next); got != "idle" {
+		t.Fatalf("status kind after successful turn=%q want idle", got)
+	}
+	if h.lastPrompt != "hello" {
+		t.Fatalf("prompt=%q", h.lastPrompt)
+	}
+}
+
 func TestConversationInputGuidanceWhenEmpty(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
@@ -1144,7 +1166,7 @@ func TestConversationInputGuidanceWhenEmpty(t *testing.T) {
 	if strings.Contains(view, "type here") {
 		t.Fatalf("placeholder must be removed: %q", view)
 	}
-	if !strings.Contains(view, "enter send") {
+	if !strings.Contains(view, "alt+enter send") {
 		t.Fatalf("expected input hints: %q", view)
 	}
 	if !strings.Contains(view, "Build") {

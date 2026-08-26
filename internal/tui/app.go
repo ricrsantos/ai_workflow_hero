@@ -76,6 +76,8 @@ type model struct {
 	transcript              []convMessage
 	input                   string
 	inputCursor             int // rune offset into input
+	inputVerticalColumn     int // preferred visual column while moving up/down
+	inputVerticalColumnSet  bool
 	streaming               bool
 	streamInterrupted       bool
 	convError               string
@@ -162,12 +164,12 @@ type model struct {
 	harnessPermissionRespCh  chan harness.PermissionResponse
 
 	// Harness-native question prompt (OpenCode question.asked).
-	harnessQuestionPending   bool
-	harnessQuestionMsg       string
-	harnessQuestionReq       harness.QuestionRequest
-	harnessQuestionRespCh    chan harness.QuestionResponse
-	harnessQuestionIndex     int
-	harnessQuestionAnswers   [][]string
+	harnessQuestionPending bool
+	harnessQuestionMsg     string
+	harnessQuestionReq     harness.QuestionRequest
+	harnessQuestionRespCh  chan harness.QuestionResponse
+	harnessQuestionIndex   int
+	harnessQuestionAnswers [][]string
 
 	// Harness watchdog (v2.3): runtime health during TUI Execute only (warn-only).
 	harnessWatchdog       harness.Watchdog
@@ -1150,7 +1152,7 @@ func (m model) beginHeroRejectPrompt() (model, tea.Cmd) {
 	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: "/hero-reject"})
 	m.transcript = append(m.transcript, convMessage{
 		role:    convRoleAgent,
-		content: "Enter rejection feedback below, then press Enter.",
+		content: "Enter rejection feedback below, then press Alt+Enter.",
 	})
 	return m, nil
 }

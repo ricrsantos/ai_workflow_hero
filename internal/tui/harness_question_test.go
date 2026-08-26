@@ -114,3 +114,44 @@ func TestHarnessQuestionReject(t *testing.T) {
 		t.Fatal("expected rejected")
 	}
 }
+
+func TestHarnessQuestionUsesAltEnterToSubmit(t *testing.T) {
+	respCh := make(chan harness.QuestionResponse, 1)
+	m := NewTestModel(nil)
+	m.streaming = true
+	m.harnessQuestionPending = true
+	m.harnessQuestionReq = harness.QuestionRequest{
+		Questions: []harness.QuestionItem{{
+			Question: "Continue?",
+			Options:  []harness.QuestionOption{{Label: "yes"}, {Label: "no"}},
+		}},
+	}
+	m.harnessQuestionRespCh = respCh
+	m = SetConversationInput(m, "yes")
+
+	next, _ := HandleTestKey(m, "enter")
+	if ConversationInputForTest(next) != "yes\n" {
+		t.Fatalf("enter input=%q want yes\\n", ConversationInputForTest(next))
+	}
+	if !next.harnessQuestionPending {
+		t.Fatal("Enter must not answer the harness question")
+	}
+	select {
+	case <-respCh:
+		t.Fatal("Enter must not send a harness response")
+	default:
+	}
+
+	next, _ = HandleTestKey(next, "alt+enter")
+	if next.harnessQuestionPending {
+		t.Fatal("Alt+Enter should answer the harness question")
+	}
+	select {
+	case response := <-respCh:
+		if len(response.Answers) != 1 || len(response.Answers[0]) != 1 || response.Answers[0][0] != "yes" {
+			t.Fatalf("response=%+v", response)
+		}
+	default:
+		t.Fatal("missing harness question response")
+	}
+}

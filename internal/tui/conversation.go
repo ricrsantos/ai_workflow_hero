@@ -598,6 +598,12 @@ func (m model) nextExecuteID() (model, string) {
 }
 
 func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) model {
+	// A new ordinary chat turn supersedes a stale warning/error from the
+	// previous turn. Keep the running status for palette-driven actions, which
+	// use actionBusy to own the footer until their execute completes.
+	if !m.actionBusy {
+		m = m.clearStatus()
+	}
 	m.streamInterrupted = false
 	m.convError = ""
 	m.streaming = true
@@ -732,7 +738,7 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Newline keys are handled before the slash overlay so they never select
-	// an item. Enter remains send (or overlay insert/execute).
+	// an item. Alt+Enter submits the prompt.
 	if isComposerNewlineKey(s) {
 		return m.insertComposerNewline(), nil
 	}
@@ -750,7 +756,7 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.slashOverlayIndex++
 			}
 			return m, nil
-		case "enter", "tab":
+		case "tab":
 			return m.applyChatSlashSelection()
 		case "esc":
 			m.slashOverlayDismissed = true
@@ -773,23 +779,20 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+c":
 		return m, tea.Quit
-	case "enter":
+	case "alt+enter":
 		if strings.TrimSpace(m.input) == "" {
 			return m, nil
 		}
 		return m.submitConversation()
 	case "up", "ctrl+p":
-		if m.inputScrollOffset > 0 {
-			m.inputScrollOffset--
-			return m, nil
+		if next, moved := m.moveInputCursorVertical(-1); moved {
+			return next, nil
 		}
 		m = m.scrollTranscript(-1)
 		return m, nil
 	case "down", "ctrl+n":
-		maxIn := m.maxInputScroll()
-		if m.inputScrollOffset < maxIn {
-			m.inputScrollOffset++
-			return m, nil
+		if next, moved := m.moveInputCursorVertical(1); moved {
+			return next, nil
 		}
 		m = m.scrollTranscript(1)
 		return m, nil
@@ -803,20 +806,24 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.inputCursor > 0 {
 			m.inputCursor--
 		}
+		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "right":
 		if m.inputCursor < runeLen(m.input) {
 			m.inputCursor++
 		}
+		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "home":
 		m.inputCursor = 0
+		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "end":
 		m.inputCursor = runeLen(m.input)
+		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "backspace":
@@ -873,6 +880,7 @@ func (m model) insertRunesAtCursor(rs []rune) model {
 	out = append(out, runes[cur:]...)
 	m.input = string(out)
 	m.inputCursor = cur + len(rs)
+	m.inputVerticalColumnSet = false
 	return m
 }
 
@@ -884,6 +892,7 @@ func (m model) deleteRuneBeforeCursor() model {
 	cur := m.inputCursor
 	m.input = string(append(runes[:cur-1], runes[cur:]...))
 	m.inputCursor = cur - 1
+	m.inputVerticalColumnSet = false
 	return m
 }
 
@@ -894,6 +903,7 @@ func (m model) deleteRuneAtCursor() model {
 	}
 	cur := m.inputCursor
 	m.input = string(append(runes[:cur], runes[cur+1:]...))
+	m.inputVerticalColumnSet = false
 	return m
 }
 
@@ -1480,6 +1490,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case harnessPermissionRequestMsg:
+		m = m.clearHarnessHealthWarnings()
 		m.harnessPermissionPending = true
 		m.harnessPermissionReq = msg.req
 		m.harnessPermissionRespCh = msg.respCh
@@ -1491,6 +1502,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case harnessQuestionRequestMsg:
+		m = m.clearHarnessHealthWarnings()
 		m.harnessQuestionPending = true
 		m.harnessQuestionReq = msg.req
 		m.harnessQuestionRespCh = msg.respCh
@@ -1591,6 +1603,11 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.result.Output != "" {
 				m = m.reconcileParentAgentOutput(msg.result.Output)
 			}
+		}
+		if !siblingsRemain && !m.actionBusy {
+			// A successful ordinary turn supersedes a stale cancellation or
+			// harness warning left in the status bar.
+			m = m.clearStatus()
 		}
 		if agentResponseEmpty(m, msg) {
 			m = m.warnEmptyAgentResponse()
@@ -2548,49 +2565,24 @@ func (m model) inputLinesWithCaret(contentW int) []string {
 		cur = len(runes)
 	}
 
-	before := string(runes[:cur])
-	after := string(runes[cur:])
-	plain := before + "\x00" + after
-	if plain == "\x00" {
-		return []string{m.renderInputCaret()}
-	}
-
-	var lines []string
-	var current strings.Builder
-	lineLen := 0
-	flush := func() {
-		raw := current.String()
-		current.Reset()
-		lineLen = 0
-		if !strings.Contains(raw, "\x00") {
-			lines = append(lines, chatInText.Render(raw))
-			return
-		}
-		parts := strings.SplitN(raw, "\x00", 2)
-		styled := chatInText.Render(parts[0]) + m.renderInputCaret()
-		if len(parts) > 1 {
-			styled += chatInText.Render(parts[1])
-		}
-		lines = append(lines, styled)
-	}
-	for _, r := range plain {
-		if r == '\n' {
-			flush()
+	lines := inputVisualLines(m.input, contentW)
+	cursorLine, cursorColumn := inputCursorVisualPosition(lines, cur)
+	rendered := make([]string, 0, len(lines))
+	for i, line := range lines {
+		lineRunes := runes[line.start:line.end]
+		raw := string(lineRunes)
+		if i != cursorLine {
+			rendered = append(rendered, chatInText.Render(raw))
 			continue
 		}
-		current.WriteRune(r)
-		lineLen++
-		if lineLen >= contentW {
-			flush()
+		if cursorColumn > len(lineRunes) {
+			cursorColumn = len(lineRunes)
 		}
+		rendered = append(rendered,
+			chatInText.Render(string(lineRunes[:cursorColumn]))+m.renderInputCaret()+chatInText.Render(string(lineRunes[cursorColumn:])),
+		)
 	}
-	if current.Len() > 0 || len(lines) == 0 {
-		flush()
-	}
-	if len(lines) == 0 {
-		return []string{m.renderInputCaret()}
-	}
-	return lines
+	return rendered
 }
 
 // chatAccentRow paints solid accent + gap + content to exactly innerW cells (composer).
@@ -2814,29 +2806,9 @@ func (m model) maxInputScroll() int {
 func (m model) ensureInputCaretVisible() model {
 	contentW := m.chatContentWidth()
 	lines := m.inputLinesWithCaret(contentW)
-	// Approximate caret line: count wraps up to cursor.
-	caretLine := 0
-	runes := []rune(m.input)
-	cur := m.inputCursor
-	if cur < 0 {
-		cur = 0
-	}
-	if cur > len(runes) {
-		cur = len(runes)
-	}
-	lineLen := 0
-	for i := 0; i < cur; i++ {
-		if runes[i] == '\n' {
-			caretLine++
-			lineLen = 0
-			continue
-		}
-		lineLen++
-		if lineLen >= contentW {
-			caretLine++
-			lineLen = 0
-		}
-	}
+	cur := m.clampInputCursor().inputCursor
+	visualLines := inputVisualLines(m.input, contentW)
+	caretLine, _ := inputCursorVisualPosition(visualLines, cur)
 	if caretLine < m.inputScrollOffset {
 		m.inputScrollOffset = caretLine
 	}

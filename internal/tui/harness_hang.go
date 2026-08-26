@@ -72,10 +72,22 @@ func (m model) clearHarnessHealthWarnings() model {
 	return m
 }
 
+func (m model) harnessWaitingForResponse() bool {
+	return m.harnessPermissionPending || m.harnessQuestionPending
+}
+
 func (m model) handleHarnessHealthProbe() (model, tea.Cmd) {
 	if !m.streaming {
 		m.harnessHealthInFlight = false
 		return m, nil
+	}
+	// Permission and question callbacks intentionally pause the harness while
+	// the TUI waits for the user. A watchdog probe would misclassify that
+	// expected pause as a stall and emit a misleading warning.
+	if m.harnessWaitingForResponse() {
+		m.harnessHealthInFlight = false
+		m = m.clearHarnessHealthWarnings()
+		return m, harnessHealthProbeCmd()
 	}
 	// Stream delivering substantive activity: healthy — skip HTTP probe this interval.
 	if m.harnessWatchdog.HasRecentActivity(time.Now(), harness.HealthProbeInterval) {
@@ -92,6 +104,10 @@ func (m model) handleHarnessHealthProbe() (model, tea.Cmd) {
 func (m model) handleHarnessHealthResult(msg harnessHealthResultMsg) (model, tea.Cmd) {
 	m.harnessHealthInFlight = false
 	if !m.streaming {
+		return m, nil
+	}
+	if m.harnessWaitingForResponse() {
+		m = m.clearHarnessHealthWarnings()
 		return m, nil
 	}
 	prev := m.harnessHealthStatus
