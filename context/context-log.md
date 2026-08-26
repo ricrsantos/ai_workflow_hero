@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-08-25 — `/hero-approve` must start the next TUI stage
+
+**Problem**: After Research with `require_human_approval`, `/hero-approve` left Planning `Waiting`. TUI handoff only ran for `Running` stages, and the approve follow-up was just the slash — ORCH asked for `/hero-start` again.
+
+**Change**: After an orchestrator turn, if the active named stage is Waiting, the TUI calls `hero stage start` and Executes that agent. Approve preamble/follow-up forbid a `/hero-start` CTA. Palette `/hero-approve` keeps `orchestrationLive` so the same handoff runs.
+
+**Validation**: `TestApproveHandsOffToWaitingPlanning`; `go test ./...` passed.
+
+## 2026-08-25 — Codex Research transcript glued without newlines
+
+**Problem**: Codex emits one `agentMessage` item per status line (`→ …`). Deltas are concatenated per `itemId` only; Hero joined every item into one bubble with no separator, so Research opened as `documents.→ I'm using…`. `turn/completed` `lastAgentMessage` is often just the last (reworded) item and was appended when it diverged, duplicating the grill question.
+
+**Change**: Insert `\n` when the `itemId` changes if the previous item has no trailing newline. Repair from `lastAgentMessage` only when it extends streamed text (still used when live deltas were dropped).
+
+**Validation**: Colocated Codex adapter tests; `go test ./...` passed.
+
 ## 2026-08-25 — C8 TUI-direct stage Execute
 
 **Change**: After `/hero-start`, ORCH starts a stage then STOPs. The TUI Executes named stage agents (`planning_agent`, scope Implementation agents, QA, Judge, Browser UI, E2E) on their YAML harness+model pair, then resumes ORCH. Nested Task fan-out remains inside the parent harness. Chat multiplexes tagged concurrent Executes; navbar chips named 4-letter codes plus generic `TASK`; Task **started** inserts a `[LABEL - model · harness]` launch line. Codex `collabToolCall` and OpenCode Task/`session.next.tool` events now set `AgentName`, `CallID`, and `Phase`.

@@ -17,7 +17,8 @@ type streamOutcome struct {
 // turnStreamState tracks text already streamed for a single Execute turn so
 // item/completed can emit only the authoritative suffix (OpenCode pattern).
 type turnStreamState struct {
-	emittedText map[string]string
+	emittedText  map[string]string
+	lastAgentKey string
 }
 
 func newTurnStreamState() *turnStreamState {
@@ -32,6 +33,62 @@ func (st *turnStreamState) noteTextDelta(key, delta string) {
 		st.emittedText = make(map[string]string)
 	}
 	st.emittedText[key] += delta
+	st.lastAgentKey = key
+}
+
+// ensureItemSeparator inserts a newline when Codex starts a new agentMessage
+// item. Deltas are concatenated per itemId; successive items have no trailing
+// newline, so the TUI would otherwise glue "....→ next status" onto one line.
+func (st *turnStreamState) ensureItemSeparator(key, next, harnessType, sessionID string, emit func(harness.StreamDelta)) {
+	if st == nil || key == "" || next == "" {
+		return
+	}
+	if st.lastAgentKey == "" || st.lastAgentKey == key {
+		return
+	}
+	prev := ""
+	if st.emittedText != nil {
+		prev = st.emittedText[st.lastAgentKey]
+	}
+	if prev == "" || strings.HasSuffix(prev, "\n") || strings.HasPrefix(next, "\n") {
+		return
+	}
+	emit(harness.StreamDelta{
+		Kind:        harness.StreamKindText,
+		Text:        "\n",
+		HarnessType: harnessType,
+		SessionID:   sessionID,
+	})
+}
+
+func (st *turnStreamState) hasAnyAgentText() bool {
+	if st == nil || st.emittedText == nil {
+		return false
+	}
+	for _, v := range st.emittedText {
+		if v != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// canRepairFromLastAgentMessage is true when turn/completed's lastAgentMessage
+// extends (or is a prefix of) streamed text. A divergent summary is usually
+// only the last item — appending it glues a duplicate paragraph onto the
+// transcript.
+func (st *turnStreamState) canRepairFromLastAgentMessage(key, full string) bool {
+	if strings.TrimSpace(full) == "" {
+		return false
+	}
+	if st == nil || st.emittedText == nil {
+		return true
+	}
+	emitted := st.emittedText[key]
+	if emitted == "" {
+		return !st.hasAnyAgentText()
+	}
+	return full == emitted || strings.HasPrefix(full, emitted) || strings.HasPrefix(emitted, full)
 }
 
 func (st *turnStreamState) emitAuthoritativeText(key, full, harnessType, sessionID string, emit func(harness.StreamDelta)) {
@@ -53,33 +110,31 @@ func (st *turnStreamState) emitAuthoritativeText(key, full, harnessType, session
 	}
 	emitted := st.emittedText[key]
 	if full == emitted {
+		st.lastAgentKey = key
 		return
 	}
-	if strings.HasPrefix(full, emitted) {
-		if suffix := full[len(emitted):]; suffix != "" {
-			emit(harness.StreamDelta{
-				Kind:        harness.StreamKindText,
-				Text:        suffix,
-				HarnessType: harnessType,
-				SessionID:   sessionID,
-				Phase:       harness.StreamPhaseCompleted,
-			})
+	text := full
+	switch {
+	case strings.HasPrefix(full, emitted):
+		text = full[len(emitted):]
+		if text == "" {
+			st.lastAgentKey = key
+			return
 		}
-		st.emittedText[key] = full
+	case strings.HasPrefix(emitted, full):
+		st.lastAgentKey = key
 		return
 	}
-	if strings.HasPrefix(emitted, full) {
-		return
-	}
-	// Live deltas diverged from the completed snapshot — emit the authoritative text.
+	st.ensureItemSeparator(key, text, harnessType, sessionID, emit)
 	emit(harness.StreamDelta{
 		Kind:        harness.StreamKindText,
-		Text:        full,
+		Text:        text,
 		HarnessType: harnessType,
 		SessionID:   sessionID,
 		Phase:       harness.StreamPhaseCompleted,
 	})
 	st.emittedText[key] = full
+	st.lastAgentKey = key
 }
 
 func agentTextKey(sessionID, itemID string) string {
@@ -198,7 +253,9 @@ func (a *Adapter) handleNotification(ctx context.Context, method string, raw jso
 		if status == "" || status == "completed" || status == "success" {
 			if msg := lastAgentMessageFromTurn(turn, params); msg != "" {
 				key := st.resolveRepairTextKey(sessionID, msg)
-				st.emitAuthoritativeText(key, msg, method, sessionID, emit)
+				if st.canRepairFromLastAgentMessage(key, msg) {
+					st.emitAuthoritativeText(key, msg, method, sessionID, emit)
+				}
 			}
 		}
 		switch status {
@@ -220,6 +277,7 @@ func (a *Adapter) handleNotification(ctx context.Context, method string, raw jso
 		delta := stringFieldRaw(params, "delta", "text")
 		if delta != "" {
 			key := agentTextKey(sessionID, stringField(params, "itemId"))
+			st.ensureItemSeparator(key, delta, method, sessionID, emit)
 			st.noteTextDelta(key, delta)
 			emit(harness.StreamDelta{Kind: harness.StreamKindText, Text: delta, HarnessType: method, SessionID: sessionID})
 		}

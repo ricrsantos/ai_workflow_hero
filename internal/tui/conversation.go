@@ -530,7 +530,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	m.runtimeModelSlug = strings.TrimSpace(modelSlug)
 	m.runtimeHarnessID = ""
 	m.runtimeAgentName = ""
-	m.orchestrationLive = cmdName == "start"
+	m.orchestrationLive = cmdName == "start" || cmdName == "approve"
 	if cmdName == "start" {
 		m.researchLive = false
 		m.orchestrationSessionID = ""
@@ -1005,8 +1005,15 @@ func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
 	m.runtimeCommandName = ""
 	m = m.syncConversationContext()
 	m = m.clearChatInput()
-	m = m.beginConversationExecute(text, text)
+	m = m.beginConversationExecute(text, controlSlashFollowUpPrompt(text))
 	return m, m.conversationExecuteCmds()
+}
+
+func controlSlashFollowUpPrompt(text string) string {
+	if strings.EqualFold(strings.TrimSpace(text), "/hero-approve") {
+		return tuiApproveFollowUpPrompt()
+	}
+	return text
 }
 
 func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {

@@ -1,23 +1,24 @@
 # Codex-native model catalog (capability + context for C5 / context bar).
 # Installed overlay: .workflow-hero/models/codex.yml
 # Model IDs match Codex app-server ListModels (PRD-C06-001 §4.8; design D12).
-# ChatGPT plans may lack USD rates — leave input/output at 0.00; do NOT invent
-# subsidized pricing. API rates for shared bare ids may still live in openai.yml
-# for Cursor Task slug metrics; this file wins for provider:codex fallback.
+# Pricing from https://developers.openai.com/api/docs/pricing (Standard short-context, 2026-08-25).
+# For GPT-5.6 tiers cache_write is 1.25x input (OpenAI prompt-cache write surcharge).
+# Long-context (>272K input) is 2x input / 1.5x output for the full request — not modeled here.
+# Context: Codex default window is ~272k; API max may be higher (1.05M/400K) — see model pages.
 provider: codex
 version: 1
-last_updated: 2026-08-21
+last_updated: 2026-08-25
 currency: usd
 unit: per_1m_tokens
 
 models:
   # Default Codex CLI model (flagship). Context: Codex default window (~272k);
-  # API max may be higher — do not invent ChatGPT USD rates.
+  # API max 1.05M (OpenAI gpt-5.4) — Standard $2.50/$15, cached $0.25.
   gpt-5.4:
-    input: 0.00
+    input: 2.50
     cache_write: 0.00
-    cache_read: 0.00
-    output: 0.00
+    cache_read: 0.25
+    output: 15.00
     context_window: 272000
     properties:
       fs:
@@ -33,10 +34,10 @@ models:
         values: ["off", "on", "detailed"]
         default: "off"
   gpt-5.4-mini:
-    input: 0.00
+    input: 0.75
     cache_write: 0.00
-    cache_read: 0.00
-    output: 0.00
+    cache_read: 0.075
+    output: 4.50
     context_window: 272000
     properties:
       fs:
@@ -52,10 +53,10 @@ models:
         values: ["off", "on", "detailed"]
         default: "off"
   gpt-5.5:
-    input: 0.00
+    input: 5.00
     cache_write: 0.00
-    cache_read: 0.00
-    output: 0.00
+    cache_read: 0.50
+    output: 30.00
     context_window: 272000
     properties:
       fs:
@@ -70,11 +71,32 @@ models:
         available: true
         values: ["off", "on", "detailed"]
         default: "off"
+  # ChatGPT Plus/Pro flagship (GPT-5.6 family). Context: Codex default window (~272k);
+  # API max 1.05M — Standard $4.00/$20.00, cached $0.40, cache_write 1.25x input.
+  gpt-5.6-sol:
+    input: 4.00
+    cache_write: 5.00
+    cache_read: 0.40
+    output: 20.00
+    context_window: 272000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
   gpt-5.6-terra:
-    input: 0.00
-    cache_write: 0.00
-    cache_read: 0.00
-    output: 0.00
+    input: 2.00
+    cache_write: 2.50
+    cache_read: 0.20
+    output: 12.00
     context_window: 272000
     properties:
       fs:
@@ -90,10 +112,10 @@ models:
         values: ["off", "on", "detailed"]
         default: "off"
   gpt-5.6-luna:
-    input: 0.00
-    cache_write: 0.00
-    cache_read: 0.00
-    output: 0.00
+    input: 0.20
+    cache_write: 0.25
+    cache_read: 0.02
+    output: 1.20
     context_window: 272000
     properties:
       fs:
@@ -109,10 +131,10 @@ models:
         values: ["off", "on", "detailed"]
         default: "off"
   gpt-5.3-codex:
-    input: 0.00
+    input: 1.75
     cache_write: 0.00
-    cache_read: 0.00
-    output: 0.00
+    cache_read: 0.175
+    output: 14.00
     context_window: 400000
     properties:
       fs:
@@ -128,11 +150,11 @@ models:
         values: ["off", "on", "detailed"]
         default: "off"
   gpt-5.3-codex-spark:
-    input: 0.00
+    input: 1.75
     cache_write: 0.00
-    cache_read: 0.00
-    output: 0.00
-    context_window: 272000
+    cache_read: 0.175
+    output: 14.00
+    context_window: 128000
     properties:
       fs:
         available: false

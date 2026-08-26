@@ -23,13 +23,13 @@
     },
     "opencode": {
       "enabled": true,
-      "model": "opencode-go/deepseek-v4-pro",
+      "model": "opencode-go/deepseek-v4-flash",
       "enable_fast_model": false
     }
   },
   "freechat_default": {
-    "harness": "codex",
-    "model": "gpt-5.6-luna"
+    "harness": "opencode",
+    "model": "opencode-go/deepseek-v4-flash"
   },
   "model_properties": {
     "codex": {
@@ -54,7 +54,7 @@
     "opencode": {
       "opencode-go/deepseek-v4-flash": {
         "ef": "max",
-        "th": "max"
+        "th": "off"
       },
       "opencode-go/deepseek-v4-pro": {
         "ef": "high",
@@ -63,6 +63,9 @@
       },
       "opencode-go/gpt-5.6-luna": {
         "ef": "max"
+      },
+      "opencode-go/muse-spark-1.2-contributor": {
+        "ef": "high"
       },
       "opencode/deepseek-v4-flash-free": {
         "ef": "max",

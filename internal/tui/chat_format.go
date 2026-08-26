@@ -116,8 +116,17 @@ func tuiHeroApprovePreamble() string {
 		"- Apply the Metrics Procedure; never leave token/cost/duration unset for the approved stage.\n" +
 		"- Persist approval via `hero approve --metrics-json '<JSON>'` (optional `--summary`). Do NOT write metrics.md or workflow.md.\n" +
 		"- Show the metrics summary block from the command Output Format and point to `hero metrics` for full details.\n" +
-		"- Tell the user to continue control commands in the Hero TUI (/hero-reject, /hero-finish, etc.) — not Cursor chat handoff.\n\n" +
+		tuiOrchStageHandoffRules() +
+		"- Do NOT ask the user to run /hero-start after approval. The TUI Executes the next named stage agent(s).\n" +
+		"- Tell the user to use /hero-approve, /hero-reject, /hero-cancel, or /hero-finish in the Hero TUI when the next stage needs human approval.\n\n" +
 		"---\n\n"
+}
+
+func tuiApproveFollowUpPrompt() string {
+	return "The user ran /hero-approve in the Hero TUI.\n" +
+		"- Run `hero status` and persist via `hero approve --metrics-json '<JSON>'`.\n" +
+		"- Then call `hero stage start --name <next enabled stage>` and STOP.\n" +
+		"- Do NOT grill. Do NOT ask the user to run /hero-start. The TUI Executes named stage agents.\n"
 }
 
 func tuiHeroCancelPreamble(reason string) string {

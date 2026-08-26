@@ -353,6 +353,115 @@ func TestImplementationCancelCancelsAllExecutes(t *testing.T) {
 	}
 }
 
+func TestApproveHandsOffToWaitingPlanning(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentFile(t, dir, "orchestration_agent", "ORCHESTRATION_AGENT_MARKER")
+	writeAgentFile(t, dir, "planning_agent", "PLANNING_AGENT_MARKER")
+	yamlBody := `title: Approve Handoff
+objective: test
+agents:
+  orchestration_agent:
+    harness: cursor
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+  planning_agent:
+    harness: cursor
+    model: composer-2.5
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+fallback_model:
+  harness: cursor
+  model: composer-2.5
+  reasoning_effort: na
+  enable_fast_model: false
+  thinking: na
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: true
+  planning:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+`
+	heroDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")
+	if err := os.MkdirAll(heroDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(heroDir, "workflow-config.yml"), []byte(yamlBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".workflow-hero", "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("research"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CloseStage("research", "ready", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Approve("", ""); err != nil {
+		t.Fatal(err)
+	}
+	st, err := svc.ActiveStage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Name != "planning" || st.Status != "Waiting" {
+		t.Fatalf("after approve stage=%s status=%s want planning Waiting", st.Name, st.Status)
+	}
+
+	h := &streamingHarness{deltas: []string{"ok"}, sessionIDs: []string{"orch-sess", "plan-sess"}}
+	svc.Harness = h
+	m := withDefaultChatModel(NewTestModel(svc))
+	m = EnterConversationForTest(m)
+	m = SetOrchestrationLiveForTest(m, true)
+	m.runtimeAgentName = agentOrchestration
+	m.researchLive = true
+	m = SetConversationInput(m, "continue")
+	next, cmd := SubmitConversationForTest(m)
+	next = drainConversationStream(t, next, cmd)
+
+	calls := h.Calls()
+	if len(calls) < 2 {
+		t.Fatalf("executes=%d want orch follow-up then planning: %+v", len(calls), calls)
+	}
+	var sawPlan bool
+	for _, c := range calls {
+		if c.Agent == "planning_agent" {
+			sawPlan = true
+			if !strings.Contains(c.Prompt, "PLANNING_AGENT_MARKER") {
+				t.Fatalf("planning prompt missing agent body: %q", c.Prompt)
+			}
+		}
+	}
+	if !sawPlan {
+		t.Fatalf("expected planning_agent Execute after approve left planning Waiting: %+v", calls)
+	}
+	st, err = svc.ActiveStage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Name != "planning" || st.Status != "Running" {
+		t.Fatalf("stage=%s status=%s want planning Running", st.Name, st.Status)
+	}
+	if ResearchLiveForTest(next) {
+		t.Fatal("researchLive should clear once research is no longer interactive")
+	}
+}
+
 func TestImplementationAgentsFromScope(t *testing.T) {
 	dir := t.TempDir()
 	svc := newTestServiceWithRunningStage(t, dir, "implementation", implementationHandoffYAML)

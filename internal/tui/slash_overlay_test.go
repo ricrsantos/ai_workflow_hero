@@ -204,7 +204,7 @@ func TestChatHeroApproveFollowUpWithoutPendingApproval(t *testing.T) {
 		t.Fatal("expected follow-up streaming")
 	}
 	next = drainConversationStream(t, next, cmd)
-	if h.lastPrompt != "/hero-approve" {
+	if !strings.Contains(h.lastPrompt, "hero approve --metrics-json") {
 		t.Fatalf("prompt=%q want /hero-approve follow-up (not hero-approve.md)", h.lastPrompt)
 	}
 	if h.lastSessionID != "orch-sess" {

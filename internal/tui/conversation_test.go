@@ -3313,8 +3313,14 @@ func TestResearchControlSlashGoesToOrchestrator(t *testing.T) {
 	next.slashOverlayDismissed = true
 	next, cmd = SubmitConversationForTest(next)
 	next = drainConversationStream(t, next, cmd)
-	if h.lastPrompt != "/hero-approve" {
-		t.Fatalf("prompt=%q want /hero-approve follow-up", h.lastPrompt)
+	if !strings.Contains(h.lastPrompt, "hero approve --metrics-json") {
+		t.Fatalf("prompt=%q want /hero-approve follow-up with approve instructions", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, "hero stage start") {
+		t.Fatalf("prompt=%q want stage start after approve", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, "Do NOT ask the user to run /hero-start") {
+		t.Fatalf("prompt=%q want no /hero-start CTA", h.lastPrompt)
 	}
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q want orchestration_agent", h.lastAgentName)

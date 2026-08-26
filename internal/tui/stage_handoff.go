@@ -43,6 +43,10 @@ func (m model) maybeHandoffAfterExecute() (model, tea.Cmd) {
 		return m, nil
 	}
 	agent := strings.TrimSpace(m.runtimeAgentName)
+	// /hero-approve follow-up can run while researchLive is still set from discover.
+	if m.researchLive && agent == agentOrchestration && m.researchStageClosedOrMovedOn() {
+		m.researchLive = false
+	}
 	if agent == agentOrchestration && !m.researchLive && !m.stageHandoffLive && m.researchStageInteractive() {
 		return m.startDiscoverResearchSession()
 	}
@@ -58,6 +62,14 @@ func (m model) maybeHandoffAfterExecute() (model, tea.Cmd) {
 	if agent == agentOrchestration && !m.researchLive && !m.stageHandoffLive {
 		if agents := m.runningStageAgents(); len(agents) > 0 {
 			if key := m.runningStageHandoffKey(); key != "" && key == m.stageHandoffDoneKey {
+				return m, nil
+			}
+			return m.startStageAgentSessions(agents)
+		}
+		if agents := m.waitingNamedStageAgents(); len(agents) > 0 {
+			if err := m.startWaitingActiveStage(); err != nil {
+				slog.Error("tui start waiting stage after orchestrator failed", "error", err)
+				m.convError = err.Error()
 				return m, nil
 			}
 			return m.startStageAgentSessions(agents)
@@ -98,9 +110,38 @@ func (m model) runningStageAgents() []string {
 	}
 	switch st.Status {
 	case store.StageRunning, store.StageEscalated:
+		return m.namedStageAgents(st)
 	default:
 		return nil
 	}
+}
+
+func (m model) waitingNamedStageAgents() []string {
+	if m.svc == nil {
+		return nil
+	}
+	st, err := m.svc.ActiveStage()
+	if err != nil {
+		return nil
+	}
+	if st.Status != store.StageWaiting {
+		return nil
+	}
+	return m.namedStageAgents(st)
+}
+
+func (m model) startWaitingActiveStage() error {
+	st, err := m.svc.ActiveStage()
+	if err != nil {
+		return err
+	}
+	if st.Status != store.StageWaiting {
+		return nil
+	}
+	return m.svc.StartStage(st.Name)
+}
+
+func (m model) namedStageAgents(st store.Stage) []string {
 	switch st.Name {
 	case stageResearch:
 		return nil

@@ -248,6 +248,135 @@ func TestTurnCompletedLastAgentMessageRepairsTruncation(t *testing.T) {
 	}
 }
 
+func TestAgentMessageItemsSeparatedByNewline(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var text string
+	req := harness.ExecuteRequest{
+		OnStreamDelta: func(d harness.StreamDelta) {
+			if d.Kind == harness.StreamKindText {
+				text += d.Text
+			}
+		},
+	}
+	for _, item := range []struct {
+		id, delta string
+	}{
+		{"m1", "Starting Research discovery. I'll read the docs."},
+		{"m2", "→ I'm using the grilling protocol."},
+		{"m3", "→ Primeira pergunta: confirmamos o escopo?"},
+	} {
+		payload, _ := json.Marshal(map[string]any{
+			"threadId": "thr", "itemId": item.id, "delta": item.delta,
+		})
+		if out := a.handleNotification(context.Background(), "item/agentMessage/delta", payload, "thr", req, nil, st); out.err != nil {
+			t.Fatal(out.err)
+		}
+	}
+	want := "Starting Research discovery. I'll read the docs.\n→ I'm using the grilling protocol.\n→ Primeira pergunta: confirmamos o escopo?"
+	if text != want {
+		t.Fatalf("text=%q want %q", text, want)
+	}
+}
+
+func TestAgentMessageCompletedNewItemInsertsNewline(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var text string
+	req := harness.ExecuteRequest{
+		OnStreamDelta: func(d harness.StreamDelta) {
+			if d.Kind == harness.StreamKindText {
+				text += d.Text
+			}
+		},
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"threadId": "thr", "itemId": "m1", "delta": "Starting Research.",
+	})
+	_ = a.handleNotification(context.Background(), "item/agentMessage/delta", payload, "thr", req, nil, st)
+	completed, _ := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"item": map[string]any{
+			"type": "agentMessage", "id": "m2", "text": "→ Next status line.",
+		},
+	})
+	_ = a.handleNotification(context.Background(), "item/completed", completed, "thr", req, nil, st)
+	want := "Starting Research.\n→ Next status line."
+	if text != want {
+		t.Fatalf("text=%q want %q", text, want)
+	}
+}
+
+func TestTurnCompletedLastAgentMessageDoesNotAppendDivergentLastItem(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var text string
+	var buf strings.Builder
+	req := harness.ExecuteRequest{
+		OnStreamDelta: func(d harness.StreamDelta) {
+			if d.Kind == harness.StreamKindText {
+				text += d.Text
+			}
+		},
+	}
+	for _, item := range []struct {
+		id, delta string
+	}{
+		{"m1", "Starting Research discovery."},
+		{"m2", "→ Primeira pergunta: para este ciclo, confirmamos o escopo?"},
+	} {
+		payload, _ := json.Marshal(map[string]any{
+			"threadId": "thr", "itemId": item.id, "delta": item.delta,
+		})
+		_ = a.handleNotification(context.Background(), "item/agentMessage/delta", payload, "thr", req, &buf, st)
+	}
+	completed, _ := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"turn": map[string]any{
+			"status":           "completed",
+			"lastAgentMessage": "Primeira pergunta: confirmamos o escopo?",
+		},
+	})
+	out := a.handleNotification(context.Background(), "turn/completed", completed, "thr", req, &buf, st)
+	if !out.done {
+		t.Fatal("expected turn done")
+	}
+	want := "Starting Research discovery.\n→ Primeira pergunta: para este ciclo, confirmamos o escopo?"
+	if text != want {
+		t.Fatalf("text=%q want %q", text, want)
+	}
+	if buf.String() != want {
+		t.Fatalf("buf=%q want %q", buf.String(), want)
+	}
+}
+
+func TestTurnCompletedLastAgentMessageEmitsWhenNoLiveDeltas(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var text string
+	req := harness.ExecuteRequest{
+		OnStreamDelta: func(d harness.StreamDelta) {
+			if d.Kind == harness.StreamKindText {
+				text += d.Text
+			}
+		},
+	}
+	completed, _ := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"turn": map[string]any{
+			"status":           "completed",
+			"lastAgentMessage": "Hello from summary only",
+		},
+	})
+	out := a.handleNotification(context.Background(), "turn/completed", completed, "thr", req, nil, st)
+	if !out.done {
+		t.Fatal("expected turn done")
+	}
+	if text != "Hello from summary only" {
+		t.Fatalf("text=%q", text)
+	}
+}
+
 func TestNotifyMustDeliver(t *testing.T) {
 	if !notifyMustDeliver("item/agentMessage/delta") {
 		t.Fatal("agentMessage delta must deliver")

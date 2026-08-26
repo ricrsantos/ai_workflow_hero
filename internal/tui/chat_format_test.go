@@ -154,6 +154,12 @@ func TestTUIRuntimeCommandPrompt_HeroApproveOverrides(t *testing.T) {
 	if !strings.Contains(got, "hero status") {
 		t.Fatalf("missing hero status guard: %q", got)
 	}
+	if !strings.Contains(got, "hero stage start") {
+		t.Fatalf("approve preamble missing stage start handoff: %q", got)
+	}
+	if !strings.Contains(got, "Do NOT ask the user to run /hero-start") {
+		t.Fatalf("approve preamble must forbid /hero-start CTA: %q", got)
+	}
 	if strings.Contains(got, "hero cycle sync-config") {
 		t.Fatalf("start override leaked into approve: %q", got)
 	}
