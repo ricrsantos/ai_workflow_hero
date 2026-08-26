@@ -39,6 +39,9 @@ var (
 	headerStyle   = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(colorTextPri)
 	footerStyle   = lipgloss.NewStyle().Foreground(colorTextDim)
 	successStyle  = lipgloss.NewStyle().Foreground(colorOK)
+	// Config form field label/value separation (label dim, input value primary).
+	configLabelStyle = lipgloss.NewStyle().Foreground(colorTextDim)
+	configValueStyle = lipgloss.NewStyle().Foreground(colorTextPri)
 	warnStyle     = lipgloss.NewStyle().Foreground(colorAccentFast)
 	errorStyle    = lipgloss.NewStyle().Foreground(colorError)
 	infoStyle     = lipgloss.NewStyle().Foreground(colorAccentAI)

@@ -16,6 +16,8 @@ func TestExecuteStreamRecoversFromSessionMessages(t *testing.T) {
 		switch r.URL.Path {
 		case "/session":
 			_ = json.NewEncoder(w).Encode(opencodeSession{ID: "sess-recover"})
+		case "/session/sess-recover":
+			w.WriteHeader(http.StatusOK)
 		case "/session/sess-recover/prompt_async":
 			w.WriteHeader(http.StatusAccepted)
 		case "/event":

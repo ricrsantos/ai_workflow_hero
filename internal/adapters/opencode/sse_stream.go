@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
@@ -14,6 +15,11 @@ import (
 const (
 	sseReconnectAttempts = 12
 	sseReconnectDelay    = 500 * time.Millisecond
+)
+
+var (
+	sseIdleGrace         = harness.OpenCodeStallTimeout
+	sseIdleProbeInterval = harness.HealthProbeInterval
 )
 
 var errStreamComplete = errors.New("opencode stream complete")
@@ -77,8 +83,24 @@ func (a *Adapter) readExecuteSSE(
 			}
 		}
 
+		watchCtx, stopWatch := context.WithCancel(ctx)
+		var sessionGone, sessionIdle atomic.Bool
+		go a.watchSSESession(watchCtx, sessionID, projectDir, events, &sessionGone, &sessionIdle)
+
 		readErr := readSSEEvents(ctx, events, handler, emitMalformed)
+		stopWatch()
 		events.Close()
+
+		if sessionGone.Load() {
+			if a.tryRecoverCompletedSession(ctx, sessionID, projectDir, req, state, buf) {
+				return nil
+			}
+			return fmt.Errorf("opencode session %q not found", sessionID)
+		}
+		if sessionIdle.Load() {
+			_ = a.tryRecoverCompletedSession(ctx, sessionID, projectDir, req, state, buf)
+			return nil
+		}
 
 		if errors.Is(readErr, errStreamComplete) {
 			return nil
@@ -109,6 +131,55 @@ func (a *Adapter) readExecuteSSE(
 		}
 	}
 	return fmt.Errorf("opencode event stream ended before session completed")
+}
+
+func (a *Adapter) watchSSESession(ctx context.Context, sessionID, projectDir string, events io.Closer, gone, idle *atomic.Bool) {
+	grace := sseIdleGrace
+	if grace <= 0 {
+		grace = harness.OpenCodeStallTimeout
+	}
+	interval := sseIdleProbeInterval
+	if interval <= 0 {
+		interval = harness.HealthProbeInterval
+	}
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(grace):
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if a.closeSSEIfSessionSettled(ctx, sessionID, projectDir, events, gone, idle) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (a *Adapter) closeSSEIfSessionSettled(ctx context.Context, sessionID, projectDir string, events io.Closer, gone, idle *atomic.Bool) bool {
+	switch a.probeSessionTurn(ctx, sessionID, projectDir) {
+	case sessionTurnIdle:
+		a.log().Info("opencode session idle while SSE still open; closing event stream", "sessionID", sessionID)
+		if idle != nil {
+			idle.Store(true)
+		}
+		_ = events.Close()
+		return true
+	case sessionTurnGone:
+		a.log().Warn("opencode session gone while SSE still open", "sessionID", sessionID)
+		if gone != nil {
+			gone.Store(true)
+		}
+		_ = events.Close()
+		return true
+	default:
+		return false
+	}
 }
 
 func sleepOrDone(ctx context.Context, d time.Duration) error {

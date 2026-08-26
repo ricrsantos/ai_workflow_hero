@@ -253,7 +253,10 @@ func TestImplementationScopeStartsParallelExecutes(t *testing.T) {
 				hasFrnt = true
 			}
 		}
-		return hasBack && hasFrnt && IsConversationStreaming(m)
+		view := ViewForTest(m)
+		return hasBack && hasFrnt && IsConversationStreaming(m) &&
+			strings.Contains(view, "[BACK - composer-2.5 · cursor]") &&
+			strings.Contains(view, "[FRNT - gpt-5.4 · codex]")
 	})
 
 	if len(LiveAgentsForTest(next)) < 2 {

@@ -64,6 +64,33 @@ func TestWatchdogHealthyWithinTimeout(t *testing.T) {
 	}
 }
 
+func TestWatchdogEvaluateFailedWhenSessionDead(t *testing.T) {
+	var w harness.Watchdog
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	w.Reset(now)
+	got := w.Evaluate(now.Add(time.Minute), harness.HarnessHealth{
+		ProcessAlive: true,
+		ServerAlive:  true,
+		SessionAlive: false,
+	}, harness.OpenCodeStallTimeout)
+	if got != harness.HealthFailed {
+		t.Fatalf("status=%q want failed", got)
+	}
+}
+
+func TestWatchdogFileWatcherActivityDoesNotResetStallClock(t *testing.T) {
+	var w harness.Watchdog
+	start := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	w.Reset(start)
+	w.RecordDelta(harness.ActivityDelta("file.watcher.updated", "src/foo.go", "sess"), start.Add(4*time.Minute))
+	w.RecordDelta(harness.StreamDelta{Kind: harness.StreamKindSession, HarnessType: "session.status", Text: "running"}, start.Add(4*time.Minute+time.Second))
+	probe := harness.HarnessHealth{ProcessAlive: true, ServerAlive: true, SessionAlive: true}
+	got := w.Evaluate(start.Add(6*time.Minute), probe, 5*time.Minute)
+	if got != harness.HealthSuspected {
+		t.Fatalf("status=%q want suspected_hang (file.watcher / session.status must not reset stall)", got)
+	}
+}
+
 func TestWatchdogHasRecentActivity(t *testing.T) {
 	var w harness.Watchdog
 	start := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)

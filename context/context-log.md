@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-08-26 — OpenCode overnight hang workarounds
+
+**Problem**: TUI stayed `streaming=true` overnight with SSE still open (or silent). OpenCode logs were INFO-only; no `session.idle`. Cause is OpenCode (`opencode-go` / `GET /event` half-open). Hero waited forever, did not persist session id until `executeDone`, `Cancel("")` missed `runCtx`, `/harness-reset` wiped the id, and recovered serve was bound to Execute `runCtx`.
+
+**Decision**: Keep `opencode serve`. Do not migrate to `opencode run`.
+
+**Change**: Probe `GET /session/{id}` after stall grace — idle completes Execute, 404 fails, busy waits. `HealthFailed` auto-cancels. Stall ignores `file.watcher` / LSP / `session.status` running. Emit `session.bound` and persist id immediately. `Cancel("")` cancels all in-flight. `ResumeSession` on Execute; OpenCode reset keeps the id. `ExecRunner.Start` uses `exec.Command`. Local `chunkTimeout: 180000` for `opencode-go`.
+
+**Validation**: `go test ./...` green.
+
+---
+
 ## 2026-08-26 — OpenCode question.asked interactive Chat
 
 **Problem**: OpenCode `question.asked` was routed as activity with raw JSON in Chat; OpenCode blocked ~23min waiting for reply while Hero ignored composer during streaming.

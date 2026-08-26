@@ -113,6 +113,8 @@ func TestExecuteStreamAndCancelHTTP(t *testing.T) {
 		switch r.URL.Path {
 		case "/session":
 			_ = json.NewEncoder(w).Encode(opencodeSession{ID: "sess-2"})
+		case "/session/sess-2":
+			w.WriteHeader(http.StatusOK)
 		case "/session/sess-2/prompt_async":
 			w.WriteHeader(http.StatusAccepted)
 		case "/event":
@@ -136,12 +138,16 @@ func TestExecuteStreamAndCancelHTTP(t *testing.T) {
 	a.ResolveServeURL = func(ProcessHandle) (string, int, error) { return srv.URL, 1, nil }
 
 	var deltas []string
+	var boundSession string
 	res, err := a.Execute(context.Background(), harness.ExecuteRequest{
 		SessionID: "sess-2",
 		Prompt:    "stream",
 		Stream:    true,
 		OnStreamDelta: func(d harness.StreamDelta) {
 			deltas = append(deltas, d.Text)
+			if d.Kind == harness.StreamKindSession && d.HarnessType == "session.bound" {
+				boundSession = d.SessionID
+			}
 		},
 	})
 	if err != nil {
@@ -152,6 +158,9 @@ func TestExecuteStreamAndCancelHTTP(t *testing.T) {
 	}
 	if strings.Contains(res.Output, "user question") {
 		t.Fatalf("user prompt leaked into output: %q", res.Output)
+	}
+	if boundSession != "sess-2" {
+		t.Fatalf("session.bound=%q want sess-2", boundSession)
 	}
 	if err := a.Cancel(context.Background(), "sess-2"); err != nil {
 		t.Fatal(err)
@@ -164,6 +173,8 @@ func TestExecuteStreamSSEReconnect(t *testing.T) {
 		switch r.URL.Path {
 		case "/session":
 			_ = json.NewEncoder(w).Encode(opencodeSession{ID: "sess-reconnect"})
+		case "/session/sess-reconnect":
+			w.WriteHeader(http.StatusOK)
 		case "/session/sess-reconnect/prompt_async":
 			w.WriteHeader(http.StatusAccepted)
 		case "/event":
@@ -191,9 +202,9 @@ func TestExecuteStreamSSEReconnect(t *testing.T) {
 	a.ResolveServeURL = func(ProcessHandle) (string, int, error) { return srv.URL, 1, nil }
 
 	res, err := a.Execute(context.Background(), harness.ExecuteRequest{
-		SessionID: "sess-reconnect",
-		Prompt:    "stream",
-		Stream:    true,
+		SessionID:     "sess-reconnect",
+		Prompt:        "stream",
+		Stream:        true,
 		OnStreamDelta: func(harness.StreamDelta) {},
 	})
 	if err != nil {

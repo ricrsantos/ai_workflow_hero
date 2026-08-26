@@ -63,8 +63,10 @@ type execHandle struct {
 	urlReady chan struct{}
 }
 
-func (ExecRunner) Start(ctx context.Context, dir, name string, args ...string) (ProcessHandle, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+func (ExecRunner) Start(_ context.Context, dir, name string, args ...string) (ProcessHandle, error) {
+	// Serve must outlive a single Execute. CommandContext(runCtx) killed the
+	// recovered child on Cancel and looked like an OpenCode crash (new run=).
+	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	if attr := parentDeathSignalAttr(); attr != nil {
 		cmd.SysProcAttr = attr
@@ -257,6 +259,28 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 			return nil, err
 		}
 		sessionID = sess.ID
+	} else if err := a.ResumeSession(ctx, sessionID); err != nil {
+		oldID := sessionID
+		a.log().Warn("opencode session resume failed; starting new session", "sessionID", oldID, "error", err)
+		if req.OnStreamDelta != nil {
+			req.OnStreamDelta(harness.StreamDelta{
+				Kind:        harness.StreamKindWarning,
+				Text:        "WARNING: OpenCode session " + oldID + " was not found; started a new conversation.",
+				HarnessType: "session.resume",
+			})
+		}
+		sess, cerr := a.CreateSession(ctx, harness.SessionRequest{
+			ProjectDir: req.ProjectDir,
+			StageName:  req.StageName,
+			AgentName:  req.AgentName,
+		})
+		if cerr != nil {
+			return nil, cerr
+		}
+		sessionID = sess.ID
+	}
+	if req.OnStreamDelta != nil {
+		req.OnStreamDelta(harness.SessionDelta(harness.SessionStateRunning, "", "session.bound", sessionID))
 	}
 	runCtx, cancel := context.WithCancel(ctx)
 	a.mu.Lock()
@@ -350,15 +374,48 @@ func (a *Adapter) executeStream(ctx context.Context, sessionID string, body []by
 }
 
 // Cancel implements harness.HarnessAdapter.
+// An empty sessionID cancels every in-flight Execute (TUI interrupt before the
+// OpenCode id is persisted).
 func (a *Adapter) Cancel(ctx context.Context, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	type target struct {
+		id     string
+		cancel context.CancelFunc
+	}
 	a.mu.Lock()
-	if c, ok := a.cancels[sessionID]; ok {
-		c()
+	var targets []target
+	if sessionID == "" {
+		for id, c := range a.cancels {
+			targets = append(targets, target{id: id, cancel: c})
+		}
+	} else if c, ok := a.cancels[sessionID]; ok {
+		targets = append(targets, target{id: sessionID, cancel: c})
+	} else {
+		targets = append(targets, target{id: sessionID})
 	}
 	a.mu.Unlock()
-	if strings.TrimSpace(sessionID) == "" {
+
+	for _, t := range targets {
+		if t.cancel != nil {
+			t.cancel()
+		}
+	}
+	if sessionID == "" && len(targets) == 0 {
 		return nil
 	}
+	var firstErr error
+	for _, t := range targets {
+		if strings.TrimSpace(t.id) == "" {
+			continue
+		}
+		if err := a.abortSession(ctx, t.id); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func (a *Adapter) abortSession(ctx context.Context, sessionID string) error {
 	if err := a.ensureServe(ctx); err != nil {
 		return err
 	}

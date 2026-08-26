@@ -376,31 +376,33 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
 - Cursor without terminal `result` + non-zero exit code fails with stderr detail.
 - Cursor `stream-json` success with no substantive output fails with an explicit empty-response error.
 
-**Harness watchdog (v2.3+, TUI only, warn-only):**
+**Harness watchdog (v2.3+, TUI only):**
 
 ```
   TUI Execute (streaming)
         │
-        ├─ stream deltas → Watchdog.RecordDelta (resets stall clock)
-        │                  recent activity ⇒ skip CheckHealth this tick
+        ├─ stream deltas → Watchdog.RecordDelta
+        │                  only text/thinking/tool/question/permission reset stall
+        │                  (file.watcher / lsp / session.status running do not)
         │
         └─ periodic HealthChecker.CheckHealth (30s, single-flight, read-only)
                  │
                  ▼
            Evaluate(process + server + session + last activity)
                  │
-     ┌───────────┼───────────────┐
-     ▼           ▼               ▼
- healthy    suspected_hang     failed / degraded
-              │                  │
-              └────────┬─────────┘
-                       ▼
-              Chat warning / footer only
-           (no auto-cancel / no auto-reset)
+     ┌───────────┼──────────────────┬─────────────────┐
+     ▼           ▼                  ▼                 ▼
+ healthy    suspected_hang     degraded          failed
+              │                  │                 │
+              │ warn only        │ warn only       │ auto-cancel Execute
+              │ (busy tools OK)  │                 │ (process/session dead)
+              └──────────────────┴─────────────────┘
 ```
 
-- Stall timeouts: Cursor 5m, OpenCode 6m (`internal/harness/health.go`).
+- Stall timeouts: Cursor 5m, OpenCode/Codex **3m** (`internal/harness/health.go`).
+- `HealthFailed` (process dead or OpenCode session 404) ends the stream (`cancelStreamCmd`); `HealthSuspected` stays warn-only while the session is still `busy`.
 - OpenCode health: `GET /global/health` + read-only `GET /session/{id}` (no `ensureServe`); Cursor: `HasInFlight()` + session status.
+- OpenCode Execute: `ResumeSession` before `prompt_async`; `session.bound` persists the id before SSE; idle/gone probes close a silent `GET /event`; `Cancel("")` cancels every in-flight `runCtx`. Serve is started with `exec.Command` (not `CommandContext(runCtx)`) so recovery survives Cancel.
 - Empty successful Execute → TUI warning (`convRoleWarning`); not applied to Cursor IDE chat Runtime.
 
 - **Execute**: multi-turn agent runs from TUI Chat (and `hero run` paths).
@@ -537,7 +539,7 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/store` | SQLite operational store + migrations |
 | `internal/harness` | `HarnessAdapter` interface, `StreamDelta` normalization, marker detection |
 | `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import, NDJSON parse |
-| `internal/adapters/opencode` | OpenCode serve adapter, `server.go` lifecycle (PID registry, graceful shutdown, orphan reap), SSE event normalization, C5 properties |
+| `internal/adapters/opencode` | OpenCode serve adapter: HTTP+SSE, ResumeSession, idle/gone SSE probe, serve lifecycle (PID registry, `exec.Command` not Execute-scoped), orphan reap, C5 properties |
 | `internal/adapters/codex` | Codex app-server adapter (stdio JSON-RPC, thread/turn, registry, auth, C5 properties, stream map, CheckHealth, ResetAppServer, PrepareHeroStart) |
 | `internal/harnessmgr` | Adapter registry (cursor + opencode + codex), fallback chain, boot ListModels skip for lazy children |
 | `internal/tui` | Bubble Tea terminal UI |

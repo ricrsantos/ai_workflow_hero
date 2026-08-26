@@ -210,6 +210,48 @@ func TestHarnessResetOpenCodeStopsManagedServe(t *testing.T) {
 	}
 }
 
+func TestHarnessResetOpenCodeKeepsSessionID(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": true}}
+}
+`))
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	if _, err := svc.Store.InsertServeRegistry(store.ServeRegistryEntry{
+		Harness:   "opencode",
+		PID:       4242,
+		Port:      45123,
+		URL:       "http://127.0.0.1:45123",
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	m := tui.SetChatHarnessIDForTest(tui.NewTestModel(svc), "opencode")
+	m = tui.SetHarnessSessionIDForTest(m, "keep-sess")
+	m = tui.SetHarnessSessionHarnessIDForTest(m, "opencode")
+	m = tui.RunHarnessResetPickerForTest(m)
+	items := tui.PaletteItemsForTest(m)
+	idx := paletteIndexByLabel(items, "OpenCode")
+	if idx < 0 {
+		t.Fatal("OpenCode not in reset picker")
+	}
+	m = tui.SetPaletteIndexForTest(m, idx)
+	m, _ = tui.HandleTestKey(m, "enter")
+
+	if tui.HarnessSessionIDForTest(m) != "keep-sess" {
+		t.Fatalf("OpenCode reset must keep session id, got %q", tui.HarnessSessionIDForTest(m))
+	}
+	if tui.HarnessSessionHarnessIDForTest(m) != "opencode" {
+		t.Fatalf("harness binding = %q", tui.HarnessSessionHarnessIDForTest(m))
+	}
+}
+
 func TestHarnessResetCodexStopsManagedAppServer(t *testing.T) {
 	dir := t.TempDir()
 	writeHeroJSON(t, dir, []byte(`{

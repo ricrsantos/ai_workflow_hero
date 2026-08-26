@@ -125,7 +125,6 @@ func (m model) applyHarnessReset(harnessID string) (model, tea.Cmd) {
 			m = m.setStatusResult(false, label, err.Error())
 			return m, nil
 		}
-		m = m.clearHarnessBindingIfMatch("opencode")
 		m = m.setStatusResult(true, label, "OpenCode serve stopped. It will restart on the next request.")
 		return m, tea.Batch(batch...)
 	case "codex":

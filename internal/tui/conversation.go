@@ -657,10 +657,10 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch s {
 		case "ctrl+c":
 			return m.cancelHeroStartPreparation()
-		case "ctrl+q":
+		case "alt+q":
 			return m.showConfirm(actionQuit, 0, "Preparing /hero-start. Quit? [y/N]")
 		case "ctrl+1", "alt+1", "ctrl+2", "alt+2", "ctrl+3", "alt+3",
-			"ctrl+4", "alt+4", "ctrl+5", "alt+5":
+			"ctrl+4", "alt+4", "ctrl+5", "alt+5", "alt+n":
 			return m.handleKey(msg)
 		case "up", "ctrl+p":
 			m = m.scrollTranscript(-1)
@@ -684,10 +684,10 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch s {
 		case "ctrl+c":
 			return m, m.cancelStreamCmd()
-		case "ctrl+q":
+		case "alt+q":
 			return m.showConfirm(actionQuit, 0, "Agent is running. Quit? [y/N]")
 		case "ctrl+1", "alt+1", "ctrl+2", "alt+2", "ctrl+3", "alt+3",
-			"ctrl+4", "alt+4", "ctrl+5", "alt+5":
+			"ctrl+4", "alt+4", "ctrl+5", "alt+5", "alt+n":
 			// Allow screen navigation while streaming; the goroutine keeps running.
 			return m.handleKey(msg)
 		case "alt+r":
@@ -717,8 +717,8 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Global shortcuts (modifier+key) work even while typing in chat.
 	// `/` is NOT global here — it stays in the composer (Cursor-style overlay).
 	switch s {
-	case "ctrl+q", "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5",
-		"alt+1", "alt+2", "alt+3", "alt+4", "alt+5",
+	case "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5",
+		"alt+q", "alt+n", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5",
 		"ctrl+r", "f5":
 		return m.handleKey(msg)
 	case "alt+r":
@@ -1415,6 +1415,17 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamDeltaMsg:
 		m = m.bindExecuteView(msg.executeID)
+		if sid := strings.TrimSpace(msg.delta.SessionID); sid != "" {
+			if ex, ok := m.executes[msg.executeID]; ok {
+				ex.SessionID = sid
+				m.executes[msg.executeID] = ex
+			}
+			hid := ""
+			if ex, ok := m.executes[msg.executeID]; ok {
+				hid = ex.HarnessID
+			}
+			m = m.persistHarnessSession(sid, hid)
+		}
 		prevActivity := m.harnessWatchdog.LastActivityAt()
 		m.harnessWatchdog.RecordDelta(msg.delta, time.Now())
 		if m.harnessWatchdog.LastActivityAt().After(prevActivity) {

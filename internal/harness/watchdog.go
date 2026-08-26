@@ -72,7 +72,7 @@ func (w *Watchdog) Evaluate(now time.Time, probe HarnessHealth, stallTimeout tim
 		return HealthDegraded
 	}
 	if !probe.SessionAlive {
-		return HealthDegraded
+		return HealthFailed
 	}
 
 	activityAt := w.lastActivityAt
@@ -87,15 +87,9 @@ func (w *Watchdog) Evaluate(now time.Time, probe HarnessHealth, stallTimeout tim
 
 func isActivityDelta(d StreamDelta) bool {
 	switch d.Kind {
-	case StreamKindText, StreamKindThinking, StreamKindTool, StreamKindActivity:
+	case StreamKindText, StreamKindThinking, StreamKindTool, StreamKindQuestion, StreamKindPermission:
 		return true
-	case StreamKindSession:
-		if d.Metadata != nil {
-			switch d.Metadata["state"] {
-			case SessionStateRunning, SessionStateIdle:
-				return true
-			}
-		}
+	default:
+		return false
 	}
-	return false
 }

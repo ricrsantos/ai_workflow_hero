@@ -117,11 +117,7 @@ func (m model) renderNavSidebar(height int) string {
 
 	footer := ""
 	if !m.freeChatMode {
-		hint := " alt+1-5"
-		if m.hasActiveCycle() {
-			hint = " alt+1-5 · events palette"
-		}
-		footer = navSidebarFooterStyle.Render(truncateNavText(hint, innerW))
+		footer = navSidebarFooterStyle.Render(truncateNavText(" alt+1-5 · alt+n events", innerW))
 	} else {
 		footer = navSidebarFooterStyle.Render(truncateNavText(" chat", innerW))
 	}

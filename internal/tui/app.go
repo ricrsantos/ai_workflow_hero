@@ -452,7 +452,7 @@ func (m model) View() string {
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "ctrl+c", "ctrl+q":
+	case "ctrl+c", "alt+q":
 		if m.streaming || m.heroStartBootstrapping || m.heroStartPreparing {
 			return m.showConfirm(actionQuit, 0, "Agent is running. Quit? [y/N]")
 		}
@@ -509,6 +509,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.hasActiveCycle() {
 			return m.goListScreen(screenCosts)
+		}
+		return m.goListScreen(screenEvents)
+	case "alt+n":
+		if m.freeChatMode {
+			return m, nil
 		}
 		return m.goListScreen(screenEvents)
 	case "up", "ctrl+p":
@@ -572,8 +577,8 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+c":
 		return m, tea.Quit
-	case "ctrl+q", "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5",
-		"alt+1", "alt+2", "alt+3", "alt+4", "alt+5",
+	case "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5",
+		"alt+q", "alt+n", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5",
 		"ctrl+r", "f5":
 		// Leave palette chrome before global navigation / refresh / quit.
 		m.pickingModel = false
@@ -1550,6 +1555,10 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyCtrlP}
 	case "ctrl+q":
 		return tea.KeyMsg{Type: tea.KeyCtrlQ}
+	case "alt+q":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}, Alt: true}
+	case "alt+n":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}, Alt: true}
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
 	case "ctrl+r":

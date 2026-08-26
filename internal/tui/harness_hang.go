@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	harnessStallWarnMsg      = "Harness appears stalled (no activity). Cancel the run or use /harness-reset if needed."
-	harnessFailedWarnHint    = "Cancel the run or use /harness-reset if needed."
-	emptyResponseWarning     = "WARNING: Harness returned an empty response. The agent produced no text or tool output."
-	healthProbeTimeout       = 5 * time.Second
+	harnessStallWarnMsg   = "Harness appears stalled (no activity). Cancel the run or use /harness-reset if needed."
+	harnessFailedWarnHint = "Cancel the run or use /harness-reset if needed."
+	emptyResponseWarning  = "WARNING: Harness returned an empty response. The agent produced no text or tool output."
+	healthProbeTimeout    = 5 * time.Second
 )
 
 type harnessHealthProbeMsg struct{}
@@ -107,6 +107,9 @@ func (m model) handleHarnessHealthResult(msg harnessHealthResultMsg) (model, tea
 			warn = warn + " " + harnessFailedWarnHint
 			m.insertBeforeAgent(convMessage{role: convRoleWarning, content: "WARNING: " + warn})
 			m = m.setStatusWarning("execute", warn)
+		}
+		if m.streaming {
+			return m, m.cancelStreamCmd()
 		}
 		return m, nil
 

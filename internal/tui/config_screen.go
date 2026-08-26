@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
@@ -36,10 +37,10 @@ var configKeys = struct {
 	Reload:    key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "reload")),
 	Next:      key.NewBinding(key.WithKeys("tab", "down"), key.WithHelp("tab", "next field")),
 	Previous:  key.NewBinding(key.WithKeys("shift+tab", "up"), key.WithHelp("shift+tab", "previous field")),
-	Toggle:    key.NewBinding(key.WithKeys("space"), key.WithHelp("space", "toggle")),
+	Toggle:    key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle")),
 	Edit:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "edit")),
 	Cancel:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-	Leave:     key.NewBinding(key.WithKeys("esc", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "ctrl+q"), key.WithHelp("esc", "leave")),
+	Leave:     key.NewBinding(key.WithKeys("esc", "alt+n", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+q"), key.WithHelp("esc", "leave")),
 	Discard:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "discard")),
 }
 
@@ -395,6 +396,10 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.config.leaveScreen, m.config.leaveQuit = configLeaveTarget(msg)
 		return m, nil
 	}
+	if key.Matches(msg, configKeys.Leave) {
+		m.config.leaveScreen, m.config.leaveQuit = configLeaveTarget(msg)
+		return m.completeConfigLeave()
+	}
 	fields := m.configFields()
 	if key.Matches(msg, configKeys.Next) && len(fields) > 0 {
 		m.config.focus = (m.config.focus + 1) % len(fields)
@@ -427,8 +432,10 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func configLeaveTarget(msg tea.KeyMsg) (screen, bool) {
 	switch msg.String() {
-	case "ctrl+c", "ctrl+q":
+	case "ctrl+c", "alt+q":
 		return screenConfig, true
+	case "alt+n":
+		return screenEvents, false
 	case "alt+1", "ctrl+1":
 		return screenConversation, false
 	case "alt+2", "ctrl+2":
@@ -958,7 +965,9 @@ func (m model) renderConfig() string {
 	}
 	c := m.config.draft
 	b.WriteString("\n" + headerStyle.Render("Identity") + "\n")
-	b.WriteString(fmt.Sprintf("  Title: %s\n  Objective: %s\n  Chat language: %s\n", c.Title, c.Objective, c.WorkflowConfig.UserPreferredLanguage))
+	b.WriteString(m.configSummaryField("Title", c.Title))
+	b.WriteString(m.configSummaryField("Objective", c.Objective))
+	b.WriteString(m.configSummaryField("Chat language", c.WorkflowConfig.UserPreferredLanguage))
 	b.WriteString(headerStyle.Render("Scope") + "\n")
 	b.WriteString(fmt.Sprintf("  Backend:%t  Frontend:%t  Native:%t  Script:%t  Infrastructure:%t\n", c.Scope.Backend, c.Scope.Frontend, c.Scope.Native, c.Scope.Script, c.Scope.Infrastructure))
 	b.WriteString(headerStyle.Render("Stages") + "\n")
@@ -994,18 +1003,12 @@ func (m model) renderConfig() string {
 				value = "[x]"
 			}
 		}
-		line := fmt.Sprintf("  %s: %s", field.label, value)
+		line := m.renderConfigField(field.label, value, i == m.config.focus, m.stageProtected(field.stage))
 		if message, ok := m.config.fieldErrors[field.path]; ok {
 			line += "\n" + errorStyle.Render("    ✗ "+message)
 		}
 		if warning := m.configCapabilityWarning(field); warning != "" {
 			line += "\n" + warnStyle.Render("    "+warning)
-		}
-		if m.stageProtected(field.stage) {
-			line += "  completed stage is protected"
-			line = mutedStyle.Render(line)
-		} else if i == m.config.focus {
-			line = selectedStyle.Render("▸ " + line)
 		}
 		b.WriteString(line)
 		b.WriteByte('\n')
@@ -1026,6 +1029,69 @@ func (m model) renderConfig() string {
 	}
 	b.WriteString(mutedStyle.Render("tab/shift+tab focus · space toggle · enter edit/select · ctrl+s save · ctrl+enter save and start · r retry · ctrl+r reload"))
 	return b.String()
+}
+
+// configValueWidth is the width available for wrapping a config field's value.
+func (m model) configValueWidth() int {
+	w := m.contentWidth() - 2
+	if w < 20 {
+		w = 20
+	}
+	return w
+}
+
+// renderConfigField renders a single "label: value" row with the label in a
+// dim color and the input value in the primary color. Text values wrap at the
+// content width, and the focused row is marked with a visible cursor (including
+// protected/inactive fields, which stay muted so the cursor is still traceable).
+func (m model) renderConfigField(label, value string, focused, protected bool) string {
+	prefix := label + ": "
+	valueWidth := m.configValueWidth() - lipgloss.Width("  "+prefix)
+	if valueWidth < 8 {
+		valueWidth = 8
+	}
+	valueLines := wrapOutputLine(value, valueWidth)
+	if len(valueLines) == 0 {
+		valueLines = []string{""}
+	}
+	cursor := "  "
+	if focused {
+		cursor = "▸ "
+	}
+	indent := strings.Repeat(" ", lipgloss.Width(prefix))
+	var b strings.Builder
+	for i, vl := range valueLines {
+		if i == 0 {
+			b.WriteString(cursor)
+			b.WriteString(configLabelStyle.Render(prefix))
+		} else {
+			b.WriteString("  ")
+			b.WriteString(configLabelStyle.Render(indent))
+		}
+		b.WriteString(configValueStyle.Render(vl))
+		if i < len(valueLines)-1 {
+			b.WriteByte('\n')
+		}
+	}
+	line := b.String()
+	if protected {
+		line += "  " + mutedStyle.Render("completed stage is protected")
+	}
+	switch {
+	case focused && protected:
+		line = mutedStyle.Render(line)
+	case focused:
+		line = selectedStyle.Render(line)
+	case protected:
+		line = mutedStyle.Render(line)
+	}
+	return line
+}
+
+// configSummaryField renders a read-only summary row (label + value) for the
+// Identity block, sharing the same label/value colors and wrapping.
+func (m model) configSummaryField(label, value string) string {
+	return m.renderConfigField(label, value, false, false) + "\n"
 }
 
 func configBoolValue(c workflowconfig.ManagedConfig, field configField) bool {

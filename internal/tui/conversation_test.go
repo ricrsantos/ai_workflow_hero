@@ -450,6 +450,71 @@ func TestConversationCancelDuringStreamWithoutSessionID(t *testing.T) {
 	}
 }
 
+func TestConversationPersistsSessionFromBoundDeltaBeforeExecuteDone(t *testing.T) {
+	m, h, svc := newConversationTestModel(t)
+	h.deltas = nil
+	h.events = []harness.StreamDelta{
+		harness.SessionDelta(harness.SessionStateRunning, "", "session.bound", "sess-early"),
+		{Kind: harness.StreamKindText, Text: "partial"},
+	}
+	h.release = make(chan struct{})
+
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "wait")
+	next, cmd := SubmitConversationForTest(m)
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming")
+	}
+	next, cmd = pumpConversationUntil(t, next, cmd, 2*time.Second, func(m model) bool {
+		return HarnessSessionIDForTest(m) == "sess-early"
+	})
+	if !IsConversationStreaming(next) {
+		t.Fatal("session must persist while Execute is still in flight")
+	}
+	stored, err := svc.StageHarnessSessionID("research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != "sess-early" {
+		t.Fatalf("stored session = %q", stored)
+	}
+
+	close(h.release)
+	_ = drainConversationStream(t, next, cmd)
+}
+
+func TestHealthFailedCancelsStream(t *testing.T) {
+	m, h, _ := newConversationTestModel(t)
+	h.deltas = []string{"partial"}
+	h.release = make(chan struct{})
+
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "wait")
+	next, cmd := SubmitConversationForTest(m)
+	next, _ = pumpConversationUntil(t, next, cmd, 2*time.Second, func(m model) bool {
+		return strings.Contains(ConversationTranscriptForTest(m), "partial")
+	})
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected streaming")
+	}
+
+	next, cancelCmd := next.handleHarnessHealthResult(harnessHealthResultMsg{
+		status: harness.HealthFailed,
+		health: harness.HarnessHealth{ProcessAlive: false, Details: "Harness process is not running."},
+	})
+	if cancelCmd != nil {
+		cancelMsg := cancelCmd()
+		next2, _ := next.Update(cancelMsg)
+		next = next2.(model)
+	}
+	if !h.CancelCalled() {
+		t.Fatal("expected Cancel on HealthFailed")
+	}
+	if IsConversationStreaming(next) {
+		t.Fatal("expected streaming stopped after HealthFailed")
+	}
+}
+
 func TestConversationCancelDuringStream(t *testing.T) {
 	m, h, _ := newConversationTestModel(t)
 	h.deltas = []string{"partial"}
@@ -500,7 +565,7 @@ func TestConversationResponsePaneLayout(t *testing.T) {
 	if !strings.Contains(view, "↑↓ scroll") {
 		t.Fatalf("expected scroll hint: %q", view)
 	}
-	if !strings.Contains(view, "ctrl+q quit") && !strings.Contains(view, "alt+1-6") {
+	if !strings.Contains(view, "alt+q quit") && !strings.Contains(view, "alt+1-6") {
 		t.Fatalf("expected footer menu visible: %q", view)
 	}
 	// Etapa hint moved to status bar under ready (not in the chat header).

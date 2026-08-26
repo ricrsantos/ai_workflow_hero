@@ -732,22 +732,22 @@ func TestNonDestructivePaletteActionNotConfirmedWhileStreaming(t *testing.T) {
 	}
 }
 
-func TestCtrlQWhileStreamingShowsConfirm(t *testing.T) {
+func TestAltQWhileStreamingShowsConfirm(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	m = SetStreamingForTest(m, true)
 
-	next, cmd := HandleTestKey(m, "ctrl+q")
+	next, cmd := HandleTestKey(m, "alt+q")
 	// cmd should NOT be tea.Quit — that would exit without asking.
 	if cmd != nil {
 		// Run the cmd to see if it's Quit.
 		msg := RunCmdForTest(cmd)
 		if _, isQuit := msg.(tea.QuitMsg); isQuit {
-			t.Fatal("ctrl+q while streaming must not quit immediately — should show confirm dialog")
+			t.Fatal("alt+q while streaming must not quit immediately — should show confirm dialog")
 		}
 	}
 	if !ConfirmPendingForTest(next) {
-		t.Fatal("ctrl+q while streaming must set confirmPending")
+		t.Fatal("alt+q while streaming must set confirmPending")
 	}
 	if !strings.Contains(ConfirmMsgForTest(next), "Quit") {
 		t.Fatalf("confirm msg should mention Quit: %q", ConfirmMsgForTest(next))
