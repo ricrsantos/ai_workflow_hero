@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-08-26 — OpenCode question.asked interactive Chat
+
+**Problem**: OpenCode `question.asked` was routed as activity with raw JSON in Chat; OpenCode blocked ~23min waiting for reply while Hero ignored composer during streaming.
+
+**Change**: Harness `QuestionRequest`/`OnQuestionRequest`; OpenCode `handleQuestionAsked` + reply/reject HTTP; TUI composer answers (sequential multi-question, Enter/Esc) while streaming.
+
+**Validation**: Adapter + TUI tests; `go test ./...` passed.
+
 ## 2026-08-26 — OpenCode SSE reconnect on unexpected EOF
 
 **Problem**: Hero Chat with OpenCode harness showed `unexpected EOF` during long tool runs (`go test ./...`). OpenCode kept running (log showed step 11 + bash permissions) but Hero’s per-execute `GET /event` SSE closed before `session.idle`; next user message often failed with socket/connection errors while the session was still busy.

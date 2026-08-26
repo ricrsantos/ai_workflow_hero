@@ -161,6 +161,14 @@ type model struct {
 	harnessPermissionReq     harness.PermissionRequest
 	harnessPermissionRespCh  chan harness.PermissionResponse
 
+	// Harness-native question prompt (OpenCode question.asked).
+	harnessQuestionPending   bool
+	harnessQuestionMsg       string
+	harnessQuestionReq       harness.QuestionRequest
+	harnessQuestionRespCh    chan harness.QuestionResponse
+	harnessQuestionIndex     int
+	harnessQuestionAnswers   [][]string
+
 	// Harness watchdog (v2.3): runtime health during TUI Execute only (warn-only).
 	harnessWatchdog       harness.Watchdog
 	harnessHealthStatus   harness.HealthStatus
@@ -400,7 +408,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slog.Debug("tui model props refresh done", "harnesses", len(msg.summaries))
 		return m, nil
 
-	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, executePairMsg:
+	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg:
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)
@@ -408,6 +416,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.harnessPermissionPending {
 			return m.handleHarnessPermissionKey(msg)
+		}
+		if m.harnessQuestionPending {
+			return m.handleHarnessQuestionKey(msg)
 		}
 		if m.confirmPending {
 			return m.handleConfirmKey(msg)

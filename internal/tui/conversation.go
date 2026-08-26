@@ -680,7 +680,7 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.streaming {
+	if m.streaming && !m.harnessQuestionPending {
 		switch s {
 		case "ctrl+c":
 			return m, m.cancelStreamCmd()
@@ -1244,6 +1244,20 @@ func (m model) startConversationExecute(executeID, prompt string, ch chan<- tea.
 					return harness.PermissionResponse{}, ctx.Err()
 				}
 			},
+			OnQuestionRequest: func(ctx context.Context, qreq harness.QuestionRequest) (harness.QuestionResponse, error) {
+				respCh := make(chan harness.QuestionResponse, 1)
+				select {
+				case ch <- harnessQuestionRequestMsg{req: qreq, respCh: respCh}:
+				case <-ctx.Done():
+					return harness.QuestionResponse{Rejected: true}, ctx.Err()
+				}
+				select {
+				case resp := <-respCh:
+					return resp, nil
+				case <-ctx.Done():
+					return harness.QuestionResponse{Rejected: true}, ctx.Err()
+				}
+			},
 		}
 		req = harness.NormalizeExecuteRequest(req)
 		res, err := pair.Adapter.Execute(ctx, req)
@@ -1328,7 +1342,7 @@ func waitConvBatchMsg(ch <-chan tea.Msg) tea.Cmd {
 
 func isImmediateConversationMessage(msg tea.Msg) bool {
 	switch msg.(type) {
-	case executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, executePairMsg:
+	case executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg:
 		return true
 	default:
 		return false
@@ -1438,6 +1452,20 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case harnessQuestionRequestMsg:
+		m.harnessQuestionPending = true
+		m.harnessQuestionReq = msg.req
+		m.harnessQuestionRespCh = msg.respCh
+		m.harnessQuestionIndex = 0
+		m.harnessQuestionAnswers = nil
+		m.harnessQuestionMsg = formatHarnessQuestion(msg.req, 0)
+		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessQuestionMsg})
+		m.chatInputFocused = true
+		if m.streaming && m.convStreamCh != nil {
+			return m, waitConvBatchMsg(m.convStreamCh)
+		}
+		return m, nil
+
 	case executeDoneMsg:
 		m = m.bindExecuteView(msg.executeID)
 		stageForMetrics := strings.TrimSpace(m.conversationStage)
@@ -1476,6 +1504,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.harnessHealthInFlight = false
 			m.harnessHealthStatus = harness.HealthHealthy
 			m = m.clearHarnessPermission()
+			m = m.clearHarnessQuestion()
 			if !m.orchestrationLive {
 				m = m.clearRuntimePair()
 				m.runtimeAgentName = ""
@@ -1561,6 +1590,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.confirmPending = false
 		m.confirmMsg = ""
 		m = m.clearHarnessPermission()
+		m = m.clearHarnessQuestion()
 		if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 			m.transcript[m.agentMsgIndex].interrupted = true
 			m.invalidateResponseCache(m.agentMsgIndex)
@@ -1621,7 +1651,7 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 		return m
 	}
 	switch d.Kind {
-	case harness.StreamKindPermission:
+	case harness.StreamKindPermission, harness.StreamKindQuestion:
 		return m
 	case harness.StreamKindSession:
 		if d.Metadata != nil && d.Metadata["state"] == harness.SessionStateFailed {

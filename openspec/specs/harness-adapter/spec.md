@@ -88,6 +88,22 @@ When a harness emits a permission request (e.g. OpenCode `permission.asked`), th
 - **WHEN** `permission.asked` arrives and `OnPermissionRequest` is nil
 - **THEN** Execute fails with an explicit permission error after emitting a warning
 
+### Requirement: Harness question prompts SHALL block until user response
+
+When a harness emits a question request (e.g. OpenCode `question.asked` / `question.v2.asked`), the adapter SHALL invoke `ExecuteRequest.OnQuestionRequest` and block until the callback returns. When the callback is nil, the adapter SHALL emit a warning and fail explicitly rather than hang silently. The TUI SHALL show formatted questions in Chat and accept answers via the composer (Enter submits, Esc rejects).
+
+#### Scenario: OpenCode question answered
+- **WHEN** the user answers all questions in Chat during an OpenCode Execute
+- **THEN** the adapter replies via `POST /question/{requestID}/reply` with `answers` per question and execution continues
+
+#### Scenario: OpenCode question rejected
+- **WHEN** the user rejects a harness question in Chat (Esc)
+- **THEN** the adapter calls `POST /question/{requestID}/reject` and execution continues or fails per harness behavior
+
+#### Scenario: Question without handler
+- **WHEN** `question.asked` arrives and `OnQuestionRequest` is nil
+- **THEN** Execute fails with an explicit question error after emitting a warning
+
 ### Requirement: Cursor stream termination SHALL surface process failure
 
 When Cursor `stream-json` ends without a `result` event and the CLI exits non-zero with empty assistant output, the adapter SHALL return an error including stderr/exit code and emit a failed session delta when streaming.

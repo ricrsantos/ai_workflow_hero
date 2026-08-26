@@ -340,6 +340,124 @@ func TestProcessSSEEventPermission(t *testing.T) {
 	}
 }
 
+func TestProcessSSEEventQuestion(t *testing.T) {
+	var gotPath, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/question/") && strings.HasSuffix(r.URL.Path, "/reply") {
+			gotPath = r.URL.Path
+			if r.URL.Query().Get("directory") == "" {
+				t.Fatal("expected directory query param on question reply")
+			}
+			body, _ := io.ReadAll(r.Body)
+			gotBody = string(body)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	a := NewAdapter(t.TempDir(), nil)
+	a.baseURL = srv.URL
+	state := newStreamState()
+	asked := false
+	req := harness.ExecuteRequest{
+		ProjectDir:    t.TempDir(),
+		OnStreamDelta: func(d harness.StreamDelta) {},
+		OnQuestionRequest: func(_ context.Context, qr harness.QuestionRequest) (harness.QuestionResponse, error) {
+			asked = true
+			if qr.ID != "que-1" {
+				t.Fatalf("id=%q", qr.ID)
+			}
+			if len(qr.Questions) != 2 {
+				t.Fatalf("questions=%d", len(qr.Questions))
+			}
+			if qr.Questions[0].Header != "Scope" {
+				t.Fatalf("header=%q", qr.Questions[0].Header)
+			}
+			return harness.QuestionResponse{Answers: [][]string{{"A"}, {"B"}}}, nil
+		},
+	}
+	evt := map[string]any{
+		"type": "question.asked",
+		"properties": map[string]any{
+			"sessionID": "sess-1",
+			"id":        "que-1",
+			"questions": []any{
+				map[string]any{
+					"header": "Scope",
+					"options": []any{
+						map[string]any{"label": "A", "description": "first"},
+					},
+				},
+				map[string]any{
+					"header": "Next",
+					"options": []any{
+						map[string]any{"label": "B"},
+					},
+				},
+			},
+		},
+	}
+	if out := a.processSSEEvent(context.Background(), evt, "sess-1", state, req, nil); out.err != nil {
+		t.Fatal(out.err)
+	}
+	if !asked {
+		t.Fatal("expected question callback")
+	}
+	if gotPath != "/question/que-1/reply" {
+		t.Fatalf("path=%q", gotPath)
+	}
+	if gotBody != `{"answers":[["A"],["B"]]}` {
+		t.Fatalf("body=%q", gotBody)
+	}
+}
+
+func TestProcessSSEEventQuestionReject(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/question/") && strings.HasSuffix(r.URL.Path, "/reject") {
+			gotPath = r.URL.Path
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	a := NewAdapter(t.TempDir(), nil)
+	a.baseURL = srv.URL
+	state := newStreamState()
+	req := harness.ExecuteRequest{
+		ProjectDir:    t.TempDir(),
+		OnStreamDelta: func(d harness.StreamDelta) {},
+		OnQuestionRequest: func(_ context.Context, _ harness.QuestionRequest) (harness.QuestionResponse, error) {
+			return harness.QuestionResponse{Rejected: true}, nil
+		},
+	}
+	evt := map[string]any{
+		"type": "question.v2.asked",
+		"properties": map[string]any{
+			"sessionID": "sess-1",
+			"id":        "que-reject",
+			"questions": []any{
+				map[string]any{
+					"header": "Pick",
+					"options": []any{
+						map[string]any{"label": "one"},
+					},
+				},
+			},
+		},
+	}
+	if out := a.processSSEEvent(context.Background(), evt, "sess-1", state, req, nil); out.err != nil {
+		t.Fatal(out.err)
+	}
+	if gotPath != "/question/que-reject/reject" {
+		t.Fatalf("path=%q", gotPath)
+	}
+}
+
 func TestProcessSSEEventPermissionExternalDirectoryV2(t *testing.T) {
 	var gotBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

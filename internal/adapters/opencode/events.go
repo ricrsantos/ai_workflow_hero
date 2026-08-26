@@ -79,7 +79,6 @@ var opencodeActivityEvents = map[string]struct{}{
 	"question.asked":                 {},
 	"question.replied":               {},
 	"question.rejected":              {},
-	"question.v2.asked":              {},
 	"question.v2.replied":            {},
 	"question.v2.rejected":           {},
 	"reference.updated":              {},
@@ -210,6 +209,12 @@ func (h *streamHandler) handle(evt map[string]any) streamOutcome {
 
 	case "permission.asked", "permission.v2.asked":
 		if err := h.handlePermissionAsked(props, evtType); err != nil {
+			return streamOutcome{err: err}
+		}
+		return streamOutcome{}
+
+	case "question.asked", "question.v2.asked":
+		if err := h.handleQuestionAsked(props, evtType); err != nil {
 			return streamOutcome{err: err}
 		}
 		return streamOutcome{}
@@ -890,6 +895,54 @@ func (h *streamHandler) handlePermissionAsked(props map[string]any, evtType stri
 	}
 	if err := h.adapter.replyPermission(h.ctx, h.sessionID, id, reply, h.req.ProjectDir); err != nil {
 		return fmt.Errorf("opencode permission reply: %w", err)
+	}
+	return nil
+}
+
+func (h *streamHandler) handleQuestionAsked(props map[string]any, evtType string) error {
+	id := stringProp(props, "id")
+	if id == "" {
+		return fmt.Errorf("opencode question event missing id")
+	}
+	questions := parseQuestionItems(props)
+	if len(questions) == 0 {
+		return fmt.Errorf("opencode question event missing questions")
+	}
+	req := harness.QuestionRequest{
+		ID:          id,
+		SessionID:   h.sessionID,
+		HarnessType: evtType,
+		Questions:   questions,
+	}
+
+	if h.req.OnQuestionRequest == nil {
+		h.emit(harness.WarningDelta(adapterName, evtType, h.sessionID, formatQuestionPrompt(req, 0)))
+		return fmt.Errorf("opencode question required but no OnQuestionRequest handler")
+	}
+
+	h.emit(harness.StreamDelta{
+		Kind:        harness.StreamKindQuestion,
+		Text:        formatQuestionPrompt(req, 0),
+		HarnessType: evtType,
+		SessionID:   h.sessionID,
+		Metadata:    map[string]string{"question_id": id},
+	})
+
+	resp, err := h.req.OnQuestionRequest(h.ctx, req)
+	if err != nil {
+		return err
+	}
+	if resp.Rejected {
+		if err := h.adapter.rejectQuestion(h.ctx, h.sessionID, id, h.req.ProjectDir); err != nil {
+			return fmt.Errorf("opencode question reject: %w", err)
+		}
+		return nil
+	}
+	if len(resp.Answers) == 0 {
+		return fmt.Errorf("opencode question response missing answers")
+	}
+	if err := h.adapter.replyQuestion(h.ctx, h.sessionID, id, resp.Answers, h.req.ProjectDir); err != nil {
+		return fmt.Errorf("opencode question reply: %w", err)
 	}
 	return nil
 }

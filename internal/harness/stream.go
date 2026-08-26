@@ -14,6 +14,7 @@ const (
 	StreamKindTool       StreamKind = "tool"
 	StreamKindWarning    StreamKind = "warning"
 	StreamKindPermission StreamKind = "permission"
+	StreamKindQuestion   StreamKind = "question"
 	StreamKindActivity   StreamKind = "activity"
 	StreamKindSession    StreamKind = "session"
 )
@@ -56,6 +57,36 @@ type PermissionRequest struct {
 // PermissionResponse is the user's answer to a harness permission prompt.
 type PermissionResponse struct {
 	Approved bool
+	Reason   string
+}
+
+// QuestionOption is one selectable choice in a harness question prompt.
+type QuestionOption struct {
+	Label       string
+	Description string
+}
+
+// QuestionItem is one question in a multi-question harness prompt.
+type QuestionItem struct {
+	Header    string
+	Question  string
+	Options   []QuestionOption
+	Multiple  bool
+	Custom    bool
+}
+
+// QuestionRequest is a harness-native interactive question (OpenCode question.asked).
+type QuestionRequest struct {
+	ID          string
+	SessionID   string
+	HarnessType string
+	Questions   []QuestionItem
+}
+
+// QuestionResponse is the user's answer to a harness question prompt.
+type QuestionResponse struct {
+	Answers  [][]string // selected labels per question
+	Rejected bool
 	Reason   string
 }
 

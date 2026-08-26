@@ -63,6 +63,10 @@ type ExecuteRequest struct {
 	// permission prompt (OpenCode permission.asked, etc.). When nil, adapters
 	// emit a warning and fail explicitly instead of hanging silently.
 	OnPermissionRequest func(ctx context.Context, req PermissionRequest) (PermissionResponse, error)
+	// OnQuestionRequest blocks until the user answers or rejects a harness
+	// question prompt (OpenCode question.asked, etc.). When nil, adapters emit
+	// a warning and fail explicitly instead of hanging silently.
+	OnQuestionRequest func(ctx context.Context, req QuestionRequest) (QuestionResponse, error)
 }
 
 // NormalizeExecuteRequest returns a request safe to hand to an adapter.  The
