@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -487,23 +488,69 @@ func (a *Adapter) HasManagedServe(ctx context.Context) bool {
 	return false
 }
 
+// clearStaleServeBinding drops a dead in-memory serve binding and stale registry rows.
+func (a *Adapter) clearStaleServeBinding(ctx context.Context) {
+	a.mu.Lock()
+	base := a.baseURL
+	pid := a.servePID
+	handle := a.serveHandle
+	a.baseURL = ""
+	a.servePID = 0
+	a.servePort = 0
+	a.serveHandle = nil
+	a.mu.Unlock()
+
+	if handle != nil {
+		_ = stopProcessHandle(ctx, handle)
+	} else if pid > 0 {
+		terminateAndReap(ctx, pid)
+	}
+
+	if a.Store == nil {
+		return
+	}
+	entries, err := a.Store.ListServeRegistry()
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.Harness != adapterName {
+			continue
+		}
+		if base != "" && e.URL == base {
+			_ = a.Store.DeleteServeRegistry(e.ID)
+			continue
+		}
+		if strings.TrimSpace(e.URL) != "" && !serveURLAlive(ctx, e.URL, a.HTTP) {
+			_ = a.Store.DeleteServeRegistry(e.ID)
+		}
+	}
+}
+
 func (a *Adapter) ensureServe(ctx context.Context) error {
 	a.mu.Lock()
-	if a.baseURL != "" {
-		a.mu.Unlock()
-		return nil
-	}
+	base := a.baseURL
 	a.mu.Unlock()
+	if base != "" {
+		if serveURLAlive(ctx, base, a.HTTP) {
+			return nil
+		}
+		a.log().Warn("opencode serve unreachable; recovering", "url", base)
+		a.clearStaleServeBinding(ctx)
+	}
 
 	a.serveStartMu.Lock()
 	defer a.serveStartMu.Unlock()
 
 	a.mu.Lock()
-	if a.baseURL != "" {
-		a.mu.Unlock()
-		return nil
-	}
+	base = a.baseURL
 	a.mu.Unlock()
+	if base != "" {
+		if serveURLAlive(ctx, base, a.HTTP) {
+			return nil
+		}
+		a.clearStaleServeBinding(ctx)
+	}
 
 	if a.adoptFromRegistry(ctx) {
 		return nil
@@ -604,10 +651,61 @@ func (a *Adapter) do(ctx context.Context, method, path string, body []byte) (*ht
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return client.Do(req)
+	resp, err := client.Do(req)
+	if err != nil && isServeConnectionError(err) {
+		a.log().Warn("opencode api connection failed; retrying after serve recovery", "path", path, "error", err)
+		a.clearStaleServeBinding(ctx)
+		if ensureErr := a.ensureServe(ctx); ensureErr != nil {
+			return nil, err
+		}
+		a.mu.Lock()
+		base = a.baseURL
+		a.mu.Unlock()
+		if base == "" {
+			return nil, err
+		}
+		var retryBody io.Reader
+		if body != nil {
+			retryBody = bytes.NewReader(body)
+		}
+		req, err = http.NewRequestWithContext(ctx, method, base+path, retryBody)
+		if err != nil {
+			return nil, err
+		}
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err = client.Do(req)
+	}
+	return resp, err
+}
+
+func isServeConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "connect: connection refused") ||
+		strings.Contains(msg, "no such host") ||
+		strings.Contains(msg, "connection reset") ||
+		errors.Is(err, io.EOF)
 }
 
 func (a *Adapter) subscribeEvents(ctx context.Context, projectDir string) (io.ReadCloser, error) {
+	body, err := a.subscribeEventsOnce(ctx, projectDir)
+	if err != nil && isServeConnectionError(err) {
+		a.log().Warn("opencode event subscribe failed; retrying after serve recovery", "error", err)
+		a.clearStaleServeBinding(ctx)
+		if ensureErr := a.ensureServe(ctx); ensureErr != nil {
+			return nil, err
+		}
+		return a.subscribeEventsOnce(ctx, projectDir)
+	}
+	return body, err
+}
+
+func (a *Adapter) subscribeEventsOnce(ctx context.Context, projectDir string) (io.ReadCloser, error) {
 	a.mu.Lock()
 	base := a.baseURL
 	a.mu.Unlock()

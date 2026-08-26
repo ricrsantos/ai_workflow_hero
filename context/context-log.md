@@ -18,9 +18,9 @@
 
 **Problem**: Hero Chat with OpenCode harness showed `unexpected EOF` during long tool runs (`go test ./...`). OpenCode kept running (log showed step 11 + bash permissions) but Hero’s per-execute `GET /event` SSE closed before `session.idle`; next user message often failed with socket/connection errors while the session was still busy.
 
-**Change**: Subscribe to `GET /event` **before** `prompt_async` (race on fast completions). SSE reconnect on disconnect. Fallback: `GET /session/{id}/message` when stream ends with no output.
+**Change**: Subscribe to `GET /event` **before** `prompt_async` (race on fast completions). SSE reconnect on disconnect. Fallback: `GET /session/{id}/message` when stream ends with no output. `ensureServe` re-validates cached base URL and restarts dead `opencode serve`; HTTP `do()` and `subscribeEvents` retry once on connection refused.
 
-**Validation**: `TestExecuteStreamRecoversFromSessionMessages`, `TestExecuteStreamSSEReconnect`; `go test ./internal/adapters/opencode/...` passed.
+**Validation**: `TestEnsureServeRecoversDeadURL`, question + SSE tests; `go test ./...` passed.
 
 ## 2026-08-25 — `/hero-approve` must start the next TUI stage
 

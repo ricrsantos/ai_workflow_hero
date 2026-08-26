@@ -27,6 +27,8 @@ func isStreamDisconnect(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "eof") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "connect: connection refused") ||
 		strings.Contains(msg, "connection reset") ||
 		strings.Contains(msg, "broken pipe") ||
 		strings.Contains(msg, "use of closed network connection")
@@ -65,7 +67,7 @@ func (a *Adapter) readExecuteSSE(
 		} else {
 			events, err = a.subscribeEvents(ctx, projectDir)
 			if err != nil {
-				if attempt > 0 && isStreamDisconnect(err) {
+				if isServeConnectionError(err) || (attempt > 0 && isStreamDisconnect(err)) {
 					if waitErr := sleepOrDone(ctx, sseReconnectDelay); waitErr != nil {
 						return waitErr
 					}
