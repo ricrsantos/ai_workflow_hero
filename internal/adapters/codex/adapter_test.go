@@ -472,7 +472,7 @@ func TestExecute_PropertyMapping(t *testing.T) {
 	if sandbox["type"] != "workspaceWrite" || sandbox["networkAccess"] != true {
 		t.Fatalf("sandboxPolicy=%v", sandbox)
 	}
-	if peer.threadProp["approvalPolicy"] != "never" || peer.threadProp["sandbox"] != "workspaceWrite" {
+	if peer.threadProp["approvalPolicy"] != "never" || peer.threadProp["sandbox"] != "workspace-write" {
 		t.Fatalf("thread policy approval=%v sandbox=%v", peer.threadProp["approvalPolicy"], peer.threadProp["sandbox"])
 	}
 }

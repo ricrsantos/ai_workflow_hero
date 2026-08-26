@@ -133,7 +133,7 @@ func (a *Adapter) CreateSession(ctx context.Context, req harness.SessionRequest)
 	}
 	params := map[string]any{
 		"approvalPolicy": codexApprovalPolicy,
-		"sandbox":        codexSandboxMode,
+		"sandbox":        codexSandboxMode, // SandboxMode kebab-case, not sandboxPolicy.type
 	}
 	if cwd := canonicalProjectDir(req.ProjectDir); cwd != "" {
 		params["cwd"] = cwd
@@ -536,7 +536,7 @@ func turnStartParams(threadID string, req harness.ExecuteRequest, projectDir str
 		"threadId":       threadID,
 		"approvalPolicy": codexApprovalPolicy,
 		"sandboxPolicy": map[string]any{
-			"type":          codexSandboxMode,
+			"type":          codexSandboxPolicyType,
 			"networkAccess": true,
 		},
 		"input": []map[string]string{

@@ -24,9 +24,14 @@ const (
 	// These defaults keep the Codex app-server non-interactive while preserving
 	// the workspace-write boundary. They are also sent through the app-server
 	// protocol so behavior does not depend solely on project config loading.
+	//
+	// Wire formats differ by field:
+	//   - thread/start.sandbox and CLI -c sandbox_mode= use SandboxMode
+	//     ("read-only" | "workspace-write" | "danger-full-access")
+	//   - turn/start.sandboxPolicy.type uses SandboxPolicy ("workspaceWrite")
 	codexApprovalPolicy    = "never"
-	codexSandboxMode       = "workspaceWrite"
-	codexSandboxConfigMode = "workspace-write"
+	codexSandboxMode       = "workspace-write"
+	codexSandboxPolicyType = "workspaceWrite"
 )
 
 // ExecRunner is the default ProcessRunner using os/exec with stdio pipes.
@@ -333,7 +338,7 @@ func appServerArgs(projectDir string) []string {
 	}
 	args = append(args,
 		"-c", fmt.Sprintf("approval_policy=%s", strconv.Quote(codexApprovalPolicy)),
-		"-c", fmt.Sprintf("sandbox_mode=%s", strconv.Quote(codexSandboxConfigMode)),
+		"-c", fmt.Sprintf("sandbox_mode=%s", strconv.Quote(codexSandboxMode)),
 		"-c", "sandbox_workspace_write.network_access=true",
 	)
 	return args

@@ -340,6 +340,14 @@
 
 **Validation**: Added adapter tests for startup arguments and JSON-RPC policy payloads. `CC=/usr/bin/gcc GOCACHE=/tmp/hero-go-cache go test ./... -count=1 -p 1 -timeout=600s` passed, including the TUI package; local-listener tests required host permission.
 
+## 2026-08-26 — Codex thread/start sandbox variant mismatch
+
+**Outcome**: Hero-managed Codex Execute failed immediately with `unknown variant workspaceWrite, expected one of read-only, workspace-write, danger-full-access`. `thread/start.sandbox` is Codex `SandboxMode` (kebab-case). The adapter had reused the `turn/start.sandboxPolicy.type` camelCase value `workspaceWrite`.
+
+**Decision**: Keep both wire formats: `thread/start.sandbox` and CLI `-c sandbox_mode=` send `workspace-write`; `turn/start.sandboxPolicy.type` remains `workspaceWrite`.
+
+**Validation**: `go test ./internal/adapters/codex/` and `CC=/usr/bin/gcc GOCACHE=/tmp/hero-go-cache go test ./... -count=1 -p 1 -timeout=600s` passed.
+
 ## 2026-08-25 — Removed `alt+y` copy-prompt shortcut
 
 **Outcome**: The `alt+y` "copy prompt" shortcut was removed from the TUI because the "you" and AI-response panes were unified, making a separate prompt-copy command redundant. Removed the `alt+y` key handling in `handleConversationKey` (streaming + global shortcut), the now-dead `copyChatPrompt` and `latestUserContent` helpers, and updated the fixed footer hint to `alt+r/i copy`. Updated `clipboard_test.go` and `screens_test.go` accordingly. `go test ./...` passes.
