@@ -3249,7 +3249,7 @@ func TestNewChatBlockedWhileStreaming(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("blocked new-chat should not spawn cmd")
 	}
-	if !strings.Contains(StatusTextForTest(next), "ctrl+c") {
+	if !strings.Contains(StatusTextForTest(next), "esc") {
 		t.Fatalf("status=%q", StatusTextForTest(next))
 	}
 }

@@ -25,8 +25,42 @@ func TestNavSidebarListsScreensInOrder(t *testing.T) {
 	if !(chat < status && status < artifacts && artifacts < costs && costs < events) {
 		t.Fatalf("expected Chat→Status→Artifacts→Costs→Events order: %q", view)
 	}
-	if !strings.Contains(stripANSI(view), "> Chat") {
+	plain := stripANSI(view)
+	if !strings.Contains(plain, "> Chat") {
 		t.Fatalf("expected active Chat marker: %q", view)
+	}
+	if !strings.Contains(plain, "alt+1-5") {
+		t.Fatalf("expected five-screen shortcut label: %q", plain)
+	}
+	if strings.Contains(plain, "alt+n") {
+		t.Fatalf("legacy alt+n label must not be rendered: %q", plain)
+	}
+}
+
+func TestNavSidebarShowsConfigLastWithSixShortcuts(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 24)
+	m.status.CycleNumber = 1
+	plain := stripANSI(ViewForTest(m))
+
+	labels := []string{"Chat", "Status", "Artifacts", "Costs", "Events", "Config"}
+	previous := -1
+	for _, label := range labels {
+		index := strings.Index(plain, label)
+		if index < 0 {
+			t.Fatalf("missing %q in sidebar: %q", label, plain)
+		}
+		if index <= previous {
+			t.Fatalf("expected %q after previous nav item: %q", label, plain)
+		}
+		previous = index
+	}
+	if !strings.Contains(plain, "alt+1-6") {
+		t.Fatalf("expected six-screen shortcut label: %q", plain)
+	}
+	if strings.Contains(plain, "alt+n") {
+		t.Fatalf("legacy alt+n label must not be rendered: %q", plain)
 	}
 }
 

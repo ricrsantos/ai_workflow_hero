@@ -23,7 +23,7 @@
 - TUI and Cursor share one source of truth.
 - Config is unavailable in free-chat mode and when the active file is missing or invalid.
 - The TUI must represent loading, read-only/busy, validation, and save states explicitly.
-- The navigation rail gains a conditional second item, shifting the project screen shortcuts to Chat, Config, Status, Artifacts, Costs, Events.
+- The navigation rail gains a conditional final item. Project screen shortcuts remain Chat, Status, Artifacts, Costs, Events, with Config appended as `alt+6` only while an active cycle exists.
 
 ## ADR-050: Managed-node merge preserves unmanaged YAML content
 
@@ -76,4 +76,3 @@
 - View functions remain pure, use `strings.Builder`, and calculate widths with Lip Gloss/ANSI-aware helpers.
 - Responsive rendering must hide lower-priority controls or show an intentional too-small warning.
 - TUI tests can exercise state transitions with temporary files and typed messages without live harnesses.
-

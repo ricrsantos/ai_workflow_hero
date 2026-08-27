@@ -56,7 +56,7 @@ The TUI starts one Execute per **in-scope** implementation agent in a single wav
 
 ### 4.5 Concurrency
 
-Chat may run several adapter Executes at once. Streaming stays true until the last child finishes. Ctrl+C cancels all in-flight Executes. Completing one child must not wipe sibling bubbles or their live-agent chips.
+Chat may run several adapter Executes at once. Streaming stays true until the last child finishes. Esc cancels all in-flight Executes. Completing one child must not wipe sibling bubbles or their live-agent chips.
 
 ### 4.6 Non-goals
 

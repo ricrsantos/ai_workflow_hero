@@ -2,7 +2,7 @@ package tui
 
 // isComposerNewlineKey is true for the ordinary Chat composer newline binding.
 // Recognized slash commands are handled before this check so Enter executes
-// them; Alt+Enter submits prompts and does not conflict with alt+1–5 screen
+// them; Alt+Enter submits prompts and does not conflict with numbered screen
 // jumps. Do not enable the Kitty keyboard protocol on Bubble Tea v1 (ordinary
 // keys become unknown CSI and the composer freezes).
 func isComposerNewlineKey(s string) bool {

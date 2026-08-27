@@ -28,8 +28,8 @@
     }
   },
   "freechat_default": {
-    "harness": "opencode",
-    "model": "opencode-go/deepseek-v4-flash"
+    "harness": "codex",
+    "model": "gpt-5.6-luna"
   },
   "model_properties": {
     "codex": {

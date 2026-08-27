@@ -181,7 +181,7 @@ func TestConfigDirtyExitCompletesDiscardAndSaveNavigation(t *testing.T) {
 	m := NewTestModel(nil)
 	m.screen = screenConfig
 	m.config.dirty = true
-	next, _ := m.handleConfigKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3"), Alt: true})
+	next, _ := m.handleConfigKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2"), Alt: true})
 	got := next.(model)
 	if !got.config.leaveDialog || got.config.leaveScreen != screenStatus {
 		t.Fatalf("dirty exit dialog=%t target=%v", got.config.leaveDialog, got.config.leaveScreen)

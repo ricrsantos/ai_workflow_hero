@@ -40,7 +40,7 @@ var configKeys = struct {
 	Toggle:    key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle")),
 	Edit:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "edit")),
 	Cancel:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-	Leave:     key.NewBinding(key.WithKeys("esc", "alt+n", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+q"), key.WithHelp("esc", "leave")),
+	Leave:     key.NewBinding(key.WithKeys("esc", "alt+n", "alt+1", "ctrl+1", "alt+2", "ctrl+2", "alt+3", "ctrl+3", "alt+4", "ctrl+4", "alt+5", "ctrl+5", "alt+q"), key.WithHelp("esc", "leave")),
 	Discard:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "discard")),
 }
 
@@ -407,11 +407,11 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.config.dirty && key.Matches(msg, configKeys.Leave) {
 		m.config.leaveDialog = true
-		m.config.leaveScreen, m.config.leaveQuit = configLeaveTarget(msg)
+		m.config.leaveScreen, m.config.leaveQuit = m.configLeaveTarget(msg)
 		return m, nil
 	}
 	if key.Matches(msg, configKeys.Leave) {
-		m.config.leaveScreen, m.config.leaveQuit = configLeaveTarget(msg)
+		m.config.leaveScreen, m.config.leaveQuit = m.configLeaveTarget(msg)
 		return m.completeConfigLeave()
 	}
 	fields := m.configFields()
@@ -445,25 +445,20 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.handleKey(msg)
 }
 
-func configLeaveTarget(msg tea.KeyMsg) (screen, bool) {
+func (m model) configLeaveTarget(msg tea.KeyMsg) (screen, bool) {
 	switch msg.String() {
 	case "ctrl+c", "alt+q":
 		return screenConfig, true
-	case "alt+n":
-		return screenEvents, false
-	case "alt+1", "ctrl+1":
-		return screenConversation, false
-	case "alt+2", "ctrl+2":
-		return screenConfig, false
-	case "alt+3", "ctrl+3":
-		return screenStatus, false
-	case "alt+4", "ctrl+4":
-		return screenArtifacts, false
-	case "alt+5", "ctrl+5":
-		return screenCosts, false
-	default:
-		return screenConversation, false
 	}
+	if isLegacyEventsShortcut(msg) {
+		return screenEvents, false
+	}
+	if index, ok := navShortcutIndex(msg); ok {
+		if target, exists := m.navScreenAt(index); exists {
+			return target, false
+		}
+	}
+	return screenConversation, false
 }
 
 func (m model) completeConfigLeave() (tea.Model, tea.Cmd) {

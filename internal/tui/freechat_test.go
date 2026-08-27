@@ -72,6 +72,9 @@ func TestFreeChatModeHidesEtapaHintAndNav(t *testing.T) {
 	if strings.Contains(view, "Artifacts") {
 		t.Fatalf("nav should not show Artifacts in free chat:\n%s", view)
 	}
+	if !strings.Contains(stripANSI(view), "alt+1-5") {
+		t.Fatalf("free chat navbar should use the numbered range label:\n%s", view)
+	}
 
 	next, _ := HandleTestKey(m, "alt+2")
 	if CurrentScreen(next) != ScreenConversation {

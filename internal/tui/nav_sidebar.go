@@ -4,24 +4,84 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// navScreens is the fixed left-rail menu (replaces the old horizontal tab bar).
-var navScreens = []struct {
+type navScreenItem struct {
 	screen screen
 	label  string
-}{
+}
+
+// navScreens is the fixed left-rail menu (replaces the old horizontal tab bar).
+var navScreens = []navScreenItem{
 	{screenConversation, "Chat"},
-	{screenConfig, "Config"},
 	{screenStatus, "Status"},
 	{screenArtifacts, "Artifacts"},
 	{screenCosts, "Costs"},
 	{screenEvents, "Events"},
+	{screenConfig, "Config"},
 }
+
+// Navigation bindings are shared by the sidebar, palette, and screen handlers.
+// The visible screen list below decides whether a numbered shortcut is valid.
+var navShortcutKeys = [...]key.Binding{
+	key.NewBinding(key.WithKeys("alt+1", "ctrl+1"), key.WithHelp("alt+1", "Chat")),
+	key.NewBinding(key.WithKeys("alt+2", "ctrl+2"), key.WithHelp("alt+2", "Status")),
+	key.NewBinding(key.WithKeys("alt+3", "ctrl+3"), key.WithHelp("alt+3", "Artifacts")),
+	key.NewBinding(key.WithKeys("alt+4", "ctrl+4"), key.WithHelp("alt+4", "Costs")),
+	key.NewBinding(key.WithKeys("alt+5", "ctrl+5"), key.WithHelp("alt+5", "Events")),
+	key.NewBinding(key.WithKeys("alt+6", "ctrl+6"), key.WithHelp("alt+6", "Config")),
+}
+
+var navEventsAlias = key.NewBinding(
+	key.WithKeys("alt+n"),
+	key.WithHelp("alt+n", "Events"),
+)
 
 // navSidebarAgentRows is the minimum body rows reserved for live agent labels.
 const navSidebarAgentRows = 2
+
+func (m model) visibleNavScreens() []navScreenItem {
+	items := make([]navScreenItem, 0, len(navScreens))
+	for _, item := range navScreens {
+		if m.freeChatMode && item.screen != screenConversation {
+			continue
+		}
+		if item.screen == screenConfig && !m.hasActiveCycle() {
+			continue
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func navShortcutIndex(msg tea.KeyMsg) (int, bool) {
+	for i, binding := range navShortcutKeys {
+		if key.Matches(msg, binding) {
+			return i + 1, true
+		}
+	}
+	return 0, false
+}
+
+func isLegacyEventsShortcut(msg tea.KeyMsg) bool {
+	return key.Matches(msg, navEventsAlias)
+}
+
+func isNavKey(msg tea.KeyMsg) bool {
+	_, numbered := navShortcutIndex(msg)
+	return numbered || isLegacyEventsShortcut(msg)
+}
+
+func (m model) navScreenAt(index int) (screen, bool) {
+	items := m.visibleNavScreens()
+	if index < 1 || index > len(items) {
+		return 0, false
+	}
+	return items[index-1].screen, true
+}
 
 // sidebarVisible reports whether the left nav frame fits beside the main pane.
 func (m model) sidebarVisible() bool {
@@ -99,13 +159,7 @@ func (m model) renderNavSidebar(height int) string {
 	}
 	lines = append(lines, navSidebarSeparator(innerW))
 
-	for _, item := range navScreens {
-		if m.freeChatMode && item.screen != screenConversation {
-			continue
-		}
-		if item.screen == screenConfig && !m.hasActiveCycle() {
-			continue
-		}
+	for _, item := range m.visibleNavScreens() {
 		marker := "  "
 		rowStyle := navSidebarItemStyle
 		if item.screen == m.screen {
@@ -115,12 +169,11 @@ func (m model) renderNavSidebar(height int) string {
 		lines = append(lines, rowStyle.Render(truncateNavText(marker+item.label, innerW)))
 	}
 
-	footer := ""
-	if !m.freeChatMode {
-		footer = navSidebarFooterStyle.Render(truncateNavText(" alt+1-5 · alt+n events", innerW))
-	} else {
-		footer = navSidebarFooterStyle.Render(truncateNavText(" chat", innerW))
+	rangeLabel := "alt+1-5"
+	if m.hasActiveCycle() {
+		rangeLabel = "alt+1-6"
 	}
+	footer := navSidebarFooterStyle.Render(truncateNavText(" "+rangeLabel, innerW))
 	for len(lines) < innerH-1 {
 		lines = append(lines, strings.Repeat(" ", innerW))
 	}

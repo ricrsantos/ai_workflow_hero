@@ -194,14 +194,15 @@ func (m model) handleHarnessQuestionComposer(msg tea.KeyMsg) (tea.Model, tea.Cmd
 	s := msg.String()
 	m.chatInputFocused = true
 
+	if isNavKey(msg) {
+		return m.handleKey(msg)
+	}
+
 	switch s {
 	case "ctrl+c":
 		return m, m.cancelStreamCmd()
 	case "alt+q":
 		return m.showConfirm(actionQuit, 0, "Harness question pending. Quit? [y/N]")
-	case "ctrl+1", "alt+1", "ctrl+2", "alt+2", "ctrl+3", "alt+3",
-		"ctrl+4", "alt+4", "ctrl+5", "alt+5", "alt+n":
-		return m.handleKey(msg)
 	case "alt+r":
 		return m.copyChatResponse()
 	case "alt+i":

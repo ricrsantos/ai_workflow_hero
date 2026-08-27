@@ -44,6 +44,56 @@ func TestNavigateScreens(t *testing.T) {
 	}
 }
 
+func TestNumberedNavigationUsesVisibleScreenOrder(t *testing.T) {
+	withoutConfig := []struct {
+		key    string
+		screen screen
+	}{
+		{key: "alt+1", screen: ScreenConversation},
+		{key: "alt+2", screen: ScreenStatus},
+		{key: "alt+3", screen: ScreenArtifacts},
+		{key: "alt+4", screen: ScreenCosts},
+		{key: "alt+5", screen: ScreenEvents},
+	}
+	for _, tc := range withoutConfig {
+		t.Run("without-config/"+tc.key, func(t *testing.T) {
+			m := NewTestModel(nil)
+			next, _ := HandleTestKey(m, tc.key)
+			if CurrentScreen(next) != tc.screen {
+				t.Fatalf("%s opened %v, want %v", tc.key, CurrentScreen(next), tc.screen)
+			}
+		})
+	}
+
+	withoutConfigAlt6 := SetScreen(NewTestModel(nil), ScreenStatus)
+	next, _ := HandleTestKey(withoutConfigAlt6, "alt+6")
+	if CurrentScreen(next) != ScreenStatus {
+		t.Fatalf("alt+6 must be a no-op when Config is hidden, got %v", CurrentScreen(next))
+	}
+
+	withConfig := []struct {
+		key    string
+		screen screen
+	}{
+		{key: "alt+1", screen: ScreenConversation},
+		{key: "alt+2", screen: ScreenStatus},
+		{key: "alt+3", screen: ScreenArtifacts},
+		{key: "alt+4", screen: ScreenCosts},
+		{key: "alt+5", screen: ScreenEvents},
+		{key: "alt+6", screen: ScreenConfig},
+	}
+	for _, tc := range withConfig {
+		t.Run("with-config/"+tc.key, func(t *testing.T) {
+			m := NewTestModel(nil)
+			m.status.CycleNumber = 1
+			next, _ := HandleTestKey(m, tc.key)
+			if CurrentScreen(next) != tc.screen {
+				t.Fatalf("%s opened %v, want %v", tc.key, CurrentScreen(next), tc.screen)
+			}
+		})
+	}
+}
+
 func TestBootOpensChat(t *testing.T) {
 	m := NewTestModel(nil)
 	if CurrentScreen(m) != ScreenConversation {
@@ -584,6 +634,52 @@ func TestNavigationAllowedWhileStreaming(t *testing.T) {
 		if !IsConversationStreaming(next) {
 			t.Errorf("key %q: streaming must remain true after navigation", key)
 		}
+	}
+}
+
+func TestConfigNavigationAllowedWhileStreaming(t *testing.T) {
+	m := NewTestModel(nil)
+	m.status.CycleNumber = 1
+	m = EnterConversationForTest(m)
+	m = SetStreamingForTest(m, true)
+
+	next, _ := HandleTestKey(m, "alt+6")
+	if CurrentScreen(next) != ScreenConfig {
+		t.Fatalf("alt+6 while streaming opened %v, want Config", CurrentScreen(next))
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("streaming must remain true after navigating to Config")
+	}
+}
+
+func TestEscapeCancelsConversationStream(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetStreamingForTest(m, true)
+	next, cancelCmd := HandleTestKey(m, "esc")
+	if cancelCmd == nil {
+		t.Fatal("Esc while streaming must request harness cancellation")
+	}
+	msg := cancelCmd()
+	updated, _ := next.Update(msg)
+	if IsConversationStreaming(updated.(model)) {
+		t.Fatal("expected Esc cancellation to stop streaming")
+	}
+}
+
+func TestCtrlCWhileStreamingDoesNotCancelExecution(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetStreamingForTest(m, true)
+	next, cancelCmd := HandleTestKey(m, "ctrl+c")
+	if cancelCmd != nil {
+		t.Fatal("Ctrl+C quit confirmation must not cancel the harness directly")
+	}
+	if !ConfirmPendingForTest(next) {
+		t.Fatal("Ctrl+C while streaming must open quit confirmation")
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("Ctrl+C quit confirmation must leave the harness running")
 	}
 }
 

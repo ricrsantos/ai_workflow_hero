@@ -4,6 +4,16 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Keep this document under 1,000 words by removing or consolidating outdated entries. Permanent facts (architecture, stack, features) belong in `context/current-state.md`, not here.
 
+## 2026-08-27 — TUI Esc interruption and conditional screen shortcuts
+
+**Problem**: Chat used Ctrl+C to cancel a running Harness Execute, and the conditional Config screen occupied the second navbar position, shifting the final Events screen beyond the available numbered shortcuts.
+
+**Change**: Esc now cancels active Chat Executes and `/hero-start` preflight; Ctrl+C remains a protected quit path. The visible project navbar is Chat, Status, Artifacts, Costs, Events, then Config when an active cycle exists. Numbered navigation follows that visible list: `alt+1-5` without Config and `alt+1-6` with Config; hidden `alt+6` is ignored. The navbar footer now renders only the applicable range label and no longer advertises `alt+n`.
+
+**Validation**: Focused navigation/cancellation tests and the complete `internal/tui` suite passed with `CC=/usr/bin/gcc GOCACHE=/tmp/hero-go-cache go test ./internal/tui -count=1`.
+
+---
+
 ## 2026-08-27 — `hero chat` OpenCode execute hang
 
 **Problem**: In `hero chat`, selecting OpenCode hung until cancel/timeout while Cursor and Codex worked. Logs showed `context canceled` or no `execute complete` for minutes.

@@ -14,14 +14,14 @@ The project sidebar becomes:
 
 ```text
 Chat
-Config
 Status
 Artifacts
 Costs
 Events
+Config
 ```
 
-Config is inserted only when an active cycle exists. `hero chat` continues to show Chat only. Project shortcuts are Chat `alt+1`, Config `alt+2`, Status `alt+3`, Artifacts `alt+4`, Costs `alt+5`, and Events remains reachable through the palette when the terminal cannot display all hints.
+Config is appended only when an active cycle exists. `hero chat` continues to show Chat only. Project shortcuts are Chat `alt+1`, Status `alt+2`, Artifacts `alt+3`, Costs `alt+4`, and Events `alt+5`; when Config is visible it is `alt+6`. The navbar footer shows only `alt+1-5` without Config and `alt+1-6` with Config; `alt+6` is a no-op when Config is hidden.
 
 If the active YAML is missing or invalid, Config is not rendered as an editable form. Show a red error state with the path, parse/read reason, and a suggestion to correct the file manually. Never create a replacement file from the template.
 
@@ -158,4 +158,3 @@ Errors identify the field/path and the violated rule. Suggestions must tell the 
 - Golden/render tests cover ready, dirty, saving, error, read-only, unavailable-harness, missing-capability, completed-stage, and failed-stage states.
 - Interaction tests cover Save, Save and start, dirty exit, external managed-field merge, and stage-specific Retry.
 - Existing Chat, Status, Artifacts, Costs, Events, free-chat, Cursor, OpenCode, and Codex flows must retain their current behavior.
-

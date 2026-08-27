@@ -26,9 +26,10 @@ The primary user is a developer configuring a Hero cycle in the terminal before 
 
 ### 4.1 Config screen availability
 
-- Add Config as the second project TUI navigation item: `Chat | Config | Status | Artifacts | Costs | Events`.
+- Append Config as the final project TUI navigation item: `Chat | Status | Artifacts | Costs | Events | Config`.
 - Show Config only when an active cycle exists.
 - Never show Config in `hero chat` free-chat mode.
+- Use `alt+6` for Config only when it is visible; when Config is hidden, `alt+6` does nothing. The navbar footer shows only `alt+1-5` without Config and `alt+1-6` with Config.
 - Permit editing when no agent is executing and no `/hero-start` preflight is running.
 - Render read-only state while any agent or preflight is active; explain that saving is available after execution finishes.
 
@@ -159,4 +160,3 @@ Retry is not enabled for an unchanged failed configuration. Save and start can e
 - Harness/model/property tests for filtering, same-harness subagents, unavailable harnesses, missing capability metadata, and explicit property precedence.
 - Engine/cycle tests for synchronization, completed-stage protection, failed-stage retry, counter reset, and metrics/event preservation.
 - Integration coverage with real temporary files and the existing test dependencies.
-

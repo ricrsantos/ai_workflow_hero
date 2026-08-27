@@ -18,6 +18,7 @@ const (
 	ScreenArtifacts    = screenArtifacts
 	ScreenCosts        = screenCosts
 	ScreenEvents       = screenEvents
+	ScreenConfig       = screenConfig
 	ScreenConversation = screenConversation
 	ScreenPalette      = screenPalette
 	ScreenOutput       = screenOutput
@@ -324,7 +325,7 @@ func SetHeight(m model, h int) model {
 
 // CancelConversationStreamForTest interrupts an active stream.
 func CancelConversationStreamForTest(m model) (model, tea.Cmd) {
-	next, cmd := m.handleConversationKey(tea.KeyMsg{Type: tea.KeyCtrlC})
+	next, cmd := m.handleConversationKey(tea.KeyMsg{Type: tea.KeyEscape})
 	return next.(model), cmd
 }
 

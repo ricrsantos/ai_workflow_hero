@@ -38,7 +38,7 @@ TUI **exits** with non-zero status on validation failure.
 
 ## 3. Conversation screen
 
-Tab bar order (left to right): **Chat | Status | Approvals | Artifacts | Costs | Events**. Shortcuts follow visual order (`alt+1` / `ctrl+1` = Chat, `alt+2` = Status, … `alt+6` = Events). TUI boot opens **Chat** (composer focused).
+The project navigation sidebar order is **Chat | Status | Artifacts | Costs | Events**, with **Config** appended only while an active cycle exists. Shortcuts follow the visible order (`alt+1` / `ctrl+1` = Chat through `alt+5` / `ctrl+5` = Events; `alt+6` / `ctrl+6` = Config when visible). The navbar footer shows only `alt+1-5` or `alt+1-6` accordingly. TUI boot opens **Chat** (composer focused).
 
 New screen (or primary mode when an etapa requires interações):
 
@@ -128,7 +128,9 @@ Include archive-only cycles from `.workflow-hero/cycles/archive/` when absent fr
 - Forward `thinking` deltas (muted italic `Thinking:`), `tool_call` started events (`→ Read path`), and Task lifecycle (live agents box + labeled subagent blocks). Thinking/tools stay in the transcript after completion. The parent agent bubble is replaced with canonical `result.Output` **only when the turn has no subagent blocks** (replacing would wipe labels).
 - Attribute assistant/tool events to an in-flight Task when the CLI tags them (`parent_tool_call_id`) or when exactly one Task is open. If no nested text arrived, print Task `result.content` in that subagent block.
 - Buffer partial lines; update transcript incrementally (lipgloss-safe wrapping).
-- On Ctrl+C during stream: call harness `Cancel` if supported; show `Interrupted`.
+- On Esc during stream: call harness `Cancel` if supported; show `Interrupted`.
+
+When Chat is idle, Esc retains its input-clear or overlay-dismiss behavior; while a Harness Execute or `/hero-start` preflight is active, Esc takes priority as the interruption key.
 
 ## 8. Approvals and Artifacts screens
 

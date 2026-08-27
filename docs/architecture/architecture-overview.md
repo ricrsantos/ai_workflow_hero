@@ -198,7 +198,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
               │
     ┌─────────┼─────────┬──────────┬──────────┬──────────────┐
     │         │         │          │          │              │
-  Chat    Config   Status   Artifacts    Costs     Events (palette)
+  Chat    Status   Artifacts   Costs     Events    Config (active cycle)
     │         │         │          │          │              │
     └─────────┴─────────┴──────────┴──────────┘              │
               │                                              │
@@ -210,7 +210,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
          hero.db mutations                              cursor-agent CLI
 ```
 
-**Screens** (`alt+1` … `alt+5`): Chat, Config (project cycles only), Status, Artifacts, Costs, Events. Approvals are handled in Chat via `/hero-approve` / `/hero-reject` (no separate Approvals screen). `hero chat` shows Chat only. Config is unavailable without an active cycle.
+**Screens** (`alt+1` … `alt+5`): Chat, Status, Artifacts, Costs, Events. With an active project cycle, Config is appended as `alt+6`; when it is hidden, `alt+6` is a no-op. The navbar footer shows only `alt+1-5` or `alt+1-6` accordingly. Approvals are handled in Chat via `/hero-approve` / `/hero-reject` (no separate Approvals screen). `hero chat` shows Chat only. Config is unavailable without an active cycle.
 
 **TUI modules** (selected):
 

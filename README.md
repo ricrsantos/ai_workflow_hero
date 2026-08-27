@@ -191,11 +191,12 @@ Refresh the TUI (`Ctrl+R`) after the cycle is created to see it on the Status sc
 
 | Key | Action |
 |---|---|
-| `1` | **Status** — cycle title, objective, stage table (`openspec_change` when set) |
-| `2` | **Approvals** — pending stage; approve / reject / finish / cancel |
-| `3` | **Artifacts** — artifact metadata from the store |
-| `4` | **Costs** — token / cost metrics |
-| `5` | **Events** — recent operational event log |
+| `Alt+1` / `Ctrl+1` | **Chat** — harness conversation (free chat or active stage) |
+| `Alt+2` / `Ctrl+2` | **Status** — cycle title, objective, stage table (`openspec_change` when set) |
+| `Alt+3` / `Ctrl+3` | **Artifacts** — artifact metadata from the store |
+| `Alt+4` / `Ctrl+4` | **Costs** — token / cost metrics |
+| `Alt+5` / `Ctrl+5` | **Events** — recent operational event log |
+| `Alt+6` / `Ctrl+6` | **Config** — active cycle only; no-op when hidden |
 | `/` | **Commands** menu — press `/`, type to filter, Enter to run (Claude Code–style; use this instead of `Ctrl+P`, which opens Cursor’s palette in the IDE terminal) |
 | `Ctrl+R` / `F5` | Refresh from SQLite |
 | `a` | Approve (on Approvals screen) |
@@ -203,9 +204,8 @@ Refresh the TUI (`Ctrl+R`) after the cycle is created to see it on the Status sc
 | `f` | Finish cycle (on Approvals screen) |
 | `c` | Cancel cycle (on Approvals screen) |
 | `d` | Dispatch harness (`hero run` / Cursor adapter, best-effort) |
-| `6` / `Ctrl+6` / `Alt+6` | **Chat** — harness conversation (free chat or active stage) |
-| `q` / `Ctrl+C` | Quit |
-| `Esc` | Close the Commands menu |
+| `Esc` | In Chat, interrupt the active Harness execution; otherwise close Commands or clear Chat input |
+| `Ctrl+C` | Quit (with confirmation while Harness is running) |
 
 ### Commands menu (`/`)
 
@@ -562,11 +562,12 @@ Atualize a TUI (`Ctrl+R`) depois que o ciclo for criado para vê-lo na tela Stat
 
 | Tecla | Ação |
 |---|---|
-| `1` | **Status** — título, objetivo, tabela de stages (`openspec_change` quando definido) |
-| `2` | **Approvals** — stage pendente; approve / reject / finish / cancel |
-| `3` | **Artifacts** — metadados de artefatos no store |
-| `4` | **Costs** — métricas de tokens / custo |
-| `5` | **Events** — log recente de eventos operacionais |
+| `Alt+1` / `Ctrl+1` | **Chat** — conversa com o harness (free chat ou etapa ativa) |
+| `Alt+2` / `Ctrl+2` | **Status** — título, objetivo, tabela de stages (`openspec_change` quando definido) |
+| `Alt+3` / `Ctrl+3` | **Artifacts** — metadados de artefatos no store |
+| `Alt+4` / `Ctrl+4` | **Costs** — métricas de tokens / custo |
+| `Alt+5` / `Ctrl+5` | **Events** — log recente de eventos operacionais |
+| `Alt+6` / `Ctrl+6` | **Config** — somente com ciclo ativo; sem efeito quando oculta |
 | `/` | Menu de **Commands** — pressione `/`, digite para filtrar, Enter para executar (estilo Claude Code; use isto em vez de `Ctrl+P`, que abre a palette do Cursor no terminal da IDE) |
 | `Ctrl+R` / `F5` | Atualizar a partir do SQLite |
 | `a` | Approve (na tela Approvals) |
@@ -574,9 +575,8 @@ Atualize a TUI (`Ctrl+R`) depois que o ciclo for criado para vê-lo na tela Stat
 | `f` | Finish do ciclo (na tela Approvals) |
 | `c` | Cancel do ciclo (na tela Approvals) |
 | `d` | Dispatch do harness (`hero run` / adapter Cursor, best-effort) |
-| `6` / `Ctrl+6` / `Alt+6` | **Chat** — conversa com o harness (free chat ou etapa ativa) |
-| `q` / `Ctrl+C` | Sair |
-| `Esc` | Fechar o menu de Commands |
+| `Esc` | No Chat, interromper o Harness ativo; caso contrário fechar Commands ou limpar o input do Chat |
+| `Ctrl+C` | Sair (com confirmação enquanto o Harness estiver rodando) |
 
 ### Menu de Commands (`/`)
 

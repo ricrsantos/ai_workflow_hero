@@ -453,6 +453,16 @@ func (m model) View() string {
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if index, ok := navShortcutIndex(msg); ok {
+		return m.navigateNavShortcut(index)
+	}
+	if isLegacyEventsShortcut(msg) {
+		if m.freeChatMode {
+			return m, nil
+		}
+		return m.goListScreen(screenEvents)
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "alt+q":
 		if m.streaming || m.heroStartBootstrapping || m.heroStartPreparing {
@@ -479,45 +489,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.refreshCmd()
-	case "ctrl+1", "alt+1":
-		return m.enterConversation()
-	case "ctrl+2", "alt+2":
-		if m.freeChatMode {
-			return m, nil
-		}
-		if m.hasActiveCycle() {
-			return m.openConfig()
-		}
-		return m.goListScreen(screenStatus)
-	case "ctrl+3", "alt+3":
-		if m.freeChatMode {
-			return m, nil
-		}
-		if m.hasActiveCycle() {
-			return m.goListScreen(screenStatus)
-		}
-		return m.goListScreen(screenArtifacts)
-	case "ctrl+4", "alt+4":
-		if m.freeChatMode {
-			return m, nil
-		}
-		if m.hasActiveCycle() {
-			return m.goListScreen(screenArtifacts)
-		}
-		return m.goListScreen(screenCosts)
-	case "ctrl+5", "alt+5":
-		if m.freeChatMode {
-			return m, nil
-		}
-		if m.hasActiveCycle() {
-			return m.goListScreen(screenCosts)
-		}
-		return m.goListScreen(screenEvents)
-	case "alt+n":
-		if m.freeChatMode {
-			return m, nil
-		}
-		return m.goListScreen(screenEvents)
 	case "up", "ctrl+p":
 		if m.screenHasContentScroll() {
 			return m.scrollContent(-1), nil
@@ -548,6 +519,20 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) navigateNavShortcut(index int) (model, tea.Cmd) {
+	target, ok := m.navScreenAt(index)
+	if !ok {
+		return m, nil
+	}
+	if target == screenConversation {
+		return m.enterConversation()
+	}
+	if target == screenConfig {
+		return m.openConfig()
+	}
+	return m.goListScreen(target)
+}
+
 func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.harnessResetAwaitingOpen {
 		switch msg.String() {
@@ -564,6 +549,19 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.pickingProps {
 		return m.handlePropertyPickerKey(msg)
 	}
+	if isNavKey(msg) || msg.String() == "alt+q" || msg.String() == "ctrl+r" || msg.String() == "f5" {
+		// Leave palette chrome before global navigation / refresh / quit.
+		m.pickingModel = false
+		m.pickingHarness = false
+		m.pickingHarnessReset = false
+		m.harnessResetAwaitingOpen = false
+		m.modelPickerHarness = ""
+		m.harnessDraft = nil
+		m.paletteFilter = ""
+		m.paletteIndex = 0
+		m.paletteOffset = 0
+		return m.handleKey(msg)
+	}
 	switch msg.String() {
 	case "esc":
 		if m.propsAwaitingRefresh {
@@ -579,20 +577,6 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+c":
 		return m, tea.Quit
-	case "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5",
-		"alt+q", "alt+n", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5",
-		"ctrl+r", "f5":
-		// Leave palette chrome before global navigation / refresh / quit.
-		m.pickingModel = false
-		m.pickingHarness = false
-		m.pickingHarnessReset = false
-		m.harnessResetAwaitingOpen = false
-		m.modelPickerHarness = ""
-		m.harnessDraft = nil
-		m.paletteFilter = ""
-		m.paletteIndex = 0
-		m.paletteOffset = 0
-		return m.handleKey(msg)
 	case "up", "ctrl+p":
 		if m.paletteIndex > 0 {
 			m.paletteIndex--
@@ -856,7 +840,7 @@ func (m model) beginNewChat() (model, tea.Cmd) {
 }
 
 func newChatBlockedMessage() string {
-	return "Wait for the agent to finish or press ctrl+c to interrupt before starting a new chat."
+	return "Wait for the agent to finish or press esc to interrupt before starting a new chat."
 }
 
 func (m model) beginHeroNew() (model, tea.Cmd) {
@@ -1601,6 +1585,8 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}, Alt: true}
 	case "ctrl+5", "alt+5":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}, Alt: true}
+	case "ctrl+6", "alt+6":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'6'}, Alt: true}
 	default:
 		if len(s) == 1 {
 			return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(s[0])}}

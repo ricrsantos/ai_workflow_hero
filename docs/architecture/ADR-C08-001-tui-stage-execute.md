@@ -49,7 +49,7 @@
 
 **Context:** Conversation state assumed one `streaming` flag, one channel, and one agent bubble. Parallel Implementation would otherwise wipe the first child on `executeDone`.
 
-**Decision:** Tag `streamDeltaMsg` and `executeDoneMsg` with an execute id. Reuse one Bubble Tea channel. `streaming` stays true until the last Execute finishes. Ctrl+C cancels every in-flight adapter session. Completing one Execute removes only that parent chip and bubble bookkeeping.
+**Decision:** Tag `streamDeltaMsg` and `executeDoneMsg` with an execute id. Reuse one Bubble Tea channel. `streaming` stays true until the last Execute finishes. Esc cancels every in-flight adapter session. Completing one Execute removes only that parent chip and bubble bookkeeping.
 
 **Consequences:**
 

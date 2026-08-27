@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
@@ -35,6 +36,11 @@ const (
 )
 
 var waitAnimFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+var conversationInterruptKey = key.NewBinding(
+	key.WithKeys("esc"),
+	key.WithHelp("esc", "interrupt"),
+)
 
 type convMessage struct {
 	role        convRole
@@ -664,14 +670,17 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s := msg.String()
 
 	if m.heroStartBootstrapping || m.heroStartPreparing {
-		switch s {
-		case "ctrl+c":
+		if key.Matches(msg, conversationInterruptKey) {
 			return m.cancelHeroStartPreparation()
-		case "alt+q":
+		}
+		switch s {
+		case "ctrl+c", "alt+q":
 			return m.showConfirm(actionQuit, 0, "Preparing /hero-start. Quit? [y/N]")
-		case "ctrl+1", "alt+1", "ctrl+2", "alt+2", "ctrl+3", "alt+3",
-			"ctrl+4", "alt+4", "ctrl+5", "alt+5", "alt+n":
+		}
+		if isNavKey(msg) {
 			return m.handleKey(msg)
+		}
+		switch s {
 		case "up", "ctrl+p":
 			m = m.scrollTranscript(-1)
 			return m, nil
@@ -691,15 +700,18 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.streaming && !m.harnessQuestionPending {
-		switch s {
-		case "ctrl+c":
+		if key.Matches(msg, conversationInterruptKey) {
 			return m, m.cancelStreamCmd()
-		case "alt+q":
+		}
+		switch s {
+		case "ctrl+c", "alt+q":
 			return m.showConfirm(actionQuit, 0, "Agent is running. Quit? [y/N]")
-		case "ctrl+1", "alt+1", "ctrl+2", "alt+2", "ctrl+3", "alt+3",
-			"ctrl+4", "alt+4", "ctrl+5", "alt+5", "alt+n":
+		}
+		if isNavKey(msg) {
 			// Allow screen navigation while streaming; the goroutine keeps running.
 			return m.handleKey(msg)
+		}
+		switch s {
 		case "alt+r":
 			return m.copyChatResponse()
 		case "alt+i":
@@ -726,11 +738,10 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Global shortcuts (modifier+key) work even while typing in chat.
 	// `/` is NOT global here — it stays in the composer (Cursor-style overlay).
-	switch s {
-	case "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5",
-		"alt+q", "alt+n", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5",
-		"ctrl+r", "f5":
+	if isNavKey(msg) || s == "alt+q" || s == "ctrl+r" || s == "f5" {
 		return m.handleKey(msg)
+	}
+	switch s {
 	case "alt+r":
 		return m.copyChatResponse()
 	case "alt+i":

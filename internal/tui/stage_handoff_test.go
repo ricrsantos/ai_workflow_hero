@@ -352,7 +352,7 @@ func TestImplementationCancelCancelsAllExecutes(t *testing.T) {
 		t.Fatal("expected streaming stopped after cancel-all")
 	}
 	if !cursorH.CancelCalled() || !frntH.CancelCalled() {
-		t.Fatal("Ctrl+C must cancel every in-flight Execute")
+		t.Fatal("Esc must cancel every in-flight Execute")
 	}
 }
 
