@@ -4,6 +4,18 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Keep this document under 1,000 words by removing or consolidating outdated entries. Permanent facts (architecture, stack, features) belong in `context/current-state.md`, not here.
 
+## 2026-08-27 — `hero chat` OpenCode execute hang
+
+**Problem**: In `hero chat`, selecting OpenCode hung until cancel/timeout while Cursor and Codex worked. Logs showed `context canceled` or no `execute complete` for minutes.
+
+**Root cause**: Free chat keeps Hero config/SQLite in `~/.workflow-hero/` (`ProjectDir` = home) but Execute workspace is cwd (`WorkDir`). OpenCode SSE subscribe/recovery already used `directory=cwd`, but session create/prompt/abort/resume posts did not — events never matched the session namespace.
+
+**Fix**: Added `getProject`/`postProject` helpers; route all session-scoped OpenCode HTTP calls through `withDirectoryQuery(req.ProjectDir, …)`. Regression test `TestExecuteUsesRequestProjectDir`.
+
+**Validation**: Manual integration (home adapter + cwd execute) completes in ~4s; `go test ./internal/adapters/opencode/ -count=1` and `go test ./... -count=1` green.
+
+---
+
 ## 2026-08-27 — Chat slash commands use Enter
 
 **Problem**: After the composer changed to Enter=newline and Alt+Enter=send, recognized slash commands typed in Chat no longer executed with their previous Enter interaction.

@@ -194,7 +194,7 @@ func (a *Adapter) CreateSession(ctx context.Context, req harness.SessionRequest)
 		return nil, err
 	}
 	body, _ := json.Marshal(map[string]string{"title": req.StageName})
-	resp, err := a.post(ctx, "/session", body)
+	resp, err := a.postProject(ctx, req.ProjectDir, "/session", body)
 	if err != nil {
 		return nil, err
 	}
@@ -221,25 +221,7 @@ func (a *Adapter) CreateSession(ctx context.Context, req harness.SessionRequest)
 
 // ResumeSession implements harness.HarnessAdapter.
 func (a *Adapter) ResumeSession(ctx context.Context, sessionID string) error {
-	if strings.TrimSpace(sessionID) == "" {
-		return fmt.Errorf("session id required")
-	}
-	if err := a.ensureServe(ctx); err != nil {
-		return err
-	}
-	resp, err := a.get(ctx, "/session/"+sessionID)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return fmt.Errorf("session %q not found", sessionID)
-	case resp.StatusCode < 200 || resp.StatusCode >= 300:
-		return fmt.Errorf("resume session %q: unexpected status %d", sessionID, resp.StatusCode)
-	default:
-		return nil
-	}
+	return a.resumeSession(ctx, sessionID, "")
 }
 
 // Execute implements harness.HarnessAdapter.
@@ -259,7 +241,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 			return nil, err
 		}
 		sessionID = sess.ID
-	} else if err := a.ResumeSession(ctx, sessionID); err != nil {
+	} else if err := a.resumeSession(ctx, sessionID, req.ProjectDir); err != nil {
 		oldID := sessionID
 		a.log().Warn("opencode session resume failed; starting new session", "sessionID", oldID, "error", err)
 		if req.OnStreamDelta != nil {
@@ -315,7 +297,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	if req.Stream && req.OnStreamDelta != nil {
 		return a.executeStream(runCtx, sessionID, body, req, start)
 	}
-	resp, err := a.post(runCtx, "/session/"+sessionID+"/message", body)
+	resp, err := a.postProject(runCtx, req.ProjectDir, "/session/"+sessionID+"/message", body)
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +327,7 @@ func (a *Adapter) executeStream(ctx context.Context, sessionID string, body []by
 		return nil, err
 	}
 
-	resp, err := a.post(ctx, "/session/"+sessionID+"/prompt_async", body)
+	resp, err := a.postProject(ctx, req.ProjectDir, "/session/"+sessionID+"/prompt_async", body)
 	if err != nil {
 		events.Close()
 		return nil, err
@@ -408,18 +390,18 @@ func (a *Adapter) Cancel(ctx context.Context, sessionID string) error {
 		if strings.TrimSpace(t.id) == "" {
 			continue
 		}
-		if err := a.abortSession(ctx, t.id); err != nil && firstErr == nil {
+		if err := a.abortSession(ctx, t.id, a.sessionProjectDir(t.id)); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
 	return firstErr
 }
 
-func (a *Adapter) abortSession(ctx context.Context, sessionID string) error {
+func (a *Adapter) abortSession(ctx context.Context, sessionID, projectDir string) error {
 	if err := a.ensureServe(ctx); err != nil {
 		return err
 	}
-	resp, err := a.post(ctx, "/session/"+sessionID+"/abort", nil)
+	resp, err := a.postProject(ctx, projectDir, "/session/"+sessionID+"/abort", nil)
 	if err != nil {
 		return err
 	}
@@ -684,6 +666,51 @@ func (a *Adapter) get(ctx context.Context, path string) (*http.Response, error) 
 
 func (a *Adapter) post(ctx context.Context, path string, body []byte) (*http.Response, error) {
 	return a.do(ctx, http.MethodPost, path, body)
+}
+
+func (a *Adapter) getProject(ctx context.Context, projectDir, path string) (*http.Response, error) {
+	return a.do(ctx, http.MethodGet, withDirectoryQuery(path, projectDir, a.ProjectDir), nil)
+}
+
+func (a *Adapter) postProject(ctx context.Context, projectDir, path string, body []byte) (*http.Response, error) {
+	return a.do(ctx, http.MethodPost, withDirectoryQuery(path, projectDir, a.ProjectDir), body)
+}
+
+func (a *Adapter) sessionProjectDir(sessionID string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if st, ok := a.sessions[sessionID]; ok {
+		if dir := strings.TrimSpace(st.session.ProjectDir); dir != "" {
+			return dir
+		}
+	}
+	return a.ProjectDir
+}
+
+func (a *Adapter) resumeSession(ctx context.Context, sessionID, projectDir string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("session id required")
+	}
+	if err := a.ensureServe(ctx); err != nil {
+		return err
+	}
+	dir := strings.TrimSpace(projectDir)
+	if dir == "" {
+		dir = a.sessionProjectDir(sessionID)
+	}
+	resp, err := a.getProject(ctx, dir, "/session/"+sessionID)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return fmt.Errorf("session %q not found", sessionID)
+	case resp.StatusCode < 200 || resp.StatusCode >= 300:
+		return fmt.Errorf("resume session %q: unexpected status %d", sessionID, resp.StatusCode)
+	default:
+		return nil
+	}
 }
 
 func (a *Adapter) do(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
