@@ -175,6 +175,59 @@ func TestChatSlashTabHeroNewExecutesNotInserts(t *testing.T) {
 	}
 }
 
+func TestChatSlashEnterHeroNewExecutesNotInserts(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	next := typeChat(t, m, "/hero-new")
+	if !ChatSlashOverlayActiveForTest(next) {
+		t.Fatal("overlay should be open for /hero-new")
+	}
+	next, _ = HandleTestKey(next, "enter")
+	if ConversationInputForTest(next) != "" {
+		t.Fatalf("composer should clear on execute, input=%q", ConversationInputForTest(next))
+	}
+	if !strings.Contains(StatusTextForTest(next), "/model") {
+		t.Fatalf("expected slash execute (model required), status=%q", StatusTextForTest(next))
+	}
+}
+
+func TestChatSlashEnterExecutesControlSlash(t *testing.T) {
+	m, h, _ := newConversationTestModel(t)
+	m = EnterConversationForTest(m)
+	m = SetOrchestrationLiveForTest(m, true)
+	m = SetHarnessSessionIDForTest(m, "orch-sess")
+	m = SetConversationInput(m, "/hero-approve")
+
+	next, cmd := HandleTestKey(m, "enter")
+	if !IsConversationStreaming(next) {
+		t.Fatal("Enter should execute a slash command")
+	}
+	next = drainConversationStream(t, next, cmd)
+	if h.lastSessionID != "orch-sess" {
+		t.Fatalf("session=%q want orch-sess", h.lastSessionID)
+	}
+	if !strings.Contains(h.lastPrompt, "hero approve --metrics-json") {
+		t.Fatalf("prompt=%q want /hero-approve follow-up", h.lastPrompt)
+	}
+}
+
+func TestChatSlashAltEnterStaysInComposer(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "/hero-new")
+
+	next, cmd := HandleTestKey(m, "alt+enter")
+	if cmd != nil {
+		t.Fatal("Alt+Enter must not execute a slash command")
+	}
+	if IsConversationStreaming(next) {
+		t.Fatal("Alt+Enter must leave slash commands idle")
+	}
+	if ConversationInputForTest(next) != "/hero-new" {
+		t.Fatalf("input=%q want slash command to remain in composer", ConversationInputForTest(next))
+	}
+}
+
 func TestChatSlashEscDismissesOverlay(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)

@@ -4,6 +4,14 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Keep this document under 1,000 words by removing or consolidating outdated entries. Permanent facts (architecture, stack, features) belong in `context/current-state.md`, not here.
 
+## 2026-08-27 — Chat slash commands use Enter
+
+**Problem**: After the composer changed to Enter=newline and Alt+Enter=send, recognized slash commands typed in Chat no longer executed with their previous Enter interaction.
+
+**Change**: Enter now takes priority for recognized slash commands, including command arguments and control slashes; partial autocomplete selections retain their existing behavior. Ordinary/unknown text still uses Enter for newlines, and Alt+Enter submits ordinary prompts without consuming a recognized slash command. Updated the Chat footer, UI-C03 behavior, and regressions for Hero/control slash execution.
+
+**Validation**: `GOCACHE=/tmp/hero-go-cache CC=/usr/bin/gcc CXX=/usr/bin/g++ go test ./internal/tui -count=1` passed (133.221s). The full `go test ./...` retry passed every package except the two pre-existing OpenCode serve-spawn tests (`TestDiscoverModelPropertiesNormalized` and `TestIsManagedOpenCodeServeDetectsSpawnedServe`), whose simulated server exits before exposing a listening URL in this environment.
+
 ---
 
 ## 2026-08-26 — Chat composer and harness wait UX

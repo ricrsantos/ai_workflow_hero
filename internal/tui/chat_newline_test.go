@@ -62,18 +62,12 @@ func TestConversationMultilineSubmitPreservesNewlines(t *testing.T) {
 	}
 }
 
-func TestConversationNewlineHidesSlashOverlay(t *testing.T) {
+func TestConversationEnterInsertsNewlineForUnknownSlash(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
-	next, _ := HandleTestKey(m, "/")
-	if !ChatSlashOverlayActiveForTest(next) {
-		t.Fatal("expected overlay after /")
-	}
-	next, _ = HandleTestKey(next, "enter")
-	if ChatSlashOverlayActiveForTest(next) {
-		t.Fatal("newline should hide slash overlay")
-	}
-	if ConversationInputForTest(next) != "/\n" {
+	m = SetConversationInput(m, "/not-a-command")
+	next, _ := HandleTestKey(m, "enter")
+	if ConversationInputForTest(next) != "/not-a-command\n" {
 		t.Fatalf("input=%q", ConversationInputForTest(next))
 	}
 }

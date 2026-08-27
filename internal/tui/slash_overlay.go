@@ -24,6 +24,27 @@ func (m model) liveOrchestratorSession() bool {
 	return m.orchestrationLive
 }
 
+// chatSlashCommandInput reports whether the single-line composer contains a
+// slash command known to the current palette. Arguments are allowed after the
+// command token (for example, /hero-continue 2).
+func (m model) chatSlashCommandInput() bool {
+	input := strings.TrimSpace(m.input)
+	if input == "" || strings.Contains(input, "\n") {
+		return false
+	}
+	token := chatSlashToken(input)
+	if token == "" {
+		return false
+	}
+	for _, item := range m.paletteItems {
+		label := strings.TrimSpace(item.label)
+		if strings.HasPrefix(label, "/") && strings.EqualFold(label, token) {
+			return true
+		}
+	}
+	return false
+}
+
 // chatFollowUpControlSlash reports whether a Chat submit should go to the live
 // orchestrator as a follow-up instead of TUI Execute (which gates on SQLite
 // PendingApproval and starts a fresh session).
@@ -87,8 +108,8 @@ func chatSlashOverlayItem(item paletteItem) bool {
 }
 
 // chatComposerControlSlash is true for agent-reply slashes that stay in the
-// composer (insert, then Alt+Enter to send). All other overlay items run immediately
-// like the full-screen palette.
+// composer when selected with Tab. Enter executes the selected slash command;
+// all other overlay items run immediately like the full-screen palette.
 func chatComposerControlSlash(item paletteItem) bool {
 	switch item.action {
 	case actionApprove, actionReject, actionCancel, actionContinue, actionFinish, actionBack:
@@ -96,6 +117,22 @@ func chatComposerControlSlash(item paletteItem) bool {
 	default:
 		return false
 	}
+}
+
+// executeChatSlashCommand preserves autocomplete behavior while making Enter
+// the command key. Control slashes are first expanded to their canonical label
+// so partial input (for example, /hero-ap) executes the selected command too.
+func (m model) executeChatSlashCommand() (model, tea.Cmd) {
+	items := m.filteredChatSlashItems()
+	if len(items) == 0 {
+		return m.submitConversation()
+	}
+	item := items[m.clampedSlashOverlayIndex()]
+	if chatComposerControlSlash(item) {
+		m = m.insertChatSlashSelection()
+		return m.submitConversation()
+	}
+	return m.applyChatSlashSelection()
 }
 
 func (m model) clampedSlashOverlayIndex() int {

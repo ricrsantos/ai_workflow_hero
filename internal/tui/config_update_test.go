@@ -187,7 +187,7 @@ stages:
 	}
 
 	m = SetConversationInput(m, "/hero-config-update")
-	next, _ := HandleTestKey(m, "alt+enter")
+	next, _ := HandleTestKey(m, "enter")
 	if ChatModelSlugForTest(next) != "composer-2.5" {
 		t.Fatalf("chat model=%q want composer-2.5", ChatModelSlugForTest(next))
 	}

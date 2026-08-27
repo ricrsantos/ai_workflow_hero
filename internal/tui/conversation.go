@@ -737,8 +737,21 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.copyChatInput()
 	}
 
-	// Newline keys are handled before the slash overlay so they never select
-	// an item. Alt+Enter submits the prompt.
+	// Recognized slash commands keep their command behavior in the composer:
+	// Enter executes them, while Alt+Enter is reserved for ordinary prompts.
+	if s == "enter" {
+		if m.chatSlashCommandInput() {
+			if m.chatSlashOverlayActive() {
+				return m.executeChatSlashCommand()
+			}
+			return m.submitConversation()
+		}
+		if m.chatSlashOverlayActive() {
+			// Preserve autocomplete selection for a partial slash token.
+			return m.applyChatSlashSelection()
+		}
+	}
+
 	if isComposerNewlineKey(s) {
 		return m.insertComposerNewline(), nil
 	}
@@ -781,6 +794,9 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "alt+enter":
 		if strings.TrimSpace(m.input) == "" {
+			return m, nil
+		}
+		if m.chatSlashCommandInput() {
 			return m, nil
 		}
 		return m.submitConversation()
