@@ -58,12 +58,16 @@ shortcut hint:
  AI     00:00:00
 ```
 
-`Sessão` runs from `/hero-new` until the cycle reaches a terminal state and
-retains active cycle seconds in SQLite across TUI restarts; archive resets its
-display. In free chat it starts with the first submitted prompt and is kept
-only for the current TUI process. `AI` starts with each Execute and stops when
-the response (including concurrent Executes) completes or is cancelled. Both
-values use `HH:MM:SS` with continuous hours and one-second resolution.
+At TUI boot, `Sessão` starts at `00:00:00`; an existing persisted cycle is not
+restored automatically. `/hero-new` starts a new cycle timer at zero, while
+`/hero-start` and `/hero-resume` explicitly restore the accumulated cycle
+seconds and continue from that baseline. The timer stops when the cycle
+reaches a terminal state and archive resets its display. Without an active
+cycle, free chat starts at zero with the first submitted prompt and continues
+across later prompts until the TUI exits or a cycle is started. `AI` starts
+with each Execute and stops when the response (including concurrent Executes)
+completes or is cancelled. Both values use `HH:MM:SS` with continuous hours
+and one-second resolution.
 
 Chat **works without an active cycle/etapa** using `hero.json` → `harnesses.<tool>` defaults (Cursor: `composer-2.5`, `enable_fast_model: false`). Freechat session ids stay in TUI memory for the process lifetime.
 

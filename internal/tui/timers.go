@@ -31,16 +31,17 @@ const (
 )
 
 type sessionTimerState struct {
-	mode         sessionTimerMode
-	cycleID      int64
-	cycleNumber  int
-	startedAt    time.Time
-	elapsed      time.Duration
-	displayed    time.Duration
-	persistedSec int64
-	running      bool
-	pendingCycle bool // /hero-new has started, but SQLite has not got the row yet.
-	suppressed   bool // archive/free-chat reset wins over a stale refresh result.
+	mode             sessionTimerMode
+	cycleID          int64
+	cycleNumber      int
+	startedAt        time.Time
+	elapsed          time.Duration
+	displayed        time.Duration
+	persistedSec     int64
+	running          bool
+	pendingCycle     bool // /hero-new has started, but SQLite has not got the row yet.
+	suppressed       bool // startup/archive/free-chat reset wins over stale refresh data.
+	restoreRequested bool // an explicit /hero-start or /hero-resume requested DB recovery.
 }
 
 type aiTimerState struct {
@@ -148,6 +149,23 @@ func (m model) startCycleSessionTimer(at time.Time) model {
 	return m
 }
 
+// requestCycleSessionRestore enables persisted cycle time for an explicit
+// cycle continuation command. A fresh TUI intentionally keeps the session
+// timer suppressed until this method is called.
+func (m model) requestCycleSessionRestore() model {
+	if m.sessionTimer.pendingCycle {
+		return m
+	}
+	if m.sessionTimer.mode == sessionTimerFreeChat {
+		m.sessionTimer = sessionTimerState{mode: sessionTimerCycle}
+	} else {
+		m.sessionTimer.mode = sessionTimerCycle
+	}
+	m.sessionTimer.suppressed = false
+	m.sessionTimer.restoreRequested = true
+	return m
+}
+
 func (m model) startFreeChatSessionTimer(at time.Time) model {
 	if at.IsZero() {
 		at = time.Now()
@@ -156,6 +174,16 @@ func (m model) startFreeChatSessionTimer(at time.Time) model {
 		mode:      sessionTimerFreeChat,
 		startedAt: at,
 		running:   true,
+	}
+	return m
+}
+
+func (m model) startExecuteTimers(at time.Time) model {
+	m = m.startAITimer(at)
+	needsFreeChatSession := m.freeChatMode || !m.hasActiveCycle()
+	if needsFreeChatSession && !m.sessionTimer.restoreRequested && !m.sessionTimer.pendingCycle &&
+		(m.sessionTimer.mode != sessionTimerFreeChat || !m.sessionTimer.running) {
+		m = m.startFreeChatSessionTimer(at)
 	}
 	return m
 }
@@ -299,6 +327,10 @@ func (m model) syncSessionTimer(c *store.Cycle, at time.Time) (model, tea.Cmd) {
 	}
 
 	if c == nil {
+		if m.sessionTimer.restoreRequested {
+			m = m.resetSessionTimer()
+			return m, nil
+		}
 		// A free-chat timer is independent of project refreshes. A cycle timer,
 		// however, has no owner after archive and must return to zero.
 		if m.sessionTimer.mode == sessionTimerCycle && !m.sessionTimer.pendingCycle {
@@ -307,14 +339,15 @@ func (m model) syncSessionTimer(c *store.Cycle, at time.Time) (model, tea.Cmd) {
 		return m, m.ensureTimerLoop()
 	}
 
-	// Do not resurrect an old completed cycle after the user explicitly
-	// archived/reset the session. A newly resumed active cycle is allowed.
-	if m.sessionTimer.suppressed && c.Status != store.CycleStatusActive {
+	// The first refresh after TUI startup is informational only. Persisted cycle
+	// time is recovered only after an explicit continuation command requested it.
+	if !m.sessionTimer.pendingCycle && !m.sessionTimer.restoreRequested &&
+		(m.sessionTimer.mode == sessionTimerNone || m.sessionTimer.suppressed) {
 		return m, m.ensureTimerLoop()
 	}
-	// A normal TUI without an active cycle can have a free-chat conversation;
-	// an old completed row must not replace that in-memory timer.
-	if m.sessionTimer.mode == sessionTimerFreeChat && c.Status != store.CycleStatusActive {
+	// A free-chat session is process-local and remains authoritative until the
+	// user starts a cycle, which replaces it with a cycle timer explicitly.
+	if m.sessionTimer.mode == sessionTimerFreeChat && !m.sessionTimer.restoreRequested {
 		return m, m.ensureTimerLoop()
 	}
 
@@ -406,6 +439,7 @@ func (m model) syncSessionTimer(c *store.Cycle, at time.Time) (model, tea.Cmd) {
 		}
 	}
 	m.sessionTimer.suppressed = false
+	m.sessionTimer.restoreRequested = false
 	return m, combineTimerCmds(saveCmd, m.ensureTimerLoop())
 }
 

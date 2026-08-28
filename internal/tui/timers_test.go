@@ -23,7 +23,7 @@ func TestFormatElapsedUsesContinuousClock(t *testing.T) {
 	}
 }
 
-func TestSessionTimerLoadsSavedDurationAndStopsAtCompletion(t *testing.T) {
+func TestSessionTimerStartsAtZeroUntilCycleContinuation(t *testing.T) {
 	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
 	cycle := &store.Cycle{
 		ID:                     7,
@@ -33,6 +33,15 @@ func TestSessionTimerLoadsSavedDurationAndStopsAtCompletion(t *testing.T) {
 		SessionDurationSeconds: int64(26*time.Hour/time.Second) + 2,
 	}
 	m := NewTestModel(nil)
+	m, _ = m.syncSessionTimer(cycle, now)
+	if got := formatElapsed(m.sessionTimer.displayed); got != "00:00:00" {
+		t.Fatalf("startup session=%q want 00:00:00", got)
+	}
+	if m.sessionTimer.running {
+		t.Fatal("startup refresh must not start the cycle session timer")
+	}
+
+	m = m.requestCycleSessionRestore()
 	m, _ = m.syncSessionTimer(cycle, now)
 	if got := formatElapsed(m.sessionTimer.displayed); got != "26:00:02" {
 		t.Fatalf("loaded session=%q want 26:00:02", got)
@@ -54,6 +63,30 @@ func TestSessionTimerLoadsSavedDurationAndStopsAtCompletion(t *testing.T) {
 	}
 	if got := formatElapsed(m.sessionTimer.displayed); got != "26:00:05" {
 		t.Fatalf("completed session=%q want 26:00:05", got)
+	}
+}
+
+func TestFreeChatSessionTimerStartsOnceAndContinuesAcrossPrompts(t *testing.T) {
+	now := time.Date(2026, time.August, 28, 12, 0, 0, 0, time.UTC)
+	m := NewTestModel(nil)
+	m.freeChatMode = true
+	m = m.startExecuteTimers(now)
+	if !m.sessionTimer.running || m.sessionTimer.mode != sessionTimerFreeChat {
+		t.Fatalf("first free-chat prompt must start Session: %+v", m.sessionTimer)
+	}
+	if got := formatElapsed(m.sessionTimer.displayed); got != "00:00:00" {
+		t.Fatalf("first free-chat prompt=%q want 00:00:00", got)
+	}
+
+	m.sessionTimer.elapsed = 8 * time.Second
+	m.sessionTimer.displayed = 8 * time.Second
+	startedAt := m.sessionTimer.startedAt
+	m = m.startExecuteTimers(now.Add(20 * time.Second))
+	if got := formatElapsed(m.sessionTimer.displayed); got != "00:00:08" {
+		t.Fatalf("second free-chat prompt reset Session=%q", got)
+	}
+	if !m.sessionTimer.startedAt.Equal(startedAt) {
+		t.Fatalf("second free-chat prompt restarted Session at %s, want %s", m.sessionTimer.startedAt, startedAt)
 	}
 }
 
@@ -122,9 +155,11 @@ func TestAITimerStopsAndRestartsForEachDemand(t *testing.T) {
 func TestNavbarTimerSubdivisionIsAtBottom(t *testing.T) {
 	m := NewTestModel(nil)
 	m.width = 100
+	m.status.CycleNumber = 1
 	m.sessionTimer.displayed = time.Hour + 2*time.Minute + 3*time.Second
 	m.aiTimer.displayed = 4 * time.Second
 	view := stripANSI(m.renderNavSidebar(18))
+	lines := strings.Split(view, "\n")
 	session := strings.Index(view, "Sessão 01:02:03")
 	ai := strings.Index(view, "AI     00:00:04")
 	if session < 0 || ai < 0 {
@@ -133,7 +168,27 @@ func TestNavbarTimerSubdivisionIsAtBottom(t *testing.T) {
 	if session >= ai {
 		t.Fatalf("session timer must precede AI timer:\n%s", view)
 	}
-	if strings.Index(view, "AI     00:00:04") < strings.Index(view, "alt+1-5") {
-		t.Fatalf("timer subdivision must be below navigation hint:\n%s", view)
+	rangeLine := -1
+	sessionLine := -1
+	configLine := -1
+	separatorLine := -1
+	for i, line := range lines {
+		switch {
+		case strings.Contains(line, "alt+1-6"):
+			rangeLine = i
+		case strings.Contains(line, "Sessão 01:02:03"):
+			sessionLine = i
+		case strings.Contains(line, "Config"):
+			configLine = i
+		}
+		if strings.Contains(line, strings.Repeat("─", 10)) && sessionLine < 0 {
+			separatorLine = i
+		}
+	}
+	if rangeLine < 0 || sessionLine != rangeLine+2 || separatorLine != rangeLine+1 {
+		t.Fatalf("shortcut must sit immediately above timer divider:\n%s", view)
+	}
+	if configLine < 0 || rangeLine <= configLine+1 {
+		t.Fatalf("shortcut must be separated from the menu options:\n%s", view)
 	}
 }

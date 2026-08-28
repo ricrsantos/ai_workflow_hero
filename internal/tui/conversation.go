@@ -575,8 +575,15 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	if cmdName == "new" {
 		m = m.startCycleSessionTimer(time.Now())
 	}
+	if cmdName == "start" || cmdName == "resume" {
+		m = m.requestCycleSessionRestore()
+	}
 	m = m.beginConversationExecute(label, executePrompt)
-	return m, m.conversationExecuteCmds()
+	executeCmd := m.conversationExecuteCmds()
+	if cmdName == "start" || cmdName == "resume" {
+		return m, tea.Batch(executeCmd, m.refreshCmd())
+	}
+	return m, executeCmd
 }
 
 func orchestratorRuntimePrompt(projectDir, cmdBody string) (string, error) {
@@ -622,11 +629,7 @@ func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) m
 		m = m.clearStatus()
 	}
 	if reset {
-		now := time.Now()
-		m = m.startAITimer(now)
-		if m.freeChatMode || (!m.hasActiveCycle() && !m.sessionTimer.running) {
-			m = m.startFreeChatSessionTimer(now)
-		}
+		m = m.startExecuteTimers(time.Now())
 	}
 	m.streamInterrupted = false
 	m.convError = ""

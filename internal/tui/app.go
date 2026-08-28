@@ -213,6 +213,7 @@ func newModel(svc *cycle.Service) model {
 		thinkingMsgIndex:       -1,
 		transcriptFollowBottom: true,
 		chatInputFocused:       true,
+		sessionTimer:           sessionTimerState{suppressed: true},
 	}
 	projectDir := ""
 	if svc != nil {

@@ -149,6 +149,27 @@ func (m model) timerSidebarLines(innerW int) []string {
 	return lines
 }
 
+func (m model) navSidebarNavigationLines(innerW int) []string {
+	lines := make([]string, 0, 1+1+navSidebarAgentRows+1+len(m.visibleNavScreens()))
+	lines = append(lines, navSidebarTitleStyle.Render(truncateNavText(" AI Hero", innerW)))
+	lines = append(lines, navSidebarSeparator(innerW))
+	for _, agentLine := range m.agentsSidebarLines(innerW) {
+		lines = append(lines, navSidebarItemStyle.Render(truncateNavText(agentLine, innerW)))
+	}
+	lines = append(lines, navSidebarSeparator(innerW))
+
+	for _, item := range m.visibleNavScreens() {
+		marker := "  "
+		rowStyle := navSidebarItemStyle
+		if item.screen == m.screen {
+			marker = "> "
+			rowStyle = navSidebarActiveStyle
+		}
+		lines = append(lines, rowStyle.Render(truncateNavText(marker+item.label, innerW)))
+	}
+	return lines
+}
+
 // renderNavSidebar draws the left "AI Hero" frame with agents + screen entries.
 // Height is the middle band (above the full-width bottom chrome).
 func (m model) renderNavSidebar(height int) string {
@@ -166,30 +187,12 @@ func (m model) renderNavSidebar(height int) string {
 		innerH = 1
 	}
 
-	var lines []string
-	lines = append(lines, navSidebarTitleStyle.Render(truncateNavText(" AI Hero", innerW)))
-	lines = append(lines, navSidebarSeparator(innerW))
-	for _, agentLine := range m.agentsSidebarLines(innerW) {
-		lines = append(lines, navSidebarItemStyle.Render(truncateNavText(agentLine, innerW)))
-	}
-	lines = append(lines, navSidebarSeparator(innerW))
-
-	for _, item := range m.visibleNavScreens() {
-		marker := "  "
-		rowStyle := navSidebarItemStyle
-		if item.screen == m.screen {
-			marker = "> "
-			rowStyle = navSidebarActiveStyle
-		}
-		lines = append(lines, rowStyle.Render(truncateNavText(marker+item.label, innerW)))
-	}
-
 	rangeLabel := "alt+1-5"
 	if m.hasActiveCycle() {
 		rangeLabel = "alt+1-6"
 	}
 	rangeHint := navSidebarFooterStyle.Render(truncateNavText(" "+rangeLabel, innerW))
-	lines = append(lines, rangeHint)
+	navigationLines := m.navSidebarNavigationLines(innerW)
 	timerLines := m.timerSidebarLines(innerW)
 	if len(timerLines) > innerH {
 		// Keep both values visible in a very short terminal, even when the
@@ -200,15 +203,34 @@ func (m model) renderNavSidebar(height int) string {
 	if upperH < 0 {
 		upperH = 0
 	}
-	for len(lines) < upperH {
-		lines = append(lines, strings.Repeat(" ", innerW))
-	}
-	if len(lines) > upperH {
-		lines = lines[:upperH]
+	// Keep the shortcut hint anchored to the bottom of the navigation area.
+	// This leaves any spare rows between the menu and the hint, and keeps the
+	// hint directly above the timer separator.
+	lines := make([]string, 0, innerH)
+	if upperH > 0 {
+		lines = navigationLines
+		menuH := upperH - 1
+		if menuH < 0 {
+			menuH = 0
+		}
+		if len(lines) > menuH {
+			lines = lines[:menuH]
+		}
+		for len(lines) < menuH {
+			lines = append(lines, strings.Repeat(" ", innerW))
+		}
+		lines = append(lines, rangeHint)
 	}
 	lines = append(lines, timerLines...)
 
-	return box.Width(innerW).Height(innerH).Render(strings.Join(lines, "\n"))
+	var content strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			content.WriteByte('\n')
+		}
+		content.WriteString(line)
+	}
+	return box.Width(innerW).Height(innerH).Render(content.String())
 }
 
 // truncateNavText shortens s to at most width columns (ANSI-aware via lipgloss).
