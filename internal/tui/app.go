@@ -57,9 +57,11 @@ type model struct {
 	actionBusy  bool
 
 	// Shared TUI counters. The session timer is cycle-backed or free-chat
-	// in-memory; the AI timer covers the currently executing demand only.
+	// in-memory; AI wk covers the currently executing demand and AI rp tracks
+	// the elapsed time since the last harness response displayed in Chat.
 	sessionTimer     sessionTimerState
 	aiTimer          aiTimerState
+	aiResponseTimer  aiTimerState
 	timerLoopStarted bool
 	timerGeneration  uint64
 

@@ -13,7 +13,7 @@
   "harnesses": {
     "codex": {
       "enabled": true,
-      "model": "gpt-5.6-luna",
+      "model": "gpt-5.6-sol",
       "enable_fast_model": false
     },
     "cursor": {
@@ -29,12 +29,16 @@
   },
   "freechat_default": {
     "harness": "codex",
-    "model": "gpt-5.6-luna"
+    "model": "gpt-5.6-sol"
   },
   "model_properties": {
     "codex": {
       "gpt-5.6-luna": {
         "ef": "max",
+        "th": "off"
+      },
+      "gpt-5.6-sol": {
+        "ef": "medium",
         "th": "off"
       },
       "gpt-5.6-terra": {

@@ -46,7 +46,11 @@ const navSidebarAgentRows = 2
 // The timer block is kept at the bottom of the sidebar, below navigation and
 // its shortcut hint. The separator belongs to the block so it reads as a
 // dedicated subdivision like the live-agent rows above.
-const navSidebarTimerRows = 3
+const navSidebarTimerRows = 4
+
+// navSidebarTimerLabelWidth reserves one shared value column for the Session
+// and AI counters in the sidebar.
+const navSidebarTimerLabelWidth = 7
 
 func (m model) visibleNavScreens() []navScreenItem {
 	items := make([]navScreenItem, 0, len(navScreens))
@@ -139,12 +143,18 @@ func navSidebarSeparator(innerW int) string {
 	return navSidebarSepStyle.Render(strings.Repeat("─", innerW))
 }
 
+func navSidebarTimerLine(label, elapsed string, innerW int) string {
+	line := fmt.Sprintf(" %-*s %s", navSidebarTimerLabelWidth, label, elapsed)
+	return navSidebarTimerStyle.Render(truncateNavText(line, innerW))
+}
+
 func (m model) timerSidebarLines(innerW int) []string {
 	lines := make([]string, 0, navSidebarTimerRows)
 	lines = append(lines,
 		navSidebarSeparator(innerW),
-		navSidebarTimerStyle.Render(truncateNavText(" Session "+formatElapsed(m.sessionTimer.displayed), innerW)),
-		navSidebarTimerStyle.Render(truncateNavText(" AI     "+formatElapsed(m.aiTimer.displayed), innerW)),
+		navSidebarTimerLine("Session", formatElapsed(m.sessionTimer.displayed), innerW),
+		navSidebarTimerLine("AI wk", formatElapsed(m.aiTimer.displayed), innerW),
+		navSidebarTimerLine("AI rp", formatElapsed(m.aiResponseTimer.displayed), innerW),
 	)
 	return lines
 }
@@ -195,7 +205,7 @@ func (m model) renderNavSidebar(height int) string {
 	navigationLines := m.navSidebarNavigationLines(innerW)
 	timerLines := m.timerSidebarLines(innerW)
 	if len(timerLines) > innerH {
-		// Keep both values visible in a very short terminal, even when the
+		// Keep the most recent values visible in a very short terminal, even when the
 		// separator cannot fit.
 		timerLines = timerLines[len(timerLines)-innerH:]
 	}

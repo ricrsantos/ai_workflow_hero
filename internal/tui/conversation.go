@@ -1511,17 +1511,17 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.maybeFollowTranscriptBottom()
 		}
 		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvBatchMsg(m.convStreamCh)
+			return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
 		}
-		return m, nil
+		return m, m.ensureTimerLoop()
 
 	case streamDeltaMsg:
 		m = m.applyStreamDelta(msg)
 		m = m.maybeFollowTranscriptBottom()
 		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvBatchMsg(m.convStreamCh)
+			return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
 		}
-		return m, nil
+		return m, m.ensureTimerLoop()
 
 	case executePairMsg:
 		m = m.bindExecuteView(msg.executeID)
@@ -1544,10 +1544,11 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.harnessPermissionRespCh = msg.respCh
 		m.harnessPermissionMsg = formatHarnessPermission(msg.req)
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessPermissionMsg})
+		m = m.restartAIResponseTimer(time.Now())
 		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvBatchMsg(m.convStreamCh)
+			return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
 		}
-		return m, nil
+		return m, m.ensureTimerLoop()
 
 	case harnessQuestionRequestMsg:
 		m = m.clearHarnessHealthWarnings()
@@ -1558,11 +1559,12 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.harnessQuestionAnswers = nil
 		m.harnessQuestionMsg = formatHarnessQuestion(msg.req, 0)
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessQuestionMsg})
+		m = m.restartAIResponseTimer(time.Now())
 		m.chatInputFocused = true
 		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvBatchMsg(m.convStreamCh)
+			return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
 		}
-		return m, nil
+		return m, m.ensureTimerLoop()
 
 	case executeDoneMsg:
 		m = m.bindExecuteView(msg.executeID)
@@ -1691,10 +1693,10 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		next, handoffCmd := m.maybeHandoffAfterExecute()
 		if handoffCmd != nil {
-			return next, tea.Batch(next.refreshCmd(), handoffCmd, convWaitTickCmd(), sessionSaveCmd)
+			return next, combineTimerCmds(next.refreshCmd(), handoffCmd, convWaitTickCmd(), sessionSaveCmd, next.ensureTimerLoop())
 		}
 		next = next.completeBusyExecuteStatus(true, busyExecuteCompletedText(next.statusLabel))
-		return next, tea.Batch(next.refreshCmd(), sessionSaveCmd)
+		return next, combineTimerCmds(next.refreshCmd(), sessionSaveCmd, next.ensureTimerLoop())
 
 	case streamCancelDoneMsg:
 		m = m.stopAITimer(time.Now())
@@ -1725,7 +1727,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m = m.completeBusyExecuteStatus(false, "cancelled")
 		slog.Info("tui conversation interrupted")
-		return m, nil
+		return m, m.ensureTimerLoop()
 	}
 	return m, nil
 }
@@ -1771,6 +1773,9 @@ func (m model) bindExecuteView(executeID string) model {
 }
 
 func (m model) appendStreamDelta(d harness.StreamDelta) model {
+	if streamDeltaRendersAIChatResponse(d) {
+		m = m.restartAIResponseTimer(time.Now())
+	}
 	if d.Phase == harness.StreamPhaseStarted {
 		m = m.addLiveAgent(d)
 	}
@@ -1879,6 +1884,25 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 			}
 		}
 		return m
+	}
+}
+
+// streamDeltaRendersAIChatResponse identifies harness events that become Chat
+// transcript content. Session metadata and callback markers do not add a row;
+// completed tools only update live-agent state. Local watchdog warnings never
+// pass through this stream path and therefore cannot mask a silent harness.
+func streamDeltaRendersAIChatResponse(d harness.StreamDelta) bool {
+	if d.Phase == harness.StreamPhaseCompleted && d.Kind == harness.StreamKindTool {
+		return false
+	}
+	if d.Phase == harness.StreamPhaseStarted && d.Kind == harness.StreamKindTool {
+		return true
+	}
+	switch d.Kind {
+	case harness.StreamKindPermission, harness.StreamKindQuestion, harness.StreamKindSession:
+		return false
+	default:
+		return strings.TrimSpace(d.Text) != ""
 	}
 }
 
@@ -2040,7 +2064,7 @@ func (m model) reconcileParentAgentOutput(output string) model {
 	}
 	m.transcript[m.agentMsgIndex].content = output
 	m.invalidateResponseCache(m.agentMsgIndex)
-	return m
+	return m.restartAIResponseTimer(time.Now())
 }
 
 // shouldReplaceStreamedAgentText is true when canonical Output repairs a

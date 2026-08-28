@@ -4,6 +4,50 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-28 — AI working and response-gap timers
+
+**Change**: Renamed the execution timer label to `AI wk` and added `AI rp`
+directly below it. `AI rp` is transient TUI state: it is zero and stopped at
+boot, starts when the first harness response is placed in Chat, and restarts on
+every subsequent harness response. It continues after Execute completion so a
+growing value exposes an absent response. Session metadata and local watchdog
+alerts do not reset it.
+
+**Validation**: Focused AI response-timer/sidebar-layout tests and
+`go test ./internal/tui -count=1` pass. `go test ./... -count=1 -p 1` passes
+every other package; the known restricted-sandbox OpenCode spawn tests
+(`TestDiscoverModelPropertiesNormalized` and
+`TestIsManagedOpenCodeServeDetectsSpawnedServe`) cannot expose a listening URL.
+
+## 2026-08-28 — Sidebar timer value alignment
+
+**Problem**: The `Session` and `AI` labels were aligned, but `AI` reserved one
+column less before its `HH:MM:SS` value.
+
+**Change**: Both timer rows now use the same fixed label field, and the layout
+test asserts that the two counter values start in the same rendered column.
+
+**Validation**: `go test ./internal/tui -count=1` passes. `go test ./... -count=1 -p 1`
+passes all other packages; the known restricted-sandbox OpenCode spawn tests
+(`TestDiscoverModelPropertiesNormalized` and
+`TestIsManagedOpenCodeServeDetectsSpawnedServe`) cannot expose a listening URL.
+
+## 2026-08-28 — Chat Session starts before cycle restore
+
+**Problem**: An ordinary first Chat prompt left `Session` at zero after opening
+the project TUI when SQLite already contained an active cycle. The timer only
+considered whether a cycle row existed, not whether this TUI had restored a
+cycle session.
+
+**Change**: Ordinary Chat now starts the process-local Session timer unless
+`/hero-start` or `/hero-resume` has restored the cycle timer (or `/hero-new`
+is creating one). The first prompt is covered by a regression test.
+
+**Validation**: `go test ./internal/tui -count=1` passes. `go test ./... -count=1 -p 1`
+passes all other packages; the known restricted-sandbox OpenCode spawn tests
+(`TestDiscoverModelPropertiesNormalized` and
+`TestIsManagedOpenCodeServeDetectsSpawnedServe`) cannot expose a listening URL.
+
 ## 2026-08-28 — TUI timer label
 
 **Change**: Renamed the blue navbar timer label from `Sessão` to `Session`.

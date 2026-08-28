@@ -55,19 +55,25 @@ shortcut hint:
 
 ```text
  Session 00:00:00
- AI     00:00:00
+ AI wk   00:00:00
+ AI rp   00:00:00
 ```
 
 At TUI boot, `Session` starts at `00:00:00`; an existing persisted cycle is not
 restored automatically. `/hero-new` starts a new cycle timer at zero, while
 `/hero-start` and `/hero-resume` explicitly restore the accumulated cycle
 seconds and continue from that baseline. The timer stops when the cycle
-reaches a terminal state and archive resets its display. Without an active
-cycle, free chat starts at zero with the first submitted prompt and continues
-across later prompts until the TUI exits or a cycle is started. `AI` starts
-with each Execute and stops when the response (including concurrent Executes)
-completes or is cancelled. Both values use `HH:MM:SS` with continuous hours
-and one-second resolution.
+reaches a terminal state and archive resets its display. An ordinary chat
+prompt starts free chat at zero when this TUI has not explicitly restored a
+cycle session, even if a cycle is already stored; it continues across later
+prompts until the TUI exits or a cycle is started. `AI wk` starts with each
+Execute and stops when the response (including concurrent Executes) completes
+or is cancelled. `AI rp` begins at zero when the TUI opens and remains stopped
+until the first harness response is displayed in Chat. Every harness response
+that adds Chat content restarts it at zero; it then keeps counting until the
+next displayed response, including after an Execute ends. Both AI counters are
+process-local and use `HH:MM:SS` with continuous hours and one-second
+resolution.
 
 Chat **works without an active cycle/etapa** using `hero.json` → `harnesses.<tool>` defaults (Cursor: `composer-2.5`, `enable_fast_model: false`). Freechat session ids stay in TUI memory for the process lifetime.
 

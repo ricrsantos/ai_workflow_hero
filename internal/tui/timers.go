@@ -57,7 +57,7 @@ func timerTickCmd(generation uint64) tea.Cmd {
 }
 
 func (m model) hasTimerWork() bool {
-	return m.sessionTimer.running || m.aiTimer.running
+	return m.sessionTimer.running || m.aiTimer.running || m.aiResponseTimer.running
 }
 
 func (m *model) ensureTimerLoop() tea.Cmd {
@@ -180,7 +180,11 @@ func (m model) startFreeChatSessionTimer(at time.Time) model {
 
 func (m model) startExecuteTimers(at time.Time) model {
 	m = m.startAITimer(at)
-	needsFreeChatSession := m.freeChatMode || !m.hasActiveCycle()
+	// An active cycle in SQLite is not, by itself, an active cycle session in
+	// this TUI process. Until /hero-start or /hero-resume explicitly restores
+	// it, an ordinary prompt starts a process-local chat session.
+	needsFreeChatSession := m.freeChatMode || (m.runtimeCommandName == "" &&
+		!m.sessionTimer.restoreRequested && !m.sessionTimer.pendingCycle && !m.sessionTimer.running)
 	if needsFreeChatSession && !m.sessionTimer.restoreRequested && !m.sessionTimer.pendingCycle &&
 		(m.sessionTimer.mode != sessionTimerFreeChat || !m.sessionTimer.running) {
 		m = m.startFreeChatSessionTimer(at)
@@ -214,6 +218,17 @@ func (m model) resetAITimer() model {
 	if !m.hasTimerWork() {
 		m.invalidateTimerLoop()
 	}
+	return m
+}
+
+// restartAIResponseTimer records a harness response that has been added to the
+// Chat transcript. Unlike AI wk, AI rp continues after the Execute finishes so
+// it exposes a gap with no subsequent harness response.
+func (m model) restartAIResponseTimer(at time.Time) model {
+	if at.IsZero() {
+		at = time.Now()
+	}
+	m.aiResponseTimer = aiTimerState{startedAt: at, running: true}
 	return m
 }
 
@@ -259,6 +274,9 @@ func (m model) handleTimerTick(msg timerTickMsg) (model, tea.Cmd) {
 	}
 	if m.aiTimer.running {
 		m.aiTimer.displayed = m.aiTimer.elapsedAt(at)
+	}
+	if m.aiResponseTimer.running {
+		m.aiResponseTimer.displayed = m.aiResponseTimer.elapsedAt(at)
 	}
 	var saveCmd tea.Cmd
 	if m.sessionTimer.running {
