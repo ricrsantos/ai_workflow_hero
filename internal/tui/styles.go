@@ -29,16 +29,16 @@ var (
 
 // Nav sidebar layout (ported from the Bonito reference TUI).
 const (
-	navSidebarWidth     = 24
-	navSidebarMinWidth  = 80 // show sidebar when terminal width >= this
-	navSidebarMinMain   = 40 // need at least this many cols for the main pane
+	navSidebarWidth    = 24
+	navSidebarMinWidth = 80 // show sidebar when terminal width >= this
+	navSidebarMinMain  = 40 // need at least this many cols for the main pane
 )
 
 var (
-	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(colorTextPri)
-	headerStyle   = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(colorTextPri)
-	footerStyle   = lipgloss.NewStyle().Foreground(colorTextDim)
-	successStyle  = lipgloss.NewStyle().Foreground(colorOK)
+	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(colorTextPri)
+	headerStyle  = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(colorTextPri)
+	footerStyle  = lipgloss.NewStyle().Foreground(colorTextDim)
+	successStyle = lipgloss.NewStyle().Foreground(colorOK)
 	// Config form field label/value separation. Labels reuse the blue accent bar
 	// from the Chat composer, while inactive controls remain intentionally muted.
 	configLabelStyle         = lipgloss.NewStyle().Foreground(colorAccentAI)
@@ -55,12 +55,12 @@ var (
 	configDisabledValueStyle = lipgloss.NewStyle().Foreground(colorTextDim)
 	configEditingValueStyle  = lipgloss.NewStyle().Foreground(colorTextPri).Background(colorBgSurface2)
 	configEditingCaretStyle  = lipgloss.NewStyle().Foreground(colorBgSurface2).Background(colorAccentAI).Bold(true)
-	warnStyle     = lipgloss.NewStyle().Foreground(colorAccentFast)
-	errorStyle    = lipgloss.NewStyle().Foreground(colorError)
-	infoStyle     = lipgloss.NewStyle().Foreground(colorAccentAI)
-	thinkingStyle = lipgloss.NewStyle().Foreground(colorTextDim).Italic(true)
-	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(colorAccentUser).Background(colorBgSurface2)
-	mutedStyle    = lipgloss.NewStyle().Foreground(colorTextDim)
+	warnStyle                = lipgloss.NewStyle().Foreground(colorAccentFast)
+	errorStyle               = lipgloss.NewStyle().Foreground(colorError)
+	infoStyle                = lipgloss.NewStyle().Foreground(colorAccentAI)
+	thinkingStyle            = lipgloss.NewStyle().Foreground(colorTextDim).Italic(true)
+	selectedStyle            = lipgloss.NewStyle().Bold(true).Foreground(colorAccentUser).Background(colorBgSurface2)
+	mutedStyle               = lipgloss.NewStyle().Foreground(colorTextDim)
 	// Filled caret when chat input has focus (light on surface — distinct from accent bar).
 	caretFilledStyle = lipgloss.NewStyle().
 				Foreground(colorBgSurface).
@@ -116,6 +116,7 @@ var (
 	navSidebarItemStyle   = lipgloss.NewStyle().Foreground(colorTextPri)
 	navSidebarActiveStyle = lipgloss.NewStyle().Foreground(colorAccentUser).Bold(true)
 	navSidebarFooterStyle = lipgloss.NewStyle().Foreground(colorTextDim)
+	navSidebarTimerStyle  = lipgloss.NewStyle().Foreground(colorAccentAI)
 	navSidebarBoxStyle    = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(colorBorder).

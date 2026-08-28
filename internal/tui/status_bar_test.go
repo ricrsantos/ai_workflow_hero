@@ -150,14 +150,17 @@ func TestBusyGuardBlocksSecondAction(t *testing.T) {
 }
 
 func TestFormatElapsed(t *testing.T) {
-	if formatElapsed(0) != "0s" {
+	if formatElapsed(0) != "00:00:00" {
 		t.Fatal(formatElapsed(0))
 	}
-	if formatElapsed(5*time.Second) != "5s" {
+	if formatElapsed(5*time.Second) != "00:00:05" {
 		t.Fatal(formatElapsed(5 * time.Second))
 	}
-	if formatElapsed(65*time.Second) != "1m05s" {
+	if formatElapsed(65*time.Second) != "00:01:05" {
 		t.Fatal(formatElapsed(65 * time.Second))
+	}
+	if formatElapsed(24*time.Hour+time.Second) != "24:00:01" {
+		t.Fatal(formatElapsed(24*time.Hour + time.Second))
 	}
 }
 

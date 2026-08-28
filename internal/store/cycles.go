@@ -5,15 +5,15 @@ import (
 	"fmt"
 )
 
-const cycleSelectCols = `id, number, title, objective, status, started_at, completed_at, config_snapshot_json, lock_holder, lock_at, openspec_change`
+const cycleSelectCols = `id, number, title, objective, status, started_at, completed_at, session_duration_seconds, config_snapshot_json, lock_holder, lock_at, openspec_change`
 
 // CreateCycle inserts a new cycle and returns its ID.
 func (s *Store) CreateCycle(c Cycle) (int64, error) {
 	res, err := s.db.Exec(`
-INSERT INTO cycles(number, title, objective, status, started_at, completed_at, config_snapshot_json, lock_holder, lock_at, openspec_change)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+INSERT INTO cycles(number, title, objective, status, started_at, completed_at, session_duration_seconds, config_snapshot_json, lock_holder, lock_at, openspec_change)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.Number, c.Title, c.Objective, c.Status, nullStr(c.StartedAt), nullStr(c.CompletedAt),
-		c.ConfigSnapshotJSON, nullStr(c.LockHolder), nullStr(c.LockAt), c.OpenspecChange,
+		maxInt64(c.SessionDurationSeconds, 0), c.ConfigSnapshotJSON, nullStr(c.LockHolder), nullStr(c.LockAt), c.OpenspecChange,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert cycle: %w", err)
@@ -49,6 +49,30 @@ func (s *Store) UpdateCycleStatus(id int64, status, completedAt string) error {
 		status, nullStr(completedAt), id)
 	if err != nil {
 		return fmt.Errorf("update cycle status: %w", err)
+	}
+	return nil
+}
+
+// UpdateCycleSessionDuration stores the greatest known active session time.
+// Monotonic writes prevent an older asynchronous TUI tick from decreasing it.
+func (s *Store) UpdateCycleSessionDuration(id, seconds int64) error {
+	if seconds < 0 {
+		return fmt.Errorf("session duration must not be negative")
+	}
+	result, err := s.db.Exec(`
+UPDATE cycles
+SET session_duration_seconds = CASE
+  WHEN session_duration_seconds > ? THEN session_duration_seconds
+  ELSE ?
+END
+WHERE id = ?`, seconds, seconds, id)
+	if err != nil {
+		return fmt.Errorf("update cycle session duration: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("check cycle session duration update: %w", err)
+	} else if affected == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -117,7 +141,7 @@ func scanCycle(row rowScanner) (Cycle, error) {
 	var started, completed, lockHolder, lockAt sql.NullString
 	err := row.Scan(
 		&c.ID, &c.Number, &c.Title, &c.Objective, &c.Status,
-		&started, &completed, &c.ConfigSnapshotJSON, &lockHolder, &lockAt,
+		&started, &completed, &c.SessionDurationSeconds, &c.ConfigSnapshotJSON, &lockHolder, &lockAt,
 		&c.OpenspecChange,
 	)
 	if err != nil {
@@ -128,6 +152,13 @@ func scanCycle(row rowScanner) (Cycle, error) {
 	c.LockHolder = lockHolder.String
 	c.LockAt = lockAt.String
 	return c, nil
+}
+
+func maxInt64(value, minimum int64) int64 {
+	if value < minimum {
+		return minimum
+	}
+	return value
 }
 
 func nullStr(s string) any {

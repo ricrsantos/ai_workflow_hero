@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -23,8 +22,6 @@ const (
 
 // Fixed chrome for the footer status area.
 const statusBarMaxLines = 2
-
-type statusTickMsg struct{}
 
 func (m model) closePalette() model {
 	wasPicking := m.pickingModel || m.pickingHarness || m.pickingHarnessReset || m.harnessResetAwaitingOpen || m.pickingProps
@@ -64,7 +61,6 @@ func (m model) setStatusRunning(label string) model {
 	m.statusKind = statusRunning
 	m.statusLabel = label
 	m.statusText = "running…"
-	m.statusStarted = time.Now()
 	m.actionBusy = true
 	return m
 }
@@ -73,7 +69,6 @@ func (m model) clearStatus() model {
 	m.statusKind = statusIdle
 	m.statusLabel = ""
 	m.statusText = ""
-	m.statusStarted = time.Time{}
 	m.actionBusy = false
 	return m
 }
@@ -135,9 +130,7 @@ func (m model) setStatusBusyBlocked() model {
 }
 
 func statusTickCmd() tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return statusTickMsg{}
-	})
+	return timerTickCmd(0)
 }
 
 func (m model) statusBarLineCount() int {
@@ -179,12 +172,11 @@ func (m model) statusBarDisplayLines(width int) []string {
 	}
 	switch m.statusKind {
 	case statusRunning:
-		elapsed := time.Since(m.statusStarted).Truncate(time.Second)
 		label := m.statusLabel
 		if label == "" {
 			label = "action"
 		}
-		head := fmt.Sprintf("● %s  running  %s", label, formatElapsed(elapsed))
+		head := fmt.Sprintf("● %s  running", label)
 		return []string{infoStyle.Render(head)}
 	case statusOK:
 		return wrapStatusMessage("✓", m.statusLabel, m.statusText, successStyle, width)
@@ -236,18 +228,6 @@ func wrapStatusMessage(icon, label, text string, style lipgloss.Style, width int
 		out[i] = style.Render(line)
 	}
 	return out
-}
-
-func formatElapsed(d time.Duration) string {
-	if d < time.Second {
-		return "0s"
-	}
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	}
-	mins := int(d.Minutes())
-	s := int(d.Seconds()) % 60
-	return fmt.Sprintf("%dm%02ds", mins, s)
 }
 
 func statusResultOpensPanel(text string, width int) bool {

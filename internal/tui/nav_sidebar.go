@@ -43,6 +43,11 @@ var navEventsAlias = key.NewBinding(
 // navSidebarAgentRows is the minimum body rows reserved for live agent labels.
 const navSidebarAgentRows = 2
 
+// The timer block is kept at the bottom of the sidebar, below navigation and
+// its shortcut hint. The separator belongs to the block so it reads as a
+// dedicated subdivision like the live-agent rows above.
+const navSidebarTimerRows = 3
+
 func (m model) visibleNavScreens() []navScreenItem {
 	items := make([]navScreenItem, 0, len(navScreens))
 	for _, item := range navScreens {
@@ -134,6 +139,16 @@ func navSidebarSeparator(innerW int) string {
 	return navSidebarSepStyle.Render(strings.Repeat("─", innerW))
 }
 
+func (m model) timerSidebarLines(innerW int) []string {
+	lines := make([]string, 0, navSidebarTimerRows)
+	lines = append(lines,
+		navSidebarSeparator(innerW),
+		navSidebarTimerStyle.Render(truncateNavText(" Sessão "+formatElapsed(m.sessionTimer.displayed), innerW)),
+		navSidebarTimerStyle.Render(truncateNavText(" AI     "+formatElapsed(m.aiTimer.displayed), innerW)),
+	)
+	return lines
+}
+
 // renderNavSidebar draws the left "AI Hero" frame with agents + screen entries.
 // Height is the middle band (above the full-width bottom chrome).
 func (m model) renderNavSidebar(height int) string {
@@ -173,14 +188,25 @@ func (m model) renderNavSidebar(height int) string {
 	if m.hasActiveCycle() {
 		rangeLabel = "alt+1-6"
 	}
-	footer := navSidebarFooterStyle.Render(truncateNavText(" "+rangeLabel, innerW))
-	for len(lines) < innerH-1 {
+	rangeHint := navSidebarFooterStyle.Render(truncateNavText(" "+rangeLabel, innerW))
+	lines = append(lines, rangeHint)
+	timerLines := m.timerSidebarLines(innerW)
+	if len(timerLines) > innerH {
+		// Keep both values visible in a very short terminal, even when the
+		// separator cannot fit.
+		timerLines = timerLines[len(timerLines)-innerH:]
+	}
+	upperH := innerH - len(timerLines)
+	if upperH < 0 {
+		upperH = 0
+	}
+	for len(lines) < upperH {
 		lines = append(lines, strings.Repeat(" ", innerW))
 	}
-	if len(lines) > innerH-1 {
-		lines = lines[:innerH-1]
+	if len(lines) > upperH {
+		lines = lines[:upperH]
 	}
-	lines = append(lines, footer)
+	lines = append(lines, timerLines...)
 
 	return box.Width(innerW).Height(innerH).Render(strings.Join(lines, "\n"))
 }

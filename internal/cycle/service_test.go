@@ -112,6 +112,10 @@ func TestServiceCycleLifecycleAndReads(t *testing.T) {
 	if err := svc.Finish(""); err != nil {
 		t.Fatal(err)
 	}
+	sessionCycle, err := svc.SessionCycle()
+	if err != nil || sessionCycle == nil || sessionCycle.Number != 1 || sessionCycle.Status != store.CycleStatusCompleted {
+		t.Fatalf("session cycle after finish: %+v %v", sessionCycle, err)
+	}
 	arch, err := svc.Archive()
 	if err != nil {
 		t.Fatal(err)
@@ -121,6 +125,10 @@ func TestServiceCycleLifecycleAndReads(t *testing.T) {
 	}
 	if _, err := os.Stat(arch.ArchiveDir); err != nil {
 		t.Fatalf("archive dir missing: %v", err)
+	}
+	sessionCycle, err = svc.SessionCycle()
+	if err != nil || sessionCycle != nil {
+		t.Fatalf("session cycle after archive: %+v %v", sessionCycle, err)
 	}
 
 	// Resume cancelled path — restore config after archive emptied current/.

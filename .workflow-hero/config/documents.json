@@ -223,6 +223,14 @@
       "slug": "tui-stage-execute",
       "path": "docs/product/UI-C08-001-tui-stage-execute.md",
       "title": "TUI-Direct Stage Execute"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C09",
+      "seq": 1,
+      "slug": "tui-session-ai-timers",
+      "path": "docs/architecture/ADR-C09-001-tui-session-ai-timers.md",
+      "title": "Shared TUI Session and AI Timers (ADR-058)"
     }
   ]
 }

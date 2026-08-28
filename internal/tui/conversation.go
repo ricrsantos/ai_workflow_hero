@@ -138,10 +138,13 @@ func (m model) waitingForHarnessLine(rowW int) string {
 	return m.chatWaitLine(rowW)
 }
 
-func (m model) conversationExecuteCmds() tea.Cmd {
+func (m *model) conversationExecuteCmds() tea.Cmd {
 	cmds := []tea.Cmd{waitConvBatchMsg(m.convStreamCh), convWaitTickCmd()}
 	if !m.testMode {
 		cmds = append(cmds, harnessHealthProbeCmd())
+	}
+	if timerCmd := m.ensureTimerLoop(); timerCmd != nil {
+		cmds = append(cmds, timerCmd)
 	}
 	return tea.Batch(cmds...)
 }
@@ -432,6 +435,7 @@ func (m model) enterConversation() (model, tea.Cmd) {
 }
 
 func (m model) resetChatSession() model {
+	m = m.resetAITimer()
 	m.transcript = nil
 	m.harnessSessionID = ""
 	m.harnessSessionHarnessID = ""
@@ -568,6 +572,9 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody, opts)
 	}
 
+	if cmdName == "new" {
+		m = m.startCycleSessionTimer(time.Now())
+	}
 	m = m.beginConversationExecute(label, executePrompt)
 	return m, m.conversationExecuteCmds()
 }
@@ -613,6 +620,13 @@ func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) m
 	// use actionBusy to own the footer until their execute completes.
 	if !m.actionBusy {
 		m = m.clearStatus()
+	}
+	if reset {
+		now := time.Now()
+		m = m.startAITimer(now)
+		if m.freeChatMode || (!m.hasActiveCycle() && !m.sessionTimer.running) {
+			m = m.startFreeChatSessionTimer(now)
+		}
 	}
 	m.streamInterrupted = false
 	m.convError = ""
@@ -1576,6 +1590,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		siblingsRemain := len(m.executes) > 0
 		if !siblingsRemain {
+			m = m.stopAITimer(time.Now())
 			m.streaming = false
 			m.convStreamCh = nil
 			m.chatInputFocused = true
@@ -1613,6 +1628,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.invalidateResponseCache(m.agentMsgIndex)
 			}
 			slog.Error("tui conversation execute failed", "error", msg.err)
+			if !siblingsRemain && m.runtimeCommandName == "new" {
+				m = m.resetSessionTimer()
+			}
 			if siblingsRemain && m.convStreamCh != nil {
 				return m, waitConvBatchMsg(m.convStreamCh)
 			}
@@ -1646,7 +1664,18 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.runtimeCommandName == "new" && msg.err == nil && m.svc != nil && !siblingsRemain {
 			if _, err := m.svc.PrepareCycle(); err != nil {
 				m.convError = err.Error()
+				m = m.resetSessionTimer()
 				slog.Error("tui prepare cycle after hero-new failed", "error", err)
+			}
+		}
+		var sessionSaveCmd tea.Cmd
+		if !siblingsRemain {
+			switch m.runtimeCommandName {
+			case "archive":
+				m, sessionSaveCmd = m.stopSessionTimer(time.Now())
+				m = m.resetSessionTimer()
+			case "finish", "cancel":
+				m, sessionSaveCmd = m.stopSessionTimer(time.Now())
 			}
 		}
 		m = m.maybeFollowTranscriptBottom()
@@ -1659,12 +1688,19 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		next, handoffCmd := m.maybeHandoffAfterExecute()
 		if handoffCmd != nil {
-			return next, tea.Batch(next.refreshCmd(), handoffCmd, convWaitTickCmd())
+			return next, tea.Batch(next.refreshCmd(), handoffCmd, convWaitTickCmd(), sessionSaveCmd)
 		}
 		next = next.completeBusyExecuteStatus(true, busyExecuteCompletedText(next.statusLabel))
-		return next, next.refreshCmd()
+		return next, tea.Batch(next.refreshCmd(), sessionSaveCmd)
 
 	case streamCancelDoneMsg:
+		m = m.stopAITimer(time.Now())
+		if m.runtimeCommandName == "new" && m.sessionTimer.pendingCycle {
+			// The cycle row is created by the /hero-new demand. If that demand is
+			// cancelled before refresh binds the row, do not leave a pending
+			// Session timer running forever.
+			m = m.resetSessionTimer()
+		}
 		for _, ex := range m.executes {
 			ex.relay.Stop()
 		}

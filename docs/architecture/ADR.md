@@ -1,6 +1,7 @@
 # Architecture Decision Records — AI Workflow Hero
 
 > Index of all ADRs for the Hero project itself (the Go CLI + Runtime assets), consolidated from early design notes. Each ADR follows the standard Context / Decision / Consequences format. **Hero 1.0 ADRs (012–019):** [ADR-C01-001-hero-1-0.md](ADR-C01-001-hero-1-0.md) (includes ADR-003 amendment). **C2 ADRs (020–023):** [ADR-C02-001-slash-parity-harness-archive.md](ADR-C02-001-slash-parity-harness-archive.md). **C3 ADRs (024–030):** [ADR-C03-001-cursor-harness-tui-autonomy.md](ADR-C03-001-cursor-harness-tui-autonomy.md). **C4 ADRs (031–037):** [ADR-C04-001-multi-harness.md](ADR-C04-001-multi-harness.md). **C5 ADRs (038–042):** [ADR-C05-001-model-properties-tui.md](ADR-C05-001-model-properties-tui.md). **C6 ADRs (043–048):** [ADR-C06-001-codex-adapter.md](ADR-C06-001-codex-adapter.md). **C7 proposed ADRs (049–053):** [ADR-C07-001-tui-cycle-config.md](ADR-C07-001-tui-cycle-config.md). **C8 ADRs (054–057):** [ADR-C08-001-tui-stage-execute.md](ADR-C08-001-tui-stage-execute.md).
+> **C9 timer ADR:** [ADR-C09-001-tui-session-ai-timers.md](ADR-C09-001-tui-session-ai-timers.md) (ADR-058).
 >
 > **Architecture overview** (high-level diagrams and package map; non-normative): [architecture-overview.md](architecture-overview.md).
 
@@ -63,6 +64,7 @@
 | [ADR-055](ADR-C08-001-tui-stage-execute.md#adr-055-implementation-scope-agents-run-as-concurrent-tui-executes) | Implementation scope agents run as concurrent TUI Executes | Accepted |
 | [ADR-056](ADR-C08-001-tui-stage-execute.md#adr-056-nested-task-stays-in-the-parent-harness-generic-tasks-chip-task) | Nested Task stays in the parent harness; generic Tasks chip TASK | Accepted |
 | [ADR-057](ADR-C08-001-tui-stage-execute.md#adr-057-chat-multiplexes-tagged-executes-until-the-last-child-finishes) | Chat multiplexes tagged Executes until the last child finishes | Accepted |
+| [ADR-058](ADR-C09-001-tui-session-ai-timers.md#adr-058-shared-tui-session-and-ai-timers) | Shared TUI Session and AI timers | Accepted |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 

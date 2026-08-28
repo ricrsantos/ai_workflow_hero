@@ -6,7 +6,7 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 7
+const currentSchemaVersion = 8
 
 func (s *Store) migrate() error {
 	return s.migrateTo(currentSchemaVersion)
@@ -187,6 +187,12 @@ func (s *Store) applyMigration(version int) error {
 		// OpenCode serve rows are untouched (forward compatible; ADR-044).
 		if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_harness_serve_registry_harness_project
   ON harness_serve_registry(harness, project_path)`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+	case 8:
+		// TUI session timer: retain active seconds across TUI restarts while
+		// keeping archive/resume boundaries independent of wall-clock time.
+		if _, err := tx.Exec(`ALTER TABLE cycles ADD COLUMN session_duration_seconds INTEGER NOT NULL DEFAULT 0`); err != nil {
 			return fmt.Errorf("migration %d: %w", version, err)
 		}
 	default:

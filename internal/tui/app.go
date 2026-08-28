@@ -17,6 +17,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
@@ -50,11 +51,17 @@ type model struct {
 	contentOffset int // scroll for Status/Artifacts/Costs/Events
 
 	// Fixed footer status bar (running / result / error).
-	statusKind    statusKind
-	statusLabel   string
-	statusText    string
-	statusStarted time.Time
-	actionBusy    bool
+	statusKind  statusKind
+	statusLabel string
+	statusText  string
+	actionBusy  bool
+
+	// Shared TUI counters. The session timer is cycle-backed or free-chat
+	// in-memory; the AI timer covers the currently executing demand only.
+	sessionTimer     sessionTimerState
+	aiTimer          aiTimerState
+	timerLoopStarted bool
+	timerGeneration  uint64
 
 	paletteFilter string
 	paletteIndex  int
@@ -181,12 +188,13 @@ type model struct {
 }
 
 type refreshDataMsg struct {
-	status    cycle.StatusView
-	metrics   cycle.MetricsView
-	events    cycle.EventsView
-	artifacts cycle.ArtifactsView
-	approvals cycle.ApprovalsView
-	err       error
+	status       cycle.StatusView
+	sessionCycle *store.Cycle
+	metrics      cycle.MetricsView
+	events       cycle.EventsView
+	artifacts    cycle.ArtifactsView
+	approvals    cycle.ApprovalsView
+	err          error
 }
 
 type actionResultMsg struct {
@@ -315,9 +323,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.events = msg.events
 		m.artifacts = msg.artifacts
 		m.approvals = msg.approvals
+		var timerCmd tea.Cmd
+		m, timerCmd = m.syncSessionTimer(msg.sessionCycle, time.Now())
 		m = m.clampContentOffset()
 		slog.Debug("tui data refreshed", "cycle", m.status.CycleNumber)
-		return m, nil
+		return m, timerCmd
 
 	case configLoadedMsg, configSavedMsg, configRetryMsg:
 		return m.handleConfigMsg(msg)
@@ -354,11 +364,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.refreshCmd()
 
-	case statusTickMsg:
-		if m.statusKind != statusRunning {
-			return m, nil
-		}
-		return m, statusTickCmd()
+	case timerTickMsg:
+		return m.handleTimerTick(msg)
 
 	case convWaitTickMsg:
 		if m.streaming {
@@ -658,7 +665,7 @@ func (m model) beginAction(label string, cmd tea.Cmd) (model, tea.Cmd) {
 		return m, nil
 	}
 	m = m.setStatusRunning(label)
-	return m, tea.Batch(cmd, statusTickCmd())
+	return m, cmd
 }
 
 func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
@@ -788,6 +795,10 @@ func (m model) refreshCmd() tea.Cmd {
 		if err != nil {
 			return refreshDataMsg{err: err}
 		}
+		sessionCycle, sErr := svc.SessionCycle()
+		if sErr != nil {
+			slog.Debug("tui session cycle refresh failed", "error", sErr)
+		}
 		metrics, mErr := svc.Metrics()
 		if mErr != nil {
 			// Metrics may fail when no active cycle; keep empty view.
@@ -809,7 +820,7 @@ func (m model) refreshCmd() tea.Cmd {
 			return refreshDataMsg{err: mErr}
 		}
 		return refreshDataMsg{
-			status: st, metrics: metrics, events: events, artifacts: artifacts, approvals: approvals,
+			status: st, sessionCycle: sessionCycle, metrics: metrics, events: events, artifacts: artifacts, approvals: approvals,
 		}
 	}
 }
@@ -837,6 +848,14 @@ func (m model) beginNewChat() (model, tea.Cmd) {
 	}
 	m, _ = m.enterConversation()
 	m = m.resetChatSession()
+	// /new-chat starts a free-chat session when no cycle is active, so it owns
+	// the explicit Session reset in that case. While a cycle is active, the
+	// cycle timer must continue through a conversation reset. Other resets
+	// (for example /hero-start preflight) must not erase a completed cycle's
+	// frozen duration before archive.
+	if !m.hasActiveCycle() {
+		m = m.resetSessionTimer()
+	}
 	m = m.setStatusResult(true, "/new-chat", "New chat started with default model.")
 	return m, nil
 }
@@ -881,12 +900,11 @@ func (m model) beginHeroStart() (model, tea.Cmd) {
 	m.statusKind = statusRunning
 	m.statusLabel = "/hero-start"
 	m.statusText = "preparing…"
-	m.statusStarted = time.Now()
 	m.heroStartRequestID++
 	requestID := m.heroStartRequestID
 	ctx, cancel := context.WithCancel(context.Background())
 	m.heroStartCancel = cancel
-	return m, tea.Batch(convWaitTickCmd(), statusTickCmd(), m.heroStartBootstrapCmd(ctx, requestID))
+	return m, tea.Batch(convWaitTickCmd(), m.heroStartBootstrapCmd(ctx, requestID))
 }
 
 type heroStartBootstrapDoneMsg struct {
@@ -1097,7 +1115,7 @@ func (m model) beginHeroResumeExecute(cycleN int) (model, tea.Cmd) {
 	}
 	m = m.setStatusRunning("/hero-resume")
 	next, execCmd := m.beginHeroRuntimeConversation("resume", slug, heroRuntimeOpts{ResumeCycleNumber: cycleN})
-	return next, tea.Batch(execCmd, statusTickCmd())
+	return next, execCmd
 }
 
 func (m model) validateHeroRejectPreconditions() (errMsg string) {

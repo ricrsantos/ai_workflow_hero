@@ -50,6 +50,21 @@ New screen (or primary mode when an etapa requires interações):
 | Input | OpenCode-style boxed prompt with colored solid accent bar; status line shows **Build** or **Plan**, model slug, and harness name. For ordinary text, **Enter** inserts a newline without sending; **Alt+Enter** submits **interação** (does not conflict with **Alt+1–5** screen jumps). A recognized slash command is executed with **Enter**; **Alt+Enter** remains reserved for ordinary prompt submission. **Alt+y** copies the latest user prompt; **Alt+r** copies the latest agent turn; **Alt+i** copies the composer (OSC 52 + native clipboard). Esc clears input (or dismisses the slash overlay first). **`/` stays in the composer** and opens a filtered autocomplete overlay of the full palette (including `Go to - *`, Refresh, Quit, `/hero-*`, and imported commands). **Tab** on **`/hero-approve` `/hero-reject` `/hero-cancel` `/hero-continue` `/hero-finish` `/hero-back`** **inserts** the token; **Enter** executes it. **Tab** on **every other item** runs the same action as the full-screen palette (navigate / Execute immediately); **Enter** preserves that command execution behavior. **Tab** toggles Build ↔ Plan only when the overlay is closed (Plan → Cursor Agent CLI `--mode plan`). `/` on other screens still opens the full command palette. With a live `/hero-start` orchestrator session, `/hero-approve` (and `/hero-reject` `/hero-cancel` `/hero-finish` `/hero-continue` `/hero-back`) are sent as **follow-ups** to that session — they must not fail on SQLite `PendingApproval` (the waiting agent persists via CLI). ↑↓ move the composer caret between visual lines and scroll the unified transcript at the boundaries. |
 | Footer | Fixed hints: `tab mode · / commands · enter newline or command · alt+enter send · alt+r/i copy · ↑↓ scroll · alt+q quit` |
 
+The left navbar ends with a blue timer subdivision below the navigation
+shortcut hint:
+
+```text
+ Sessão 00:00:00
+ AI     00:00:00
+```
+
+`Sessão` runs from `/hero-new` until the cycle reaches a terminal state and
+retains active cycle seconds in SQLite across TUI restarts; archive resets its
+display. In free chat it starts with the first submitted prompt and is kept
+only for the current TUI process. `AI` starts with each Execute and stops when
+the response (including concurrent Executes) completes or is cancelled. Both
+values use `HH:MM:SS` with continuous hours and one-second resolution.
+
 Chat **works without an active cycle/etapa** using `hero.json` → `harnesses.<tool>` defaults (Cursor: `composer-2.5`, `enable_fast_model: false`). Freechat session ids stay in TUI memory for the process lifetime.
 
 At TUI boot, after harness validation, Hero calls the harness model catalog (`agent models` / `--list-models` for Cursor). Models are available via `/hero-model` in the palette; selection updates the Chat screen and persists to `hero.json` → `harnesses.<tool>.model`. If listing fails, boot continues with the configured slug (no hard fail).

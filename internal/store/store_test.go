@@ -36,12 +36,13 @@ func TestOpenMigrateAndRoundTrip(t *testing.T) {
 	defer s2.Close()
 
 	id, err := s.CreateCycle(Cycle{
-		Number:             1,
-		Title:              "Test",
-		Objective:          "Obj",
-		Status:             CycleStatusActive,
-		StartedAt:          nowRFC3339(),
-		ConfigSnapshotJSON: `{"title":"Test"}`,
+		Number:                 1,
+		Title:                  "Test",
+		Objective:              "Obj",
+		Status:                 CycleStatusActive,
+		StartedAt:              nowRFC3339(),
+		SessionDurationSeconds: 12,
+		ConfigSnapshotJSON:     `{"title":"Test"}`,
 	})
 	if err != nil {
 		t.Fatalf("CreateCycle: %v", err)
@@ -116,8 +117,18 @@ func TestOpenMigrateAndRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetActiveCycle: %v", err)
 	}
-	if active.ID != id || active.Title != "Test" {
+	if active.ID != id || active.Title != "Test" || active.SessionDurationSeconds != 12 {
 		t.Fatalf("active = %+v", active)
+	}
+	if err := s.UpdateCycleSessionDuration(id, 27); err != nil {
+		t.Fatalf("UpdateCycleSessionDuration: %v", err)
+	}
+	if err := s.UpdateCycleSessionDuration(id, 9); err != nil {
+		t.Fatalf("monotonic UpdateCycleSessionDuration: %v", err)
+	}
+	active, err = s.GetActiveCycle()
+	if err != nil || active.SessionDurationSeconds != 27 {
+		t.Fatalf("session duration = %d, want 27 (err=%v)", active.SessionDurationSeconds, err)
 	}
 }
 

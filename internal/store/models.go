@@ -38,16 +38,18 @@ const (
 
 // Cycle is a development cycle row.
 type Cycle struct {
-	ID                 int64
-	Number             int
-	Title              string
-	Objective          string
-	Status             string
-	StartedAt          string
-	CompletedAt        string
-	ConfigSnapshotJSON string
-	LockHolder         string
-	LockAt             string
+	ID          int64
+	Number      int
+	Title       string
+	Objective   string
+	Status      string
+	StartedAt   string
+	CompletedAt string
+	// SessionDurationSeconds is the accumulated active TUI session time.
+	SessionDurationSeconds int64
+	ConfigSnapshotJSON     string
+	LockHolder             string
+	LockAt                 string
 	// OpenspecChange is the OpenSpec change directory name (empty when unset).
 	OpenspecChange string
 }

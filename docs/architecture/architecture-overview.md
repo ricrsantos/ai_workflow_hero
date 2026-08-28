@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **2.8.0 development** (C7 configuration screen + C8 TUI-direct stage Execute). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
+> **Status:** reflects codebase at Hero **2.8.0 development** (C7 configuration screen + C8 TUI-direct stage Execute + shared TUI timers). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -17,7 +17,7 @@ Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning
 | CLI | Cobra + `internal/common/clierr` |
 | TUI | Bubble Tea + lipgloss + huh (install prompts) |
 | Assets | `assets.FS` (`embed.FS`) |
-| Operational store | SQLite at `.workflow-hero/hero.db` (schema v3) |
+| Operational store | SQLite at `.workflow-hero/hero.db` (schema v8) |
 | SDD | OpenSpec (external CLI; coupled at archive) |
 | V1 harness | Cursor Agent CLI (`cursor-agent` / `cursor agent`) |
 | Platforms | Linux/macOS `amd64` / `arm64` |
@@ -226,6 +226,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 | `agentlabels.go` / `chat_format.go` | Live agents box and `[LABEL - model]` transcript |
 | `contextbar.go` | Token usage bar from `result.usage` vs `models/*.yml` |
 | `config_screen.go` | Active-cycle YAML-backed form, progressive disclosure, save states, and failed-stage retry |
+| `timers.go` | Shared one-second Session/AI counters and cycle-duration persistence |
 | `internal/workflowconfig` document layer | Latest-file YAML node merge, managed projection/diff, validation, and atomic write |
 | `output_view.go` | Shared scrollable output for Status/Costs/Events |
 
@@ -239,6 +240,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 - **Boot** validates harness availability (`IsAvailable`); may prompt for harness selection when `cli.tools` is empty (ADR-027).
 - **Default harness model** is stored in `hero.json` → `harnesses.<tool>` (ADR-030); per-cycle agent models live in `workflow-config.yml`. Freechat and `/hero-new` use the harness default; orchestrator slashes use YAML `orchestration_agent` (then `fallback_model`, then `/hero-model`).
 - **Cycle Config (C7)**: the TUI edits only managed YAML nodes; the latest file supplies unmanaged comments/unknown keys during Save. Successful Save calls cycle sync; completed stages remain protected, and a changed failed stage can be explicitly requeued through `cycle.Service.RetryFailedStage`.
+- **Shared TUI timers**: one second tick drives the blue bottom-navbar `Sessão` and `AI` values. `Sessão` persists active cycle seconds in `cycles.session_duration_seconds`, stops at a terminal cycle state, resets on archive/free-chat, and resumes from saved seconds; free-chat Session and AI values remain process-local.
 
 ---
 
@@ -311,13 +313,13 @@ Agents: `orchestration_agent`, `discover_agent`, `planning_agent`, `context_agen
   context/ · openspec/ · docs/ · AGENTS.md  (project knowledge, not SoT)   │
 ```
 
-**SQLite** (`internal/store`) holds cycles, stages, events, metrics, artifact metadata, and harness session references per stage where persisted.
+**SQLite** (`internal/store`) holds cycles, stages, events, metrics, artifact metadata, harness session references per stage where persisted, and the accumulated active cycle Session timer seconds.
 
-**Schema v3** (`internal/store/migrate.go`):
+**Schema v8** (`internal/store/migrate.go`):
 
 | Table | Purpose |
 |---|---|
-| `cycles` | Cycle row; v2 adds `openspec_change` |
+| `cycles` | Cycle row; v2 adds `openspec_change`; v8 adds `session_duration_seconds` |
 | `stages` | Per-cycle stage state; v3 adds `harness_session_id` |
 | `events` | Append-only operational log |
 | `metrics` | Per-stage/agent token/cost estimates |

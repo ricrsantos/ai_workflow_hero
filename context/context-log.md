@@ -413,3 +413,11 @@
 **Outcome**: Added a per-Execute ordered/coalescing relay between harness callbacks and Bubble Tea. It makes callbacks return immediately, coalesces adjacent text/thinking deltas, retains transcript-critical events, drains before Execute completion, and is stopped on cancellation. Codex now records final text per `agentMessage` item and constructs `ExecutionResult.Output` from authoritative completed snapshots in wire order. A unique streamed item also accepts `turn/completed.lastAgentMessage` as a final fallback. TUI auto-follow is calculated once per stream batch rather than once per delta.
 
 **Validation**: New Codex gap-repair tests and TUI relay backpressure/cancellation tests pass. `CC=/usr/bin/gcc GOCACHE=/tmp/hero-go-cache go test ./... -count=1 -p 1 -timeout=600s` passed all affected packages (Codex, TUI, Cursor, integration) but the full command still fails in two pre-existing OpenCode local-serve tests: `TestDiscoverModelPropertiesNormalized` and `TestIsManagedOpenCodeServeDetectsSpawnedServe`, both reporting no listening URL from the simulated serve process in this restricted sandbox.
+
+## 2026-08-28 — Shared TUI Session and AI timers
+
+**Outcome**: Replaced the `/hero-start`-specific elapsed footer value with one shared one-second timer loop. The blue bottom-navbar subdivision now shows `Sessão` and `AI` as continuous `HH:MM:SS` values. Cycle Session seconds persist monotonically in SQLite schema v8, stop at terminal states, and reset on archive/free-chat; free-chat Session and AI remain process-local. Added timer lifecycle, sidebar placement, store migration, service, and TUI coverage.
+
+**Validation**: Focused `internal/store`, `internal/cycle`, and `internal/tui` suites pass with `CC=/usr/bin/gcc GOCACHE=/tmp/hero-go-cache`. The full suite reaches the same two pre-existing restricted-sandbox failures in `internal/adapters/opencode` (`TestDiscoverModelPropertiesNormalized` and `TestIsManagedOpenCodeServeDetectsSpawnedServe`, simulated serve exits without a listening URL); all other packages pass.
+
+**Follow-up**: Preserved active-cycle time across conversation resets, kept completed-cycle time visible until archive/free-chat reset, and cleared a pending `/hero-new` Session timer when its Execute is cancelled.

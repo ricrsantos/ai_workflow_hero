@@ -163,6 +163,38 @@ func (s *Service) Status() (StatusView, error) {
 	return view, nil
 }
 
+// SessionCycle returns the cycle that owns the TUI session timer. Active is
+// preferred; after /hero-finish or /hero-cancel the latest cycle is retained
+// until /hero-archive resets the timer.
+func (s *Service) SessionCycle() (*store.Cycle, error) {
+	if s == nil || s.Store == nil {
+		return nil, errors.New("cycle service unavailable")
+	}
+	active, err := s.Store.GetActiveCycle()
+	if err == nil {
+		return &active, nil
+	}
+	if !errors.Is(err, store.ErrNoActiveCycle) {
+		return nil, err
+	}
+	cycles, err := s.Store.ListCycles()
+	if err != nil {
+		return nil, err
+	}
+	if len(cycles) == 0 || cycles[len(cycles)-1].Status == store.CycleStatusArchived {
+		return nil, nil
+	}
+	return &cycles[len(cycles)-1], nil
+}
+
+// UpdateCycleSessionDuration persists the monotonic active-session counter.
+func (s *Service) UpdateCycleSessionDuration(cycleID, seconds int64) error {
+	if s == nil || s.Store == nil {
+		return errors.New("cycle service unavailable")
+	}
+	return s.Store.UpdateCycleSessionDuration(cycleID, seconds)
+}
+
 // MetricsView is the metrics command output.
 type MetricsView struct {
 	CycleNumber int          `json:"cycleNumber"`
