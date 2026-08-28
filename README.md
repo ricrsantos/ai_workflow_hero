@@ -185,27 +185,32 @@ If Status shows *No active cycle*, start one from the TUI or Cursor chat:
 2. Edit `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`) when the agent asks you to review
 3. Run `/hero-start` (TUI or chat) to execute configured stages; in chat, prefer a **new empty chat** with your orchestrator / grill-me agent
 
-Refresh the TUI (`Ctrl+R`) after the cycle is created to see it on the Status screen.
+Refresh the TUI with `F5` (or `Alt+R` outside Chat) after the cycle is created to see it on the Status screen.
 
 ### Screens and shortcuts
 
 | Key | Action |
 |---|---|
-| `Alt+1` / `Ctrl+1` | **Chat** — harness conversation (free chat or active stage) |
-| `Alt+2` / `Ctrl+2` | **Status** — cycle title, objective, stage table (`openspec_change` when set) |
-| `Alt+3` / `Ctrl+3` | **Artifacts** — artifact metadata from the store |
-| `Alt+4` / `Ctrl+4` | **Costs** — token / cost metrics |
-| `Alt+5` / `Ctrl+5` | **Events** — recent operational event log |
-| `Alt+6` / `Ctrl+6` | **Config** — active cycle only; no-op when hidden |
+| `Alt+1` | **Chat** — harness conversation (free chat or active stage) |
+| `Alt+2` | **Status** — cycle title, objective, stage table (`openspec_change` when set) |
+| `Alt+3` | **Artifacts** — artifact metadata from the store |
+| `Alt+4` | **Costs** — token / cost metrics |
+| `Alt+5` | **Events** — recent operational event log |
+| `Alt+6` | **Config** — active cycle only; no-op when hidden |
+| `Tab` / `Shift+Tab` | Switch focus between the active screen and navbar |
+| `↑` / `↓`, `Enter` | With navbar focus, move the luminous selection and open it; `>` continues to mark the active screen |
+| `Alt+M` | Toggle Chat between Build and Plan mode |
 | `/` | **Commands** menu — press `/`, type to filter, Enter to run (Claude Code–style; use this instead of `Ctrl+P`, which opens Cursor’s palette in the IDE terminal) |
-| `Ctrl+R` / `F5` | Refresh from SQLite |
+| `Alt+R` / `F5` | Refresh screen data; in Chat, `Alt+R` copies the response and `F5` refreshes cycle data |
+| `Alt+S` / `Alt+Enter` | On Config, save / save and start |
+| `Alt+R` / `Alt+I` | In Chat, copy the latest response / input |
 | `a` | Approve (on Approvals screen) |
 | `r` | Reject (on Approvals screen) |
 | `f` | Finish cycle (on Approvals screen) |
 | `c` | Cancel cycle (on Approvals screen) |
 | `d` | Dispatch harness (`hero run` / Cursor adapter, best-effort) |
 | `Esc` | In Chat, interrupt the active Harness execution; otherwise close Commands or clear Chat input |
-| `Ctrl+C` | Quit (with confirmation while Harness is running) |
+| `Alt+Q` | Quit (with confirmation while Harness is running) |
 
 ### Commands menu (`/`)
 
@@ -253,7 +258,7 @@ Pick one entry UI per session for control actions; both read and write `.workflo
 ### Tips
 
 - In Cursor’s integrated terminal, open Hero commands with **`/`**, not `Ctrl+P` (that shortcut belongs to the IDE).
-- Keep the TUI open while agents work in Cursor to watch status, events, and costs update after you refresh (`Ctrl+R`).
+- Keep the TUI open while agents work in Cursor to watch status, events, and costs update after you refresh (`F5`, or `Alt+R` outside Chat).
 - Scripting and CI should use `hero status --json` / `hero metrics --json`, not the TUI.
 - Uninstall removes `.workflow-hero/` (including the DB); project docs and `context/` stay.
 
@@ -556,27 +561,32 @@ Se o Status mostrar *No active cycle*, inicie um ciclo pela TUI ou pelo chat do 
 2. Edite `.workflow-hero/cycles/current/workflow-config.yml` (`title` / `objective` / `scope`) quando o agente pedir revisão
 3. Execute `/hero-start` (TUI ou chat) para rodar as etapas; no chat, prefira um **chat novo e vazio** com o orchestrator / grill-me
 
-Atualize a TUI (`Ctrl+R`) depois que o ciclo for criado para vê-lo na tela Status.
+Atualize a TUI com `F5` (ou `Alt+R` fora do Chat) depois que o ciclo for criado para vê-lo na tela Status.
 
 ### Telas e atalhos
 
 | Tecla | Ação |
 |---|---|
-| `Alt+1` / `Ctrl+1` | **Chat** — conversa com o harness (free chat ou etapa ativa) |
-| `Alt+2` / `Ctrl+2` | **Status** — título, objetivo, tabela de stages (`openspec_change` quando definido) |
-| `Alt+3` / `Ctrl+3` | **Artifacts** — metadados de artefatos no store |
-| `Alt+4` / `Ctrl+4` | **Costs** — métricas de tokens / custo |
-| `Alt+5` / `Ctrl+5` | **Events** — log recente de eventos operacionais |
-| `Alt+6` / `Ctrl+6` | **Config** — somente com ciclo ativo; sem efeito quando oculta |
+| `Alt+1` | **Chat** — conversa com o harness (free chat ou etapa ativa) |
+| `Alt+2` | **Status** — título, objetivo, tabela de stages (`openspec_change` quando definido) |
+| `Alt+3` | **Artifacts** — metadados de artefatos no store |
+| `Alt+4` | **Costs** — métricas de tokens / custo |
+| `Alt+5` | **Events** — log recente de eventos operacionais |
+| `Alt+6` | **Config** — somente com ciclo ativo; sem efeito quando oculta |
+| `Tab` / `Shift+Tab` | Alterna o foco entre a tela ativa e a navbar |
+| `↑` / `↓`, `Enter` | Com a navbar focada, move a seleção luminosa e abre o item; `>` continua marcando a tela ativa |
+| `Alt+M` | Alterna o Chat entre os modos Build e Plan |
 | `/` | Menu de **Commands** — pressione `/`, digite para filtrar, Enter para executar (estilo Claude Code; use isto em vez de `Ctrl+P`, que abre a palette do Cursor no terminal da IDE) |
-| `Ctrl+R` / `F5` | Atualizar a partir do SQLite |
+| `Alt+R` / `F5` | Atualiza os dados da tela; no Chat, `Alt+R` copia a resposta e `F5` atualiza os dados do ciclo |
+| `Alt+S` / `Alt+Enter` | Em Config, salva / salva e inicia |
+| `Alt+R` / `Alt+I` | No Chat, copia a última resposta / input |
 | `a` | Approve (na tela Approvals) |
 | `r` | Reject (na tela Approvals) |
 | `f` | Finish do ciclo (na tela Approvals) |
 | `c` | Cancel do ciclo (na tela Approvals) |
 | `d` | Dispatch do harness (`hero run` / adapter Cursor, best-effort) |
 | `Esc` | No Chat, interromper o Harness ativo; caso contrário fechar Commands ou limpar o input do Chat |
-| `Ctrl+C` | Sair (com confirmação enquanto o Harness estiver rodando) |
+| `Alt+Q` | Sair (com confirmação enquanto o Harness estiver rodando) |
 
 ### Menu de Commands (`/`)
 
@@ -624,7 +634,7 @@ Escolha uma UI por sessão para ações de controle; ambas leem e escrevem `.wor
 ### Dicas
 
 - No terminal integrado do Cursor, abra os comandos do Hero com **`/`**, não com `Ctrl+P` (esse atalho é da IDE).
-- Deixe a TUI aberta enquanto os agentes trabalham no Cursor e use `Ctrl+R` para ver status, eventos e custos.
+- Deixe a TUI aberta enquanto os agentes trabalham no Cursor e use `F5` (ou `Alt+R` fora do Chat) para ver status, eventos e custos.
 - Em scripts/CI use `hero status --json` / `hero metrics --json`, não a TUI.
 - O uninstall remove `.workflow-hero/` (incluindo o DB); docs do projeto e `context/` permanecem.
 

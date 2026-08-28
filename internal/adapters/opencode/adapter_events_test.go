@@ -1114,3 +1114,47 @@ func TestExtractOpenCodeUsageFromStepFinish(t *testing.T) {
 		t.Fatalf("usage=%+v", state.usage)
 	}
 }
+
+func TestExtractOpenCodeUsageAccumulatesStepFinishes(t *testing.T) {
+	state := newStreamState()
+	state.assistantMsgID = "msg-asst"
+	for id, tokens := range map[string][2]float64{
+		"prt-fin-1": {10, 3},
+		"prt-fin-2": {20, 4},
+	} {
+		evt := map[string]any{
+			"type": "message.part.updated",
+			"properties": map[string]any{
+				"sessionID": "sess-1",
+				"part": map[string]any{
+					"id":        id,
+					"type":      "step-finish",
+					"messageID": "msg-asst",
+					"tokens": map[string]any{
+						"input":  tokens[0],
+						"output": tokens[1],
+					},
+				},
+			},
+		}
+		parseEventDelta(evt, "sess-1", state)
+	}
+	// A later message snapshot must not replace the accumulated step usage.
+	parseEventDelta(map[string]any{
+		"type": "message.updated",
+		"properties": map[string]any{
+			"sessionID": "sess-1",
+			"info": map[string]any{
+				"id":   "msg-asst",
+				"role": "assistant",
+				"tokens": map[string]any{
+					"input":  20.0,
+					"output": 4.0,
+				},
+			},
+		},
+	}, "sess-1", state)
+	if state.usage.InputTokens != 30 || state.usage.OutputTokens != 7 {
+		t.Fatalf("usage=%+v want accumulated step usage", state.usage)
+	}
+}

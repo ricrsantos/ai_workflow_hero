@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -208,6 +209,66 @@ func TestDebugOnlyActivities(t *testing.T) {
 			t.Fatalf("missing %q in %q", want, joined)
 		}
 	}
+}
+
+func TestMapTokenUsageUsesLastTurnFromV2Snapshot(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	payload, err := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"usage": map[string]any{
+			"last": map[string]any{
+				"inputTokens":  12,
+				"outputTokens": 4,
+			},
+			"total": map[string]any{
+				"inputTokens":  120,
+				"outputTokens": 40,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out := a.handleNotification(context.Background(), "thread/tokenUsage/updated", payload, "thr", harness.ExecuteRequest{}, nil, st); out.err != nil {
+		t.Fatal(out.err)
+	}
+	a.mu.Lock()
+	got := a.usageBySession["thr"]
+	a.mu.Unlock()
+	if got.InputTokens != 12 || got.OutputTokens != 4 {
+		t.Fatalf("usage=%+v want last-turn usage", got)
+	}
+}
+
+func TestTurnSlotSerializesAndHonorsCancellation(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	if err := a.acquireTurnSlot(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		result <- a.acquireTurnSlot(ctx)
+	}()
+
+	select {
+	case err := <-result:
+		t.Fatalf("second turn acquired before first was released: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("queued turn error=%v want context canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("queued turn did not observe cancellation")
+	}
+	a.releaseTurnSlot()
 }
 
 func TestTextBufWrittenBeforeOnStreamDelta(t *testing.T) {

@@ -14,12 +14,16 @@ import (
 )
 
 type convExecute struct {
-	ID            string
-	AgentName     string
-	HarnessID     string
-	SessionID     string
-	AgentMsgIndex int
-	relay         *conversationStreamRelay
+	ID              string
+	AgentName       string
+	HarnessID       string
+	Model           string
+	Prompt          string
+	StageName       string
+	UsageGeneration int64
+	SessionID       string
+	AgentMsgIndex   int
+	relay           *conversationStreamRelay
 }
 
 const (

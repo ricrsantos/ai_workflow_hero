@@ -210,7 +210,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
          hero.db mutations                              cursor-agent CLI
 ```
 
-**Screens** (`alt+1` … `alt+5`): Chat, Status, Artifacts, Costs, Events. With an active project cycle, Config is appended as `alt+6`; when it is hidden, `alt+6` is a no-op. The navbar footer shows only `alt+1-5` or `alt+1-6` accordingly. Approvals are handled in Chat via `/hero-approve` / `/hero-reject` (no separate Approvals screen). `hero chat` shows Chat only. Config is unavailable without an active cycle.
+**Screens** (`alt+1` … `alt+5`): Chat, Status, Artifacts, Costs, Events. With an active project cycle, Config is appended as `alt+6`; when it is hidden, `alt+6` is a no-op. Ctrl aliases are not part of the TUI keymap. Tab switches shell focus between the active screen and navbar; while the navbar owns focus, Up/Down move its independent luminous cursor and Enter activates the selected screen, while `>` continues to identify the active screen. The navbar footer shows only `alt+1-5` or `alt+1-6` accordingly. Approvals are handled in Chat via `/hero-approve` / `/hero-reject` (no separate Approvals screen). `hero chat` shows Chat only. Config is unavailable without an active cycle.
 
 **TUI modules** (selected):
 
@@ -224,7 +224,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 | `palette.go` / `slash_overlay.go` | Command palette and Chat `/` autocomplete |
 | `harness_boot.go` / `model_gate.go` | Harness availability, model picker at boot |
 | `agentlabels.go` / `chat_format.go` | Live agents box and `[LABEL - model]` transcript |
-| `contextbar.go` | Token usage bar from `result.usage` vs `models/*.yml` |
+| `contextbar.go` | Session-accumulated per-turn token usage bar from `result.usage` vs `models/*.yml` |
 | `config_screen.go` | Active-cycle YAML-backed form, progressive disclosure, save states, and failed-stage retry |
 | `timers.go` | Shared one-second Session/AI wk/AI rp counters and cycle-duration persistence |
 | `internal/workflowconfig` document layer | Latest-file YAML node merge, managed projection/diff, validation, and atomic write |

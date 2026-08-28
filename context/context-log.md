@@ -4,6 +4,47 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-28 — Accumulated TUI token usage
+
+**Problem**: TUI Chat replaced the session context-token counter with the
+latest completed Execute's usage. Cycle-stage attribution also relied on
+mutable global speaker state, which could misattribute parallel stage-agent
+results.
+
+**Change**: Completed Execute usage now accumulates `input+output` for the
+current Chat session. `/new-chat` and successful `/harness-reset` clear the
+counter, and invalidated late completions cannot re-add usage to that new
+counter. Each tagged Execute captures its stage, agent, model, and prompt for
+usage fallback and cycle metrics attribution. OpenCode step usage is summed
+within one Execute, while Codex app-server v2 cumulative snapshots are
+normalized to their `last` turn before the TUI/cycle accumulator consumes them.
+Existing cycle metrics aggregation remains additive by cycle, stage, and
+agent; a late result from a reset session still records consumed cycle usage.
+Nested Runtime Task usage remains represented by the parent agent's Metrics
+Procedure estimate.
+
+**Validation**: Focused TUI, Codex adapter, and harness tests pass with a
+writable temporary Go build cache.
+
+## 2026-08-28 — Codex turn callback isolation
+
+**Change**: Codex app-server exposes one notification/request callback pair
+per JSON-RPC connection. The adapter now serializes turns on the same
+connection, while retaining concurrency across different harness adapters,
+so parallel stage executions cannot replace one another's event and usage
+routing. Queued turns honor cancellation.
+
+**Validation**: Codex adapter and affected TUI/cycle/engine tests pass. The
+unfiltered repository suite still reaches all packages and fails only the two
+previously documented restricted-sandbox OpenCode serve-spawn tests, which
+cannot expose a listening URL in this environment.
+
+## 2026-08-28 — Alt-oriented TUI and navbar focus navigation
+
+**Change**: Removed TUI Ctrl aliases and standardized modified shortcuts on Alt. Tab/Shift+Tab now switch shell focus between screen content and the visible navbar; the navbar keeps a wrapping luminous Up/Down cursor separate from the `>` active-screen marker, and Enter activates the highlighted screen. Chat Build/Plan moved from Tab to Alt+M. Config now uses Alt+S, Alt+Enter, and Alt+R; redundant Ctrl+P/N navigation aliases were removed in favor of arrow keys.
+
+**Validation**: Added behavioral tests for focus transfer, luminous selection, marker stability, Enter activation, wrapping, hidden-navbar behavior, dirty Config leave protection, edit commit on Tab, Alt bindings, and the ignored legacy control quit key. `go test ./internal/tui -count=1` passes. The repository suite passes when skipping the two pre-existing restricted-sandbox OpenCode serve-spawn tests; an unfiltered `go test ./...` fails only those same documented cases because they cannot expose a listening URL in this environment.
+
 ## 2026-08-28 — AI working and response-gap timers
 
 **Change**: Renamed the execution timer label to `AI wk` and added `AI rp`
@@ -68,7 +109,7 @@ previous entry.
 
 ## 2026-08-27 — TUI test helper and conditional navigation
 
-**Outcome**: Test-only models skip the 30-second health probe, and command draining stops after the first business message. Esc cancels active Executes/preflight while Ctrl+C remains protected quit. Sidebar numbering follows visible screens (`alt+1-5`, or `alt+1-6` with Config).
+**Outcome**: Test-only models skip the 30-second health probe, and command draining stops after the first business message. Esc cancels active Executes/preflight; the protected quit binding was later standardized on Alt+Q. Sidebar numbering follows visible screens (`alt+1-5`, or `alt+1-6` with Config).
 
 **Validation**: TUI and focused navigation/cancellation tests passed.
 

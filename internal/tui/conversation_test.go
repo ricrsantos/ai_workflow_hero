@@ -239,7 +239,7 @@ stages:
 
 func TestConversationScreenNavigation(t *testing.T) {
 	m := NewTestModel(nil)
-	next, _ := HandleTestKey(m, "ctrl+1")
+	next, _ := HandleTestKey(m, "alt+1")
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen = %v", CurrentScreen(next))
 	}
@@ -1095,26 +1095,26 @@ func TestConversationEmptyStageShowsInput(t *testing.T) {
 	if !strings.Contains(view, "Build") {
 		t.Fatalf("expected Build mode label: %q", view)
 	}
-	if !strings.Contains(view, "tab mode") {
-		t.Fatalf("expected tab hint: %q", view)
+	if !strings.Contains(view, "alt+m mode") {
+		t.Fatalf("expected alt+m hint: %q", view)
 	}
 }
 
-func TestConversationTabTogglesMode(t *testing.T) {
+func TestConversationAltMTogglesMode(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	if ChatModeForTest(m) != harness.ModeBuild {
 		t.Fatalf("mode=%q", ChatModeForTest(m))
 	}
-	next, _ := HandleTestKey(m, "tab")
+	next, _ := HandleTestKey(m, "alt+m")
 	if ChatModeForTest(next) != harness.ModePlan {
-		t.Fatalf("after tab mode=%q", ChatModeForTest(next))
+		t.Fatalf("after alt+m mode=%q", ChatModeForTest(next))
 	}
 	view := ViewForTest(next)
 	if !strings.Contains(view, "Plan") {
 		t.Fatalf("expected Plan label: %q", view)
 	}
-	next2, _ := HandleTestKey(next, "tab")
+	next2, _ := HandleTestKey(next, "alt+m")
 	if ChatModeForTest(next2) != harness.ModeBuild {
 		t.Fatalf("toggle back mode=%q", ChatModeForTest(next2))
 	}
@@ -1172,8 +1172,8 @@ func TestConversationInputGuidanceWhenEmpty(t *testing.T) {
 	if !strings.Contains(view, "Build") {
 		t.Fatalf("expected Build mode: %q", view)
 	}
-	if !strings.Contains(view, "tab mode") {
-		t.Fatalf("expected tab hint: %q", view)
+	if !strings.Contains(view, "alt+m mode") {
+		t.Fatalf("expected alt+m hint: %q", view)
 	}
 	if !ChatInputFocusedForTest(m) {
 		t.Fatal("expected chat input focused on conversation screen")
@@ -1222,7 +1222,7 @@ func TestConversationFocusCaretNoBlinkPipe(t *testing.T) {
 		t.Fatalf("unexpected placeholder: %q", view)
 	}
 	// Leave chat → hollow caret when returning via view of unfocused model.
-	next, _ := HandleTestKey(m, "ctrl+2")
+	next, _ := HandleTestKey(m, "alt+2")
 	if ChatInputFocusedForTest(next) {
 		t.Fatal("expected focus lost on Status")
 	}
@@ -1235,12 +1235,12 @@ func TestConversationFocusCaretNoBlinkPipe(t *testing.T) {
 func TestConversationScreenNavFromEmptyInput(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
-	next, _ := HandleTestKey(m, "ctrl+2")
+	next, _ := HandleTestKey(m, "alt+2")
 	if CurrentScreen(next) != ScreenStatus {
 		t.Fatalf("screen = %v, want Status", CurrentScreen(next))
 	}
 	m = EnterConversationForTest(m)
-	next, _ = HandleTestKey(m, "ctrl+5")
+	next, _ = HandleTestKey(m, "alt+5")
 	if CurrentScreen(next) != ScreenEvents {
 		t.Fatalf("screen = %v, want Events", CurrentScreen(next))
 	}
@@ -3613,7 +3613,7 @@ func TestConversationContextBarHiddenWithoutWindow(t *testing.T) {
 	}
 }
 
-func TestExecuteDoneUpdatesContextUsedTokens(t *testing.T) {
+func TestExecuteDoneAccumulatesContextUsedTokens(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	m = SetChatModelSlugForTest(m, "composer-2.5")
@@ -3627,10 +3627,90 @@ func TestExecuteDoneUpdatesContextUsedTokens(t *testing.T) {
 	if got.contextUsedTokens != 180000 {
 		t.Fatalf("used=%d want 180000", got.contextUsedTokens)
 	}
+	got.streaming = true
+	next, _ = got.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
+		SessionID: "sess-1",
+		Output:    "done again",
+		Usage:     harness.Usage{InputTokens: 12000, OutputTokens: 3000},
+	}, nil))
+	got = next.(model)
+	if got.contextUsedTokens != 195000 {
+		t.Fatalf("used=%d want 195000 after second turn", got.contextUsedTokens)
+	}
 	view := stripANSI(ViewForTest(got))
-	if !strings.Contains(view, "180k/200k") {
+	if !strings.Contains(view, "195k/200k") {
 		t.Fatalf("view missing updated bar: %q", view)
 	}
+}
+
+func TestExecuteDoneAfterUsageResetDoesNotReaddTokens(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m.contextUsedTokens = 100
+	m.streaming = true
+	m.executes = map[string]convExecute{
+		"ex-old": {ID: "ex-old", UsageGeneration: m.contextUsageGeneration},
+	}
+	m = m.resetConversationUsage()
+	m.streaming = true
+	next, _ := m.Update(executeDoneMsg{
+		executeID: "ex-old",
+		result: &harness.ExecutionResult{
+			Output: "late result",
+			Usage:  harness.Usage{InputTokens: 40, OutputTokens: 10},
+		},
+	})
+	got := next.(model)
+	if got.contextUsedTokens != 0 {
+		t.Fatalf("used=%d want 0 after late pre-reset completion", got.contextUsedTokens)
+	}
+}
+
+func TestLateCompletionAfterUsageResetStillCountsCycleMetrics(t *testing.T) {
+	svc := newTestServiceWithRunningResearch(t)
+	m := NewTestModel(svc)
+	m = EnterConversationForTest(m)
+	m.conversationStage = "research"
+	m.runtimeAgentName = "discover_agent"
+	m.contextUsedTokens = 100
+	m.streaming = true
+	m.executes = map[string]convExecute{
+		"ex-old": {
+			ID:              "ex-old",
+			AgentName:       "discover_agent",
+			Model:           "composer-2.5",
+			Prompt:          "old research turn",
+			StageName:       "research",
+			UsageGeneration: m.contextUsageGeneration,
+		},
+	}
+	m = m.resetConversationUsage()
+	m.streaming = true
+	next, _ := m.Update(executeDoneMsg{
+		executeID: "ex-old",
+		result: &harness.ExecutionResult{
+			Output:   "late research result",
+			Usage:    harness.Usage{InputTokens: 40, OutputTokens: 10},
+			Duration: time.Second,
+		},
+	})
+	got := next.(model)
+	if got.contextUsedTokens != 0 {
+		t.Fatalf("used=%d want 0 after reset", got.contextUsedTokens)
+	}
+	view, err := svc.Metrics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range view.Rows {
+		if row.Stage == "research" && row.Agent == "discover_agent" {
+			if row.InputTokens != 40 || row.OutputTokens != 10 {
+				t.Fatalf("cycle row=%+v want late completion usage", row)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing research/discover_agent metric: %+v", view.Rows)
 }
 
 func TestExecuteDoneEstimatesTokensWhenUsageMissing(t *testing.T) {
@@ -3657,15 +3737,44 @@ func TestExecuteDoneAccumulatesStageMetricsWhenCycleActive(t *testing.T) {
 	m.conversationStage = "research"
 	m.runtimeAgentName = "discover_agent"
 	m.streaming = true
-	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
+	m.executes = map[string]convExecute{
+		"ex-1": {
+			ID:        "ex-1",
+			AgentName: "discover_agent",
+			Model:     "composer-2.5",
+			Prompt:    "first research turn",
+			StageName: "research",
+		},
+	}
+	next, _ := m.Update(executeDoneMsg{executeID: "ex-1", result: &harness.ExecutionResult{
 		SessionID: "sess-1",
 		Output:    "grill done",
 		Usage:     harness.Usage{InputTokens: 70, OutputTokens: 30},
 		Duration:  2 * time.Second,
-	}, nil))
+	}})
 	got := next.(model)
 	if got.contextUsedTokens != 100 {
 		t.Fatalf("used=%d want 100", got.contextUsedTokens)
+	}
+	got.streaming = true
+	got.executes = map[string]convExecute{
+		"ex-2": {
+			ID:        "ex-2",
+			AgentName: "discover_agent",
+			Model:     "composer-2.5",
+			Prompt:    "second research turn",
+			StageName: "research",
+		},
+	}
+	next, _ = got.Update(executeDoneMsg{executeID: "ex-2", result: &harness.ExecutionResult{
+		SessionID: "sess-1",
+		Output:    "grill follow-up",
+		Usage:     harness.Usage{InputTokens: 40, OutputTokens: 30},
+		Duration:  time.Second,
+	}})
+	got = next.(model)
+	if got.contextUsedTokens != 170 {
+		t.Fatalf("used=%d want 170 after second turn", got.contextUsedTokens)
 	}
 	view, err := svc.Metrics()
 	if err != nil {
@@ -3675,16 +3784,79 @@ func TestExecuteDoneAccumulatesStageMetricsWhenCycleActive(t *testing.T) {
 	for _, r := range view.Rows {
 		if r.Stage == "research" && r.Agent == "discover_agent" {
 			found = true
-			if r.InputTokens != 70 || r.OutputTokens != 30 {
+			if r.InputTokens != 110 || r.OutputTokens != 60 {
 				t.Fatalf("row=%+v", r)
 			}
-			if r.DurationMS < 2000 {
-				t.Fatalf("duration=%d want >=2000", r.DurationMS)
+			if r.DurationMS < 3000 {
+				t.Fatalf("duration=%d want >=3000", r.DurationMS)
 			}
 		}
 	}
 	if !found {
 		t.Fatalf("expected research/discover_agent metric, rows=%+v", view.Rows)
+	}
+}
+
+func TestExecuteDoneUsesTrackedAgentForStageMetrics(t *testing.T) {
+	svc := newTestServiceWithRunningResearch(t)
+	m := NewTestModel(svc)
+	m = EnterConversationForTest(m)
+	m.conversationStage = "research"
+	m.streaming = true
+	m.executes = map[string]convExecute{
+		"ex-discover": {
+			ID:        "ex-discover",
+			AgentName: "discover_agent",
+			Model:     "model-a",
+			Prompt:    "discover prompt",
+			StageName: "research",
+		},
+		"ex-generic": {
+			ID:        "ex-generic",
+			AgentName: "generic_agent",
+			Model:     "model-b",
+			Prompt:    "generic prompt",
+			StageName: "research",
+		},
+	}
+	next, _ := m.Update(executeDoneMsg{
+		executeID: "ex-discover",
+		result: &harness.ExecutionResult{
+			Output:   "discover",
+			Usage:    harness.Usage{InputTokens: 11, OutputTokens: 5},
+			Duration: time.Second,
+		},
+	})
+	got := next.(model)
+	next, _ = got.Update(executeDoneMsg{
+		executeID: "ex-generic",
+		result: &harness.ExecutionResult{
+			Output:   "generic",
+			Usage:    harness.Usage{InputTokens: 17, OutputTokens: 7},
+			Duration: time.Second,
+		},
+	})
+	view, err := svc.Metrics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]int64{
+		"discover_agent": {11, 5},
+		"generic_agent":  {17, 7},
+	}
+	for _, row := range view.Rows {
+		if row.Stage != "research" {
+			continue
+		}
+		if tokens, ok := want[row.Agent]; ok {
+			if row.InputTokens != tokens[0] || row.OutputTokens != tokens[1] {
+				t.Fatalf("agent=%s row=%+v", row.Agent, row)
+			}
+			delete(want, row.Agent)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing per-agent rows: %+v; metrics=%+v", want, view.Rows)
 	}
 }
 

@@ -409,6 +409,17 @@ func ChatModelSlugForTest(m model) string {
 	return m.chatModelSlug
 }
 
+// SetContextUsedTokensForTest seeds the session token counter.
+func SetContextUsedTokensForTest(m model, tokens int64) model {
+	m.contextUsedTokens = tokens
+	return m
+}
+
+// ContextUsedTokensForTest returns the session token counter.
+func ContextUsedTokensForTest(m model) int64 {
+	return m.contextUsedTokens
+}
+
 // SetChatHarnessIDForTest sets the active chat harness id.
 func SetChatHarnessIDForTest(m model, harnessID string) model {
 	m.chatHarnessID = harnessID

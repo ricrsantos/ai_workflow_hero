@@ -111,10 +111,14 @@ var (
 				Padding(0, 1)
 
 	// Nav sidebar styles (SESSIONS-like frame).
-	navSidebarTitleStyle  = lipgloss.NewStyle().Foreground(colorTextPri).Bold(true)
-	navSidebarSepStyle    = lipgloss.NewStyle().Foreground(colorBorder)
-	navSidebarItemStyle   = lipgloss.NewStyle().Foreground(colorTextPri)
-	navSidebarActiveStyle = lipgloss.NewStyle().Foreground(colorAccentUser).Bold(true)
+	navSidebarTitleStyle   = lipgloss.NewStyle().Foreground(colorTextPri).Bold(true)
+	navSidebarSepStyle     = lipgloss.NewStyle().Foreground(colorBorder)
+	navSidebarItemStyle    = lipgloss.NewStyle().Foreground(colorTextPri)
+	navSidebarActiveStyle  = lipgloss.NewStyle().Foreground(colorAccentUser).Bold(true)
+	navSidebarFocusedStyle = lipgloss.NewStyle().
+				Foreground(colorTextPri).
+				Background(colorAccentUser).
+				Bold(true)
 	navSidebarFooterStyle = lipgloss.NewStyle().Foreground(colorTextDim)
 	navSidebarTimerStyle  = lipgloss.NewStyle().Foreground(colorAccentAI)
 	navSidebarBoxStyle    = lipgloss.NewStyle().

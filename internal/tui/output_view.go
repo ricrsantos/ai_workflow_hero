@@ -147,10 +147,10 @@ func (m model) handleOutputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.outputTitle = ""
 		m.outputErr = false
 		return m, nil
-	case "ctrl+c", "alt+q":
+	case "alt+q":
 		return m, tea.Quit
 	}
-	if isNavKey(msg) || msg.String() == "ctrl+r" || msg.String() == "f5" {
+	if isNavKey(msg) || msg.String() == "alt+r" || msg.String() == "f5" {
 		m.outputLines = nil
 		m.outputRaw = ""
 		m.outputOffset = 0
@@ -159,12 +159,12 @@ func (m model) handleOutputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 	switch msg.String() {
-	case "up", "ctrl+p":
+	case "up":
 		if m.outputOffset > 0 {
 			m.outputOffset--
 		}
 		return m, nil
-	case "down", "ctrl+n":
+	case "down":
 		m.outputOffset++
 		m = m.ensureOutputVisible()
 		return m, nil

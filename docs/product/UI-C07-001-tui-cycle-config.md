@@ -67,8 +67,8 @@ Use the existing Hero dark palette, semantic icons, warning colors, and border/f
 - Boolean fields use visible toggles; Space changes a toggle.
 - Numeric fields accept positive integers and show an inline field error for invalid input.
 - Closed choices use keyboard-navigable pickers. Harness selection filters the model picker; model selection filters known properties.
-- Tab and Shift+Tab move between focusable controls. Up/Down navigate within lists; Enter selects or activates the focused control; Escape cancels a picker or closes a dialog.
-- Save and Save and start are explicit focusable actions. The action row always shows the current enabled/disabled reason when an action is unavailable.
+- Tab and Shift+Tab switch focus between Config and the navbar. Up/Down move between Config fields or navbar items according to the focused region; Enter edits/selects a Config field or opens the luminous navbar item; Escape cancels an edit/picker or closes a dialog.
+- Save and Save and start use `alt+s` and `alt+enter`; `alt+r` reloads the YAML. The action row always shows the current enabled/disabled reason when an action is unavailable.
 - Help text remains visible in the fixed footer or the existing help overlay; it must include navigation, editing, save, cancel, and retry actions.
 
 The implementation must use centralized key bindings with `key.Matches`, never raw key-string checks scattered through the screen.

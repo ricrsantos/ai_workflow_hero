@@ -5,11 +5,30 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
+
+func TestConfigActionBindingsUseAlt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		pressed string
+		binding key.Binding
+	}{
+		{name: "save", pressed: "alt+s", binding: configKeys.Save},
+		{name: "save and start", pressed: "alt+enter", binding: configKeys.SaveStart},
+		{name: "reload", pressed: "alt+r", binding: configKeys.Reload},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !key.Matches(parseTestKey(tc.pressed), tc.binding) {
+				t.Fatalf("%s does not match %s", tc.pressed, tc.name)
+			}
+		})
+	}
+}
 
 func TestConfigRendersMissingDocumentError(t *testing.T) {
 	m := NewTestModel(nil)
@@ -174,7 +193,47 @@ func TestConfigFocusScrollsIntoViewport(t *testing.T) {
 	if m.contentOffset == 0 {
 		t.Fatal("focused lower form field must scroll into the viewport")
 	}
-	_, _ = m.handleConfigKey(tea.KeyMsg{Type: tea.KeyTab})
+	_, _ = m.handleConfigKey(tea.KeyMsg{Type: tea.KeyDown})
+}
+
+func TestConfigTabCommitsEditAndFocusesNavbar(t *testing.T) {
+	m := NewTestModel(nil)
+	m.status.CycleNumber = 7
+	m.screen = screenConfig
+	m.config.draft = workflowconfig.ManagedConfig{Title: "before"}
+	m.config.editing = true
+	m.config.editBuffer = "after"
+	m.config.editCursor = runeLen(m.config.editBuffer)
+
+	next, _ := HandleTestKey(m, "tab")
+
+	if next.config.editing {
+		t.Fatal("Tab should finish the active field edit")
+	}
+	if next.config.draft.Title != "after" {
+		t.Fatalf("title=%q want after", next.config.draft.Title)
+	}
+	if next.shellFocus != shellFocusNavbar {
+		t.Fatal("Tab should focus the navbar")
+	}
+}
+
+func TestDirtyConfigNavbarSelectionShowsLeaveDialog(t *testing.T) {
+	m := NewTestModel(nil)
+	m.status.CycleNumber = 7
+	m.screen = screenConfig
+	m.config.dirty = true
+
+	m, _ = HandleTestKey(m, "tab")
+	m, _ = HandleTestKey(m, "up")
+	m, _ = HandleTestKey(m, "enter")
+
+	if !m.config.leaveDialog || m.config.leaveScreen != screenEvents {
+		t.Fatalf("leave dialog=%t target=%v, want Events", m.config.leaveDialog, m.config.leaveScreen)
+	}
+	if m.shellFocus != shellFocusContent {
+		t.Fatal("leave dialog should return focus to Config content")
+	}
 }
 
 func TestConfigDirtyExitCompletesDiscardAndSaveNavigation(t *testing.T) {

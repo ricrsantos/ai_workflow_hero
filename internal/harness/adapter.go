@@ -79,7 +79,9 @@ func NormalizeExecuteRequest(req ExecuteRequest) ExecuteRequest {
 	return req
 }
 
-// Usage holds optional token counts parsed from harness output.
+// Usage holds optional token counts for one harness Execute turn. Adapters
+// that receive cumulative thread snapshots must expose only the current turn
+// here; the TUI and cycle metrics layer perform the session/cycle accumulation.
 type Usage struct {
 	InputTokens  int64
 	OutputTokens int64

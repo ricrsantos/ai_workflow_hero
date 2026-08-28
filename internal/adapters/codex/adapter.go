@@ -63,16 +63,17 @@ type Adapter struct {
 	// ClientInfo overrides initialize clientInfo (tests inject).
 	ClientInfo map[string]string
 
-	mu            sync.Mutex
-	startMu       sync.Mutex
-	appPID        int
-	appHandle     StdioHandle
-	rpc           *rpcConn
-	sessions      map[string]*sessionState
-	cancels       map[string]context.CancelFunc
-	activeTurn    map[string]string // threadID → turnID
-	lastUsage     harness.Usage
-	usageUSDUnset bool
+	mu                     sync.Mutex
+	startMu                sync.Mutex
+	appPID                 int
+	appHandle              StdioHandle
+	rpc                    *rpcConn
+	sessions               map[string]*sessionState
+	cancels                map[string]context.CancelFunc
+	activeTurn             map[string]string // threadID → turnID
+	usageBySession         map[string]harness.Usage
+	usageUSDUnsetBySession map[string]bool
+	turnSlot               chan struct{}
 }
 
 type sessionState struct {
@@ -89,14 +90,17 @@ var (
 // NewAdapter returns a Codex harness adapter for projectDir.
 func NewAdapter(projectDir string, st *store.Store) *Adapter {
 	return &Adapter{
-		ProjectDir: projectDir,
-		Store:      st,
-		Logger:     slog.Default(),
-		LookPath:   exec.LookPath,
-		Runner:     ExecRunner{},
-		sessions:   make(map[string]*sessionState),
-		cancels:    make(map[string]context.CancelFunc),
-		activeTurn: make(map[string]string),
+		ProjectDir:             projectDir,
+		Store:                  st,
+		Logger:                 slog.Default(),
+		LookPath:               exec.LookPath,
+		Runner:                 ExecRunner{},
+		sessions:               make(map[string]*sessionState),
+		cancels:                make(map[string]context.CancelFunc),
+		activeTurn:             make(map[string]string),
+		usageBySession:         make(map[string]harness.Usage),
+		usageUSDUnsetBySession: make(map[string]bool),
+		turnSlot:               make(chan struct{}, 1),
 	}
 }
 
@@ -247,15 +251,27 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	runCtx, cancel := context.WithCancel(ctx)
 	a.mu.Lock()
 	a.cancels[sessionID] = cancel
-	a.lastUsage = harness.Usage{}
-	a.usageUSDUnset = false
+	if a.usageBySession == nil {
+		a.usageBySession = make(map[string]harness.Usage)
+	}
+	if a.usageUSDUnsetBySession == nil {
+		a.usageUSDUnsetBySession = make(map[string]bool)
+	}
+	a.usageBySession[sessionID] = harness.Usage{}
+	a.usageUSDUnsetBySession[sessionID] = false
 	a.mu.Unlock()
 	defer func() {
 		a.mu.Lock()
 		delete(a.cancels, sessionID)
+		delete(a.usageBySession, sessionID)
+		delete(a.usageUSDUnsetBySession, sessionID)
 		a.mu.Unlock()
 		cancel()
 	}()
+	if err := a.acquireTurnSlot(runCtx); err != nil {
+		return nil, err
+	}
+	defer a.releaseTurnSlot()
 
 	start := time.Now()
 	params := turnStartParams(sessionID, req, a.ProjectDir)
@@ -330,8 +346,10 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	}
 
 	a.mu.Lock()
-	usage := a.lastUsage
-	usdUnset := a.usageUSDUnset
+	usage := a.usageBySession[sessionID]
+	usdUnset := a.usageUSDUnsetBySession[sessionID]
+	delete(a.usageBySession, sessionID)
+	delete(a.usageUSDUnsetBySession, sessionID)
 	delete(a.activeTurn, sessionID)
 	a.mu.Unlock()
 
@@ -357,6 +375,28 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		Duration:   time.Since(start),
 		StreamDone: true,
 	}, nil
+}
+
+// acquireTurnSlot serializes turns on one app-server connection. The Codex
+// JSON-RPC connection has one notification/request callback pair, so allowing
+// concurrent turns would let one Execute replace another Execute's handlers.
+func (a *Adapter) acquireTurnSlot(ctx context.Context) error {
+	if a.turnSlot == nil {
+		return nil
+	}
+	select {
+	case a.turnSlot <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (a *Adapter) releaseTurnSlot() {
+	if a.turnSlot == nil {
+		return
+	}
+	<-a.turnSlot
 }
 
 // Cancel implements harness.HarnessAdapter.

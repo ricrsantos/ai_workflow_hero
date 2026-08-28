@@ -192,7 +192,7 @@ func TestHarnessResetOpenCodeStopsManagedServe(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := tui.RunHarnessResetPickerForTest(tui.NewTestModel(svc))
+	m := tui.RunHarnessResetPickerForTest(tui.SetContextUsedTokensForTest(tui.NewTestModel(svc), 1234))
 	items := tui.PaletteItemsForTest(m)
 	idx := paletteIndexByLabel(items, "OpenCode")
 	m = tui.SetPaletteIndexForTest(m, idx)
@@ -207,6 +207,9 @@ func TestHarnessResetOpenCodeStopsManagedServe(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("expected serve registry cleared, got %d entries", len(entries))
+	}
+	if got := tui.ContextUsedTokensForTest(m); got != 0 {
+		t.Fatalf("context used=%d want 0 after OpenCode reset", got)
 	}
 }
 
@@ -232,7 +235,7 @@ func TestHarnessResetOpenCodeKeepsSessionID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := tui.SetChatHarnessIDForTest(tui.NewTestModel(svc), "opencode")
+	m := tui.SetContextUsedTokensForTest(tui.SetChatHarnessIDForTest(tui.NewTestModel(svc), "opencode"), 1234)
 	m = tui.SetHarnessSessionIDForTest(m, "keep-sess")
 	m = tui.SetHarnessSessionHarnessIDForTest(m, "opencode")
 	m = tui.RunHarnessResetPickerForTest(m)
@@ -249,6 +252,9 @@ func TestHarnessResetOpenCodeKeepsSessionID(t *testing.T) {
 	}
 	if tui.HarnessSessionHarnessIDForTest(m) != "opencode" {
 		t.Fatalf("harness binding = %q", tui.HarnessSessionHarnessIDForTest(m))
+	}
+	if got := tui.ContextUsedTokensForTest(m); got != 0 {
+		t.Fatalf("context used=%d want 0 after OpenCode reset", got)
 	}
 }
 
@@ -268,7 +274,7 @@ func TestHarnessResetCodexStopsManagedAppServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := tui.RunHarnessResetPickerForTest(tui.NewTestModel(svc))
+	m := tui.RunHarnessResetPickerForTest(tui.SetContextUsedTokensForTest(tui.NewTestModel(svc), 1234))
 	items := tui.PaletteItemsForTest(m)
 	idx := paletteIndexByLabel(items, "Codex")
 	if idx < 0 {
@@ -289,5 +295,8 @@ func TestHarnessResetCodexStopsManagedAppServer(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("expected codex registry cleared, got %d entries", len(entries))
+	}
+	if got := tui.ContextUsedTokensForTest(m); got != 0 {
+		t.Fatalf("context used=%d want 0 after Codex reset", got)
 	}
 }

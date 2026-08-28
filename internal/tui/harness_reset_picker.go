@@ -125,6 +125,7 @@ func (m model) applyHarnessReset(harnessID string) (model, tea.Cmd) {
 			m = m.setStatusResult(false, label, err.Error())
 			return m, nil
 		}
+		m = m.resetConversationUsage()
 		m = m.setStatusResult(true, label, "OpenCode serve stopped. It will restart on the next request.")
 		return m, tea.Batch(batch...)
 	case "codex":
@@ -139,6 +140,7 @@ func (m model) applyHarnessReset(harnessID string) (model, tea.Cmd) {
 			m = m.setStatusResult(false, label, err.Error())
 			return m, nil
 		}
+		m = m.resetConversationUsage()
 		m = m.clearHarnessBindingIfMatch("codex")
 		m = m.setStatusResult(true, label, "Codex app-server stopped. It will restart on the next request.")
 		return m, tea.Batch(batch...)
@@ -158,6 +160,7 @@ func (m model) applyHarnessReset(harnessID string) (model, tea.Cmd) {
 			m = m.setStatusWarning(label, "No Cursor agent process is running.")
 			return m, nil
 		}
+		m = m.resetConversationUsage()
 		m = m.clearHarnessBindingIfMatch("cursor")
 		m = m.setStatusResult(true, label, "Cursor agent process cancelled.")
 		return m, tea.Batch(batch...)

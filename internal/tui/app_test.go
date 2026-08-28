@@ -38,7 +38,7 @@ func TestNavigateScreens(t *testing.T) {
 	if CurrentScreen(m) != ScreenStatus {
 		t.Fatalf("screen = %v", CurrentScreen(m))
 	}
-	next, _ := HandleTestKey(m, "ctrl+3")
+	next, _ := HandleTestKey(m, "alt+3")
 	if CurrentScreen(next) != ScreenArtifacts {
 		t.Fatalf("artifacts screen = %v", CurrentScreen(next))
 	}
@@ -667,19 +667,19 @@ func TestEscapeCancelsConversationStream(t *testing.T) {
 	}
 }
 
-func TestCtrlCWhileStreamingDoesNotCancelExecution(t *testing.T) {
+func TestCtrlCWhileStreamingIsIgnored(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	m = SetStreamingForTest(m, true)
-	next, cancelCmd := HandleTestKey(m, "ctrl+c")
-	if cancelCmd != nil {
-		t.Fatal("Ctrl+C quit confirmation must not cancel the harness directly")
+	next, cmd := HandleTestKeyMsg(m, tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd != nil {
+		t.Fatal("Ctrl+C must not trigger a TUI command")
 	}
-	if !ConfirmPendingForTest(next) {
-		t.Fatal("Ctrl+C while streaming must open quit confirmation")
+	if ConfirmPendingForTest(next) {
+		t.Fatal("Ctrl+C must not open the quit confirmation")
 	}
 	if !IsConversationStreaming(next) {
-		t.Fatal("Ctrl+C quit confirmation must leave the harness running")
+		t.Fatal("Ctrl+C must leave the harness running")
 	}
 }
 

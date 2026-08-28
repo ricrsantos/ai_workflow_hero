@@ -27,12 +27,15 @@ type streamState struct {
 	lastTextPartID       string // last assistant text part that emitted output
 	sessionNextReasoning bool   // v2 reasoning stream active; skip v1 reasoning parts
 	usage                harness.Usage
+	stepUsageSeen        bool
+	stepUsageIDs         map[string]struct{}
 }
 
 func newStreamState() *streamState {
 	return &streamState{
-		partTexts:   make(map[string]string),
-		emittedText: make(map[string]string),
+		partTexts:    make(map[string]string),
+		emittedText:  make(map[string]string),
+		stepUsageIDs: make(map[string]struct{}),
 	}
 }
 
@@ -724,7 +727,7 @@ func (h *streamHandler) handleMessageUpdated(props map[string]any) {
 	if agent, _ := info["agent"].(string); agent != "" {
 		h.state.agentName = agent
 	}
-	h.noteUsage(info)
+	h.noteUsage(info, false)
 }
 
 func (h *streamHandler) handlePartDelta(props map[string]any) streamOutcome {
@@ -766,7 +769,7 @@ func (h *streamHandler) handlePartUpdated(props map[string]any) streamOutcome {
 		}
 		return streamOutcome{}
 	case "step-finish":
-		h.noteUsage(part)
+		h.noteUsage(part, true)
 		if h.req.Debug {
 			h.emit(harness.ActivityDelta("message.part.updated", "step finished", h.sessionID))
 		}
@@ -1067,7 +1070,7 @@ func stringProp(props map[string]any, keys ...string) string {
 }
 
 // noteUsage extracts token counts from OpenCode message.info or step-finish parts.
-func (h *streamHandler) noteUsage(m map[string]any) {
+func (h *streamHandler) noteUsage(m map[string]any, perStep bool) {
 	if h == nil || h.state == nil || m == nil {
 		return
 	}
@@ -1075,7 +1078,31 @@ func (h *streamHandler) noteUsage(m map[string]any) {
 	if usage.InputTokens == 0 && usage.OutputTokens == 0 {
 		return
 	}
-	h.state.usage = usage
+	if !perStep {
+		// OpenCode's message.updated snapshot is useful when no step-finish
+		// event was delivered. Once step usage exists, keep the sum of all
+		// model steps instead of replacing it with the last step.
+		if !h.state.stepUsageSeen {
+			h.state.usage = usage
+		}
+		return
+	}
+	if h.state.stepUsageIDs == nil {
+		h.state.stepUsageIDs = make(map[string]struct{})
+	}
+	if id := stringProp(m, "id"); id != "" {
+		if _, exists := h.state.stepUsageIDs[id]; exists {
+			return
+		}
+		h.state.stepUsageIDs[id] = struct{}{}
+	}
+	if !h.state.stepUsageSeen {
+		h.state.usage = usage
+		h.state.stepUsageSeen = true
+		return
+	}
+	h.state.usage.InputTokens += usage.InputTokens
+	h.state.usage.OutputTokens += usage.OutputTokens
 }
 
 func extractOpenCodeUsage(m map[string]any) harness.Usage {

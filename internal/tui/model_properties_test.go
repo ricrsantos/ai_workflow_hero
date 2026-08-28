@@ -570,7 +570,7 @@ func TestPropertyPickerEscapeRestoresChatSlashOverlay(t *testing.T) {
 	m, _ := newPickerTestModel(t)
 	m = EnterConversationForTest(m)
 	m = typeChat(t, m, "/model")
-	m, _ = HandleTestKey(m, "tab")
+	m, _ = HandleTestKey(m, "enter")
 	if CurrentScreen(m) != ScreenPalette {
 		t.Fatalf("screen=%v want palette", CurrentScreen(m))
 	}

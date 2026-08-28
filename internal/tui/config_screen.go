@@ -31,16 +31,16 @@ var configKeys = struct {
 	Leave     key.Binding
 	Discard   key.Binding
 }{
-	Save:      key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
-	SaveStart: key.NewBinding(key.WithKeys("ctrl+enter"), key.WithHelp("ctrl+enter", "save and start")),
+	Save:      key.NewBinding(key.WithKeys("alt+s"), key.WithHelp("alt+s", "save")),
+	SaveStart: key.NewBinding(key.WithKeys("alt+enter"), key.WithHelp("alt+enter", "save and start")),
 	Retry:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "retry failed stage")),
-	Reload:    key.NewBinding(key.WithKeys("ctrl+r"), key.WithHelp("ctrl+r", "reload")),
-	Next:      key.NewBinding(key.WithKeys("tab", "down"), key.WithHelp("tab", "next field")),
-	Previous:  key.NewBinding(key.WithKeys("shift+tab", "up"), key.WithHelp("shift+tab", "previous field")),
+	Reload:    key.NewBinding(key.WithKeys("alt+r"), key.WithHelp("alt+r", "reload")),
+	Next:      key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "next field")),
+	Previous:  key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "previous field")),
 	Toggle:    key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle")),
 	Edit:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "edit")),
 	Cancel:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-	Leave:     key.NewBinding(key.WithKeys("esc", "alt+n", "alt+1", "ctrl+1", "alt+2", "ctrl+2", "alt+3", "ctrl+3", "alt+4", "ctrl+4", "alt+5", "ctrl+5", "alt+q"), key.WithHelp("esc", "leave")),
+	Leave:     key.NewBinding(key.WithKeys("esc", "alt+n", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+q"), key.WithHelp("esc", "leave")),
 	Discard:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "discard")),
 }
 
@@ -447,7 +447,7 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) configLeaveTarget(msg tea.KeyMsg) (screen, bool) {
 	switch msg.String() {
-	case "ctrl+c", "alt+q":
+	case "alt+q":
 		return screenConfig, true
 	}
 	if isLegacyEventsShortcut(msg) {
@@ -486,13 +486,7 @@ func (m model) handleConfigEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, configKeys.Edit) {
-		fields := m.configFields()
-		if len(fields) > 0 {
-			m = m.setConfigField(fields[m.config.focus%len(fields)], m.config.editBuffer)
-		}
-		m.config.editing = false
-		m.config.editBuffer = ""
-		m.config.editCursor = 0
+		m = m.commitConfigEdit()
 		return m, nil
 	}
 	switch msg.String() {
@@ -538,6 +532,17 @@ func (m model) handleConfigEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m.configEnsureFocusVisible(), nil
+}
+
+func (m model) commitConfigEdit() model {
+	fields := m.configFields()
+	if len(fields) > 0 {
+		m = m.setConfigField(fields[m.config.focus%len(fields)], m.config.editBuffer)
+	}
+	m.config.editing = false
+	m.config.editBuffer = ""
+	m.config.editCursor = 0
+	return m
 }
 
 func (m model) stageProtected(stage string) bool {

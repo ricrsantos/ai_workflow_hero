@@ -408,7 +408,10 @@ func (a *Adapter) handleNotification(ctx context.Context, method string, raw jso
 
 	case "account/rateLimits/updated":
 		a.mu.Lock()
-		a.usageUSDUnset = true
+		if a.usageUSDUnsetBySession == nil {
+			a.usageUSDUnsetBySession = make(map[string]bool)
+		}
+		a.usageUSDUnsetBySession[sessionID] = true
 		a.mu.Unlock()
 		if req.Debug {
 			emit(harness.ActivityDelta(method, "rate limits updated", sessionID))
@@ -579,11 +582,24 @@ func (a *Adapter) mapTokenUsage(params map[string]any, sessionID string, debug b
 			}
 		}
 	}
+	extractContainer := func(m map[string]any) {
+		if m == nil {
+			return
+		}
+		// Codex app-server v2 sends a cumulative snapshot with `last` for
+		// the current turn and `total` for the whole thread. Execute reports
+		// one turn, so never add the cumulative `total` to the TUI counter.
+		if last, ok := m["last"].(map[string]any); ok {
+			extract(last)
+			return
+		}
+		extract(m)
+	}
 	if u, ok := params["usage"].(map[string]any); ok {
-		extract(u)
+		extractContainer(u)
 	}
 	if u, ok := params["tokenUsage"].(map[string]any); ok {
-		extract(u)
+		extractContainer(u)
 	}
 	// Only read top-level token fields when nested usage objects were absent.
 	if usage.InputTokens == 0 && usage.OutputTokens == 0 {
@@ -598,10 +614,16 @@ func (a *Adapter) mapTokenUsage(params map[string]any, sessionID string, debug b
 
 	a.mu.Lock()
 	if usage.InputTokens > 0 || usage.OutputTokens > 0 {
-		a.lastUsage = usage
+		if a.usageBySession == nil {
+			a.usageBySession = make(map[string]harness.Usage)
+		}
+		a.usageBySession[sessionID] = usage
 	}
 	if !hasUSD {
-		a.usageUSDUnset = true
+		if a.usageUSDUnsetBySession == nil {
+			a.usageUSDUnsetBySession = make(map[string]bool)
+		}
+		a.usageUSDUnsetBySession[sessionID] = true
 	}
 	a.mu.Unlock()
 

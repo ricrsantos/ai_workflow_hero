@@ -3,6 +3,9 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/muesli/termenv"
 )
 
 func TestNavSidebarListsScreensInOrder(t *testing.T) {
@@ -88,6 +91,111 @@ func TestNavSidebarHighlightsStatus(t *testing.T) {
 	if strings.Contains(plain, "> Chat") {
 		t.Fatalf("Chat must not stay active on Status screen: %q", plain)
 	}
+}
+
+func TestTabFocusesNavbarAndEnterOpensHighlightedScreen(t *testing.T) {
+	forceColorProfile(t, termenv.ANSI)
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 24)
+
+	next, _ := HandleTestKey(m, "tab")
+	if next.shellFocus != shellFocusNavbar {
+		t.Fatal("Tab should move focus from content to navbar")
+	}
+	if hints := next.footerHints(); !strings.Contains(hints, "↑↓ navbar") || !strings.Contains(hints, "enter open") {
+		t.Fatalf("navbar help is incomplete: %q", hints)
+	}
+	if ChatInputFocusedForTest(next) {
+		t.Fatal("chat composer must lose focus while navbar is focused")
+	}
+
+	next, _ = HandleTestKey(next, "down")
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatal("arrow navigation must not open a screen before Enter")
+	}
+	lines := next.navSidebarNavigationLines(navSidebarWidth - navSidebarBoxStyle.GetHorizontalFrameSize())
+	focusedStatus := navSidebarFocusedStyle.Render(truncateNavText("  Status", navSidebarWidth-navSidebarBoxStyle.GetHorizontalFrameSize()))
+	if !containsLine(lines, focusedStatus) {
+		t.Fatalf("Status row is not rendered with the focused background: %q", lines)
+	}
+	plain := stripANSI(strings.Join(lines, "\n"))
+	if !strings.Contains(plain, "> Chat") || strings.Contains(plain, "> Status") {
+		t.Fatalf("active marker must remain on Chat before Enter: %q", plain)
+	}
+
+	next, _ = HandleTestKey(next, "enter")
+	if CurrentScreen(next) != ScreenStatus {
+		t.Fatalf("Enter opened %v, want Status", CurrentScreen(next))
+	}
+	if next.shellFocus != shellFocusNavbar {
+		t.Fatal("navbar should retain focus after opening a screen")
+	}
+	if plain := stripANSI(ViewForTest(next)); !strings.Contains(plain, "> Status") {
+		t.Fatalf("active marker did not move to Status: %q", plain)
+	}
+
+	next, _ = HandleTestKey(next, "tab")
+	if next.shellFocus != shellFocusContent {
+		t.Fatal("second Tab should return focus to screen content")
+	}
+}
+
+func TestNavbarArrowNavigationWraps(t *testing.T) {
+	m := SetWidth(NewTestModel(nil), 100)
+	m, _ = HandleTestKey(m, "tab")
+	m, _ = HandleTestKey(m, "up")
+
+	if got, want := m.navCursor, len(m.visibleNavScreens())-1; got != want {
+		t.Fatalf("nav cursor=%d want %d", got, want)
+	}
+}
+
+func TestTabDoesNotFocusHiddenNavbar(t *testing.T) {
+	m := SetWidth(NewTestModel(nil), navSidebarMinWidth-1)
+	next, _ := HandleTestKey(m, "tab")
+
+	if next.shellFocus != shellFocusContent {
+		t.Fatal("hidden navbar must not receive focus")
+	}
+	if !ChatInputFocusedForTest(next) {
+		t.Fatal("chat composer should keep focus when navbar is hidden")
+	}
+}
+
+func TestResizeReturnsFocusWhenNavbarBecomesHidden(t *testing.T) {
+	m := SetWidth(NewTestModel(nil), 100)
+	m, _ = HandleTestKey(m, "tab")
+
+	nextModel, _ := m.Update(tea.WindowSizeMsg{Width: navSidebarMinWidth - 1, Height: 24})
+	next := nextModel.(model)
+	if next.shellFocus != shellFocusContent {
+		t.Fatal("content must regain focus when a resize hides the navbar")
+	}
+	if !ChatInputFocusedForTest(next) {
+		t.Fatal("chat composer should regain focus after the navbar is hidden")
+	}
+}
+
+func TestControlNavigationAliasIsRemoved(t *testing.T) {
+	m := NewTestModel(nil)
+	next, cmd := HandleTestKeyMsg(m, tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd != nil || CurrentScreen(next) != ScreenConversation {
+		t.Fatal("Ctrl+C must not trigger a TUI action")
+	}
+	next, _ = HandleTestKeyMsg(next, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	if CurrentScreen(next) != ScreenConversation {
+		t.Fatal("a non-Alt digit must not navigate")
+	}
+}
+
+func containsLine(lines []string, want string) bool {
+	for _, line := range lines {
+		if line == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestNavSidebarShowsAgentsSection(t *testing.T) {

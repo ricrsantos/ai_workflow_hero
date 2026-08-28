@@ -461,7 +461,7 @@ func (m model) resetChatSession() model {
 	m.transcriptScrollOffset = 0
 	m.transcriptFollowBottom = true
 	m.waitAnimFrame = 0
-	m.contextUsedTokens = 0
+	m = m.resetConversationUsage()
 	m = m.clearChatInput()
 	if m.svc != nil {
 		stage, _, err := m.svc.ConversationContext()
@@ -472,6 +472,13 @@ func (m model) resetChatSession() model {
 		}
 	}
 	m = m.syncConversationContext()
+	return m
+}
+
+func (m model) resetConversationUsage() model {
+	m.contextUsedTokens = 0
+	m.lastExecutePrompt = ""
+	m.contextUsageGeneration++
 	return m
 }
 
@@ -641,6 +648,7 @@ func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) m
 	parentName := strings.TrimSpace(m.runtimeAgentName)
 	parentModel := m.conversationModelSlug()
 	parentHarness := m.conversationHarnessTool()
+	stageName := strings.TrimSpace(m.conversationStage)
 	m, executeID := m.nextExecuteID()
 	if reset || m.executes == nil {
 		m.executes = make(map[string]convExecute)
@@ -669,10 +677,14 @@ func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) m
 		m.executes = make(map[string]convExecute)
 	}
 	m.executes[executeID] = convExecute{
-		ID:            executeID,
-		AgentName:     parentName,
-		HarnessID:     parentHarness,
-		AgentMsgIndex: m.agentMsgIndex,
+		ID:              executeID,
+		AgentName:       parentName,
+		HarnessID:       parentHarness,
+		Model:           parentModel,
+		Prompt:          executePrompt,
+		StageName:       stageName,
+		UsageGeneration: m.contextUsageGeneration,
+		AgentMsgIndex:   m.agentMsgIndex,
 	}
 
 	if m.convStreamCh == nil {
@@ -695,17 +707,17 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.cancelHeroStartPreparation()
 		}
 		switch s {
-		case "ctrl+c", "alt+q":
+		case "alt+q":
 			return m.showConfirm(actionQuit, 0, "Preparing /hero-start. Quit? [y/N]")
 		}
 		if isNavKey(msg) {
 			return m.handleKey(msg)
 		}
 		switch s {
-		case "up", "ctrl+p":
+		case "up":
 			m = m.scrollTranscript(-1)
 			return m, nil
-		case "down", "ctrl+n":
+		case "down":
 			m = m.scrollTranscript(1)
 			return m, nil
 		case "pgup":
@@ -725,7 +737,7 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.cancelStreamCmd()
 		}
 		switch s {
-		case "ctrl+c", "alt+q":
+		case "alt+q":
 			return m.showConfirm(actionQuit, 0, "Agent is running. Quit? [y/N]")
 		}
 		if isNavKey(msg) {
@@ -737,10 +749,10 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.copyChatResponse()
 		case "alt+i":
 			return m.copyChatInput()
-		case "up", "ctrl+p":
+		case "up":
 			m = m.scrollTranscript(-1)
 			return m, nil
-		case "down", "ctrl+n":
+		case "down":
 			m = m.scrollTranscript(1)
 			return m, nil
 		case "pgup":
@@ -759,7 +771,7 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Global shortcuts (modifier+key) work even while typing in chat.
 	// `/` is NOT global here — it stays in the composer (Cursor-style overlay).
-	if isNavKey(msg) || s == "alt+q" || s == "ctrl+r" || s == "f5" {
+	if isNavKey(msg) || s == "alt+q" || s == "f5" {
 		return m.handleKey(msg)
 	}
 	switch s {
@@ -790,19 +802,17 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.chatSlashOverlayActive() {
 		switch s {
-		case "up", "ctrl+p":
+		case "up":
 			if m.slashOverlayIndex > 0 {
 				m.slashOverlayIndex--
 			}
 			return m, nil
-		case "down", "ctrl+n":
+		case "down":
 			items := m.filteredChatSlashItems()
 			if m.slashOverlayIndex < len(items)-1 {
 				m.slashOverlayIndex++
 			}
 			return m, nil
-		case "tab":
-			return m.applyChatSlashSelection()
 		case "esc":
 			m.slashOverlayDismissed = true
 			return m, nil
@@ -815,15 +825,13 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m = m.clearChatInput()
 		}
 		return m, nil
-	case "tab":
+	case "alt+m":
 		if m.chatMode == harness.ModePlan {
 			m.chatMode = harness.ModeBuild
 		} else {
 			m.chatMode = harness.ModePlan
 		}
 		return m, nil
-	case "ctrl+c":
-		return m, tea.Quit
 	case "alt+enter":
 		if strings.TrimSpace(m.input) == "" {
 			return m, nil
@@ -832,13 +840,13 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.submitConversation()
-	case "up", "ctrl+p":
+	case "up":
 		if next, moved := m.moveInputCursorVertical(-1); moved {
 			return next, nil
 		}
 		m = m.scrollTranscript(-1)
 		return m, nil
-	case "down", "ctrl+n":
+	case "down":
 		if next, moved := m.moveInputCursorVertical(1); moved {
 			return next, nil
 		}
@@ -1530,6 +1538,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.harnessID != "" {
 				ex.HarnessID = msg.harnessID
 			}
+			if msg.model != "" {
+				ex.Model = msg.model
+			}
 			m.executes[msg.executeID] = ex
 		}
 		if m.streaming && m.convStreamCh != nil {
@@ -1567,17 +1578,34 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.ensureTimerLoop()
 
 	case executeDoneMsg:
+		var executeMeta convExecute
+		trackedExecute := false
+		if msg.executeID != "" {
+			var ok bool
+			executeMeta, ok = m.executes[msg.executeID]
+			if !ok {
+				// A completion from an execution invalidated by /new-chat,
+				// cancellation, or /harness-reset must not repopulate the
+				// session token counter.
+				return m, nil
+			}
+			trackedExecute = true
+		}
 		m = m.bindExecuteView(msg.executeID)
 		stageForMetrics := strings.TrimSpace(m.conversationStage)
 		agentForMetrics := strings.TrimSpace(m.runtimeAgentName)
 		modelForMetrics := m.conversationModelSlug()
-		if ex, ok := m.executes[msg.executeID]; ok {
-			if strings.TrimSpace(ex.AgentName) != "" {
-				agentForMetrics = ex.AgentName
+		sessionUsageAllowed := true
+		if trackedExecute {
+			sessionUsageAllowed = executeMeta.UsageGeneration == m.contextUsageGeneration
+			if strings.TrimSpace(executeMeta.StageName) != "" {
+				stageForMetrics = executeMeta.StageName
 			}
-			if msg.result != nil && strings.TrimSpace(msg.result.SessionID) != "" {
-				ex.SessionID = msg.result.SessionID
-				m.executes[msg.executeID] = ex
+			if strings.TrimSpace(executeMeta.AgentName) != "" {
+				agentForMetrics = executeMeta.AgentName
+			}
+			if strings.TrimSpace(executeMeta.Model) != "" {
+				modelForMetrics = executeMeta.Model
 			}
 		}
 		if m.stageHandoffLive && msg.result != nil {
@@ -1642,8 +1670,17 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.result != nil {
-			usage := harness.ResolveUsage(msg.result.Usage, m.lastExecutePrompt, msg.result.Output)
-			m.contextUsedTokens = usage.InputTokens + usage.OutputTokens
+			promptForUsage := m.lastExecutePrompt
+			if trackedExecute && executeMeta.Prompt != "" {
+				promptForUsage = executeMeta.Prompt
+			}
+			usage := harness.ResolveUsage(msg.result.Usage, promptForUsage, msg.result.Output)
+			if sessionUsageAllowed {
+				m.contextUsedTokens += usage.InputTokens + usage.OutputTokens
+			}
+			// Cycle metrics record tokens actually consumed by the stage even if
+			// a harness reset invalidated this completion for the new Chat-session
+			// context counter.
 			if m.svc != nil && stageForMetrics != "" {
 				if err := m.svc.AccumulateStageHarnessMetrics(
 					stageForMetrics, agentForMetrics, modelForMetrics, usage, msg.result.Duration,
@@ -1652,7 +1689,11 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if msg.result.SessionID != "" && !m.stageHandoffLive {
-				m = m.persistHarnessSession(msg.result.SessionID, msg.harnessID)
+				harnessID := strings.TrimSpace(msg.harnessID)
+				if harnessID == "" && trackedExecute {
+					harnessID = executeMeta.HarnessID
+				}
+				m = m.persistHarnessSession(msg.result.SessionID, harnessID)
 			}
 			if msg.result.Output != "" {
 				m = m.reconcileParentAgentOutput(msg.result.Output)
@@ -2756,7 +2797,7 @@ func (m model) renderInputCaret() string {
 	if m.streaming {
 		return ""
 	}
-	if m.chatInputFocused {
+	if m.chatInputFocused && m.shellFocus == shellFocusContent {
 		return caretFilledStyle.Render(" ")
 	}
 	return caretHollowStyle.Render("▮")

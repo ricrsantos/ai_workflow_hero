@@ -14,6 +14,13 @@ type navScreenItem struct {
 	label  string
 }
 
+type shellFocus int
+
+const (
+	shellFocusContent shellFocus = iota
+	shellFocusNavbar
+)
+
 // navScreens is the fixed left-rail menu (replaces the old horizontal tab bar).
 var navScreens = []navScreenItem{
 	{screenConversation, "Chat"},
@@ -27,13 +34,32 @@ var navScreens = []navScreenItem{
 // Navigation bindings are shared by the sidebar, palette, and screen handlers.
 // The visible screen list below decides whether a numbered shortcut is valid.
 var navShortcutKeys = [...]key.Binding{
-	key.NewBinding(key.WithKeys("alt+1", "ctrl+1"), key.WithHelp("alt+1", "Chat")),
-	key.NewBinding(key.WithKeys("alt+2", "ctrl+2"), key.WithHelp("alt+2", "Status")),
-	key.NewBinding(key.WithKeys("alt+3", "ctrl+3"), key.WithHelp("alt+3", "Artifacts")),
-	key.NewBinding(key.WithKeys("alt+4", "ctrl+4"), key.WithHelp("alt+4", "Costs")),
-	key.NewBinding(key.WithKeys("alt+5", "ctrl+5"), key.WithHelp("alt+5", "Events")),
-	key.NewBinding(key.WithKeys("alt+6", "ctrl+6"), key.WithHelp("alt+6", "Config")),
+	key.NewBinding(key.WithKeys("alt+1"), key.WithHelp("alt+1", "Chat")),
+	key.NewBinding(key.WithKeys("alt+2"), key.WithHelp("alt+2", "Status")),
+	key.NewBinding(key.WithKeys("alt+3"), key.WithHelp("alt+3", "Artifacts")),
+	key.NewBinding(key.WithKeys("alt+4"), key.WithHelp("alt+4", "Costs")),
+	key.NewBinding(key.WithKeys("alt+5"), key.WithHelp("alt+5", "Events")),
+	key.NewBinding(key.WithKeys("alt+6"), key.WithHelp("alt+6", "Config")),
 }
+
+var (
+	shellFocusKey = key.NewBinding(
+		key.WithKeys("tab", "shift+tab"),
+		key.WithHelp("tab", "switch focus"),
+	)
+	navUpKey = key.NewBinding(
+		key.WithKeys("up"),
+		key.WithHelp("↑", "previous item"),
+	)
+	navDownKey = key.NewBinding(
+		key.WithKeys("down"),
+		key.WithHelp("↓", "next item"),
+	)
+	navSelectKey = key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "open screen"),
+	)
+)
 
 var navEventsAlias = key.NewBinding(
 	key.WithKeys("alt+n"),
@@ -90,6 +116,128 @@ func (m model) navScreenAt(index int) (screen, bool) {
 		return 0, false
 	}
 	return items[index-1].screen, true
+}
+
+func (m model) activeNavScreen() screen {
+	if m.screen == screenPalette || m.screen == screenOutput {
+		return m.prevScreen
+	}
+	return m.screen
+}
+
+func (m model) activeNavIndex() int {
+	active := m.activeNavScreen()
+	for i, item := range m.visibleNavScreens() {
+		if item.screen == active {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m model) toggleShellFocus() (tea.Model, tea.Cmd) {
+	if !m.sidebarVisible() {
+		return m, nil
+	}
+	if m.shellFocus == shellFocusNavbar {
+		m.shellFocus = shellFocusContent
+		m.chatInputFocused = m.screen == screenConversation
+		return m, nil
+	}
+	if m.screen == screenConfig && m.config.editing {
+		m = m.commitConfigEdit()
+	}
+	m.shellFocus = shellFocusNavbar
+	m.navCursor = m.activeNavIndex()
+	m.chatInputFocused = false
+	return m, nil
+}
+
+func (m model) handleNavbarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	items := m.visibleNavScreens()
+	if len(items) == 0 {
+		return m, nil
+	}
+	if m.navCursor < 0 || m.navCursor >= len(items) {
+		m.navCursor = m.activeNavIndex()
+	}
+	switch {
+	case key.Matches(msg, navUpKey):
+		m.navCursor = (m.navCursor - 1 + len(items)) % len(items)
+		return m, nil
+	case key.Matches(msg, navDownKey):
+		m.navCursor = (m.navCursor + 1) % len(items)
+		return m, nil
+	case key.Matches(msg, navSelectKey):
+		return m.activateNavbarScreen(items[m.navCursor].screen)
+	case msg.String() == "alt+q":
+		if m.screen == screenConfig && m.config.dirty {
+			m.shellFocus = shellFocusContent
+			m.config.leaveDialog = true
+			m.config.leaveScreen = screenConfig
+			m.config.leaveQuit = true
+			return m, nil
+		}
+		return m.handleKey(msg)
+	}
+	if isLegacyEventsShortcut(msg) && !m.freeChatMode {
+		for i, item := range items {
+			if item.screen == screenEvents {
+				m.navCursor = i
+				break
+			}
+		}
+		return m.activateNavbarScreen(screenEvents)
+	}
+	if index, ok := navShortcutIndex(msg); ok {
+		target, exists := m.navScreenAt(index)
+		if !exists {
+			return m, nil
+		}
+		for i, item := range items {
+			if item.screen == target {
+				m.navCursor = i
+				break
+			}
+		}
+		return m.activateNavbarScreen(target)
+	}
+	return m, nil
+}
+
+func (m model) activateNavbarScreen(target screen) (model, tea.Cmd) {
+	if m.screen == screenConfig && target != screenConfig && m.config.dirty {
+		m.shellFocus = shellFocusContent
+		m.config.leaveDialog = true
+		m.config.leaveScreen = target
+		m.config.leaveQuit = false
+		return m, nil
+	}
+	if m.screen == screenPalette {
+		m = m.closePalette()
+	}
+	if m.screen == screenOutput {
+		m.outputLines = nil
+		m.outputRaw = ""
+		m.outputOffset = 0
+		m.outputTitle = ""
+		m.outputErr = false
+	}
+	next, cmd := m.navigateToScreen(target)
+	next.shellFocus = shellFocusNavbar
+	next.navCursor = next.activeNavIndex()
+	next.chatInputFocused = false
+	return next, cmd
+}
+
+func (m model) navigateToScreen(target screen) (model, tea.Cmd) {
+	if target == screenConversation {
+		return m.enterConversation()
+	}
+	if target == screenConfig {
+		return m.openConfig()
+	}
+	return m.goListScreen(target)
 }
 
 // sidebarVisible reports whether the left nav frame fits beside the main pane.
@@ -168,12 +316,16 @@ func (m model) navSidebarNavigationLines(innerW int) []string {
 	}
 	lines = append(lines, navSidebarSeparator(innerW))
 
-	for _, item := range m.visibleNavScreens() {
+	active := m.activeNavScreen()
+	for i, item := range m.visibleNavScreens() {
 		marker := "  "
 		rowStyle := navSidebarItemStyle
-		if item.screen == m.screen {
+		if item.screen == active {
 			marker = "> "
 			rowStyle = navSidebarActiveStyle
+		}
+		if m.shellFocus == shellFocusNavbar && i == m.navCursor {
+			rowStyle = navSidebarFocusedStyle
 		}
 		lines = append(lines, rowStyle.Render(truncateNavText(marker+item.label, innerW)))
 	}

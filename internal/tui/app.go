@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	codexadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
@@ -40,6 +41,8 @@ type model struct {
 	width        int
 	height       int
 	screen       screen
+	shellFocus   shellFocus
+	navCursor    int
 
 	status    cycle.StatusView
 	metrics   cycle.MetricsView
@@ -157,8 +160,9 @@ type model struct {
 
 	liveAgents []liveAgent // currently executing parent + Task subagents (Chat box)
 
-	contextUsedTokens int64
-	contextWindows    contextWindowCatalog
+	contextUsedTokens      int64
+	contextUsageGeneration int64
+	contextWindows         contextWindowCatalog
 
 	// Inline confirmation for destructive actions while an agent is streaming.
 	confirmPending bool
@@ -302,6 +306,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.shellFocus == shellFocusNavbar && !m.sidebarVisible() {
+			m.shellFocus = shellFocusContent
+			m.chatInputFocused = m.screen == screenConversation
+		}
 		if m.screen == screenPalette {
 			m = m.ensurePaletteVisible()
 		}
@@ -431,15 +439,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.harnessPermissionPending {
 			return m.handleHarnessPermissionKey(msg)
 		}
-		if m.harnessQuestionPending {
-			return m.handleHarnessQuestionKey(msg)
-		}
 		if m.confirmPending {
 			return m.handleConfirmKey(msg)
 		}
 		// C5: warnings clear on the next user action (UI-C05-001 §5). The action
 		// itself may set a new warning later in this same processing pass.
 		m = m.clearPropsWarning()
+		if key.Matches(msg, shellFocusKey) {
+			return m.toggleShellFocus()
+		}
+		if m.shellFocus == shellFocusNavbar {
+			return m.handleNavbarKey(msg)
+		}
+		if m.harnessQuestionPending {
+			return m.handleHarnessQuestionKey(msg)
+		}
 		if m.screen == screenOutput {
 			return m.handleOutputKey(msg)
 		}
@@ -476,7 +490,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "ctrl+c", "alt+q":
+	case "alt+q":
 		if m.streaming || m.heroStartBootstrapping || m.heroStartPreparing {
 			return m.showConfirm(actionQuit, 0, "Agent is running. Quit? [y/N]")
 		}
@@ -496,16 +510,16 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.harnessDraft = nil
 		m = m.reloadPaletteItems()
 		return m, nil
-	case "ctrl+r", "f5":
+	case "alt+r", "f5":
 		if m.freeChatMode {
 			return m, nil
 		}
 		return m, m.refreshCmd()
-	case "up", "ctrl+p":
+	case "up":
 		if m.screenHasContentScroll() {
 			return m.scrollContent(-1), nil
 		}
-	case "down", "ctrl+n":
+	case "down":
 		if m.screenHasContentScroll() {
 			return m.scrollContent(1), nil
 		}
@@ -536,13 +550,8 @@ func (m model) navigateNavShortcut(index int) (model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	if target == screenConversation {
-		return m.enterConversation()
-	}
-	if target == screenConfig {
-		return m.openConfig()
-	}
-	return m.goListScreen(target)
+	m.shellFocus = shellFocusContent
+	return m.navigateToScreen(target)
 }
 
 func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -552,7 +561,7 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.harnessResetAwaitingOpen = false
 			m = m.closePalette()
 			return m, nil
-		case "ctrl+c":
+		case "alt+q":
 			return m, tea.Quit
 		default:
 			return m, nil
@@ -561,7 +570,7 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.pickingProps {
 		return m.handlePropertyPickerKey(msg)
 	}
-	if isNavKey(msg) || msg.String() == "alt+q" || msg.String() == "ctrl+r" || msg.String() == "f5" {
+	if isNavKey(msg) || msg.String() == "alt+q" || msg.String() == "alt+r" || msg.String() == "f5" {
 		// Leave palette chrome before global navigation / refresh / quit.
 		m.pickingModel = false
 		m.pickingHarness = false
@@ -587,15 +596,13 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m = m.closePalette()
 		return m, nil
-	case "ctrl+c":
-		return m, tea.Quit
-	case "up", "ctrl+p":
+	case "up":
 		if m.paletteIndex > 0 {
 			m.paletteIndex--
 		}
 		m = m.ensurePaletteVisible()
 		return m, nil
-	case "down", "ctrl+n":
+	case "down":
 		items := m.filteredPaletteItems()
 		if m.paletteIndex < len(items)-1 {
 			m.paletteIndex++
@@ -1555,23 +1562,23 @@ func (m model) dispatchConfirmedAction(action paletteAction, actionN int) (tea.M
 	return m, nil
 }
 
-// parseDigitKeys handles multi-char test keys like "ctrl+p".
+// parseTestKey converts human-readable bindings into Bubble Tea key messages.
 func parseTestKey(s string) tea.KeyMsg {
 	switch strings.ToLower(s) {
 	case "/":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}}
-	case "ctrl+p":
-		return tea.KeyMsg{Type: tea.KeyCtrlP}
-	case "ctrl+q":
-		return tea.KeyMsg{Type: tea.KeyCtrlQ}
 	case "alt+q":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}, Alt: true}
 	case "alt+n":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}, Alt: true}
-	case "ctrl+c":
-		return tea.KeyMsg{Type: tea.KeyCtrlC}
-	case "ctrl+r":
-		return tea.KeyMsg{Type: tea.KeyCtrlR}
+	case "alt+m":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}
+	case "alt+r":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}, Alt: true}
+	case "alt+s":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}, Alt: true}
+	case "alt+u":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}, Alt: true}
 	case "esc":
 		return tea.KeyMsg{Type: tea.KeyEscape}
 	case "enter":
@@ -1590,6 +1597,8 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyBackspace}
 	case "tab":
 		return tea.KeyMsg{Type: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyMsg{Type: tea.KeyShiftTab}
 	case "left":
 		return tea.KeyMsg{Type: tea.KeyLeft}
 	case "right":
@@ -1598,17 +1607,17 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyHome}
 	case "end":
 		return tea.KeyMsg{Type: tea.KeyEnd}
-	case "ctrl+1", "alt+1":
+	case "alt+1":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}, Alt: true}
-	case "ctrl+2", "alt+2":
+	case "alt+2":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}, Alt: true}
-	case "ctrl+3", "alt+3":
+	case "alt+3":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}, Alt: true}
-	case "ctrl+4", "alt+4":
+	case "alt+4":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}, Alt: true}
-	case "ctrl+5", "alt+5":
+	case "alt+5":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}, Alt: true}
-	case "ctrl+6", "alt+6":
+	case "alt+6":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'6'}, Alt: true}
 	default:
 		if len(s) == 1 {

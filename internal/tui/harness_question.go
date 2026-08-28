@@ -199,8 +199,6 @@ func (m model) handleHarnessQuestionComposer(msg tea.KeyMsg) (tea.Model, tea.Cmd
 	}
 
 	switch s {
-	case "ctrl+c":
-		return m, m.cancelStreamCmd()
 	case "alt+q":
 		return m.showConfirm(actionQuit, 0, "Harness question pending. Quit? [y/N]")
 	case "alt+r":
@@ -217,13 +215,13 @@ func (m model) handleHarnessQuestionComposer(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		return m.insertComposerNewline(), nil
 	case "alt+enter":
 		return m.submitHarnessQuestionAnswer()
-	case "up", "ctrl+p":
+	case "up":
 		if next, moved := m.moveInputCursorVertical(-1); moved {
 			return next, nil
 		}
 		m = m.scrollTranscript(-1)
 		return m, nil
-	case "down", "ctrl+n":
+	case "down":
 		if next, moved := m.moveInputCursorVertical(1); moved {
 			return next, nil
 		}
@@ -257,7 +255,7 @@ func (m model) handleHarnessQuestionComposer(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		m = m.deleteRuneAtCursor()
 		m = m.ensureInputCaretVisible()
 		return m, nil
-	case "ctrl+u":
+	case "alt+u":
 		m = m.clearChatInput()
 		return m, nil
 	case "home":

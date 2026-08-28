@@ -284,7 +284,7 @@ hero update-models
 | `/hero-model` | Select TUI default model **pair and properties** (model · harness · `fs`/`th`/`ef`; atomically persists `hero.json` `freechat_default` + `model_properties`) |
 | `/hero-help` | List Runtime commands |
 
-**TUI Chat** (`hero tui`): the line under the green response pane shows `[fs-<value>] [th-<value>] [ef-<value>]` beside the scroll hint and context bar, including an empty Chat after model selection. Validated freechat values are green; `false`, `na`, unavailable, and workflow YAML values are gray. Missing catalog, stale cache, and invalidated choices use yellow warnings. The context bar (last harness turn `usage` vs the model's `context_window` in `.workflow-hero/models/*.yml`) remains hidden when the model has no window. `/hero-model` never edits `agents.*` or `fallback_model` in `workflow-config.yml`.
+**TUI Chat** (`hero tui`): the line under the green response pane shows `[fs-<value>] [th-<value>] [ef-<value>]` beside the scroll hint and context bar, including an empty Chat after model selection. Validated freechat values are green; `false`, `na`, unavailable, and workflow YAML values are gray. Missing catalog, stale cache, and invalidated choices use yellow warnings. The context bar (sum of completed per-turn `usage` input+output in the current Chat session vs the model's `context_window` in `.workflow-hero/models/*.yml`) remains hidden when the model has no window; `/new-chat` and a successful `/harness-reset` clear it. `/hero-model` never edits `agents.*` or `fallback_model` in `workflow-config.yml`.
 
 ---
 

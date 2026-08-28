@@ -52,7 +52,7 @@ func TestSlashOnStatusStillOpensPalette(t *testing.T) {
 	}
 }
 
-func TestChatSlashOverlayInsertThenSend(t *testing.T) {
+func TestChatSlashTabMovesFocusToNavbar(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	next := typeChat(t, m, "/hero-approve")
@@ -76,20 +76,20 @@ func TestChatSlashOverlayInsertThenSend(t *testing.T) {
 
 	next, _ = HandleTestKey(next, "tab")
 	if ConversationInputForTest(next) != "/hero-approve" {
-		t.Fatalf("after insert input=%q", ConversationInputForTest(next))
+		t.Fatalf("after Tab input=%q", ConversationInputForTest(next))
 	}
-	if ChatSlashOverlayActiveForTest(next) {
-		t.Fatal("overlay should close after insert")
+	if !ChatSlashOverlayActiveForTest(next) {
+		t.Fatal("overlay should remain open while navbar has focus")
 	}
-	if !SlashOverlayDismissedForTest(next) {
-		t.Fatal("expected overlay dismissed after insert")
+	if next.shellFocus != shellFocusNavbar {
+		t.Fatal("Tab should focus the navbar")
 	}
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatal("should stay on chat")
 	}
 }
 
-func TestChatSlashTabInsertsControlNotModeToggle(t *testing.T) {
+func TestChatSlashTabDoesNotToggleMode(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	next := typeChat(t, m, "/hero-approve")
@@ -101,14 +101,14 @@ func TestChatSlashTabInsertsControlNotModeToggle(t *testing.T) {
 		t.Fatalf("tab on overlay should not toggle mode, got %q", ChatModeForTest(next))
 	}
 	if ConversationInputForTest(next) != "/hero-approve" {
-		t.Fatalf("tab should insert control slash, input=%q", ConversationInputForTest(next))
+		t.Fatalf("tab must preserve composer input, got %q", ConversationInputForTest(next))
 	}
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatal("should stay on chat")
 	}
 }
 
-func TestChatSlashTabOnGoToDoesNotToggleMode(t *testing.T) {
+func TestChatSlashTabDoesNotExecuteGoTo(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	next := typeChat(t, m, "/go")
@@ -119,15 +119,15 @@ func TestChatSlashTabOnGoToDoesNotToggleMode(t *testing.T) {
 	if ChatModeForTest(next) != harness.ModeBuild {
 		t.Fatalf("tab on overlay should not toggle mode, got %q", ChatModeForTest(next))
 	}
-	if ConversationInputForTest(next) != "" {
-		t.Fatalf("tab on Go to should execute, not insert, input=%q", ConversationInputForTest(next))
+	if ConversationInputForTest(next) != "/go" {
+		t.Fatalf("tab on Go to must preserve input, got %q", ConversationInputForTest(next))
 	}
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("Go to - Chat should stay on conversation, screen=%v", CurrentScreen(next))
 	}
 }
 
-func TestChatSlashTabGoToStatusNavigates(t *testing.T) {
+func TestChatSlashEnterGoToStatusNavigates(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	next, _ := HandleTestKey(m, "/")
@@ -147,7 +147,7 @@ func TestChatSlashTabGoToStatusNavigates(t *testing.T) {
 		next, cmd = HandleTestKey(next, "down")
 		_ = cmd
 	}
-	next, _ = HandleTestKey(next, "tab")
+	next, _ = HandleTestKey(next, "enter")
 	if CurrentScreen(next) != ScreenStatus {
 		t.Fatalf("screen=%v want status", CurrentScreen(next))
 	}
@@ -156,22 +156,22 @@ func TestChatSlashTabGoToStatusNavigates(t *testing.T) {
 	}
 }
 
-func TestChatSlashTabHeroNewExecutesNotInserts(t *testing.T) {
+func TestChatSlashAltMTogglesModeWithoutExecuting(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	next := typeChat(t, m, "/hero-new")
 	if !ChatSlashOverlayActiveForTest(next) {
 		t.Fatal("overlay should be open for /hero-new")
 	}
-	next, _ = HandleTestKey(next, "tab")
-	if ConversationInputForTest(next) != "" {
-		t.Fatalf("composer should clear on execute, not insert /hero-new, input=%q", ConversationInputForTest(next))
+	next, _ = HandleTestKey(next, "alt+m")
+	if ConversationInputForTest(next) != "/hero-new" {
+		t.Fatalf("composer input=%q want /hero-new", ConversationInputForTest(next))
 	}
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation", CurrentScreen(next))
 	}
-	if !strings.Contains(StatusTextForTest(next), "/model") {
-		t.Fatalf("expected palette-style execute (model required), status=%q", StatusTextForTest(next))
+	if ChatModeForTest(next) != harness.ModePlan {
+		t.Fatalf("mode=%q want plan", ChatModeForTest(next))
 	}
 }
 

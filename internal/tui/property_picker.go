@@ -16,13 +16,13 @@ func (m model) handlePropertyPickerKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		return m.cancelPropertyDraft()
-	case "up", "ctrl+p":
+	case "up":
 		idx := m.propsRowIndex()
 		if idx > 0 {
 			m.paletteIndex = idx - 1
 		}
 		return m, nil
-	case "down", "ctrl+n":
+	case "down":
 		idx := m.propsRowIndex()
 		if idx < len(harness.PropertyKeys())-1 {
 			m.paletteIndex = idx + 1
