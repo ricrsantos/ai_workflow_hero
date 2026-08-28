@@ -38,6 +38,7 @@ func NewTestModel(svc *cycle.Service) model {
 	m := newModel(svc)
 	m.width = 100
 	m.height = 40
+	m.testMode = true
 	return m
 }
 
@@ -251,35 +252,55 @@ func ApplyActionResultForTest(m model, msg actionResultMsg) (model, tea.Cmd) {
 
 // RunCmdForTest executes a tea.Cmd, expanding BatchMsg into nested cmds, and
 // returns the first non-tick business message (preferring actionResultMsg).
+// Batch children run in order; later tick cmds (status, conv wait, health
+// probe) are not invoked once a business message is available — mirroring
+// runConversationCmd so tests do not block on production timers.
 func RunCmdForTest(cmd tea.Cmd) tea.Msg {
+	return runCmdForTest(cmd)
+}
+
+func runCmdForTest(cmd tea.Cmd) tea.Msg {
 	if cmd == nil {
 		return nil
 	}
-	var found tea.Msg
-	var walk func(tea.Cmd)
-	walk = func(c tea.Cmd) {
-		if c == nil {
-			return
-		}
-		msg := c()
-		switch m := msg.(type) {
-		case tea.BatchMsg:
-			for _, nested := range m {
-				walk(nested)
+	msg := cmd()
+	switch m := msg.(type) {
+	case tea.BatchMsg:
+		var found tea.Msg
+		for _, nested := range m {
+			if nested == nil {
+				continue
 			}
-		case statusTickMsg, convWaitTickMsg, harnessHealthProbeMsg:
-			// ignore ticker
-		default:
+			got := runCmdForTest(nested)
+			if got == nil {
+				continue
+			}
+			if _, ok := got.(actionResultMsg); ok {
+				return got
+			}
+			if runCmdImmediateMsg(got) {
+				return got
+			}
 			if found == nil {
-				found = msg
+				found = got
 			}
-			if _, ok := msg.(actionResultMsg); ok {
-				found = msg
-			}
+			return found
 		}
+		return found
+	case statusTickMsg, convWaitTickMsg, harnessHealthProbeMsg:
+		return nil
+	default:
+		return msg
 	}
-	walk(cmd)
-	return found
+}
+
+func runCmdImmediateMsg(msg tea.Msg) bool {
+	switch msg.(type) {
+	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, executePairMsg:
+		return true
+	default:
+		return false
+	}
 }
 
 // StatusKindForTest returns the footer status kind name.

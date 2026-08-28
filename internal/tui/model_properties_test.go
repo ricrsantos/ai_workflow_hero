@@ -474,14 +474,7 @@ func TestExecutionSendsFreechatProperties(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected execute cmd")
 	}
-	// Drain the stream channel synchronously.
-	msg := RunCmdForTest(cmd)
-	_ = msg
-	// The goroutine may still be running; apply stream messages until done.
-	for i := 0; i < 50 && IsConversationStreaming(m); i++ {
-		done := ExecuteDoneResultForTest(nil, nil)
-		m, _ = HandleTestMsg(m, done)
-	}
+	m = drainConversationStream(t, m, cmd)
 	if h.lastProps["fs"] != "true" || h.lastProps["ef"] != "high" {
 		t.Fatalf("freechat properties must reach Execute: %v", h.lastProps)
 	}
@@ -523,10 +516,11 @@ func TestPropertyRejectionSurfacesRedErrorAndKeepsChoices(t *testing.T) {
 
 	h.err = harness.PropertyRejection("ef", "cursor", "composer-2.5", errors.New("unsupported"))
 	m = SetConversationInput(m, "hello")
-	_, cmd := SubmitConversationForTest(m)
-	_ = RunCmdForTest(cmd)
-
-	m, _ = HandleTestMsg(m, ExecuteDoneMsgForTest(h.err))
+	m, cmd := SubmitConversationForTest(m)
+	if cmd == nil {
+		t.Fatal("expected execute cmd")
+	}
+	m = drainConversationStream(t, m, cmd)
 	if StatusKindForTest(m) != "err" {
 		t.Fatalf("rejection must be a red execution error, got %s", StatusKindForTest(m))
 	}
@@ -555,11 +549,11 @@ func TestWorkflowExecutionSendsYAMLProjection(t *testing.T) {
 	m.runtimeModelSlug = "composer-2.5"
 
 	m = SetConversationInput(m, "start")
-	_, cmd := SubmitConversationForTest(m)
-	_ = RunCmdForTest(cmd)
-	for i := 0; i < 50 && IsConversationStreaming(m); i++ {
-		m, _ = HandleTestMsg(m, ExecuteDoneResultForTest(nil, nil))
+	m, cmd := SubmitConversationForTest(m)
+	if cmd == nil {
+		t.Fatal("expected execute cmd")
 	}
+	m = drainConversationStream(t, m, cmd)
 	if h.lastProps["ef"] != "medium" {
 		t.Fatalf("workflow ef must come from YAML: %v", h.lastProps)
 	}

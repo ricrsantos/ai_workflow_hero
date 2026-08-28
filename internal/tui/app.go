@@ -176,6 +176,8 @@ type model struct {
 	harnessHealthStatus   harness.HealthStatus
 	harnessHealthInFlight bool
 	lastExecutePrompt     string
+
+	testMode bool // NewTestModel: omit long-lived execute timers (health probe).
 }
 
 type refreshDataMsg struct {

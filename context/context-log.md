@@ -4,6 +4,16 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Keep this document under 1,000 words by removing or consolidating outdated entries. Permanent facts (architecture, stack, features) belong in `context/current-state.md`, not here.
 
+## 2026-08-27 — TUI test helper: skip 30s health-probe wait
+
+**Problem**: Three `model_properties_test.go` cases took ~30s each (~90s total) because `RunCmdForTest` walked every `conversationExecuteCmds` batch child, including `harnessHealthProbeCmd()` (`tea.Tick(30s)`). Other tests accidentally relied on that 30s window for async Execute goroutines to finish.
+
+**Change**: `NewTestModel` sets `testMode`, which omits the health-probe tick from `conversationExecuteCmds`. `RunCmdForTest` now processes batch children in order and stops after the first business message (no exhaustive tick walk). The three property tests use `drainConversationStream` instead of `RunCmdForTest`.
+
+**Validation**: Full suite `go test ./... -count=1` ~47s (was ~136s); `internal/tui` ~40s (was ~132s).
+
+---
+
 ## 2026-08-27 — TUI Esc interruption and conditional screen shortcuts
 
 **Problem**: Chat used Ctrl+C to cancel a running Harness Execute, and the conditional Config screen occupied the second navbar position, shifting the final Events screen beyond the available numbered shortcuts.

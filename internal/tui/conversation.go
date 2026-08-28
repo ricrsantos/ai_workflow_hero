@@ -139,7 +139,11 @@ func (m model) waitingForHarnessLine(rowW int) string {
 }
 
 func (m model) conversationExecuteCmds() tea.Cmd {
-	return tea.Batch(waitConvBatchMsg(m.convStreamCh), convWaitTickCmd(), harnessHealthProbeCmd())
+	cmds := []tea.Cmd{waitConvBatchMsg(m.convStreamCh), convWaitTickCmd()}
+	if !m.testMode {
+		cmds = append(cmds, harnessHealthProbeCmd())
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m model) harnessAdapter() harness.HarnessAdapter {
