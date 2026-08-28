@@ -143,7 +143,7 @@ func (m model) timerSidebarLines(innerW int) []string {
 	lines := make([]string, 0, navSidebarTimerRows)
 	lines = append(lines,
 		navSidebarSeparator(innerW),
-		navSidebarTimerStyle.Render(truncateNavText(" Sessão "+formatElapsed(m.sessionTimer.displayed), innerW)),
+		navSidebarTimerStyle.Render(truncateNavText(" Session "+formatElapsed(m.sessionTimer.displayed), innerW)),
 		navSidebarTimerStyle.Render(truncateNavText(" AI     "+formatElapsed(m.aiTimer.displayed), innerW)),
 	)
 	return lines

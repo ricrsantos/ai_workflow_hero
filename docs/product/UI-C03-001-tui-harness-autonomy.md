@@ -54,11 +54,11 @@ The left navbar ends with a blue timer subdivision below the navigation
 shortcut hint:
 
 ```text
- Sessão 00:00:00
+ Session 00:00:00
  AI     00:00:00
 ```
 
-At TUI boot, `Sessão` starts at `00:00:00`; an existing persisted cycle is not
+At TUI boot, `Session` starts at `00:00:00`; an existing persisted cycle is not
 restored automatically. `/hero-new` starts a new cycle timer at zero, while
 `/hero-start` and `/hero-resume` explicitly restore the accumulated cycle
 seconds and continue from that baseline. The timer stops when the cycle

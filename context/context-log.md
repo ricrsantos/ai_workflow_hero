@@ -4,6 +4,16 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-28 — TUI timer label
+
+**Change**: Renamed the blue navbar timer label from `Sessão` to `Session`.
+The existing lifecycle remains unchanged: zero at TUI boot, first free-chat
+prompt, and cycle transitions according to ADR-058.
+
+**Validation**: `go test ./internal/tui` passes. The full suite passes outside
+the two pre-existing restricted-sandbox OpenCode spawn cases documented in the
+previous entry.
+
 ## 2026-08-28 — TUI navbar hint and Session timer lifecycle
 
 **Problem**: The `alt+1-6` hint was attached to the navigation rows, and a fresh TUI restored the persisted cycle Session timer before the user explicitly resumed/started a cycle. Free-chat prompts also reset the Session timer on every turn.

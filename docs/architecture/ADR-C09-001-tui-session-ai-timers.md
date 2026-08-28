@@ -9,7 +9,7 @@ footer. That made the value action-specific and left `hero chat`, ordinary
 conversation, and direct stage Executes without a common timing model. The
 product needs two second-resolution counters in the navbar:
 
-- `Sessão`: the active cycle session or the current free-chat session.
+- `Session`: the active cycle session or the current free-chat session.
 - `AI`: the currently executing demand only.
 
 Cycle session time must be available for explicit recovery after a TUI restart
@@ -35,7 +35,7 @@ and AI time must not be persisted.
 4. Start AI on the first Execute of a demand, stop it when the last concurrent
    Execute returns or is cancelled, and reset it for the next demand. AI state
    is process-local and never written to SQLite.
-5. Render `Sessão` and `AI` as the bottom subdivision of the left navbar,
+5. Render `Session` and `AI` as the bottom subdivision of the left navbar,
    beneath the navigation shortcut hint, using the existing blue info accent.
    The footer status bar remains responsible only for action state/messages.
 

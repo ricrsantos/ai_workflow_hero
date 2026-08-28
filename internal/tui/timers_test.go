@@ -160,10 +160,13 @@ func TestNavbarTimerSubdivisionIsAtBottom(t *testing.T) {
 	m.aiTimer.displayed = 4 * time.Second
 	view := stripANSI(m.renderNavSidebar(18))
 	lines := strings.Split(view, "\n")
-	session := strings.Index(view, "Sessão 01:02:03")
+	session := strings.Index(view, "Session 01:02:03")
 	ai := strings.Index(view, "AI     00:00:04")
 	if session < 0 || ai < 0 {
 		t.Fatalf("navbar missing timers:\n%s", view)
+	}
+	if strings.Contains(view, "Sessão") {
+		t.Fatalf("navbar must use the English Session label:\n%s", view)
 	}
 	if session >= ai {
 		t.Fatalf("session timer must precede AI timer:\n%s", view)
@@ -176,7 +179,7 @@ func TestNavbarTimerSubdivisionIsAtBottom(t *testing.T) {
 		switch {
 		case strings.Contains(line, "alt+1-6"):
 			rangeLine = i
-		case strings.Contains(line, "Sessão 01:02:03"):
+		case strings.Contains(line, "Session 01:02:03"):
 			sessionLine = i
 		case strings.Contains(line, "Config"):
 			configLine = i
