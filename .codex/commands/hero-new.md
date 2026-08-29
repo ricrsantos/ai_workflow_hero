@@ -25,10 +25,12 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
    This creates cycle **C<N>** with `status=active`, imports stages from the config file, and leaves **title** and **objective** empty in SQLite until `/hero-start`.
 
 7. Sync `project.json → workflow.cycle` from `hero status --json` (`cycleNumber`) for document numbering and archive prefixes.
-8. Ask the user to review and edit the cycle config **using a clickable markdown link** to the file (Cursor opens it on click):
-   `[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)`
+8. Ask the user to review and fill the cycle config before `/hero-start`:
+   - **Preferred (Hero TUI)**: Open the **Config** screen in the Hero TUI (`alt+6` when a cycle is active) and fill `title`, `objective`, `scope`, stages, and agents there.
+   - **Alternative**: Edit the YAML directly using a clickable markdown link (Cursor opens it on click):
+     `[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)`
    Remind them that `title`, `objective`, and `scope` are cycle-specific (reset to template defaults) and must be filled before `/hero-start`. Remind them to check `workflow_config.user_preferred_language` (chat language), stages (including `browser_ui_validation` / `qa_end_to_end.use_playwright` when frontend is in scope), and that imported `workflow_config` / `agents` / `fallback_model` / stage budgets came from the previous cycle when applicable. Also remind that `.env.example` is the committed template; real secrets stay in local `.env`.
-   Never mention the path only as plain text without the markdown link when asking for review.
+   When both options apply, **lead with Config (alt+6)**; mention the YAML link as a fallback. Never mention the YAML path only as plain text without the markdown link when presenting the file option.
 9. Give the **Clean Session Handoff** below. Do **not** start Research or later stages in this chat.
 
 ## Previous Cycle Config Import
@@ -90,7 +92,7 @@ When later stages invoke subagents (after `/hero-start`), follow **Model Resolut
 → Previous cycle config: imported workflow_config + fallback_model + stages + agents from C<M> (title/objective/scope reset to template)
 → Preparing cycle in SQLite via hero cycle new...
 ✓ Cycle C<N> prepared (active; title/objective pending until /hero-start).
-→ Review and edit title, objective, and scope: [.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)
+→ Review and fill title, objective, and scope — prefer Hero TUI Config (alt+6); or edit YAML: [.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)
 
 → Next (clean session handoff):
   1. Open a new empty chat (do not continue here).

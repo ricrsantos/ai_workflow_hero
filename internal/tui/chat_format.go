@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const tuiHeroNewClosingLine = "→ After completing the configuration in .workflow-hero/cycles/current/workflow-config.yml, run /hero-start to start the new cycle."
+const tuiHeroNewClosingLine = "→ Prefer filling title, objective, and scope in Config (alt+6). You may also edit .workflow-hero/cycles/current/workflow-config.yml. Then run /hero-start to start the new cycle."
 
 const tuiRuntimePreamble = "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
 	"You are running inside the Hero TUI. Follow the command instructions below with these overrides:\n\n" +
@@ -22,7 +22,8 @@ func tuiHeroNewPreamble() string {
 		"- Prepare and write workflow-config.yml, then the TUI will call hero cycle new automatically (active cycle, empty title/objective in SQLite).\n" +
 		"- Do NOT ask the user to reply or confirm before the cycle is prepared. Do NOT run shell/CLI commands yourself.\n" +
 		"- Do not include \"Clean Session Handoff\" or Cursor-chat instructions (new empty chat, select orchestrator model).\n" +
-		"- Tell the user to edit title/objective/scope in the config file, then run /hero-start from the Hero TUI.\n" +
+		"- Tell the user to prefer the Hero TUI Config screen (alt+6) for title, objective, scope, stages, and agents; editing workflow-config.yml directly is optional.\n" +
+		"- Then tell the user to run /hero-start from the Hero TUI.\n" +
 		"- End your response with exactly this line (copy verbatim):\n" +
 		tuiHeroNewClosingLine + "\n\n" +
 		"---\n\n"
