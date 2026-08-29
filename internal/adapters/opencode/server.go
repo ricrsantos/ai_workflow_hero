@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -313,11 +314,22 @@ func serveURLAlive(ctx context.Context, baseURL string, client HTTPDoer) bool {
 
 // startServeProcess spawns opencode serve and returns the resolved base URL.
 func (a *Adapter) startServeProcess(ctx context.Context) (baseURL string, port int, pid int, err error) {
+	return a.startServeProcessWithProfile(ctx, harness.PermissionProfileAsk)
+}
+
+func (a *Adapter) startServeProcessWithProfile(ctx context.Context, profile harness.PermissionProfile) (baseURL string, port int, pid int, err error) {
 	cli, err := a.cliPath()
 	if err != nil {
 		return "", 0, 0, err
 	}
-	handle, err := a.Runner.Start(ctx, a.ProjectDir, cli, "serve", "--port", "0", "--hostname", "127.0.0.1")
+	args := []string{"serve", "--port", "0", "--hostname", "127.0.0.1"}
+	env := []string{"OPENCODE_CONFIG_CONTENT=" + permissionConfigContent(profile)}
+	var handle ProcessHandle
+	if runner, ok := a.Runner.(EnvironmentProcessRunner); ok {
+		handle, err = runner.StartWithEnv(ctx, a.ProjectDir, cli, env, args...)
+	} else {
+		handle, err = a.Runner.Start(ctx, a.ProjectDir, cli, args...)
+	}
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("start opencode serve: %w", err)
 	}
@@ -336,8 +348,19 @@ func (a *Adapter) startServeProcess(ctx context.Context) (baseURL string, port i
 	a.servePID = pid
 	a.servePort = port
 	a.serveHandle = handle
+	a.serveProfile = harness.NormalizePermissionProfile(profile)
 	a.mu.Unlock()
 	return url, port, pid, nil
+}
+
+// permissionConfigContent is a process-scoped OpenCode override. It takes
+// precedence over opencode.json, so changing a Hero profile never rewrites a
+// user's project configuration.
+func permissionConfigContent(profile harness.PermissionProfile) string {
+	if harness.NormalizePermissionProfile(profile) == harness.PermissionProfileAutoProject {
+		return `{"permission":{"*":"allow","bash":"ask","external_directory":"ask","webfetch":"ask","websearch":"ask","mcp_*":"ask"}}`
+	}
+	return `{"permission":"ask"}`
 }
 
 // stopServeState clears in-memory serve state and terminates managed processes.
@@ -349,6 +372,7 @@ func (a *Adapter) stopServeState(ctx context.Context) error {
 	a.baseURL = ""
 	a.servePID = 0
 	a.servePort = 0
+	a.serveProfile = harness.PermissionProfileAsk
 	a.mu.Unlock()
 
 	if handle != nil {

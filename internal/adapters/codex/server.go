@@ -29,7 +29,9 @@ const (
 	//   - thread/start.sandbox and CLI -c sandbox_mode= use SandboxMode
 	//     ("read-only" | "workspace-write" | "danger-full-access")
 	//   - turn/start.sandboxPolicy.type uses SandboxPolicy ("workspaceWrite")
-	codexApprovalPolicy    = "never"
+	// Keep the app server in request mode. turn/start below makes the
+	// adapter-owned decision for each project-local permission profile.
+	codexApprovalPolicy    = "on-request"
 	codexSandboxMode       = "workspace-write"
 	codexSandboxPolicyType = "workspaceWrite"
 )

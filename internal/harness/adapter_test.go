@@ -67,6 +67,18 @@ func TestExecuteRequestFields(t *testing.T) {
 	}
 }
 
+func TestNormalizePermissionProfileDefaultsToAsk(t *testing.T) {
+	if got := harness.NormalizePermissionProfile(""); got != harness.PermissionProfileAsk {
+		t.Fatalf("blank profile = %q, want ask", got)
+	}
+	if got := harness.NormalizePermissionProfile("unknown"); got != harness.PermissionProfileAsk {
+		t.Fatalf("unknown profile = %q, want ask", got)
+	}
+	if got := harness.NormalizePermissionProfile(harness.PermissionProfileAutoProject); got != harness.PermissionProfileAutoProject {
+		t.Fatalf("auto profile = %q", got)
+	}
+}
+
 func TestExecutionResultUsage(t *testing.T) {
 	res := harness.ExecutionResult{
 		SessionID: "s1",

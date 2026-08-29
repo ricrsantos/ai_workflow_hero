@@ -1288,16 +1288,23 @@ func (m model) startConversationExecute(executeID, prompt string, relay *convers
 				slog.Debug("tui persist stage harness id failed", "error", err)
 			}
 		}
+		profile := harness.PermissionProfileAsk
+		if svc != nil {
+			if hero, err := install.LoadHeroJSON(projectDir); err == nil {
+				profile = install.HarnessPermissionProfile(hero, pair.HarnessID)
+			}
+		}
 		req := harness.ExecuteRequest{
-			ProjectDir: projectDir,
-			Prompt:     prompt,
-			SessionID:  sessionID,
-			Stream:     true,
-			Debug:      herodebug.Enabled,
-			StageName:  stageName,
-			AgentName:  agentName,
-			Model:      pair.Model,
-			Mode:       mode,
+			ProjectDir:        projectDir,
+			Prompt:            prompt,
+			SessionID:         sessionID,
+			Stream:            true,
+			Debug:             herodebug.Enabled,
+			StageName:         stageName,
+			AgentName:         agentName,
+			Model:             pair.Model,
+			Mode:              mode,
+			PermissionProfile: profile,
 			// C5: attach the normalized property projection (freechat for
 			// Chat//hero-new, YAML-derived for workflow commands; ADR-041/042).
 			Properties: resolved.props,

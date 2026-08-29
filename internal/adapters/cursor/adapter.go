@@ -189,15 +189,16 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	if req.Stream {
 		format = "stream-json"
 	}
-	// --print is non-interactive: without --force, Auto-review rejects Shell (no TTY
-	// to prompt), so the agent cannot run `hero` and starts searching parent dirs.
-	// --workspace pins the agent to the consumer project (cmd.Dir alone is not enough
-	// when Cursor walks up for a git/workspace root).
-	// --sandbox disabled keeps the user's PATH (nvm/npm/openspec) in Shell; the
-	// default sandbox often strips those dirs so `hero cycle archive` cannot find
-	// openspec even when it is installed for the login shell.
-	// --approve-mcps auto-approves MCP tool servers in headless mode (no TTY to prompt).
-	args := []string{"--print", "--output-format", format, "--trust", "--force", "--approve-mcps", "--sandbox", "disabled"}
+	// --workspace pins the agent to the consumer project (cmd.Dir alone is not
+	// enough when Cursor walks up for a git/workspace root). Keep the native
+	// sandbox on for both profiles: Hero never grants the unrestricted yolo mode.
+	args := []string{"--print", "--output-format", format, "--trust", "--sandbox", "enabled"}
+	if req.PermissionProfile == harness.PermissionProfileAutoProject {
+		// Cursor CLI has no resource-scoped yolo flag. Smart Auto is its narrowest
+		// automatic mode: it auto-runs only Cursor-classified safe calls and keeps
+		// the rest in the native approval flow. MCPs are deliberately never added.
+		args = append(args, "--auto-review")
+	}
 	if dir != "" {
 		args = append(args, "--workspace", dir)
 	}

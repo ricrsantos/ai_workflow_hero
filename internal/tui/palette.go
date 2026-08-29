@@ -36,6 +36,8 @@ const (
 	actionHarness
 	actionToggleHarness
 	actionApplyHarness
+	actionPickHarnessPermission
+	actionSelectHarnessPermissionProfile
 	actionHarnessReset
 	actionSelectHarnessReset
 	actionConfigUpdate

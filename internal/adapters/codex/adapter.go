@@ -576,8 +576,10 @@ func truncate(s string, n int) string {
 
 func turnStartParams(threadID string, req harness.ExecuteRequest, projectDir string) map[string]any {
 	params := map[string]any{
-		"threadId":       threadID,
-		"approvalPolicy": codexApprovalPolicy,
+		"threadId": threadID,
+		// Codex must emit native requests even for AutoProject: the adapter only
+		// pre-approves file changes after workspace-write confines the target.
+		"approvalPolicy": "on-request",
 		"sandboxPolicy": map[string]any{
 			"type":          codexSandboxPolicyType,
 			"networkAccess": true,

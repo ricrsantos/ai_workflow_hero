@@ -112,6 +112,8 @@ type model struct {
 	availableModels          []string
 	pickingModel             bool
 	pickingHarness           bool
+	pickingHarnessPermission bool
+	pickingPermissionProfile bool
 	pickingHarnessReset      bool
 	harnessResetAwaitingOpen bool // loading harness list before reset picker is interactive
 	heroStartPreparing       bool // syncing opencode agents before /hero-start orchestration
@@ -120,16 +122,17 @@ type model struct {
 	heroStartRequestID       uint64
 	modelPickerHarness       string          // non-empty = /hero-model step 2 (models for this harness)
 	harnessDraft             map[string]bool // checkbox state while /hero-harness is open
-	runtimeCommandName       string          // hero runtime slash body name (e.g. "new") for Chat output normalization
-	runtimeModelSlug         string          // YAML orch/discover slug or /hero-model default for the active runtime slash
-	runtimeHarnessID         string          // YAML orch/discover harness (or resolved execute pair); preferred over freechat for labels
-	runtimeAgentName         string          // harness agent name for active runtime slash (e.g. orchestration_agent)
-	orchestrationLive        bool            // /hero-start session: follow-ups resume orchestrator model + session
-	researchLive             bool            // TUI Research: free-text follow-ups resume discover_agent
-	orchestrationSessionID   string          // saved orchestrator harness session while Research is live
-	researchSessionID        string          // discover_agent harness session
-	awaitingRejectReason     bool            // Chat is collecting rejection feedback before Runtime Execute
-	executeSeq               int             // monotonic id for tagged concurrent Executes
+	permissionPickerHarness  string
+	runtimeCommandName       string // hero runtime slash body name (e.g. "new") for Chat output normalization
+	runtimeModelSlug         string // YAML orch/discover slug or /hero-model default for the active runtime slash
+	runtimeHarnessID         string // YAML orch/discover harness (or resolved execute pair); preferred over freechat for labels
+	runtimeAgentName         string // harness agent name for active runtime slash (e.g. orchestration_agent)
+	orchestrationLive        bool   // /hero-start session: follow-ups resume orchestrator model + session
+	researchLive             bool   // TUI Research: free-text follow-ups resume discover_agent
+	orchestrationSessionID   string // saved orchestrator harness session while Research is live
+	researchSessionID        string // discover_agent harness session
+	awaitingRejectReason     bool   // Chat is collecting rejection feedback before Runtime Execute
+	executeSeq               int    // monotonic id for tagged concurrent Executes
 	executes                 map[string]convExecute
 	stageHandoffLive         bool
 	stageHandoffStage        string
@@ -504,10 +507,13 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.paletteOffset = 0
 		m.pickingModel = false
 		m.pickingHarness = false
+		m.pickingHarnessPermission = false
+		m.pickingPermissionProfile = false
 		m.pickingHarnessReset = false
 		m.harnessResetAwaitingOpen = false
 		m.modelPickerHarness = ""
 		m.harnessDraft = nil
+		m.permissionPickerHarness = ""
 		m = m.reloadPaletteItems()
 		return m, nil
 	case "alt+r", "f5":
@@ -574,10 +580,13 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Leave palette chrome before global navigation / refresh / quit.
 		m.pickingModel = false
 		m.pickingHarness = false
+		m.pickingHarnessPermission = false
+		m.pickingPermissionProfile = false
 		m.pickingHarnessReset = false
 		m.harnessResetAwaitingOpen = false
 		m.modelPickerHarness = ""
 		m.harnessDraft = nil
+		m.permissionPickerHarness = ""
 		m.paletteFilter = ""
 		m.paletteIndex = 0
 		m.paletteOffset = 0
@@ -593,6 +602,9 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.pickingModel && m.modelPickerHarness != "" {
 			return m.openModelPicker()
+		}
+		if m.pickingPermissionProfile {
+			return m.openHarnessPermissionPicker()
 		}
 		m = m.closePalette()
 		return m, nil
@@ -643,6 +655,9 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.pickingHarness {
 			return m.applyHarnessDraft()
+		}
+		if m.pickingPermissionProfile {
+			return m.applyHarnessPermissionProfile()
 		}
 		items := m.filteredPaletteItems()
 		if len(items) == 0 {
@@ -698,6 +713,10 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		return m.toggleHarnessDraft()
 	case actionApplyHarness:
 		return m.applyHarnessDraft()
+	case actionPickHarnessPermission:
+		return m.pickHarnessPermission(item.harnessID)
+	case actionSelectHarnessPermissionProfile:
+		return m.applyHarnessPermissionProfile()
 	case actionHarnessReset:
 		return m.beginHarnessResetPicker()
 	case actionSelectHarnessReset:

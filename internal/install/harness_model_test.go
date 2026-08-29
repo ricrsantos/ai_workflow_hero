@@ -139,6 +139,29 @@ func TestSaveHarnessModel(t *testing.T) {
 	}
 }
 
+func TestSetHarnessPermissionProfile(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, filepath.Dir(cursoradapter.HeroJSONPath))
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hero := HeroJSON{Harnesses: HarnessesFromSelection([]string{"cursor"})}
+	data, _ := json.MarshalIndent(hero, "", "  ")
+	if err := os.WriteFile(filepath.Join(dir, cursoradapter.HeroJSONPath), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetHarnessPermissionProfile(dir, "cursor", "auto-project"); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := HarnessPermissionProfile(loaded, "cursor"); got != "auto-project" {
+		t.Fatalf("profile=%q", got)
+	}
+}
+
 func TestSaveHarnessModel_RequiresSlug(t *testing.T) {
 	if err := SaveHarnessModel(t.TempDir(), "cursor", "  "); err == nil {
 		t.Fatal("expected error")

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
 // DefaultCursorModel is a documented example slug for tests and docs only.
@@ -16,9 +17,10 @@ const DefaultCursorModel = "composer-2.5"
 
 // HarnessConfig holds per-harness defaults in hero.json (ADR-030; ADR-034 enabled).
 type HarnessConfig struct {
-	Enabled         bool   `json:"enabled"`
-	Model           string `json:"model"`
-	EnableFastModel bool   `json:"enable_fast_model"`
+	Enabled           bool                      `json:"enabled"`
+	Model             string                    `json:"model"`
+	EnableFastModel   bool                      `json:"enable_fast_model"`
+	PermissionProfile harness.PermissionProfile `json:"permission_profile"`
 }
 
 // DefaultHarnesses returns the install-time harness block when no selection is provided (tests).
@@ -85,7 +87,13 @@ func HarnessConfigForTool(hero HeroJSON, toolID string) HarnessConfig {
 	if def, ok := DefaultHarnesses()[toolID]; ok {
 		return def
 	}
-	return HarnessConfig{EnableFastModel: false}
+	return HarnessConfig{EnableFastModel: false, PermissionProfile: harness.PermissionProfileAsk}
+}
+
+// HarnessPermissionProfile returns a safe profile for one harness. Old
+// hero.json files without the field resolve to Ask every time.
+func HarnessPermissionProfile(hero HeroJSON, toolID string) harness.PermissionProfile {
+	return harness.NormalizePermissionProfile(HarnessConfigForTool(hero, toolID).PermissionProfile)
 }
 
 // HasDefaultHarnessModel reports whether the user selected a default model for toolID.

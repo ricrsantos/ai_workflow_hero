@@ -42,6 +42,7 @@ func TestHarnessPickerCheckboxesShowAvailability(t *testing.T) {
 	writeHeroJSON(t, dir, []byte(`{
   "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}, "codex": {"enabled": false}}
 }
+
 `))
 	svc, err := cycle.OpenService(dir)
 	if err != nil {
@@ -64,6 +65,39 @@ func TestHarnessPickerCheckboxesShowAvailability(t *testing.T) {
 	}
 	if !strings.Contains(view, "space toggle") {
 		t.Fatalf("missing checkbox hint: %q", view)
+	}
+}
+
+func TestHarnessPickerPersistsAutoProjectPermissionProfile(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}, "codex": {"enabled": false}}
+}
+`))
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
+	// Keep the enabled set unchanged, then enter the permission manager.
+	next, _ = tui.HandleTestKey(next, "enter")
+	if !strings.Contains(tui.ViewForTest(next), "Harnesses · permissions") {
+		t.Fatalf("expected permission list: %q", tui.ViewForTest(next))
+	}
+	next, _ = tui.HandleTestKey(next, "enter")
+	if !strings.Contains(tui.ViewForTest(next), "Cursor · permissions") {
+		t.Fatalf("expected profile list: %q", tui.ViewForTest(next))
+	}
+	next = tui.SetPaletteIndexForTest(next, 1)
+	next, _ = tui.HandleTestKey(next, "enter")
+	hero, err := install.LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := install.HarnessPermissionProfile(hero, "cursor"); got != "auto-project" {
+		t.Fatalf("profile=%q", got)
 	}
 }
 

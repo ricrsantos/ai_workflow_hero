@@ -230,7 +230,15 @@ func (m model) renderPalette() string {
 	case m.pickingHarness:
 		b.WriteString(headerStyle.Render("Harnesses"))
 		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("space toggle · enter apply · esc cancel"))
+		b.WriteString(mutedStyle.Render("space toggle · enter continue · esc cancel"))
+	case m.pickingHarnessPermission:
+		b.WriteString(headerStyle.Render("Harnesses · permissions"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("↑↓ navigate · enter select harness · esc close"))
+	case m.pickingPermissionProfile:
+		b.WriteString(headerStyle.Render("Harnesses · " + harnessDisplayName(m.permissionPickerHarness) + " · permissions"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("↑↓ navigate · enter save · esc back"))
 	case m.pickingHarnessReset:
 		b.WriteString(headerStyle.Render("/harness-reset · select harness"))
 		b.WriteByte('\n')

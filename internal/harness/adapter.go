@@ -57,6 +57,9 @@ type ExecuteRequest struct {
 	Properties map[string]string
 	// Debug enables verbose harness event output in the TUI (hero --debug).
 	Debug bool
+	// PermissionProfile is the persisted project-scoped approval preset. Each
+	// adapter maps this normalized value to its native permission mechanism.
+	PermissionProfile PermissionProfile
 	// OnStreamDelta receives live stream events when Stream is true (optional).
 	OnStreamDelta func(delta StreamDelta)
 	// OnPermissionRequest blocks until the user approves or denies a harness
@@ -76,6 +79,7 @@ type ExecuteRequest struct {
 // each caller know how provider adapters protect request state.
 func NormalizeExecuteRequest(req ExecuteRequest) ExecuteRequest {
 	req.Properties = NormalizeProperties(req.Properties)
+	req.PermissionProfile = NormalizePermissionProfile(req.PermissionProfile)
 	return req
 }
 

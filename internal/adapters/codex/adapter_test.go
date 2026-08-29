@@ -49,6 +49,7 @@ type mockStdioPeer struct {
 	turnProp       map[string]any
 	onTurn         func(params map[string]any)
 	injectApproval bool
+	approvalMethod string
 	resumeFail     bool
 	threadStarts   int
 	startDir       string
@@ -210,9 +211,13 @@ func (m *mockStdioPeer) serve() {
 				"threadId": "thr_test_1", "foo": "bar",
 			}})
 			if m.injectApproval {
+				method := m.approvalMethod
+				if method == "" {
+					method = "item/commandExecution/requestApproval"
+				}
 				m.write(map[string]any{
 					"id":     99001,
-					"method": "item/commandExecution/requestApproval",
+					"method": method,
 					"params": map[string]any{
 						"threadId": "thr_test_1",
 						"turnId":   "turn_1",
@@ -462,8 +467,8 @@ func TestExecute_PropertyMapping(t *testing.T) {
 	if _, ok := peer.turnProp["fast"]; ok {
 		t.Fatal("fs must not appear in native payload")
 	}
-	if peer.turnProp["approvalPolicy"] != "never" {
-		t.Fatalf("approvalPolicy=%v want never", peer.turnProp["approvalPolicy"])
+	if peer.turnProp["approvalPolicy"] != "on-request" {
+		t.Fatalf("approvalPolicy=%v want on-request", peer.turnProp["approvalPolicy"])
 	}
 	sandbox, ok := peer.turnProp["sandboxPolicy"].(map[string]any)
 	if !ok {
@@ -472,7 +477,7 @@ func TestExecute_PropertyMapping(t *testing.T) {
 	if sandbox["type"] != "workspaceWrite" || sandbox["networkAccess"] != true {
 		t.Fatalf("sandboxPolicy=%v", sandbox)
 	}
-	if peer.threadProp["approvalPolicy"] != "never" || peer.threadProp["sandbox"] != "workspace-write" {
+	if peer.threadProp["approvalPolicy"] != "on-request" || peer.threadProp["sandbox"] != "workspace-write" {
 		t.Fatalf("thread policy approval=%v sandbox=%v", peer.threadProp["approvalPolicy"], peer.threadProp["sandbox"])
 	}
 }
@@ -499,7 +504,7 @@ func TestEnsureAppServerStartsTrustedWithExplicitPolicy(t *testing.T) {
 	wantTrust := fmt.Sprintf(`projects.%q.trust_level="trusted"`, dir)
 	wantOverrides := []string{
 		wantTrust,
-		`approval_policy="never"`,
+		`approval_policy="on-request"`,
 		`sandbox_mode="workspace-write"`,
 		"sandbox_workspace_write.network_access=true",
 	}
@@ -555,6 +560,31 @@ func TestPermission_AllowPrompt(t *testing.T) {
 	}
 	if !sawPerm {
 		t.Fatal("expected Allow? stream delta")
+	}
+}
+
+func TestPermission_AutoProjectApprovesWorkspaceFileChange(t *testing.T) {
+	peer := newMockPeer()
+	peer.injectApproval = true
+	peer.approvalMethod = "item/fileChange/requestApproval"
+	a := codex.NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "/mock/codex", nil }
+	a.Runner = peer
+	called := false
+	_, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt:            "hi",
+		Stream:            true,
+		PermissionProfile: harness.PermissionProfileAutoProject,
+		OnPermissionRequest: func(context.Context, harness.PermissionRequest) (harness.PermissionResponse, error) {
+			called = true
+			return harness.PermissionResponse{Approved: false}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("workspace file changes must be pre-approved without a TUI prompt")
 	}
 }
 

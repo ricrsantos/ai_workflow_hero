@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
 // SupportedHarnessIDs lists harness identifiers Hero supports in the TUI
@@ -33,9 +34,10 @@ func HarnessesFromSelection(selected []string) map[string]HarnessConfig {
 	out := make(map[string]HarnessConfig, len(SupportedHarnessIDs))
 	for _, id := range SupportedHarnessIDs {
 		out[id] = HarnessConfig{
-			Enabled:         enabled[id],
-			Model:           "",
-			EnableFastModel: false,
+			Enabled:           enabled[id],
+			Model:             "",
+			EnableFastModel:   false,
+			PermissionProfile: harness.PermissionProfileAsk,
 		}
 	}
 	return out
@@ -101,9 +103,30 @@ func MigrateHarnessState(hero *HeroJSON) bool {
 		if _, ok := hero.Harnesses[id]; !ok {
 			hero.Harnesses[id] = HarnessConfig{Enabled: id == "cursor" && slices.Contains(nonEmptyStrings(hero.CLI.Tools), "cursor")}
 			modified = true
+			continue
 		}
 	}
 	return modified
+}
+
+// SetHarnessPermissionProfile persists the simple approval preset for one
+// enabled harness. Blank and invalid values intentionally become Ask.
+func SetHarnessPermissionProfile(projectDir, harnessID string, profile harness.PermissionProfile) error {
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	if !slices.Contains(SupportedHarnessIDs, harnessID) {
+		return fmt.Errorf("unsupported harness %q", harnessID)
+	}
+	hero, err := LoadHeroJSON(projectDir)
+	if err != nil {
+		return err
+	}
+	if hero.Harnesses == nil {
+		hero.Harnesses = HarnessesFromSelection(nil)
+	}
+	cfg := hero.Harnesses[harnessID]
+	cfg.PermissionProfile = harness.NormalizePermissionProfile(profile)
+	hero.Harnesses[harnessID] = cfg
+	return saveHeroJSON(projectDir, hero)
 }
 
 // ListEnabledHarnesses returns enabled harness ids in stable order.

@@ -50,7 +50,7 @@
 - **Strict CLI vs Runtime**: CLI is deterministic; orchestration lives in embedded `assets/cursor/`.
 - **Simple templating**: `internal/common/template` — `{{path.key}}` only (ADR-006).
 - **Assets**: embedded via `assets.FS`; install copies into `.cursor/` (when Cursor enabled), `.opencode/` (when OpenCode enabled), `.codex/` (when Codex enabled — full agents/commands/skills mirroring OpenCode; no AGENTS.md / no default config template), and `.workflow-hero/`. Codex `SKILL.md` files include required YAML frontmatter (`name`, `description`) for Codex skill discovery. This repository also carries a project-local `.codex/config.toml` for its own trusted development workspace.
-- **Multi-harness (C4/C5)**: `hero.json` → `harnesses.<id>.enabled`, `freechat_default {harness, model}`, and C5 `model_properties`; `workflow-config.yml` requires `harness` on every agent + `fallback_model`; `internal/harnessmgr` registry + fallback chain (ADR-033); SQLite schema **v8** (C6 registry/index plus `cycles.session_duration_seconds` for the TUI Session timer).
+- **Multi-harness (C4/C5)**: `hero.json` → `harnesses.<id>.enabled`, `permission_profile` (`ask` default or `auto-project`), `freechat_default {harness, model}`, and C5 `model_properties`; `workflow-config.yml` requires `harness` on every agent + `fallback_model`; `internal/harnessmgr` registry + fallback chain (ADR-033); SQLite schema **v8** (C6 registry/index plus `cycles.session_duration_seconds` for the TUI Session timer).
 
 ## Implemented Features
 

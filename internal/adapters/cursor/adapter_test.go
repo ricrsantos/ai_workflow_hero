@@ -345,14 +345,11 @@ func TestExecuteJSONFixture(t *testing.T) {
 	if !containsArg(gotArgs, "--trust") {
 		t.Fatalf("expected --trust in args=%v", gotArgs)
 	}
-	if !containsArg(gotArgs, "--force") {
-		t.Fatalf("expected --force in args=%v", gotArgs)
+	if containsArg(gotArgs, "--force") || containsArg(gotArgs, "--approve-mcps") {
+		t.Fatalf("ask profile must not auto-approve in args=%v", gotArgs)
 	}
-	if !containsArg(gotArgs, "--approve-mcps") {
-		t.Fatalf("expected --approve-mcps in args=%v", gotArgs)
-	}
-	if !containsArg(gotArgs, "--sandbox") || !containsArg(gotArgs, "disabled") {
-		t.Fatalf("expected --sandbox disabled in args=%v", gotArgs)
+	if !containsArg(gotArgs, "--sandbox") || !containsArg(gotArgs, "enabled") {
+		t.Fatalf("expected --sandbox enabled in args=%v", gotArgs)
 	}
 	if !containsArg(gotArgs, "--workspace") || !containsArg(gotArgs, dir) {
 		t.Fatalf("expected --workspace %s in args=%v", dir, gotArgs)
@@ -383,6 +380,24 @@ func TestExecutePassesModelFlag(t *testing.T) {
 	}
 	if !containsArg(gotArgs, "--model") || !containsArg(gotArgs, "composer-2.5") {
 		t.Fatalf("expected --model composer-2.5, args=%v", gotArgs)
+	}
+}
+
+func TestExecuteAutoProjectUsesSmartAutoWithoutMCPApproval(t *testing.T) {
+	dir := withCursorAssets(t)
+	var gotArgs []string
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func([]string) bool { return true },
+		result:    cursoradapter.RunResult{Stdout: []byte(`{"type":"result","subtype":"success","session_id":"s-auto","result":"ok"}`)},
+		capture:   &gotArgs,
+	}}}
+	if _, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "hi", PermissionProfile: harness.PermissionProfileAutoProject}); err != nil {
+		t.Fatal(err)
+	}
+	if !containsArg(gotArgs, "--auto-review") || containsArg(gotArgs, "--force") || containsArg(gotArgs, "--approve-mcps") {
+		t.Fatalf("auto-project args=%v", gotArgs)
 	}
 }
 
@@ -571,10 +586,10 @@ func TestExecuteStreamDeltasArriveBeforeProcessEnds(t *testing.T) {
 	adapter := cursoradapter.NewAdapter(dir)
 	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
 	adapter.Runner = &slowStreamRunner{
-		t: t,
-		stdout: []byte(line1 + line2),
+		t:            t,
+		stdout:       []byte(line1 + line2),
 		betweenLines: 20 * time.Millisecond,
-		onFinished: func() { processDone.Store(true) },
+		onFinished:   func() { processDone.Store(true) },
 	}
 
 	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{

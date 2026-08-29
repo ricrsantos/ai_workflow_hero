@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -36,6 +37,12 @@ type LookPathFunc func(string) (string, error)
 // ProcessRunner starts and stops child processes (design D6).
 type ProcessRunner interface {
 	Start(ctx context.Context, dir, name string, args ...string) (ProcessHandle, error)
+}
+
+// EnvironmentProcessRunner starts a child with additional process-scoped
+// environment variables. Test runners can continue to implement ProcessRunner.
+type EnvironmentProcessRunner interface {
+	StartWithEnv(ctx context.Context, dir, name string, env []string, args ...string) (ProcessHandle, error)
 }
 
 // ProcessHandle is a started child process.
@@ -64,10 +71,18 @@ type execHandle struct {
 }
 
 func (ExecRunner) Start(_ context.Context, dir, name string, args ...string) (ProcessHandle, error) {
+	return ExecRunner{}.StartWithEnv(context.Background(), dir, name, nil, args...)
+}
+
+// StartWithEnv starts OpenCode without mutating the parent process environment.
+func (ExecRunner) StartWithEnv(_ context.Context, dir, name string, env []string, args ...string) (ProcessHandle, error) {
 	// Serve must outlive a single Execute. CommandContext(runCtx) killed the
 	// recovered child on Cancel and looked like an OpenCode crash (new run=).
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	if attr := parentDeathSignalAttr(); attr != nil {
 		cmd.SysProcAttr = attr
 	}
@@ -139,6 +154,7 @@ type Adapter struct {
 	servePID     int
 	servePort    int
 	serveHandle  ProcessHandle
+	serveProfile harness.PermissionProfile
 	sessions     map[string]*sessionState
 	cancels      map[string]context.CancelFunc
 }
@@ -193,6 +209,10 @@ func (a *Adapter) CreateSession(ctx context.Context, req harness.SessionRequest)
 	if err := a.ensureServe(ctx); err != nil {
 		return nil, err
 	}
+	return a.createSession(ctx, req)
+}
+
+func (a *Adapter) createSession(ctx context.Context, req harness.SessionRequest) (*harness.Session, error) {
 	body, _ := json.Marshal(map[string]string{"title": req.StageName})
 	resp, err := a.postProject(ctx, req.ProjectDir, "/session", body)
 	if err != nil {
@@ -227,12 +247,12 @@ func (a *Adapter) ResumeSession(ctx context.Context, sessionID string) error {
 // Execute implements harness.HarnessAdapter.
 func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*harness.ExecutionResult, error) {
 	req = harness.NormalizeExecuteRequest(req)
-	if err := a.ensureServe(ctx); err != nil {
+	if err := a.ensureServeWithProfile(ctx, req.PermissionProfile); err != nil {
 		return nil, err
 	}
 	sessionID := strings.TrimSpace(req.SessionID)
 	if sessionID == "" {
-		sess, err := a.CreateSession(ctx, harness.SessionRequest{
+		sess, err := a.createSession(ctx, harness.SessionRequest{
 			ProjectDir: req.ProjectDir,
 			StageName:  req.StageName,
 			AgentName:  req.AgentName,
@@ -251,7 +271,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 				HarnessType: "session.resume",
 			})
 		}
-		sess, cerr := a.CreateSession(ctx, harness.SessionRequest{
+		sess, cerr := a.createSession(ctx, harness.SessionRequest{
 			ProjectDir: req.ProjectDir,
 			StageName:  req.StageName,
 			AgentName:  req.AgentName,
@@ -537,6 +557,7 @@ func (a *Adapter) clearStaleServeBinding(ctx context.Context) {
 	a.servePID = 0
 	a.servePort = 0
 	a.serveHandle = nil
+	a.serveProfile = harness.PermissionProfileAsk
 	a.mu.Unlock()
 
 	if handle != nil {
@@ -567,15 +588,25 @@ func (a *Adapter) clearStaleServeBinding(ctx context.Context) {
 }
 
 func (a *Adapter) ensureServe(ctx context.Context) error {
+	return a.ensureServeWithProfile(ctx, harness.PermissionProfileAsk)
+}
+
+func (a *Adapter) ensureServeWithProfile(ctx context.Context, profile harness.PermissionProfile) error {
+	profile = harness.NormalizePermissionProfile(profile)
 	a.mu.Lock()
 	base := a.baseURL
+	runningProfile := harness.NormalizePermissionProfile(a.serveProfile)
 	a.mu.Unlock()
-	if base != "" {
+	if base != "" && runningProfile == profile {
 		if serveURLAlive(ctx, base, a.HTTP) {
 			return nil
 		}
 		a.log().Warn("opencode serve unreachable; recovering", "url", base)
 		a.clearStaleServeBinding(ctx)
+	} else if base != "" {
+		if err := a.stopServeState(ctx); err != nil {
+			return err
+		}
 	}
 
 	a.serveStartMu.Lock()
@@ -583,19 +614,24 @@ func (a *Adapter) ensureServe(ctx context.Context) error {
 
 	a.mu.Lock()
 	base = a.baseURL
+	runningProfile = harness.NormalizePermissionProfile(a.serveProfile)
 	a.mu.Unlock()
-	if base != "" {
+	if base != "" && runningProfile == profile {
 		if serveURLAlive(ctx, base, a.HTTP) {
 			return nil
 		}
 		a.clearStaleServeBinding(ctx)
+	} else if base != "" {
+		if err := a.stopServeState(ctx); err != nil {
+			return err
+		}
 	}
 
-	if a.adoptFromRegistry(ctx) {
+	if profile == harness.PermissionProfileAsk && a.adoptFromRegistry(ctx) {
 		return nil
 	}
 
-	url, port, pid, err := a.startServeProcess(ctx)
+	url, port, pid, err := a.startServeProcessWithProfile(ctx, profile)
 	if err != nil {
 		return err
 	}

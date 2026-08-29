@@ -371,6 +371,8 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
 | `activity` | Observability (file edits, todos, LSP, TUI events) |
 | `session` | Idle / running / failed lifecycle |
 
+**Project-scoped permission profiles:** `hero.json` stores `harnesses.<id>.permission_profile`; blank legacy values normalize to conservative `ask`. `/hero-harness` manages the enabled set and then profiles for every enabled adapter. `auto-project` never grants unrestricted yolo: OpenCode receives process-local inline rules (workspace tools allowed; shell, network, MCP, and external directories ask), Codex retains native `on-request` and auto-replies only to workspace-confined file changes, and Cursor uses sandboxed Smart Auto without MCP auto-approval.
+
 **Rules:**
 
 - Adapters SHALL NOT silently drop parseable events; unknown types emit `StreamKindWarning`.

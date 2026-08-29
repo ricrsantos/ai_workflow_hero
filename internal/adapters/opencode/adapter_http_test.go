@@ -30,6 +30,18 @@ func (h stubHandle) PID() int    { return h.pid }
 func (h stubHandle) Wait() error { return nil }
 func (h stubHandle) Kill() error { return nil }
 
+func TestPermissionConfigContent(t *testing.T) {
+	if got := permissionConfigContent(harness.PermissionProfileAsk); got != `{"permission":"ask"}` {
+		t.Fatalf("ask config=%s", got)
+	}
+	got := permissionConfigContent(harness.PermissionProfileAutoProject)
+	for _, want := range []string{`"bash":"ask"`, `"external_directory":"ask"`, `"webfetch":"ask"`, `"websearch":"ask"`, `"mcp_*":"ask"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("auto config missing %s: %s", want, got)
+		}
+	}
+}
+
 func TestEnsureServeNeverAttachesToForeignPort(t *testing.T) {
 	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("adapter must not call a foreign serve URL")
