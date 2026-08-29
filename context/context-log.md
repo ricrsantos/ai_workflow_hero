@@ -4,6 +4,20 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-28 — Auto-ignore TUI slog log
+
+**Problem**: `hero` redirects slog to `.workflow-hero/tui.log`, but install/upgrade
+gitignore hygiene only ensured secrets patterns and skipped projects that already
+had a Hero block or an existing `.env` ignore.
+
+**Change**: `assets/templates/gitignore-secrets` now includes
+`.workflow-hero/tui.log`. `internal/common/envhygiene` patches existing Hero
+blocks (insert before `# END Hero secrets hygiene`) or appends a small runtime
+block when needed. `hero tui` / default `hero` entry also runs env hygiene on
+boot so older projects pick up the ignore without reinstalling.
+
+**Validation**: `go test ./...` passes.
+
 ## 2026-08-28 — Accumulated TUI token usage
 
 **Problem**: TUI Chat replaced the session context-token counter with the
@@ -144,3 +158,11 @@ previous entry.
 **Outcome**: Tagged `v2.8.0` (minor bump from `v2.7.0`). Ships C7 TUI cycle configuration, C8 TUI-direct stage Execute, shared Session/AI timers, OpenCode question mapping and hang workarounds, Codex stream/permission improvements, and per-harness project-local approval profiles (`ask` / `auto-project`).
 
 **Validation**: `go test ./...` green before tag; `scripts/release.sh` artifacts published to GitHub Releases.
+
+## 2026-08-28 — Discover auto-loads active `docs/idea` files
+
+**Decision**: Research should consider optional design notes under `docs/idea/` at session start. Top-level `archive/` and `tobe/` are excluded; empty folder is fine.
+
+**Implementation**: Added `internal/ideadocs` (`ListActive`, `PromptSection`), TUI injection in `startDiscoverResearchSession`, CLI `hero cycle idea-files` (`--json`), and `discover_agent.md` responsibility to run the command in Cursor IDE. Documented layout in `docs/idea/README.md`.
+
+**Validation**: `go test ./internal/ideadocs/... ./internal/cycle/... ./internal/tui/...` and full `go test ./...`.

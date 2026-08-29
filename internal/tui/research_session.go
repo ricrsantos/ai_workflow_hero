@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/ideadocs"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
@@ -123,7 +124,13 @@ func (m model) startDiscoverResearchSession() (model, tea.Cmd) {
 	m.runtimeCommandName = ""
 	m = m.withRuntimeAgent(agentDiscover)
 	m = m.applyAgentRuntimePair(agentDiscover, slug)
-	prompt := tuiDiscoverResearchPreamble() + strings.TrimSpace(agentBody) + "\n"
+	prompt := tuiDiscoverResearchPreamble()
+	if paths, err := ideadocs.ListActive(m.svc.ProjectDir); err != nil {
+		slog.Debug("tui discover idea files scan failed", "error", err)
+	} else if section := ideadocs.PromptSection(paths); section != "" {
+		prompt += section + "\n\n"
+	}
+	prompt += strings.TrimSpace(agentBody) + "\n"
 	label := "→ Research"
 	if warned {
 		label = "→ Research (model from fallback /model; set agents.discover_agent in workflow-config.yml)"

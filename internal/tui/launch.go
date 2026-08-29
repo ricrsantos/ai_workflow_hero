@@ -14,7 +14,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
+	"github.com/ricrsantos/ai_workflow_hero/assets"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
@@ -171,6 +173,10 @@ func RunDefault(stdout, stderr io.Writer) error {
 		return e
 	}
 	defer svc.Close()
+
+	if err := envhygiene.EnsureProjectRoot(svc.ProjectDir, assets.FS); err != nil {
+		slog.Warn("project gitignore hygiene failed", "error", err)
+	}
 
 	adapter, err := bootHarness(context.Background(), stdout, stderr, svc.ProjectDir, svc.Store, defaultHarnessBootDeps())
 	if err != nil {

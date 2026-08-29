@@ -568,13 +568,13 @@ func TestConversationResponsePaneLayout(t *testing.T) {
 	if !strings.Contains(view, "alt+q quit") && !strings.Contains(view, "alt+1-6") {
 		t.Fatalf("expected footer menu visible: %q", view)
 	}
-	// Etapa hint moved to status bar under ready (not in the chat header).
-	if !strings.Contains(view, "ready") || !strings.Contains(view, "No active etapa") {
-		t.Fatalf("expected ready + etapa hint in status: %q", view)
+	// Stage hint moved to status bar under ready (not in the chat header).
+	if !strings.Contains(view, "ready") || !strings.Contains(view, "No active stage") {
+		t.Fatalf("expected ready + stage hint in status: %q", view)
 	}
 	headerEnd := strings.Index(view, "Submit a message")
-	if headerEnd > 0 && strings.Contains(view[:headerEnd], "No active etapa") {
-		t.Fatalf("etapa hint must not sit in chat header: %q", view[:headerEnd])
+	if headerEnd > 0 && strings.Contains(view[:headerEnd], "No active stage") {
+		t.Fatalf("stage hint must not sit in chat header: %q", view[:headerEnd])
 	}
 }
 
@@ -3375,6 +3375,36 @@ func TestHeroStartHandsOffToDiscoverAgent(t *testing.T) {
 	}
 	if h.lastModel != "claude-sonnet-4.6-medium" {
 		t.Fatalf("follow-up model=%q", h.lastModel)
+	}
+}
+
+func TestHeroStartDiscoverPromptIncludesIdeaFiles(t *testing.T) {
+	dir := t.TempDir()
+	setupDiscoverRuntimeFiles(t, dir)
+	svc := newTestServiceWithRunningResearchInDir(t, dir)
+	writeDiscoverAgentYAML(t, dir)
+	ideaPath := filepath.Join(dir, "docs", "idea", "seed.md")
+	if err := os.MkdirAll(filepath.Dir(ideaPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ideaPath, []byte("# seed idea"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h := &streamingHarness{
+		deltas:     []string{"ok"},
+		sessionIDs: []string{"orch-sess", "disc-sess"},
+	}
+	svc.Harness = h
+
+	m := withDefaultChatModel(NewTestModel(svc))
+	next, cmd := RunPaletteItemForTest(m, "/hero-start")
+	_ = drainConversationStream(t, next, cmd)
+
+	if !strings.Contains(h.lastPrompt, "docs/idea/seed.md") {
+		t.Fatalf("prompt missing idea path: %q", h.lastPrompt)
+	}
+	if !strings.Contains(h.lastPrompt, "Active idea notes") {
+		t.Fatalf("prompt missing idea section: %q", h.lastPrompt)
 	}
 }
 

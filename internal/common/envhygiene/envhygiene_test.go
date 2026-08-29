@@ -40,6 +40,9 @@ func TestEnsureProjectRoot_CreatesFiles(t *testing.T) {
 	if !strings.Contains(content, "!.env.example") {
 		t.Error(".gitignore missing !.env.example exception")
 	}
+	if !strings.Contains(content, envhygiene.TUILogGitignorePath) {
+		t.Error(".gitignore missing TUI log path")
+	}
 }
 
 func TestEnsureProjectRoot_PreservesExistingEnvExample(t *testing.T) {
@@ -67,11 +70,15 @@ func TestEnsureProjectRoot_SkipsAppendWhenEnvAlreadyIgnored(t *testing.T) {
 		t.Fatalf("EnsureProjectRoot: %v", err)
 	}
 	got, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if strings.Contains(string(got), envhygiene.MarkerBegin) {
-		t.Error("should not append Hero block when .env already ignored")
+	content := string(got)
+	if strings.Contains(content, envhygiene.MarkerBegin) {
+		t.Error("should not append Hero secrets block when .env already ignored")
 	}
-	if string(got) != existing {
-		t.Errorf("gitignore changed unexpectedly: %q", got)
+	if !strings.Contains(content, envhygiene.TUILogGitignorePath) {
+		t.Error("expected TUI log ignore when .env already ignored")
+	}
+	if !strings.HasPrefix(content, existing) {
+		t.Errorf("gitignore changed unexpectedly at start: %q", got)
 	}
 }
 
@@ -90,6 +97,41 @@ func TestEnsureProjectRoot_AppendsWhenMissingEnvIgnore(t *testing.T) {
 	}
 	if !strings.Contains(string(got), envhygiene.MarkerBegin) {
 		t.Error("expected Hero secrets block append")
+	}
+}
+
+func TestEnsureProjectRoot_PatchesExistingHeroBlockWithTUILog(t *testing.T) {
+	dir := t.TempDir()
+	existing := envhygiene.MarkerBegin + "\n.env\n" + envhygiene.MarkerEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := envhygiene.EnsureProjectRoot(dir, assets.FS); err != nil {
+		t.Fatalf("EnsureProjectRoot: %v", err)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	content := string(got)
+	if !strings.Contains(content, envhygiene.TUILogGitignorePath) {
+		t.Error("expected TUI log inserted into existing Hero block")
+	}
+	tuiIdx := strings.Index(content, envhygiene.TUILogGitignorePath)
+	endIdx := strings.Index(content, envhygiene.MarkerEnd)
+	if tuiIdx == -1 || endIdx == -1 || tuiIdx > endIdx {
+		t.Errorf("TUI log should appear before Hero block end: %q", content)
+	}
+}
+
+func TestGitignoreIgnoresTUILog(t *testing.T) {
+	cases := map[string]bool{
+		".workflow-hero/tui.log\n": true,
+		"# comment\n.workflow-hero/tui.log\n": true,
+		".workflow-hero/*.log\n":              true,
+		"node_modules/\n":                     false,
+	}
+	for content, want := range cases {
+		if got := envhygiene.GitignoreIgnoresTUILog(content); got != want {
+			t.Errorf("GitignoreIgnoresTUILog(%q)=%v, want %v", content, got, want)
+		}
 	}
 }
 

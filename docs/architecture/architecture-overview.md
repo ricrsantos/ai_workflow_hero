@@ -33,8 +33,7 @@ ai_workflow_hero/
 ├── assets/                # embed.FS: cursor/, templates/, models/, config/, docs/
 ├── internal/
 │   ├── install · upgrade · uninstall · doctor · status · variables · update_models
-│   ├── cycle · engine · store · tui · harness · todos · workflowconfig
-│   ├── harness · harnessmgr · store · engine · tui · workflowconfig
+│   ├── cycle · engine · store · tui · harness · todos · workflowconfig · ideadocs
 │   ├── adapters/cursor/   # Cursor Agent CLI adapter (NDJSON stream-json)
 │   ├── adapters/opencode/ # OpenCode serve HTTP + SSE /event
 │   ├── adapters/codex/    # Codex app-server stdio JSON-RPC + PrepareHeroStart (C6 §4–§7; Hero 2.5.0)
@@ -218,7 +217,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 |---|---|
 | `app.go` / `screens.go` | Bubble Tea model, screen routing, keybindings |
 | `conversation.go` | Chat transcript, multiplexed harness Executes, Execute lifecycle |
-| `research_session.go` | Dedicated `discover_agent` session during Research |
+| `research_session.go` | Dedicated `discover_agent` session during Research; injects active `docs/idea` paths via `ideadocs` |
 | `stage_handoff.go` | TUI-direct Execute of named stage agents after ORCH `hero stage start` then STOP |
 | `herocmd.go` | `/hero-*` slash dispatch and orchestrator prompt assembly |
 | `palette.go` / `slash_overlay.go` | Command palette and Chat `/` autocomplete |

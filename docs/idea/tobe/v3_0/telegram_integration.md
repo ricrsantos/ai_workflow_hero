@@ -10,7 +10,13 @@ O Telegram deve ser **bidirecional**:
 - O Hero pode **enviar mensagens, eventos, status, solicitações de aprovação e resultados para o Telegram**.
 - O Telegram não substitui a TUI.
 - TUI e Telegram devem operar sobre o **mesmo estado do Hero**, podendo inclusive ser utilizados simultaneamente durante o mesmo Ciclo.
-
+- O usuário também pode enviar uma mensagem diretamente para o chat do Hero através do Telegram.
+- O Usuário deve poder executar os slash comands da TUI do Hero pelo Telegram
+- Toda vez que uma instância da TUI do Hero for iniciada e o Hero estiver configurado com a integração com o Telegram, a instancia deve enviar uma mensagem indicando o nome do projeto e uma abreviatura do mesmo.
+- Se for uma instância de free chat (hero chat), deve enviar para o telegram com usando uma identificação free_xx, onde xx é um indice atribuido
+- Todas as instancias da TUI do Hero devem escutar o telegram e só devem responder quando a mensagem iniciar com o nome do respectivo projeto.
+- Quando um ciclo estiver em execução, todos as instâncias devem enviar mensagens dos status para o telegram.
+- Todas as mensagens que a TUI envia para o telegram devem ser enviadas com o nome do projeto
 
 
 ### Objetivo do V0
@@ -18,22 +24,17 @@ O Telegram deve ser **bidirecional**:
 Para evitar complexidade desnecessária, o V0 terá:
 
 - Um único Telegram Bot.
-- Uma única instância do Hero Runtime conectada ao bot por vez.
-- Nenhum processo Gateway adicional.
-- Nenhum serviço externo intermediário.
 - O próprio Hero Runtime será responsável pela integração com a Telegram Bot API.
 
-A arquitetura deve, entretanto, ser projetada para permitir múltiplas instâncias e múltiplos projetos no futuro sem necessidade de reescrever o Conversation Service.
 
 ---
-
 
 
 # 2. Terminologia oficial
 
 É importante manter estes termos de forma consistente no projeto.
 
-### Ciclo
+### Ciclo (cycle)
 
 Um processo completo de execução do Hero.
 
@@ -59,9 +60,8 @@ Completed
 
 Isso é um Ciclo.
 
-Nunca chamar um Ciclo de "Loop".
 
-### Etapa
+### Etapa (Stage)
 
 Cada estágio individual de um Ciclo.
 
@@ -100,49 +100,10 @@ Conversa relacionada a um Ciclo/Etapa específica.
 
 Quando existe um Ciclo ativo, o usuário pode enviar mensagens relacionadas à execução e também conversar com o Harness associado à Etapa atual.
 
+
 # 3. Arquitetura atual do Hero
 
-A arquitetura existente é aproxidamante:
-
-
-
-```text
-
-Hero TUI (Bubble Tea)
-
-│
-
-├───────────────────────┬───────────────────────┐
-│                       │                       │
-CICLO DE EXECUÇÃO      CONVERSATION (UI)         OUTRAS TELAS
-(state machine)        (tui/conversation.go)    Status · Approvals · …
-│                       │
-│                       │
-cycle.Service              syncConversationContext()
-│                       │
-├────┬────┐             ├────┬────┐
-│    │    │             │         │
-engine store.Store   FREE CHAT   CYCLE CHAT
-       (hero.db)       stage=""    stage≠""
-                          │           │
-                          │     ConversationContext()
-                          │     + harness_session_id
-                          │           │
-                          └─────┬─────┘
-                                │
-                     HarnessAdapter.Execute (stream)
-                                │
-                         Cursor Adapter
-                                │
-                         cursor-agent CLI
-
-Run / Dispatch ──► HarnessAdapter.Dispatch
-
-(palette /hero-start, /hero-sync, key `d`)
-
-```
-
-O objetivo da integração com Telegram não é redesenhar essa arquitetura.
+O objetivo da integração com Telegram não é redesenhar a arquitetura do Hero.
 
 A principal alteração será separar a lógica de Conversation da implementação específica da TUI.
 
@@ -237,8 +198,6 @@ HarnessAdapter
 
 O Telegram Adapter será implementado dentro do próprio Hero Runtime.
 
-Não criar um Gateway separado no V0.
-
 Arquitetura:
 ```bash
 Hero Runtime
@@ -281,28 +240,23 @@ Este requisito é fundamental.
 O usuário pode enviar:
 
 ```code 
-/hero-status
+projeto: /hero-status
 ```
 ou
 
 ```code 
-/hero-approve
+projeto: /hero-approve
 ```
 ou uma mensagem livre
 
 ```code 
-Quero que a implementação use PostgreSQL
+projeto: Quero que a implementação use PostgreSQL
 ```
 
 ou uma mensagem para o Free Chat
 
 ```code 
-Em qual projeto vc está trabalhando?
-```
-ou uma mensagem durante um Ciclo
-
-```code 
-Não use Redis nesta implementação
+projeto: Não use Redis nesta implementação
 ```
 
 Essas mensagens entram no Hero através do Conversation Service ou Cycle Service, conforme o contexto.
@@ -314,7 +268,7 @@ O Hero também deve enviar mensagens ao Telegram.
 Exemplos:
 
 ```text
-Ciclo #42 iniciado.
+projeto: Ciclo #42 iniciado.
 
 Etapa:
 Research
@@ -325,7 +279,7 @@ Cursor
 ou
 
 ```text
-Etapa Plan concluída.
+projeto: Etapa Plan concluída.
 
 Custo: $0.42
 Duração: 18m
@@ -335,7 +289,7 @@ Aguardando aprovação.
 ou
 
 ```text
-QA falhou.
+projeto: QA falhou.
 
 3 problemas encontrados:
 - ...
@@ -344,7 +298,7 @@ QA falhou.
 ou
 
 ```text
-Ciclo #42 concluído.
+projeto: Ciclo #42 concluído.
 
 Custo total: $4.82
 Duração: 1h 37m
@@ -352,37 +306,10 @@ Duração: 1h 37m
 
 Portanto, Telegram não é somente um canal de comandos. Ele é uma interface remota bidirecional do Hero.
 
-## 8. V0 — Limitação deliberada
 
-No V0 haverá:
+# 8. Configuração do Telegram 
 
-```text
-1 Telegram Bot
-        │
-        ▼
-1 Hero Runtime
-        │
-        ▼
-1 Project
-``` 
-
-Não haverá:
-
-```text
-Telegram
-   │
-   ├── Gateway
-   ├── Runtime Registry
-   ├── Hero #1
-   ├── Hero #2
-   └── Hero #3
-```
-
-O objetivo é validar a experiência de interação remota antes de introduzir infraestrutura adicional.
-
-# 9. Configuração do Telegram 
-
-O token do BotFather e o chatId não devem ser armazenado no código-fonte, neste primeiro momento eles devem ser configurados através de um slash command /hero-telegram-config e devem ser salvos no SQLite. 
+O token do BotFather e o chatId não devem ser armazenado no código-fonte, neste primeiro momento eles devem ser configurados através de um slash command (/hero-telegram-config) em qualquer instância do Hero e deve ser salvos no SQLite global em ~/.workflow-hero/hero.db
 O usuário deve ter a opção de excluir o token e o chatId e também enviar uma mensagem de teste, na mesma caixa de configuração.
 
 No código deve ser tratado como uma váriável de ambiante
@@ -402,7 +329,7 @@ O token nunca deve:
 - aparecer em mensagens de erro.
 
 
-# 10. Segurança
+# 9. Segurança
 
 O Hero deve validar o chat_id do Telegram autorizado.
 
@@ -432,16 +359,14 @@ Telegram Bot Token
 Harness / Agent
 ```
 
-# 11. Free Chat
+# 10. Free Chat
 
 O Free Chat já existe na TUI e deve continuar existindo.
-
-O Telegram deverá permitir entrar em um Free Chat existente ou criar um novo.
 
 Exemplo conceitual:
 
 ```text
-/free-chat
+projeto: /free-chat
 ``` 
 Resposta:
 
@@ -456,8 +381,9 @@ Harness: Cursor
 
 Depois:
 
-```text
 Usuário:
+```text
+projeto:
 Em qual projeto você está trabalhando?
 ```
 
@@ -495,7 +421,7 @@ Telegram Adapter
 Telegram
 ``` 
 
-# 12. Cycle Chat
+# 11. Cycle Chat
 
 Quando existe um ciclo ativo
 
@@ -512,7 +438,7 @@ O Telegram deve permitir interação com o contexto do Ciclo/Etapa.
 Exemplo:
 
 ```text
-/hero-status
+projeto: /hero-status
 ```
 
 Resposta:
@@ -535,13 +461,13 @@ Status: Running
 O usuário pode então enviar:
 
 ```text
-Por que você escolheu esta abordagem?
+projeto: Por que você escolheu esta abordagem?
 ```
 
 A mensagem será associada ao contexto do Ciclo/Etapa atual e poderá ser encaminhada para a sessão do Harness correspondente.
 
 
-# 13. TUI e Telegram simultaneamente
+# 12. TUI e Telegram simultaneamente
 
 Isso é um requisito importante.
 
@@ -596,7 +522,7 @@ TUI updates
 Nunca devem existir dois estados diferentes.
 
 
-# 14. Comandos no Telegram
+# 13. Comandos no Telegram
 
 Os comandos atuais da TUI devem ser preservados conceitualmente.
 

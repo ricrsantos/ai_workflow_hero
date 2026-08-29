@@ -202,7 +202,7 @@ func (m model) conversationStatusHint() string {
 		return ""
 	}
 	if m.conversationStage == "" {
-		return "No active etapa — chatting with harness defaults. /hero-new then /hero-start for a cycle."
+		return "No active stage — chatting with harness defaults. /hero-new for new cycle."
 	}
 	return fmt.Sprintf("Etapa: %s", m.conversationStage)
 }

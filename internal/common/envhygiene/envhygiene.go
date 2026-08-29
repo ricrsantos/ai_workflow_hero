@@ -19,6 +19,9 @@ const (
 	EnvExamplePath = ".env.example"
 	GitignorePath  = ".gitignore"
 
+	// TUILogGitignorePath is the repo-relative path for TUI slog output.
+	TUILogGitignorePath = ".workflow-hero/tui.log"
+
 	templateEnvExample     = "templates/env.example"
 	templateGitignoreBlock = "templates/gitignore-secrets"
 )
@@ -84,23 +87,66 @@ func ensureGitignore(projectDir string, assetsFS fs.FS) error {
 	}
 
 	content := string(existing)
-	if strings.Contains(content, MarkerBegin) {
-		return nil
-	}
-	// Also skip append if `.env` is already ignored without the Hero marker.
-	if GitignoreIgnoresEnv(content) {
-		return nil
-	}
+	updated := content
 
+	if !strings.Contains(content, MarkerBegin) && !GitignoreIgnoresEnv(content) {
+		updated = appendGitignoreBlock(updated, blockStr)
+	}
+	updated = ensureGitignoreTUILog(updated)
+
+	if updated == content {
+		return nil
+	}
+	return os.WriteFile(path, []byte(updated), 0o644)
+}
+
+func appendGitignoreBlock(content, block string) string {
 	sep := "\n"
 	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
 		sep = "\n\n"
-	} else if len(content) > 0 {
-		sep = "\n"
-	} else {
+	} else if len(content) == 0 {
 		sep = ""
 	}
-	return os.WriteFile(path, []byte(content+sep+blockStr), 0o644)
+	return content + sep + block
+}
+
+func ensureGitignoreTUILog(content string) string {
+	if GitignoreIgnoresTUILog(content) {
+		return content
+	}
+	if strings.Contains(content, MarkerBegin) && strings.Contains(content, MarkerEnd) {
+		return insertLineBeforeMarkerEnd(content, TUILogGitignorePath)
+	}
+	return appendGitignoreBlock(content, "# Hero runtime log (local only)\n"+TUILogGitignorePath+"\n")
+}
+
+func insertLineBeforeMarkerEnd(content, line string) string {
+	idx := strings.Index(content, MarkerEnd)
+	if idx == -1 {
+		return content
+	}
+	lineStart := strings.LastIndex(content[:idx], "\n")
+	if lineStart == -1 {
+		lineStart = 0
+	} else {
+		lineStart++
+	}
+	return content[:lineStart] + line + "\n" + content[lineStart:]
+}
+
+// GitignoreIgnoresTUILog reports whether content already ignores TUI slog output.
+func GitignoreIgnoresTUILog(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		switch trimmed {
+		case TUILogGitignorePath, ".workflow-hero/*.log", "**/tui.log":
+			return true
+		}
+	}
+	return false
 }
 
 // GitignoreIgnoresEnv reports whether content already ignores `.env` files.

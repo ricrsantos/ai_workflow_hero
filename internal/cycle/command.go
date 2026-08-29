@@ -279,7 +279,7 @@ func newCycleCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmd.AddCommand(newCycleNewCommand(), newCycleSyncConfigCommand(), newCycleArchiveCommand(), newCycleResumeCommand(), newCycleOpenspecChangeCommand())
+	cmd.AddCommand(newCycleNewCommand(), newCycleSyncConfigCommand(), newCycleArchiveCommand(), newCycleResumeCommand(), newCycleOpenspecChangeCommand(), newCycleIdeaFilesCommand())
 	return cmd
 }
 
