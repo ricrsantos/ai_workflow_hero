@@ -15,6 +15,8 @@ func (m model) renderContent() string {
 	switch m.screen {
 	case screenConfig:
 		return m.renderConfig()
+	case screenSettings:
+		return m.renderSettings()
 	case screenStatus:
 		return m.renderStatus()
 	case screenArtifacts:
@@ -507,6 +509,12 @@ func (m model) footerHints() string {
 			return "tab navbar · ↑↓ fields · space toggle · enter edit/select · alt+s save · alt+enter save and start · alt+r reload · esc leave"
 		}
 	}
+	if m.screen == screenSettings {
+		if m.settings.saving {
+			return "saving settings…"
+		}
+		return "tab navbar · ↑↓ choose · enter apply · esc chat · alt+q quit"
+	}
 	return fixedFooterHints
 }
 
@@ -650,7 +658,7 @@ func max(a, b int) int {
 
 func (m model) screenHasContentScroll() bool {
 	switch m.screen {
-	case screenConfig, screenStatus, screenArtifacts, screenCosts, screenEvents:
+	case screenConfig, screenSettings, screenStatus, screenArtifacts, screenCosts, screenEvents:
 		return true
 	default:
 		return false

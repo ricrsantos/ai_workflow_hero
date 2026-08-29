@@ -1836,7 +1836,7 @@ func (m model) bindExecuteView(executeID string) model {
 }
 
 func (m model) appendStreamDelta(d harness.StreamDelta) model {
-	if streamDeltaRendersAIChatResponse(d) {
+	if streamDeltaRendersAIChatResponse(d) && m.chatVerbosityShows(d) {
 		m = m.restartAIResponseTimer(time.Now())
 	}
 	if d.Phase == harness.StreamPhaseStarted {
@@ -1880,16 +1880,19 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 		slog.Warn("harness stream warning", "harness_type", d.HarnessType, "text", d.Text)
 		// UI-C06-001 §5 / D11: yellow status-area warning (not raw JSON in assistant text).
 		m = m.setStatusWarning("harness", firstStatusLine(d.Text))
+		if !m.chatVerbosityShows(d) {
+			return m
+		}
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: d.Text})
 		return m
 	case harness.StreamKindActivity:
-		if strings.TrimSpace(d.Text) == "" {
+		if strings.TrimSpace(d.Text) == "" || !m.chatVerbosityShows(d) {
 			return m
 		}
 		m.insertBeforeAgent(convMessage{role: convRoleActivity, content: d.Text})
 		return m
 	}
-	if d.Text == "" {
+	if d.Text == "" || !m.chatVerbosityShows(d) {
 		return m
 	}
 	if d.CallID == "" {
@@ -1947,6 +1950,23 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 			}
 		}
 		return m
+	}
+}
+
+// chatVerbosityShows filters transcript-only details. Permission prompts,
+// questions, session errors, live-agent bookkeeping, and warning status remain
+// active even when their transcript row is hidden.
+func (m model) chatVerbosityShows(d harness.StreamDelta) bool {
+	switch install.NormalizeChatVerbosity(m.settings.verbosity) {
+	case install.ChatVerbosityCompact:
+		return d.Kind == harness.StreamKindText
+	case install.ChatVerbosityStandard:
+		return d.Kind == harness.StreamKindText || d.Kind == harness.StreamKindTool
+	case install.ChatVerbosityDetailed:
+		return d.Kind == harness.StreamKindText || d.Kind == harness.StreamKindThinking ||
+			d.Kind == harness.StreamKindTool || d.Kind == harness.StreamKindActivity || d.Kind == harness.StreamKindWarning
+	default:
+		return true
 	}
 }
 

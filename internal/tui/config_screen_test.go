@@ -228,8 +228,8 @@ func TestDirtyConfigNavbarSelectionShowsLeaveDialog(t *testing.T) {
 	m, _ = HandleTestKey(m, "up")
 	m, _ = HandleTestKey(m, "enter")
 
-	if !m.config.leaveDialog || m.config.leaveScreen != screenEvents {
-		t.Fatalf("leave dialog=%t target=%v, want Events", m.config.leaveDialog, m.config.leaveScreen)
+	if !m.config.leaveDialog || m.config.leaveScreen != screenSettings {
+		t.Fatalf("leave dialog=%t target=%v, want Settings", m.config.leaveDialog, m.config.leaveScreen)
 	}
 	if m.shellFocus != shellFocusContent {
 		t.Fatal("leave dialog should return focus to Config content")

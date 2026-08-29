@@ -67,8 +67,8 @@ func TestNumberedNavigationUsesVisibleScreenOrder(t *testing.T) {
 
 	withoutConfigAlt6 := SetScreen(NewTestModel(nil), ScreenStatus)
 	next, _ := HandleTestKey(withoutConfigAlt6, "alt+6")
-	if CurrentScreen(next) != ScreenStatus {
-		t.Fatalf("alt+6 must be a no-op when Config is hidden, got %v", CurrentScreen(next))
+	if CurrentScreen(next) != ScreenSettings {
+		t.Fatalf("alt+6 must open Settings when Config is hidden, got %v", CurrentScreen(next))
 	}
 
 	withConfig := []struct {
@@ -80,7 +80,8 @@ func TestNumberedNavigationUsesVisibleScreenOrder(t *testing.T) {
 		{key: "alt+3", screen: ScreenArtifacts},
 		{key: "alt+4", screen: ScreenCosts},
 		{key: "alt+5", screen: ScreenEvents},
-		{key: "alt+6", screen: ScreenConfig},
+		{key: "alt+6", screen: ScreenSettings},
+		{key: "alt+7", screen: ScreenConfig},
 	}
 	for _, tc := range withConfig {
 		t.Run("with-config/"+tc.key, func(t *testing.T) {
@@ -643,9 +644,9 @@ func TestConfigNavigationAllowedWhileStreaming(t *testing.T) {
 	m = EnterConversationForTest(m)
 	m = SetStreamingForTest(m, true)
 
-	next, _ := HandleTestKey(m, "alt+6")
+	next, _ := HandleTestKey(m, "alt+7")
 	if CurrentScreen(next) != ScreenConfig {
-		t.Fatalf("alt+6 while streaming opened %v, want Config", CurrentScreen(next))
+		t.Fatalf("alt+7 while streaming opened %v, want Config", CurrentScreen(next))
 	}
 	if !IsConversationStreaming(next) {
 		t.Fatal("streaming must remain true after navigating to Config")

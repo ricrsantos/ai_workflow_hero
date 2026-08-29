@@ -40,7 +40,7 @@ var configKeys = struct {
 	Toggle:    key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "toggle")),
 	Edit:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "edit")),
 	Cancel:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-	Leave:     key.NewBinding(key.WithKeys("esc", "alt+n", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+q"), key.WithHelp("esc", "leave")),
+	Leave:     key.NewBinding(key.WithKeys("esc", "alt+n", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+q"), key.WithHelp("esc", "leave")),
 	Discard:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "discard")),
 }
 

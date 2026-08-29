@@ -45,6 +45,10 @@ type HeroJSON struct {
 	Assets          AssetsInfo               `json:"assets"`
 	Harnesses       map[string]HarnessConfig `json:"harnesses,omitempty"`
 	FreechatDefault FreechatDefault          `json:"freechat_default,omitempty"`
+	// ChatVerbosity controls how much live harness activity the TUI transcript
+	// renders. An omitted value intentionally resolves to Debug for backwards
+	// compatibility with the pre-settings behaviour.
+	ChatVerbosity ChatVerbosity `json:"chat_verbosity,omitempty"`
 	// ModelProperties persists string-valued model properties per harness/native
 	// model pair (C5; ADR-040). Missing maps unmarshal as empty and never cause
 	// a migration failure.

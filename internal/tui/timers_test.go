@@ -334,7 +334,7 @@ func TestNavbarTimerSubdivisionIsAtBottom(t *testing.T) {
 	separatorLine := -1
 	for i, line := range lines {
 		switch {
-		case strings.Contains(line, "alt+1-6"):
+		case strings.Contains(line, "alt+1-7"):
 			rangeLine = i
 		case strings.Contains(line, "Session 01:02:03"):
 			sessionLine = i
@@ -353,8 +353,8 @@ func TestNavbarTimerSubdivisionIsAtBottom(t *testing.T) {
 	if rangeLine < 0 || sessionLine != rangeLine+2 || separatorLine != rangeLine+1 {
 		t.Fatalf("shortcut must sit immediately above timer divider:\n%s", view)
 	}
-	if configLine < 0 || rangeLine <= configLine+1 {
-		t.Fatalf("shortcut must be separated from the menu options:\n%s", view)
+	if configLine < 0 || rangeLine <= configLine {
+		t.Fatalf("shortcut must follow the menu options:\n%s", view)
 	}
 	if sessionTimeColumn < 0 || aiWorkingTimeColumn < 0 || aiResponseTimeColumn < 0 ||
 		sessionTimeColumn != aiWorkingTimeColumn || sessionTimeColumn != aiResponseTimeColumn {

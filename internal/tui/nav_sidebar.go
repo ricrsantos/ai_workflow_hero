@@ -28,6 +28,7 @@ var navScreens = []navScreenItem{
 	{screenArtifacts, "Artifacts"},
 	{screenCosts, "Costs"},
 	{screenEvents, "Events"},
+	{screenSettings, "Settings"},
 	{screenConfig, "Config"},
 }
 
@@ -39,7 +40,8 @@ var navShortcutKeys = [...]key.Binding{
 	key.NewBinding(key.WithKeys("alt+3"), key.WithHelp("alt+3", "Artifacts")),
 	key.NewBinding(key.WithKeys("alt+4"), key.WithHelp("alt+4", "Costs")),
 	key.NewBinding(key.WithKeys("alt+5"), key.WithHelp("alt+5", "Events")),
-	key.NewBinding(key.WithKeys("alt+6"), key.WithHelp("alt+6", "Config")),
+	key.NewBinding(key.WithKeys("alt+6"), key.WithHelp("alt+6", "Settings")),
+	key.NewBinding(key.WithKeys("alt+7"), key.WithHelp("alt+7", "Config")),
 }
 
 var (
@@ -79,16 +81,13 @@ const navSidebarTimerRows = 4
 const navSidebarTimerLabelWidth = 7
 
 func (m model) navScreenRangeLabel() string {
-	if m.hasActiveCycle() {
-		return "alt+1-6"
-	}
-	return "alt+1-5"
+	return fmt.Sprintf("alt+1-%d", len(m.visibleNavScreens()))
 }
 
 func (m model) visibleNavScreens() []navScreenItem {
 	items := make([]navScreenItem, 0, len(navScreens))
 	for _, item := range navScreens {
-		if m.freeChatMode && item.screen != screenConversation {
+		if m.freeChatMode && item.screen != screenConversation && item.screen != screenSettings {
 			continue
 		}
 		if item.screen == screenConfig && !m.hasActiveCycle() {
@@ -243,6 +242,9 @@ func (m model) navigateToScreen(target screen) (model, tea.Cmd) {
 	}
 	if target == screenConfig {
 		return m.openConfig()
+	}
+	if target == screenSettings {
+		return m.openSettings()
 	}
 	return m.goListScreen(target)
 }

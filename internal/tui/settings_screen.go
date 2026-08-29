@@ -1,0 +1,159 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+)
+
+var settingsKeys = struct {
+	Next     key.Binding
+	Previous key.Binding
+	Save     key.Binding
+	Leave    key.Binding
+}{
+	Next:     key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "next profile")),
+	Previous: key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "previous profile")),
+	Save:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "apply")),
+	Leave:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back to chat")),
+}
+
+type settingsScreen struct {
+	verbosity install.ChatVerbosity
+	cursor    int
+	saving    bool
+	err       string
+}
+
+type settingsSavedMsg struct{ err error }
+
+type verbosityOption struct {
+	value       install.ChatVerbosity
+	label       string
+	description string
+}
+
+var verbosityOptions = []verbosityOption{
+	{install.ChatVerbosityCompact, "Compact", "Responses, errors, and required approvals."},
+	{install.ChatVerbosityStandard, "Standard", "Compact plus tools and Task lifecycle."},
+	{install.ChatVerbosityDetailed, "Detailed", "Standard plus reasoning, activities, and subagent output."},
+	{install.ChatVerbosityDebug, "Debug", "Everything Hero currently shows, including diagnostics."},
+}
+
+func (m model) openSettings() (model, tea.Cmd) {
+	m.chatInputFocused = false
+	m.screen = screenSettings
+	m.settings.err = ""
+	m.settings.cursor = verbosityOptionIndex(m.settings.verbosity)
+	return m, nil
+}
+
+func (m model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.settings.saving {
+		return m, nil
+	}
+	switch {
+	case key.Matches(msg, settingsKeys.Next):
+		m.settings.cursor = (m.settings.cursor + 1) % len(verbosityOptions)
+	case key.Matches(msg, settingsKeys.Previous):
+		m.settings.cursor = (m.settings.cursor - 1 + len(verbosityOptions)) % len(verbosityOptions)
+	case key.Matches(msg, settingsKeys.Save):
+		m.settings.verbosity = verbosityOptions[m.settings.cursor].value
+		m.settings.err = ""
+		m.settings.saving = true
+		return m, m.saveSettingsCmd()
+	case key.Matches(msg, settingsKeys.Leave):
+		return m.enterConversation()
+	default:
+		return m.handleKey(msg)
+	}
+	return m, nil
+}
+
+func (m model) saveSettingsCmd() tea.Cmd {
+	projectDir := ""
+	if m.svc != nil {
+		projectDir = m.svc.ProjectDir
+	}
+	value := m.settings.verbosity
+	return func() tea.Msg {
+		if projectDir == "" {
+			return settingsSavedMsg{err: fmt.Errorf("project unavailable")}
+		}
+		return settingsSavedMsg{err: install.SetChatVerbosity(projectDir, value)}
+	}
+}
+
+func (m model) handleSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
+	saved, ok := msg.(settingsSavedMsg)
+	if !ok {
+		return m, nil
+	}
+	m.settings.saving = false
+	if saved.err != nil {
+		m.settings.err = saved.err.Error()
+		return m, nil
+	}
+	m = m.setStatusResult(true, "settings", "Chat verbosity: "+verbosityOptionLabel(m.settings.verbosity))
+	return m, nil
+}
+
+func (m model) renderSettings() string {
+	if m.frameContentHeight() < 12 {
+		return warnStyle.Render("Settings needs a taller terminal window.")
+	}
+	var b strings.Builder
+	b.WriteString(headerStyle.Render("Settings"))
+	b.WriteByte('\n')
+	b.WriteString(mutedStyle.Render("Choose how much live AI activity appears in Chat."))
+	b.WriteString("\n\n")
+	for i, option := range verbosityOptions {
+		selected := i == m.settings.cursor
+		active := option.value == install.NormalizeChatVerbosity(m.settings.verbosity)
+		marker := "  "
+		labelStyle := mutedStyle
+		if active {
+			marker = "✓ "
+			labelStyle = successStyle.Bold(true)
+		}
+		if selected {
+			marker = "› "
+			labelStyle = selectedStyle
+		}
+		b.WriteString(labelStyle.Render(marker + option.label))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("    " + option.description))
+		b.WriteByte('\n')
+	}
+	b.WriteByte('\n')
+	if m.settings.saving {
+		b.WriteString(infoStyle.Render("Saving preference…"))
+	} else if m.settings.err != "" {
+		b.WriteString(errorStyle.Render("Could not save: " + m.settings.err))
+	} else {
+		b.WriteString(infoStyle.Render("↑↓ choose · enter apply · esc Chat"))
+	}
+	return b.String()
+}
+
+func verbosityOptionIndex(value install.ChatVerbosity) int {
+	value = install.NormalizeChatVerbosity(value)
+	for i, option := range verbosityOptions {
+		if option.value == value {
+			return i
+		}
+	}
+	return len(verbosityOptions) - 1
+}
+
+func verbosityOptionLabel(value install.ChatVerbosity) string {
+	for _, option := range verbosityOptions {
+		if option.value == install.NormalizeChatVerbosity(value) {
+			return option.label
+		}
+	}
+	return "Debug"
+}

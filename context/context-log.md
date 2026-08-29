@@ -4,6 +4,14 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-29 — TUI Chat verbosity Settings
+
+**Change**: Added the persistent Settings screen to the navbar. It offers Compact, Standard, Detailed, and Debug profiles; the default/legacy value is Debug, preserving existing transcript output. The setting is saved as `chat_verbosity` in `hero.json`. Settings is the final normal navigation item and moves immediately before the conditional Config item. Shortcut range labels now follow the visible nav list (`alt+1-6` normally; `alt+1-7` with Config; `alt+1-2` for free chat).
+
+**Behaviour**: Profiles filter transcript detail only: Compact shows agent text; Standard adds tools/Task lifecycle; Detailed adds thinking, activities, and warnings; Debug shows all currently emitted rows. Permission/question gates, session failure handling, live-agent state, and warning status remain active regardless of the selected profile.
+
+**Validation**: Focused install/TUI Settings/navigation tests pass. Full `go test ./... -count=1 -p 1` passes all other packages; the two pre-existing restricted-sandbox OpenCode serve-spawn tests still fail because they cannot expose a listening URL.
+
 ## 2026-08-29 — Unified Harness Manager permissions
 
 **Change**: Collapsed the former `/harness` → enabled-Harness list → individual permission profile screens into one interactive Harness Manager. Each Harness has two indented, checkbox-style permission rows: `Ask every time` and `Automatic in project`. Space toggles the focused Harness or permission row, while Enter saves the full draft. A disabled Harness leaves its permission rows visible but muted and non-interactive, preserving the stored profile. On save, no marked permission falls back to `Ask every time`; if both are marked, `Automatic in project` takes precedence. Permission changes still restart long-lived OpenCode/Codex servers so their native settings are reloaded.

@@ -33,22 +33,22 @@ func TestNavSidebarListsScreensInOrder(t *testing.T) {
 	if !strings.Contains(plain, "> Chat") {
 		t.Fatalf("expected active Chat marker: %q", view)
 	}
-	if !strings.Contains(plain, "alt+1-5") {
-		t.Fatalf("expected five-screen shortcut label: %q", plain)
+	if !strings.Contains(plain, "alt+1-6") {
+		t.Fatalf("expected six-screen shortcut label: %q", plain)
 	}
 	if strings.Contains(plain, "alt+n") {
 		t.Fatalf("legacy alt+n label must not be rendered: %q", plain)
 	}
 }
 
-func TestNavSidebarShowsConfigLastWithSixShortcuts(t *testing.T) {
+func TestNavSidebarShowsSettingsBeforeConfigWithSevenShortcuts(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 100)
 	m = SetHeight(m, 24)
 	m.status.CycleNumber = 1
 	plain := stripANSI(ViewForTest(m))
 
-	labels := []string{"Chat", "Status", "Artifacts", "Costs", "Events", "Config"}
+	labels := []string{"Chat", "Status", "Artifacts", "Costs", "Events", "Settings", "Config"}
 	previous := -1
 	for _, label := range labels {
 		index := strings.Index(plain, label)
@@ -60,8 +60,8 @@ func TestNavSidebarShowsConfigLastWithSixShortcuts(t *testing.T) {
 		}
 		previous = index
 	}
-	if !strings.Contains(plain, "alt+1-6") {
-		t.Fatalf("expected six-screen shortcut label: %q", plain)
+	if !strings.Contains(plain, "alt+1-7") {
+		t.Fatalf("expected seven-screen shortcut label: %q", plain)
 	}
 	if strings.Contains(plain, "alt+n") {
 		t.Fatalf("legacy alt+n label must not be rendered: %q", plain)
@@ -258,11 +258,11 @@ func TestNavSidebarHidesConfigAfterCycleArchived(t *testing.T) {
 	if strings.Contains(plain, "Config") {
 		t.Fatalf("Config nav item should be hidden after archive refresh: %q", plain)
 	}
-	if !strings.Contains(plain, "alt+1-5") {
-		t.Fatalf("expected five-screen shortcut label after archive: %q", plain)
+	if !strings.Contains(plain, "alt+1-6") {
+		t.Fatalf("expected six-screen shortcut label after archive: %q", plain)
 	}
-	if strings.Contains(plain, "alt+1-6") {
-		t.Fatalf("six-screen label must not appear without active cycle: %q", plain)
+	if strings.Contains(plain, "alt+1-7") {
+		t.Fatalf("seven-screen label must not appear without active cycle: %q", plain)
 	}
 	if CurrentScreen(m) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation after archive", CurrentScreen(m))

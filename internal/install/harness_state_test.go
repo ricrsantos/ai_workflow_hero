@@ -50,6 +50,30 @@ func TestGetFreechatDefaultDoesNotInventModel(t *testing.T) {
 	}
 }
 
+func TestChatVerbosityDefaultsToDebugAndPersists(t *testing.T) {
+	if got := install.NormalizeChatVerbosity(""); got != install.ChatVerbosityDebug {
+		t.Fatalf("missing chat verbosity=%q want debug", got)
+	}
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), []byte(`{"cli":{},"assets":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := install.SetChatVerbosity(dir, install.ChatVerbosityCompact); err != nil {
+		t.Fatal(err)
+	}
+	hero, err := install.LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hero.ChatVerbosity != install.ChatVerbosityCompact {
+		t.Fatalf("chat_verbosity=%q want compact", hero.ChatVerbosity)
+	}
+}
+
 func TestListEnabledHarnesses(t *testing.T) {
 	hero := install.HeroJSON{
 		Harnesses: install.HarnessesFromSelection([]string{"cursor", "opencode"}),

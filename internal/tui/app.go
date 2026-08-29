@@ -27,6 +27,7 @@ type screen int
 const (
 	screenConversation screen = iota
 	screenConfig
+	screenSettings
 	screenStatus
 	screenArtifacts
 	screenCosts
@@ -50,6 +51,7 @@ type model struct {
 	artifacts cycle.ArtifactsView
 	approvals cycle.ApprovalsView
 	config    configScreen
+	settings  settingsScreen
 
 	contentOffset int // scroll for Status/Artifacts/Costs/Events
 
@@ -234,7 +236,11 @@ func newModel(svc *cycle.Service) model {
 			h, slug := install.GetFreechatDefault(hero)
 			m.chatHarnessID = h
 			m.chatModelSlug = slug
+			m.settings.verbosity = install.NormalizeChatVerbosity(hero.ChatVerbosity)
 		}
+	}
+	if m.settings.verbosity == "" {
+		m.settings.verbosity = install.ChatVerbosityDebug
 	}
 	m.contextWindows = loadContextWindowCatalog(projectDir)
 	m = m.reloadPaletteItems()
@@ -354,6 +360,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case configLoadedMsg, configSavedMsg, configRetryMsg:
 		return m.handleConfigMsg(msg)
+
+	case settingsSavedMsg:
+		return m.handleSettingsMsg(msg)
 
 	case actionResultMsg:
 		m.actionBusy = false
@@ -480,6 +489,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.screen == screenConfig {
 			return m.handleConfigKey(msg)
+		}
+		if m.screen == screenSettings {
+			return m.handleSettingsKey(msg)
 		}
 		return m.handleKey(msg)
 	}

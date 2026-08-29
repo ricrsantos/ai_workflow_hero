@@ -36,7 +36,7 @@ Review [.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles
 	if !strings.Contains(got, tuiHeroNewClosingLine) {
 		t.Fatalf("expected TUI closing line: %q", got)
 	}
-	if !strings.Contains(got, "Config (alt+6)") {
+	if !strings.Contains(got, "Config (alt+7)") {
 		t.Fatalf("expected Config screen hint in closing line: %q", got)
 	}
 }
@@ -66,7 +66,7 @@ func TestTUIRuntimeCommandPrompt_HeroNewOverrides(t *testing.T) {
 	if !strings.Contains(got, tuiHeroNewClosingLine) {
 		t.Fatalf("missing closing line in preamble: %q", got)
 	}
-	if !strings.Contains(got, "Config screen (alt+6)") {
+	if !strings.Contains(got, "Config screen (alt+7)") {
 		t.Fatalf("missing Config screen preference in preamble: %q", got)
 	}
 	if !strings.Contains(got, "body") {

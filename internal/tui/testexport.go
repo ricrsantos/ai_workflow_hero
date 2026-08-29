@@ -19,6 +19,7 @@ const (
 	ScreenCosts        = screenCosts
 	ScreenEvents       = screenEvents
 	ScreenConfig       = screenConfig
+	ScreenSettings     = screenSettings
 	ScreenConversation = screenConversation
 	ScreenPalette      = screenPalette
 	ScreenOutput       = screenOutput

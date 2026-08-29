@@ -12,6 +12,41 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
+// ChatVerbosity is the persisted TUI transcript detail profile.
+type ChatVerbosity string
+
+const (
+	ChatVerbosityCompact  ChatVerbosity = "compact"
+	ChatVerbosityStandard ChatVerbosity = "standard"
+	ChatVerbosityDetailed ChatVerbosity = "detailed"
+	ChatVerbosityDebug    ChatVerbosity = "debug"
+)
+
+// NormalizeChatVerbosity returns Debug for absent or unknown values so older
+// projects retain Hero's historical "show everything" behaviour.
+func NormalizeChatVerbosity(value ChatVerbosity) ChatVerbosity {
+	switch ChatVerbosity(strings.ToLower(strings.TrimSpace(string(value)))) {
+	case ChatVerbosityCompact:
+		return ChatVerbosityCompact
+	case ChatVerbosityStandard:
+		return ChatVerbosityStandard
+	case ChatVerbosityDetailed:
+		return ChatVerbosityDetailed
+	default:
+		return ChatVerbosityDebug
+	}
+}
+
+// SetChatVerbosity persists the selected TUI transcript profile.
+func SetChatVerbosity(projectDir string, value ChatVerbosity) error {
+	hero, err := LoadHeroJSON(projectDir)
+	if err != nil {
+		return err
+	}
+	hero.ChatVerbosity = NormalizeChatVerbosity(value)
+	return saveHeroJSON(projectDir, hero)
+}
+
 // SupportedHarnessIDs lists harness identifiers Hero supports in the TUI
 // (ADR-034; Cursor + OpenCode from C4; Codex added in C6 / Hero 2.5.0 per ADR-043/048).
 var SupportedHarnessIDs = []string{"cursor", "opencode", "codex"}
