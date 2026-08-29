@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -230,15 +231,7 @@ func (m model) renderPalette() string {
 	case m.pickingHarness:
 		b.WriteString(headerStyle.Render("Harnesses"))
 		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("space toggle · enter continue · esc cancel"))
-	case m.pickingHarnessPermission:
-		b.WriteString(headerStyle.Render("Harnesses · permissions"))
-		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("↑↓ navigate · enter select harness · esc close"))
-	case m.pickingPermissionProfile:
-		b.WriteString(headerStyle.Render("Harnesses · " + harnessDisplayName(m.permissionPickerHarness) + " · permissions"))
-		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("↑↓ navigate · enter save · esc back"))
+		b.WriteString(mutedStyle.Render("↑↓ navigate · space toggle · enter save · esc cancel"))
 	case m.pickingHarnessReset:
 		b.WriteString(headerStyle.Render("/harness-reset · select harness"))
 		b.WriteByte('\n')
@@ -292,7 +285,14 @@ func (m model) renderPalette() string {
 		var line string
 		switch {
 		case m.pickingHarness:
-			line = formatHarnessCheckboxLine(item.label, item.hint, m.harnessDraft[item.harnessID])
+			switch item.action {
+			case actionToggleHarness:
+				line = formatHarnessCheckboxLine(item.label, item.hint, m.harnessDraft[item.harnessID])
+			case actionToggleHarnessPermission:
+				enabled := m.harnessDraft[item.harnessID]
+				checked := m.harnessPermissionDraft[item.harnessID][harness.PermissionProfile(item.modelSlug)]
+				line = formatHarnessPermissionCheckboxLine(item.label, checked, enabled)
+			}
 		case m.pickingHarnessReset:
 			line = " " + item.label
 			if item.hint != "" {
@@ -345,6 +345,18 @@ func formatHarnessCheckboxLine(name, availHint string, checked bool) string {
 		box = "[x]"
 	}
 	return fmt.Sprintf(" %s %s %s", box, strings.TrimSpace(name), strings.TrimSpace(availHint))
+}
+
+func formatHarnessPermissionCheckboxLine(name string, checked, enabled bool) string {
+	box := "[ ]"
+	if checked {
+		box = "[x]"
+	}
+	line := "     " + box + " " + strings.TrimSpace(name)
+	if !enabled {
+		return mutedStyle.Render(line)
+	}
+	return line
 }
 
 func (m model) paletteListHeight() int {
@@ -407,6 +419,9 @@ func (m model) ensurePaletteVisible() model {
 }
 
 func (m model) renderFrame() string {
+	if m.cycleWelcomeDialog {
+		return m.renderCycleWelcomeDialog()
+	}
 	var bottom strings.Builder
 	bottom.WriteString(m.renderStatusBar())
 	bottom.WriteByte('\n')
@@ -474,6 +489,9 @@ func fitContentHeight(content string, height int, keepBottom bool) string {
 const fixedFooterHints = "tab focus · alt+m mode · / commands · enter newline or command · alt+enter send · alt+r/i copy · ↑↓ scroll · alt+q quit"
 
 func (m model) footerHints() string {
+	if m.cycleWelcomeDialog {
+		return "tab/←→ select · enter confirm · esc close"
+	}
 	if m.shellFocus == shellFocusNavbar {
 		return "tab screen · ↑↓ navbar · enter open · " + m.navScreenRangeLabel() + " screens · alt+q quit"
 	}

@@ -112,8 +112,6 @@ type model struct {
 	availableModels          []string
 	pickingModel             bool
 	pickingHarness           bool
-	pickingHarnessPermission bool
-	pickingPermissionProfile bool
 	pickingHarnessReset      bool
 	harnessResetAwaitingOpen bool // loading harness list before reset picker is interactive
 	heroStartPreparing       bool // syncing opencode agents before /hero-start orchestration
@@ -122,7 +120,7 @@ type model struct {
 	heroStartRequestID       uint64
 	modelPickerHarness       string          // non-empty = /hero-model step 2 (models for this harness)
 	harnessDraft             map[string]bool // checkbox state while /hero-harness is open
-	permissionPickerHarness  string
+	harnessPermissionDraft   map[string]map[harness.PermissionProfile]bool
 	runtimeCommandName       string // hero runtime slash body name (e.g. "new") for Chat output normalization
 	runtimeModelSlug         string // YAML orch/discover slug or /hero-model default for the active runtime slash
 	runtimeHarnessID         string // YAML orch/discover harness (or resolved execute pair); preferred over freechat for labels
@@ -172,6 +170,11 @@ type model struct {
 	confirmMsg     string
 	confirmAction  paletteAction
 	confirmActionN int // optional numeric arg (e.g. /hero-continue N)
+
+	// Shown once after /hero-new has successfully created its active cycle.
+	// It is transient TUI state: reopening Hero must not show it again.
+	cycleWelcomeDialog bool
+	cycleWelcomeFocus  int // 0 = Go to Config, 1 = Close
 
 	// Harness-native permission prompt (OpenCode permission.asked, etc.).
 	harnessPermissionPending bool
@@ -445,6 +448,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleConversationMsg(msg)
 
 	case tea.KeyMsg:
+		if m.cycleWelcomeDialog {
+			return m.handleCycleWelcomeKey(msg)
+		}
 		if m.harnessPermissionPending {
 			return m.handleHarnessPermissionKey(msg)
 		}
@@ -513,13 +519,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.paletteOffset = 0
 		m.pickingModel = false
 		m.pickingHarness = false
-		m.pickingHarnessPermission = false
-		m.pickingPermissionProfile = false
 		m.pickingHarnessReset = false
 		m.harnessResetAwaitingOpen = false
 		m.modelPickerHarness = ""
 		m.harnessDraft = nil
-		m.permissionPickerHarness = ""
+		m.harnessPermissionDraft = nil
 		m = m.reloadPaletteItems()
 		return m, nil
 	case "alt+r", "f5":
@@ -586,13 +590,11 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Leave palette chrome before global navigation / refresh / quit.
 		m.pickingModel = false
 		m.pickingHarness = false
-		m.pickingHarnessPermission = false
-		m.pickingPermissionProfile = false
 		m.pickingHarnessReset = false
 		m.harnessResetAwaitingOpen = false
 		m.modelPickerHarness = ""
 		m.harnessDraft = nil
-		m.permissionPickerHarness = ""
+		m.harnessPermissionDraft = nil
 		m.paletteFilter = ""
 		m.paletteIndex = 0
 		m.paletteOffset = 0
@@ -608,9 +610,6 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.pickingModel && m.modelPickerHarness != "" {
 			return m.openModelPicker()
-		}
-		if m.pickingPermissionProfile {
-			return m.openHarnessPermissionPicker()
 		}
 		m = m.closePalette()
 		return m, nil
@@ -647,7 +646,7 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case " ", "space":
 		if m.pickingHarness {
-			return m.toggleHarnessDraft()
+			return m.toggleHarnessPickerDraft()
 		}
 		if len(msg.Runes) > 0 && !msg.Alt {
 			m.paletteFilter += string(msg.Runes)
@@ -661,9 +660,6 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.pickingHarness {
 			return m.applyHarnessDraft()
-		}
-		if m.pickingPermissionProfile {
-			return m.applyHarnessPermissionProfile()
 		}
 		items := m.filteredPaletteItems()
 		if len(items) == 0 {
@@ -716,13 +712,11 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	case actionPickModelHarness:
 		return m.pickModelHarness(item.harnessID)
 	case actionToggleHarness:
-		return m.toggleHarnessDraft()
+		return m.toggleHarnessPickerDraft()
+	case actionToggleHarnessPermission:
+		return m.toggleHarnessPickerDraft()
 	case actionApplyHarness:
 		return m.applyHarnessDraft()
-	case actionPickHarnessPermission:
-		return m.pickHarnessPermission(item.harnessID)
-	case actionSelectHarnessPermissionProfile:
-		return m.applyHarnessPermissionProfile()
 	case actionHarnessReset:
 		return m.beginHarnessResetPicker()
 	case actionSelectHarnessReset:

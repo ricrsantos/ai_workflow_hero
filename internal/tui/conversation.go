@@ -1719,6 +1719,15 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.convError = err.Error()
 				m = m.resetSessionTimer()
 				slog.Error("tui prepare cycle after hero-new failed", "error", err)
+			} else if st, err := m.svc.Status(); err != nil {
+				slog.Error("tui load status after hero-new failed", "error", err)
+			} else {
+				// Refresh immediately so Config is visible and the welcome action can
+				// navigate there before the asynchronous refresh returns.
+				m.status = st
+				m = m.syncActiveCycleChrome()
+				m.cycleWelcomeDialog = true
+				m.cycleWelcomeFocus = 0
 			}
 		}
 		var sessionSaveCmd tea.Cmd

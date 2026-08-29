@@ -32,43 +32,69 @@ func (m model) openHarnessPicker() (model, tea.Cmd) {
 	m = m.openPaletteOverlay()
 	m.pickingHarness = true
 	m.pickingModel = false
-	m.pickingHarnessPermission = false
-	m.pickingPermissionProfile = false
 	m.modelPickerHarness = ""
 	m.paletteFilter = ""
 	m.paletteIndex = 0
 	m.paletteOffset = 0
 	m.harnessDraft = make(map[string]bool, len(install.SupportedHarnessIDs))
+	m.harnessPermissionDraft = make(map[string]map[harness.PermissionProfile]bool, len(install.SupportedHarnessIDs))
 
-	items := make([]paletteItem, 0, len(install.SupportedHarnessIDs))
+	items := make([]paletteItem, 0, len(install.SupportedHarnessIDs)*3)
 	for _, id := range install.SupportedHarnessIDs {
 		enabled := install.IsHarnessEnabled(hero, id)
 		m.harnessDraft[id] = enabled
+		profile := install.HarnessPermissionProfile(hero, id)
+		m.harnessPermissionDraft[id] = map[harness.PermissionProfile]bool{
+			harness.PermissionProfileAsk:         profile == harness.PermissionProfileAsk,
+			harness.PermissionProfileAutoProject: profile == harness.PermissionProfileAutoProject,
+		}
 		items = append(items, paletteItem{
 			label:     harnessDisplayName(id),
 			hint:      "(" + m.harnessAvailabilityLabel(id) + ")",
 			action:    actionToggleHarness,
 			harnessID: id,
 		})
+		items = append(items,
+			paletteItem{label: harness.PermissionProfileLabel(harness.PermissionProfileAsk), action: actionToggleHarnessPermission, harnessID: id, modelSlug: string(harness.PermissionProfileAsk)},
+			paletteItem{label: harness.PermissionProfileLabel(harness.PermissionProfileAutoProject), action: actionToggleHarnessPermission, harnessID: id, modelSlug: string(harness.PermissionProfileAutoProject)},
+		)
 	}
 	m.paletteItems = items
 	m = m.ensurePaletteVisible()
 	return m, nil
 }
 
-func (m model) toggleHarnessDraft() (model, tea.Cmd) {
+func (m model) toggleHarnessPickerDraft() (model, tea.Cmd) {
 	items := m.filteredPaletteItems()
 	if len(items) == 0 || m.paletteIndex < 0 || m.paletteIndex >= len(items) {
 		return m, nil
 	}
-	id := strings.TrimSpace(strings.ToLower(items[m.paletteIndex].harnessID))
+	item := items[m.paletteIndex]
+	id := strings.TrimSpace(strings.ToLower(item.harnessID))
 	if id == "" {
 		return m, nil
 	}
-	if m.harnessDraft == nil {
-		m.harnessDraft = make(map[string]bool)
+	switch item.action {
+	case actionToggleHarness:
+		if m.harnessDraft == nil {
+			m.harnessDraft = make(map[string]bool)
+		}
+		m.harnessDraft[id] = !m.harnessDraft[id]
+	case actionToggleHarnessPermission:
+		// Permission controls are shown below every Harness, but a disabled
+		// Harness cannot be configured until it is enabled in this same draft.
+		if !m.harnessDraft[id] {
+			return m, nil
+		}
+		if m.harnessPermissionDraft == nil {
+			m.harnessPermissionDraft = make(map[string]map[harness.PermissionProfile]bool)
+		}
+		if m.harnessPermissionDraft[id] == nil {
+			m.harnessPermissionDraft[id] = make(map[harness.PermissionProfile]bool)
+		}
+		profile := harness.NormalizePermissionProfile(harness.PermissionProfile(item.modelSlug))
+		m.harnessPermissionDraft[id][profile] = !m.harnessPermissionDraft[id][profile]
 	}
-	m.harnessDraft[id] = !m.harnessDraft[id]
 	return m, nil
 }
 
@@ -186,99 +212,52 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 		}
 		m = m.setStatusResult(true, slashHarness, strings.Join(parts, "; "))
 	}
-	return m.openHarnessPermissionPicker()
-}
-
-// openHarnessPermissionPicker lists every enabled harness after a topology
-// change, so newly enabled harnesses must pass through the same explicit
-// project-local approval choice as existing ones.
-func (m model) openHarnessPermissionPicker() (model, tea.Cmd) {
-	projectDir := ""
-	if m.svc != nil {
-		projectDir = m.svc.ProjectDir
-	}
-	hero, err := install.LoadHeroJSON(projectDir)
-	if err != nil {
-		m = m.closePalette()
-		m = m.setStatusResult(false, slashHarness, err.Error())
-		return m, nil
-	}
-	m = m.openPaletteOverlay()
-	m.pickingHarness = false
-	m.pickingHarnessPermission = true
-	m.pickingPermissionProfile = false
-	m.permissionPickerHarness = ""
-	m.paletteFilter = ""
-	m.paletteIndex = 0
-	m.paletteOffset = 0
-	m.paletteItems = nil
+	var permissionChanges []string
 	for _, id := range install.SupportedHarnessIDs {
-		if !install.IsHarnessEnabled(hero, id) {
+		if !m.harnessDraft[id] {
+			continue // Keep disabled Harness profiles intact and inactive.
+		}
+		profile := m.draftHarnessPermissionProfile(id)
+		if install.HarnessPermissionProfile(hero, id) == profile {
 			continue
 		}
-		m.paletteItems = append(m.paletteItems, paletteItem{
-			label:     harnessDisplayName(id),
-			hint:      harness.PermissionProfileLabel(install.HarnessPermissionProfile(hero, id)),
-			action:    actionPickHarnessPermission,
-			harnessID: id,
-		})
-	}
-	m = m.ensurePaletteVisible()
-	return m, nil
-}
-
-func (m model) pickHarnessPermission(harnessID string) (model, tea.Cmd) {
-	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
-	if harnessID == "" {
-		return m, nil
-	}
-	m.pickingHarnessPermission = false
-	m.pickingPermissionProfile = true
-	m.permissionPickerHarness = harnessID
-	m.paletteFilter = ""
-	m.paletteIndex = 0
-	m.paletteOffset = 0
-	m.paletteItems = []paletteItem{
-		{label: harness.PermissionProfileLabel(harness.PermissionProfileAsk), hint: "require confirmation for native approvals", action: actionSelectHarnessPermissionProfile, harnessID: harnessID, modelSlug: string(harness.PermissionProfileAsk)},
-		{label: harness.PermissionProfileLabel(harness.PermissionProfileAutoProject), hint: "pre-approve workspace operations only", action: actionSelectHarnessPermissionProfile, harnessID: harnessID, modelSlug: string(harness.PermissionProfileAutoProject)},
-	}
-	m = m.ensurePaletteVisible()
-	return m, nil
-}
-
-func (m model) applyHarnessPermissionProfile() (model, tea.Cmd) {
-	if m.svc == nil {
-		m = m.closePalette()
-		m = m.setStatusResult(false, slashHarness, "project unavailable")
-		return m, nil
-	}
-	items := m.filteredPaletteItems()
-	if len(items) == 0 || m.paletteIndex < 0 || m.paletteIndex >= len(items) {
-		return m, nil
-	}
-	item := items[m.paletteIndex]
-	profile := harness.NormalizePermissionProfile(harness.PermissionProfile(item.modelSlug))
-	if err := install.SetHarnessPermissionProfile(m.svc.ProjectDir, m.permissionPickerHarness, profile); err != nil {
-		m = m.closePalette()
-		m = m.setStatusResult(false, slashHarness, err.Error())
-		return m, nil
-	}
-	// Long-lived servers read native permission configuration at startup. Stop
-	// them now; the next Execute lazily starts one with the newly saved profile.
-	if m.svc != nil {
-		switch m.permissionPickerHarness {
+		if err := install.SetHarnessPermissionProfile(projectDir, id, profile); err != nil {
+			m = m.closePalette()
+			m = m.setStatusResult(false, slashHarness, err.Error())
+			return m, nil
+		}
+		permissionChanges = append(permissionChanges, harnessDisplayName(id)+" permissions: "+harness.PermissionProfileLabel(profile))
+		switch id {
 		case "opencode":
-			if err := stopOpenCodeServe(context.Background(), m.svc.ProjectDir, m.svc.Store, m.svc.Registry); err != nil {
+			if err := stopOpenCodeServe(context.Background(), projectDir, m.svc.Store, m.svc.Registry); err != nil {
 				slog.Warn("stop opencode serve after permission update failed", "error", err)
 			}
 		case "codex":
-			if err := stopCodexAppServer(context.Background(), m.svc.ProjectDir, m.svc.Store, m.svc.Registry); err != nil {
+			if err := stopCodexAppServer(context.Background(), projectDir, m.svc.Store, m.svc.Registry); err != nil {
 				slog.Warn("stop codex app-server after permission update failed", "error", err)
 			}
 		}
 	}
-	m = m.setStatusResult(true, slashHarness, harnessDisplayName(m.permissionPickerHarness)+" permissions: "+harness.PermissionProfileLabel(profile))
-	return m.openHarnessPermissionPicker()
+	if len(permissionChanges) > 0 {
+		statusText := m.statusText
+		if statusText != "" {
+			permissionChanges = append([]string{statusText}, permissionChanges...)
+		}
+		m = m.setStatusResult(true, slashHarness, strings.Join(permissionChanges, "; "))
+	}
+	m = m.closePalette()
+	return m, nil
+}
+
+// draftHarnessPermissionProfile resolves the checkbox pair to Hero's portable
+// profile. No selection is intentionally conservative (Ask); when both are
+// selected, automatic project approval wins as agreed by the Harness Manager UX.
+func (m model) draftHarnessPermissionProfile(id string) harness.PermissionProfile {
+	draft := m.harnessPermissionDraft[id]
+	if draft[harness.PermissionProfileAutoProject] {
+		return harness.PermissionProfileAutoProject
+	}
+	return harness.PermissionProfileAsk
 }
 
 func (m model) harnessEnabled(id string) bool {

@@ -24,7 +24,7 @@ const (
 const statusBarMaxLines = 2
 
 func (m model) closePalette() model {
-	wasPicking := m.pickingModel || m.pickingHarness || m.pickingHarnessPermission || m.pickingPermissionProfile || m.pickingHarnessReset || m.harnessResetAwaitingOpen || m.pickingProps
+	wasPicking := m.pickingModel || m.pickingHarness || m.pickingHarnessReset || m.harnessResetAwaitingOpen || m.pickingProps
 	m.screen = m.prevScreen
 	m.paletteFilter = ""
 	m.paletteIndex = 0
@@ -32,13 +32,11 @@ func (m model) closePalette() model {
 	if wasPicking {
 		m.pickingModel = false
 		m.pickingHarness = false
-		m.pickingHarnessPermission = false
-		m.pickingPermissionProfile = false
 		m.pickingHarnessReset = false
 		m.harnessResetAwaitingOpen = false
 		m.modelPickerHarness = ""
 		m.harnessDraft = nil
-		m.permissionPickerHarness = ""
+		m.harnessPermissionDraft = nil
 		m.pickingProps = false
 		m.propsValueList = false
 		m.propsValueKey = ""

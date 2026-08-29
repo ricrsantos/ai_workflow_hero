@@ -4,6 +4,18 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-29 — Unified Harness Manager permissions
+
+**Change**: Collapsed the former `/harness` → enabled-Harness list → individual permission profile screens into one interactive Harness Manager. Each Harness has two indented, checkbox-style permission rows: `Ask every time` and `Automatic in project`. Space toggles the focused Harness or permission row, while Enter saves the full draft. A disabled Harness leaves its permission rows visible but muted and non-interactive, preserving the stored profile. On save, no marked permission falls back to `Ask every time`; if both are marked, `Automatic in project` takes precedence. Permission changes still restart long-lived OpenCode/Codex servers so their native settings are reloaded.
+
+**Validation**: Focused Harness Manager tests, `go test ./internal/tui -count=1`, and `go test ./... -count=1` pass with the isolated Go cache.
+
+## 2026-08-29 — TUI post-cycle welcome dialog
+
+**Change**: After `/hero-new` successfully finishes `PrepareCycle`, the TUI now immediately refreshes active-cycle chrome and opens a clean, centered English guidance dialog. It explains Harness authentication, Skills parity, idea notes in `docs/idea/`, and cycle configuration through `workflow-config.yml` or Config. `Go to Config` opens the existing editable Config screen; `Close`/Esc returns to Chat. Tab or left/right switches the selected action. The dialog is transient and is shown once per successful new cycle within that TUI process; it is not persisted or shown after restart. Small terminals receive a concise resize fallback.
+
+**Validation**: `go test ./internal/tui -run 'TestCycleWelcome' -count=1`, `go test ./internal/tui -count=1`, and `go test ./... -count=1` pass with an isolated Go cache because the restricted environment cannot write the default compiler cache.
+
 ## 2026-08-28 — Auto-ignore TUI slog log
 
 **Problem**: `hero` redirects slog to `.workflow-hero/tui.log`, but install/upgrade

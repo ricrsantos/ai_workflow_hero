@@ -15,24 +15,24 @@
       "enabled": true,
       "model": "gpt-5.6-terra",
       "enable_fast_model": false,
-      "permission_profile": ""
+      "permission_profile": "auto-project"
     },
     "cursor": {
       "enabled": true,
       "model": "auto",
       "enable_fast_model": false,
-      "permission_profile": ""
+      "permission_profile": "auto-project"
     },
     "opencode": {
       "enabled": true,
       "model": "opencode-go/deepseek-v4-flash",
       "enable_fast_model": false,
-      "permission_profile": ""
+      "permission_profile": "auto-project"
     }
   },
   "freechat_default": {
-    "harness": "opencode",
-    "model": "opencode-go/deepseek-v4-flash"
+    "harness": "codex",
+    "model": "gpt-5.6-terra"
   },
   "model_properties": {
     "codex": {
@@ -45,7 +45,7 @@
         "th": "off"
       },
       "gpt-5.6-terra": {
-        "ef": "high",
+        "ef": "medium",
         "th": "off"
       }
     },
