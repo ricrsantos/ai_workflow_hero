@@ -173,6 +173,12 @@ previous entry.
 
 **Validation**: `go test ./...` passes with an isolated Go cache and writable temporary OpenCode data directory (the execution sandbox makes the default Go/ccache and OpenCode user-data locations read-only).
 
+## 2026-08-29 — Release v2.9.0
+
+**Outcome**: Tagged `v2.9.0` (minor bump from `v2.8.0`). Ships TUI settings screen, checklist window, harness config adjustments, auto-hide Config after archive, TUI label/status-bar polish, and `docs/idea` folder support.
+
+**Validation**: `go test ./...` green before tag; `scripts/release.sh` artifacts published to GitHub Releases.
+
 ## 2026-08-28 — Release v2.8.0
 
 **Outcome**: Tagged `v2.8.0` (minor bump from `v2.7.0`). Ships C7 TUI cycle configuration, C8 TUI-direct stage Execute, shared Session/AI timers, OpenCode question mapping and hang workarounds, Codex stream/permission improvements, and per-harness project-local approval profiles (`ask` / `auto-project`).
