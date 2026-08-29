@@ -475,7 +475,7 @@ const fixedFooterHints = "tab focus · alt+m mode · / commands · enter newline
 
 func (m model) footerHints() string {
 	if m.shellFocus == shellFocusNavbar {
-		return "tab screen · ↑↓ navbar · enter open · alt+1-6 screens · alt+q quit"
+		return "tab screen · ↑↓ navbar · enter open · " + m.navScreenRangeLabel() + " screens · alt+q quit"
 	}
 	if m.screen == screenConfig {
 		switch {

@@ -1727,6 +1727,12 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "archive":
 				m, sessionSaveCmd = m.stopSessionTimer(time.Now())
 				m = m.resetSessionTimer()
+				if msg.err == nil && m.svc != nil {
+					if st, err := m.svc.Status(); err == nil {
+						m.status = st
+					}
+					m = m.syncActiveCycleChrome()
+				}
 			case "finish", "cancel":
 				m, sessionSaveCmd = m.stopSessionTimer(time.Now())
 			}

@@ -78,6 +78,13 @@ const navSidebarTimerRows = 4
 // and AI counters in the sidebar.
 const navSidebarTimerLabelWidth = 7
 
+func (m model) navScreenRangeLabel() string {
+	if m.hasActiveCycle() {
+		return "alt+1-6"
+	}
+	return "alt+1-5"
+}
+
 func (m model) visibleNavScreens() []navScreenItem {
 	items := make([]navScreenItem, 0, len(navScreens))
 	for _, item := range navScreens {
@@ -349,10 +356,7 @@ func (m model) renderNavSidebar(height int) string {
 		innerH = 1
 	}
 
-	rangeLabel := "alt+1-5"
-	if m.hasActiveCycle() {
-		rangeLabel = "alt+1-6"
-	}
+	rangeLabel := m.navScreenRangeLabel()
 	rangeHint := navSidebarFooterStyle.Render(truncateNavText(" "+rangeLabel, innerW))
 	navigationLines := m.navSidebarNavigationLines(innerW)
 	timerLines := m.timerSidebarLines(innerW)

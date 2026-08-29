@@ -152,6 +152,11 @@ func RefreshDataForTest(st cycle.StatusView) refreshDataMsg {
 	return refreshDataMsg{status: st}
 }
 
+// SyncActiveCycleChromeForTest exposes cycle chrome reconciliation for tests.
+func SyncActiveCycleChromeForTest(m model) model {
+	return m.syncActiveCycleChrome()
+}
+
 // PendingApprovalForTest exposes pending stage detection.
 func PendingApprovalForTest(st cycle.StatusView) string {
 	return pendingApprovalStage(st)

@@ -332,11 +332,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			slog.Error("tui refresh failed", "error", msg.err)
 			return m, nil
 		}
+		hadCycle := m.hasActiveCycle()
 		m.status = msg.status
 		m.metrics = msg.metrics
 		m.events = msg.events
 		m.artifacts = msg.artifacts
 		m.approvals = msg.approvals
+		if hadCycle && !m.hasActiveCycle() {
+			m = m.syncActiveCycleChrome()
+		} else if !hadCycle && m.hasActiveCycle() {
+			m = m.reloadPaletteItems()
+		}
 		var timerCmd tea.Cmd
 		m, timerCmd = m.syncSessionTimer(msg.sessionCycle, time.Now())
 		m = m.clampContentOffset()
@@ -809,6 +815,28 @@ func (m model) goListScreen(s screen) (model, tea.Cmd) {
 
 func (m model) hasActiveCycle() bool {
 	return !m.freeChatMode && m.status.CycleNumber > 0
+}
+
+// syncActiveCycleChrome reconciles palette and navigation when no cycle is active
+// (e.g. after /hero-archive). Reuses the same rules as TUI boot without a cycle.
+func (m model) syncActiveCycleChrome() model {
+	m = m.reloadPaletteItems()
+	if !m.hasActiveCycle() {
+		if m.screen == screenConfig {
+			m.config = configScreen{}
+			m, _ = m.enterConversation()
+			m.contentOffset = 0
+		}
+		items := m.visibleNavScreens()
+		if m.navCursor >= len(items) {
+			if len(items) == 0 {
+				m.navCursor = 0
+			} else {
+				m.navCursor = len(items) - 1
+			}
+		}
+	}
+	return m
 }
 
 func (m model) refreshCmd() tea.Cmd {

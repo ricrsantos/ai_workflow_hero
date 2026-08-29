@@ -14,22 +14,25 @@
     "codex": {
       "enabled": true,
       "model": "gpt-5.6-terra",
-      "enable_fast_model": false
+      "enable_fast_model": false,
+      "permission_profile": ""
     },
     "cursor": {
       "enabled": true,
       "model": "auto",
-      "enable_fast_model": false
+      "enable_fast_model": false,
+      "permission_profile": ""
     },
     "opencode": {
       "enabled": true,
       "model": "opencode-go/deepseek-v4-flash",
-      "enable_fast_model": false
+      "enable_fast_model": false,
+      "permission_profile": ""
     }
   },
   "freechat_default": {
-    "harness": "codex",
-    "model": "gpt-5.6-terra"
+    "harness": "opencode",
+    "model": "opencode-go/deepseek-v4-flash"
   },
   "model_properties": {
     "codex": {

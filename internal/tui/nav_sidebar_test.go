@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 )
 
 func TestNavSidebarListsScreensInOrder(t *testing.T) {
@@ -239,5 +240,47 @@ func TestNavSidebarAgentsHiddenFromChatHeader(t *testing.T) {
 	}
 	if strings.Contains(plain, "Chat · harness") {
 		t.Fatalf("chat harness header removed when sidebar visible: %q", plain)
+	}
+}
+
+func TestNavSidebarHidesConfigAfterCycleArchived(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 24)
+	m.status.CycleNumber = 1
+	m.screen = screenConfig
+	m.config.dirty = true
+
+	next, _ := m.Update(RefreshDataForTest(cycle.StatusView{CycleNumber: 0}))
+	m = next.(model)
+	plain := stripANSI(ViewForTest(m))
+
+	if strings.Contains(plain, "Config") {
+		t.Fatalf("Config nav item should be hidden after archive refresh: %q", plain)
+	}
+	if !strings.Contains(plain, "alt+1-5") {
+		t.Fatalf("expected five-screen shortcut label after archive: %q", plain)
+	}
+	if strings.Contains(plain, "alt+1-6") {
+		t.Fatalf("six-screen label must not appear without active cycle: %q", plain)
+	}
+	if CurrentScreen(m) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation after archive", CurrentScreen(m))
+	}
+}
+
+func TestSyncActiveCycleChromeClearsConfigState(t *testing.T) {
+	m := NewTestModel(nil)
+	m.status.CycleNumber = 0
+	m.screen = screenConfig
+	m.config.dirty = true
+	m.config.editing = true
+
+	m = SyncActiveCycleChromeForTest(m)
+	if m.config.dirty || m.config.editing {
+		t.Fatalf("config state should reset: dirty=%t editing=%t", m.config.dirty, m.config.editing)
+	}
+	if CurrentScreen(m) != ScreenConversation {
+		t.Fatalf("screen=%v want conversation", CurrentScreen(m))
 	}
 }
