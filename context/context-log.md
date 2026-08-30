@@ -4,6 +4,12 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-29 — Release v2.9.1
+
+**Outcome**: Tagged `v2.9.1` (patch bump from `v2.9.0`). Ships TUI timer/watchdog fixes, `auto-all` harness permission profile, idea-folder auto-archive on cycle archive, and removes accidental upgrade conflict backup files.
+
+**Validation**: `go test ./...` green before tag; `scripts/release.sh` artifacts published to GitHub Releases.
+
 ## 2026-08-29 — Archive active idea notes with cycles
 
 **Change**: `hero cycle archive` now moves every direct file and subfolder under

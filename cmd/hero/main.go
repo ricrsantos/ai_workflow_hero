@@ -19,8 +19,8 @@ import (
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>".
-// Default matches the latest release (Hero 2.9.0) when untagged.
-var version = "2.9.0"
+// Default matches the latest release (Hero 2.9.1) when untagged.
+var version = "2.9.1"
 
 func main() {
 	root := newRootCommand()
