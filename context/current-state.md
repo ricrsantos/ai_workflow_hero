@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **2.9.1** released (tag `v2.9.1`). Patch: TUI timer/watchdog fixes, `auto-all` harness permission profile, idea-folder auto-archive on cycle archive. |
+| **Phase** | Hero **2.9.2** released (tag `v2.9.2`). Patch: Config model catalog picker, welcome dialog fill, Config property/catalog cascade. |
 
 ## Technology Stack
 
@@ -69,7 +69,7 @@
 - **`/hero-harness`** / **`/hero-model`**: Codex enable→`.codex/` projection; model step lists native ids (Codex may start app-server); C5 property submenu; Chat `[LABEL - model · harness]` / `Build · model · harness` follow the **active execute pair** (`runtimeHarnessID` + `runtimeModelSlug` from agent YAML / `ResolveExecutePair`), not a cross-mix with freechat; UI-C06-001 §6 goldens.
 - Embedded Runtime: Cursor + `assets/opencode/` + `assets/codex/` (no AGENTS.md / no Codex config template).
 - C5 model properties: `internal/harness` + `internal/modelprops`; catalogs carry `properties` for Cursor base + OpenCode 27 + Codex ids.
-- `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **2.9.1**; integration tests include C6 Codex path.
+- `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **2.9.2**; integration tests include C6 Codex path.
 - Test strategy in [docs/testing/TESTING.md](docs/testing/TESTING.md); bilingual README.
 
 ## Pending Features

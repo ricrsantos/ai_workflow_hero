@@ -4,6 +4,12 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-30 — Release v2.9.2
+
+**Outcome**: Tagged `v2.9.2` (patch bump from `v2.9.1`). Ships Config model catalog picker, welcome dialog surface fill, and Config property/catalog cascade (including Luna `max`).
+
+**Validation**: `go test ./...` green before tag; `scripts/release.sh` artifacts published to GitHub Releases.
+
 ## 2026-08-30 — Config model catalog picker
 
 **Problem**: Config model fields cycled one catalog entry per Enter/Space. Harnesses with large catalogs (Cursor/Codex) made choosing a model slow and easy to overshoot.
