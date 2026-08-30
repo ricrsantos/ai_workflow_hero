@@ -505,6 +505,8 @@ func (m model) footerHints() string {
 			return "saving configuration…"
 		case m.config.leaveDialog:
 			return "enter save · d discard · esc cancel"
+		case m.config.modelPicker:
+			return "↑↓ models · enter select · esc cancel"
 		case m.config.editing:
 			return "enter apply · esc cancel · ←→ move · home/end · backspace/delete"
 		default:

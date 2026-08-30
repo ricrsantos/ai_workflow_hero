@@ -55,12 +55,15 @@ var (
 	configDisabledValueStyle = lipgloss.NewStyle().Foreground(colorTextDim)
 	configEditingValueStyle  = lipgloss.NewStyle().Foreground(colorTextPri).Background(colorBgSurface2)
 	configEditingCaretStyle  = lipgloss.NewStyle().Foreground(colorBgSurface2).Background(colorAccentAI).Bold(true)
-	warnStyle                = lipgloss.NewStyle().Foreground(colorAccentFast)
-	errorStyle               = lipgloss.NewStyle().Foreground(colorError)
-	infoStyle                = lipgloss.NewStyle().Foreground(colorAccentAI)
-	thinkingStyle            = lipgloss.NewStyle().Foreground(colorTextDim).Italic(true)
-	selectedStyle            = lipgloss.NewStyle().Bold(true).Foreground(colorAccentUser).Background(colorBgSurface2)
-	mutedStyle               = lipgloss.NewStyle().Foreground(colorTextDim)
+	configPickerBoxStyle     = lipgloss.NewStyle().
+					Border(lipgloss.RoundedBorder()).
+					BorderForeground(colorAccentAI)
+	warnStyle     = lipgloss.NewStyle().Foreground(colorAccentFast)
+	errorStyle    = lipgloss.NewStyle().Foreground(colorError)
+	infoStyle     = lipgloss.NewStyle().Foreground(colorAccentAI)
+	thinkingStyle = lipgloss.NewStyle().Foreground(colorTextDim).Italic(true)
+	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(colorAccentUser).Background(colorBgSurface2)
+	mutedStyle    = lipgloss.NewStyle().Foreground(colorTextDim)
 	// Filled caret when chat input has focus (light on surface — distinct from accent bar).
 	caretFilledStyle = lipgloss.NewStyle().
 				Foreground(colorBgSurface).

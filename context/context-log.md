@@ -4,6 +4,14 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-30 — Config model catalog picker
+
+**Problem**: Config model fields cycled one catalog entry per Enter/Space. Harnesses with large catalogs (Cursor/Codex) made choosing a model slow and easy to overshoot.
+
+**Change**: Enter or Space on a model field now opens a slash-overlay-style window listing that harness's models in alphabetical order. Up/Down move the cursor (with a scrolling 8-row window), Enter applies the highlighted model and normalizes thinking/effort/fast, and Escape closes without changing the draft. Tab dismisses the picker and focuses the navbar. Harness and property fields still cycle in place.
+
+**Validation**: `go test ./... -count=1` passes, including picker open/navigate/select/escape, long-catalog scroll, subagent model fields, and harness-field regression coverage.
+
 ## 2026-08-29 — Welcome inner black gaps and Config property wheels
 
 **Problem**: The post-`/hero-new` checklist still showed black bars inside the

@@ -82,6 +82,8 @@
 
 ## Recent Decisions
 
+- **2026-08-30 — Config model picker**: Enter (or Space) on a Config model field opens a slash-menu-style catalog window for that agent's harness, listed alphabetically. Arrow keys move the selection, Enter applies it, and Escape cancels without changing the draft. Harness and property fields still cycle in place.
+
 - **2026-08-29 — Welcome inner fill and Config property catalogs**: The post-`/hero-new` welcome dialog paints both the full-screen backdrop and every inner row (including wrapped copy and the button row) with the Hero surface color. Config thinking/effort wheels now use the same C5 snapshot as `/hero-model` (catalog/cache, including Luna `max`), and model validation uses the catalog cascade rather than boot-only rows.
 
 - **2026-08-29 — Cycle archive preserves idea workspace boundaries**: `hero cycle archive` moves active files and subfolders directly under `docs/idea/` into `docs/idea/archive/`, preserving their relative structure. The root `README.md`, `tobe/`, and the existing `archive/` directory are never moved; destination collisions fail before any active idea entry is changed.

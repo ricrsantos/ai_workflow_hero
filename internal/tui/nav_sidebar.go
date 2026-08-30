@@ -153,6 +153,9 @@ func (m model) toggleShellFocus() (tea.Model, tea.Cmd) {
 	if m.screen == screenConfig && m.config.editing {
 		m = m.commitConfigEdit()
 	}
+	if m.screen == screenConfig && m.config.modelPicker {
+		m = m.closeConfigModelPicker()
+	}
 	m.shellFocus = shellFocusNavbar
 	m.navCursor = m.activeNavIndex()
 	m.chatInputFocused = false

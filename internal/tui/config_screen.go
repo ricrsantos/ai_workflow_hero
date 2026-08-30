@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -63,6 +64,11 @@ type configScreen struct {
 	leaveDialog     bool
 	leaveScreen     screen
 	leaveQuit       bool
+	modelPicker     bool
+	pickerField     configField
+	pickerItems     []string
+	pickerIndex     int
+	pickerOffset    int
 }
 
 type configLoadedMsg struct {
@@ -392,6 +398,9 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.config.modelPicker {
+		return m.handleConfigModelPickerKey(msg)
+	}
 	if m.config.editing {
 		return m.handleConfigEditKey(msg)
 	}
@@ -441,7 +450,10 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m = m.toggleConfigField(field)
 			return m.configEnsureFocusVisible(), nil
 		}
-		if field.kind == "harness" || field.kind == "model" || field.kind == "property" {
+		if field.kind == "model" {
+			return m.openConfigModelPicker(field), nil
+		}
+		if field.kind == "harness" || field.kind == "property" {
 			m = m.cycleConfigChoice(field)
 			return m, nil
 		}
@@ -842,6 +854,9 @@ func (m model) configModelChoices(harnessID, current string) []string {
 	if current != "" && !seen[strings.ToLower(current)] {
 		filtered = append(filtered, current)
 	}
+	slices.SortFunc(filtered, func(a, b string) int {
+		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+	})
 	return filtered
 }
 
@@ -1161,6 +1176,11 @@ func (m model) renderConfig() string {
 	}
 	if m.config.leaveDialog {
 		b.WriteString(m.renderConfigLeaveDialog())
+		return b.String()
+	}
+	if m.config.modelPicker {
+		b.WriteByte('\n')
+		b.WriteString(m.renderConfigModelPicker())
 		return b.String()
 	}
 	b.WriteByte('\n')
