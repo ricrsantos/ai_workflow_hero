@@ -1,0 +1,256 @@
+title: New Feature
+objective: Describe the objective of this development cycle.
+
+# Workflow-level preferences (chat language, etc.). Cycle artifacts stay English.
+workflow_config:
+  # Language agents use when talking to the user in chat (ISO-ish code, e.g. EN, PT-BR).
+  # Override only when the user explicitly asks for a different chat language.
+  user_preferred_language: PT-BR
+
+scope:
+  backend: true
+  frontend: false
+  native: false
+  script: false
+  infrastructure: false
+
+stages:
+  research:
+    enabled: true
+    purpose: Collaborate with the user to gather requirements and produce the project specifications.
+    max_iterations: 3
+    timeout_minutes: 15
+    require_human_approval: true
+
+  planning:
+    enabled: true
+    purpose: Convert the approved specifications into a complete SDD ready for implementation.
+    max_iterations: 3
+    timeout_minutes: 30
+    require_human_approval: true
+
+  implementation:
+    enabled: true
+    purpose: Implement the approved SDD.
+    max_iterations: 4
+    timeout_minutes: 60
+    require_human_approval: false
+
+  qa:
+    enabled: true
+    purpose: Validate implementation quality (tests, coverage, architecture, lint, build).
+    max_iterations: 2
+    timeout_minutes: 15
+    require_human_approval: false
+
+  judge:
+    enabled: true
+    purpose: Verify SDD requirement coverage.
+    max_iterations: 3
+    timeout_minutes: 10
+    require_human_approval: false
+
+  browser_ui_validation:
+    enabled: false
+    purpose: Validate browser UI health (render, console, network/CSS) and optional visual comparison.
+    max_iterations: 2
+    timeout_minutes: 15
+    require_human_approval: false
+    # Visual Validation runs only after Browser Health passes.
+    # Health has no separate toggle — it always runs when this stage is enabled.
+    visual_validation:
+      enabled: false
+      reference_dir: docs/ui/visual_reference
+
+  qa_end_to_end:
+    enabled: false
+    purpose: Validate the complete feature end-to-end.
+    max_iterations: 3
+    timeout_minutes: 15
+    require_human_approval: false
+    # When true and scope.frontend is true, end2end_qa_agent uses Playwright
+    # for browser journeys. Must be false when scope.frontend is false
+    # (direct HTTP calls only). Independent of browser_ui_validation.
+    use_playwright: false
+
+agents:
+  # Hero 2.0+: every agent and fallback_model require `harness` (cursor | opencode | codex)
+  # and a native `model` id for that harness:
+  #   Cursor IDE / Agent CLI: kebab slugs (composer-2.5, cursor-grok-4.6-high)
+  #   OpenCode: provider/model ids (anthropic/claude-sonnet-4, openai/gpt-5.3-codex)
+  #   Codex (TUI only): native Codex ids (e.g. harness: codex, model: gpt-5.4)
+  # TUI freechat and /hero-new use /hero-model (freechat_default pair), not these blocks.
+  # /hero-new injects missing harness from enabled project harnesses (one → that id;
+  # multiple including Cursor → cursor; never a disabled harness).
+  # Cursor IDE chat ignores orchestration_agent / discover_agent model blocks and harness.
+  orchestration_agent:
+    harness: cursor
+    model: composer-2.5
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: true
+      model: auto
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
+  # Cursor IDE chat: Research grilling runs in the orchestrator session, so this
+  # model is ignored (the IDE session model is used). Hero TUI honors this block:
+  # Research runs as a dedicated discover_agent session with this model.
+  discover_agent:
+    harness: codex
+    model: gpt-5.6-luna
+    reasoning_effort: xhigh
+    enable_fast_model: false
+    thinking: off
+    subagent:
+      same_of_agent: false
+      model: gpt-5.6-luna
+      reasoning_effort: xhigh
+      enable_fast_model: false
+      thinking: off
+
+  planning_agent:
+    harness: cursor
+    model: grok-4.6-high
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+    # Nested Task fan-out from this agent (not named Hero agents like context_agent).
+    # same_of_agent: true → reuse this agent's model; false → use subagent.model below.
+    subagent:
+      same_of_agent: false
+      model: composer-2.5
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
+  context_agent:
+    harness: opencode
+    model: opencode-go/deepseek-v4-flash
+    reasoning_effort: max
+    enable_fast_model: false
+    thinking: off
+    subagent:
+      same_of_agent: true
+      model: opencode-go/deepseek-v4-flash
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
+  backend_agent:
+    harness: cursor
+    model: auto
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: true
+      model: auto
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
+  frontend_agent:
+    harness: cursor
+    model: auto
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: true
+      model: auto
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
+  generic_agent:
+    harness: codex
+    model: gpt-5.6-terra
+    reasoning_effort: xhigh
+    enable_fast_model: false
+    thinking: off
+    subagent:
+      same_of_agent: true
+      model: gpt-5.6-terra
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
+  qa_agent:
+    harness: codex
+    model: gpt-5.6-luna
+    reasoning_effort: xhigh
+    enable_fast_model: false
+    thinking: off
+    subagent:
+      same_of_agent: true
+      model: gpt-5.6-luna
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
+  judge_agent:
+    harness: opencode
+    model: opencode-go/deepseek-v4-pro
+    reasoning_effort: high
+    enable_fast_model: false
+    thinking: off
+    subagent:
+      same_of_agent: true
+      model: opencode-go/deepseek-v4-pro
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
+  browser_ui_agent:
+    harness: cursor
+    model: auto
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: true
+      model: auto
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
+  end2end_qa_agent:
+    harness: cursor
+    model: auto
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+    subagent:
+      same_of_agent: true
+      model: auto
+      reasoning_effort: na
+      enable_fast_model: false
+      thinking: na
+
+# Fallback model used when an agent's configured model is unavailable.
+# The user is always warned explicitly when this fallback is used.
+fallback_model:
+  harness: codex
+  model: gpt-5.6-luna
+  reasoning_effort: xhigh
+  enable_fast_model: false
+  thinking: off
+
+workflow_rules:
+  - Skip any stage that is not enabled.
+  - Do not start implementation until the PRD has been approved, if the research stage is enabled.
+  - If the research stage is disabled, require the objective field above to be well described and ask the user for explicit scope confirmation before starting implementation.
+  - At least one of the five scope fields must be true when implementation is enabled.
+  - stages.browser_ui_validation.enabled may be true only when scope.frontend is true; otherwise block and ask for correction.
+  - When Browser UI Validation is enabled, Browser Health always runs (Playwright required at execution); Visual Validation runs only when visual_validation.enabled is true and only after Health passes.
+  - stages.qa_end_to_end.use_playwright may be true only when scope.frontend is true; otherwise block and ask for correction.
+  - When use_playwright is true, end2end_qa_agent uses Playwright; when false, it uses direct HTTP calls.
+  - All agents must communicate with the user in chat using workflow_config.user_preferred_language (default EN), unless the user explicitly asks for a different chat language. Cycle artifacts remain English.
+  - On /hero-new with prior cycles, import previous workflow_config + fallback_model + stages + agents; always reset title, objective, and scope to template defaults.
+  - Do not change the architecture without an approved ADR.
+  - Persist stage close and metrics via the hero CLI (SQLite), e.g. hero approve|reject|finish|continue with --metrics-json as needed; do not write workflow.md or metrics.md as operational stores.
+  - Before finishing the workflow, ensure current-state.md is up to date.

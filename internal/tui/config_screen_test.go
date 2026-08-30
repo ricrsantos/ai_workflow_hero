@@ -183,6 +183,60 @@ func TestConfigModelChoiceUsesHarnessCatalogBeyondBootModels(t *testing.T) {
 	}
 }
 
+func TestConfigLunaEffortCyclesThroughCatalogMax(t *testing.T) {
+	m := NewTestModel(nil)
+	m.config.draft = workflowconfig.ManagedConfig{
+		Agents: map[string]workflowconfig.AgentModelConfig{
+			"orchestration_agent": {
+				Harness: "codex", Model: "gpt-5.6-luna",
+				ReasoningEffort: "xhigh", Thinking: "off",
+			},
+		},
+	}
+	field := configField{kind: "property", agent: "orchestration_agent", path: "agents.orchestration_agent.reasoning_effort"}
+	choices := m.configPropertyChoices(m.config.draft.Agents["orchestration_agent"], "ef", "xhigh")
+	if !configChoiceHas(choices, "max") {
+		t.Fatalf("luna effort choices=%v, want max", choices)
+	}
+	next := m.cycleConfigChoice(field)
+	if got := next.config.draft.Agents["orchestration_agent"].ReasoningEffort; got != "max" {
+		t.Fatalf("effort=%q, want max after xhigh; choices=%v", got, choices)
+	}
+}
+
+func TestConfigThinkingCyclesCatalogValuesNotBooleans(t *testing.T) {
+	m := NewTestModel(nil)
+	agent := workflowconfig.AgentModelConfig{Harness: "codex", Model: "gpt-5.6-luna", Thinking: "off"}
+	m.config.draft = workflowconfig.ManagedConfig{
+		Agents: map[string]workflowconfig.AgentModelConfig{"orchestration_agent": agent},
+	}
+	choices := m.configPropertyChoices(agent, "th", "off")
+	for _, want := range []string{"na", "off", "on", "detailed"} {
+		if !configChoiceHas(choices, want) {
+			t.Fatalf("luna thinking choices=%v, want %q", choices, want)
+		}
+	}
+	for _, banned := range []string{"true", "false"} {
+		if configChoiceHas(choices, banned) {
+			t.Fatalf("luna thinking must not use boolean fallback, got %v", choices)
+		}
+	}
+	field := configField{kind: "property", agent: "orchestration_agent", path: "agents.orchestration_agent.thinking"}
+	next := m.cycleConfigChoice(field)
+	if got := next.config.draft.Agents["orchestration_agent"].Thinking; got != "on" {
+		t.Fatalf("thinking=%q, want on after off; choices=%v", got, choices)
+	}
+}
+
+func configChoiceHas(choices []string, want string) bool {
+	for _, choice := range choices {
+		if strings.EqualFold(choice, want) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestConfigRetryOnlyMatchesChangedFailedStage(t *testing.T) {
 	if configChangedStage([]string{"stages.qa.max_iterations"}, "research") {
 		t.Fatal("QA configuration must not enable a Research retry")

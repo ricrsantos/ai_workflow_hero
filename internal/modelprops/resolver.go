@@ -169,10 +169,11 @@ func mergePropertyCapability(cap harness.PropertyCapability, cat CatalogProperty
 	}
 	out := cap
 	out.Available = true
-	// Expand only when the harness response is obviously incomplete (a single
-	// echoed default is common for OpenCode model_options).
-	if len(cat.Values) > 1 && len(out.AcceptedValues) <= 1 {
-		out.AcceptedValues = append([]string(nil), cat.Values...)
+	// Catalog wins when it advertises a richer accepted-value list than the
+	// harness response. OpenCode model_options often echo only the current
+	// default, and some live lists omit later rungs such as max.
+	if catalogValuesRicher(out.AcceptedValues, cat.Values) {
+		out.AcceptedValues = unionAcceptedValues(cat.Values, out.AcceptedValues)
 	}
 	if def := strings.TrimSpace(out.DefaultValue); def == "" || !containsValue(out.AcceptedValues, def) {
 		if catDef := strings.TrimSpace(cat.Default); catDef != "" && containsValue(out.AcceptedValues, catDef) {
@@ -271,4 +272,39 @@ func containsValue(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func catalogValuesRicher(current, catalog []string) bool {
+	if len(catalog) == 0 {
+		return false
+	}
+	if len(current) <= 1 {
+		return len(catalog) > 1
+	}
+	for _, value := range catalog {
+		if strings.TrimSpace(value) != "" && !containsValue(current, strings.TrimSpace(value)) {
+			return true
+		}
+	}
+	return false
+}
+
+func unionAcceptedValues(catalog, current []string) []string {
+	out := make([]string, 0, len(catalog)+len(current))
+	seen := map[string]bool{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	for _, value := range catalog {
+		add(value)
+	}
+	for _, value := range current {
+		add(value)
+	}
+	return out
 }

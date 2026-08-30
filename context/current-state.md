@@ -82,7 +82,7 @@
 
 ## Recent Decisions
 
-- **2026-08-29 — Welcome backdrop and Config catalogs**: The post-`/hero-new` welcome dialog paints all terminal whitespace with the Hero surface color. Config model choices combine boot rows, persisted model-list cache, and the embedded harness catalog; opening Config starts an enabled-harness refresh asynchronously.
+- **2026-08-29 — Welcome inner fill and Config property catalogs**: The post-`/hero-new` welcome dialog paints both the full-screen backdrop and every inner row (including wrapped copy and the button row) with the Hero surface color. Config thinking/effort wheels now use the same C5 snapshot as `/hero-model` (catalog/cache, including Luna `max`), and model validation uses the catalog cascade rather than boot-only rows.
 
 - **2026-08-29 — Cycle archive preserves idea workspace boundaries**: `hero cycle archive` moves active files and subfolders directly under `docs/idea/` into `docs/idea/archive/`, preserving their relative structure. The root `README.md`, `tobe/`, and the existing `archive/` directory are never moved; destination collisions fail before any active idea entry is changed.
 

@@ -21,17 +21,36 @@ var cycleWelcomeKeys = struct {
 }
 
 var (
+	// Inner text styles share the dialog surface background. Nested
+	// foreground-only styles emit a reset that punches default/black holes
+	// through the box fill, which is what produced the post-/hero-new gaps.
 	cycleWelcomeBoxStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(colorAccentAI).
 				Background(colorBgSurface).
 				Padding(1, 2)
-	cycleWelcomeTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(colorTextPri)
-	cycleWelcomeLeadStyle     = lipgloss.NewStyle().Foreground(colorAccentAI)
-	cycleWelcomeBodyStyle     = lipgloss.NewStyle().Foreground(colorTextPri)
-	cycleWelcomeDetailStyle   = lipgloss.NewStyle().Foreground(colorTextDim)
-	cycleWelcomeTipStyle      = lipgloss.NewStyle().Foreground(colorAccentFast).Bold(true)
-	cycleWelcomeButtonStyle   = lipgloss.NewStyle().Foreground(colorTextDim).Padding(0, 1)
+	cycleWelcomeTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorTextPri).
+				Background(colorBgSurface)
+	cycleWelcomeLeadStyle = lipgloss.NewStyle().
+				Foreground(colorAccentAI).
+				Background(colorBgSurface)
+	cycleWelcomeBodyStyle = lipgloss.NewStyle().
+				Foreground(colorTextPri).
+				Background(colorBgSurface)
+	cycleWelcomeDetailStyle = lipgloss.NewStyle().
+				Foreground(colorTextDim).
+				Background(colorBgSurface)
+	cycleWelcomeTipStyle = lipgloss.NewStyle().
+				Foreground(colorAccentFast).
+				Bold(true).
+				Background(colorBgSurface)
+	cycleWelcomeFillStyle   = lipgloss.NewStyle().Background(colorBgSurface)
+	cycleWelcomeButtonStyle = lipgloss.NewStyle().
+				Foreground(colorTextDim).
+				Background(colorBgSurface).
+				Padding(0, 1)
 	cycleWelcomeSelectedStyle = lipgloss.NewStyle().
 					Foreground(colorBgBase).
 					Background(colorAccentAI).
@@ -72,57 +91,51 @@ func (m model) renderCycleWelcomeDialog() string {
 		return m.renderCompactCycleWelcomeDialog()
 	}
 
-	boxWidth := minInt(94, m.width-8)
-	innerWidth := boxWidth - cycleWelcomeBoxStyle.GetHorizontalFrameSize()
-	var b strings.Builder
-	b.WriteString(cycleWelcomeTitleStyle.Render("New development cycle created"))
-	b.WriteString("\n\n")
-	b.WriteString(cycleWelcomeLeadStyle.Render("Thank you for starting a new development cycle with Hero!"))
-	b.WriteString("\n\n")
-	b.WriteString(cycleWelcomeBodyStyle.Render("Before you begin, review these recommendations:"))
-	b.WriteString("\n\n")
-	b.WriteString(cycleWelcomeBullet("Make sure you are authenticated with every Harness you intend to use.", []string{
-		"See each Harness documentation for instructions on signing in or verifying authentication.",
-	}, innerWidth))
-	b.WriteString("\n\n")
-	b.WriteString(cycleWelcomeBullet("Check that your favorite Skills are available in every Harness you intend to use.", []string{
-		"You can ask Hero's AI directly in Free Chat. For example:",
-		"\"Equalize my Skills across the configured Harnesses and install any that are missing.\"",
-	}, innerWidth))
-	b.WriteString("\n\n")
-	b.WriteString(cycleWelcomeTip("You can save time by creating a file that describes your idea in:", "docs/idea/", innerWidth))
-	b.WriteString("\n")
-	b.WriteString(cycleWelcomeIndented("You can also develop and refine that idea beforehand with an agent in Hero Free Chat.", innerWidth))
-	b.WriteString("\n\n")
-	b.WriteString(cycleWelcomeTip("You can configure the cycle you just created by editing:", ".workflow-hero/cycles/current/workflow-config.yml", innerWidth))
-	b.WriteString("\n")
-	b.WriteString(cycleWelcomeIndented("Or use Hero's TUI Config section.", innerWidth))
-	b.WriteString("\n\n")
-	b.WriteString(m.renderCycleWelcomeButtons(innerWidth))
-
-	box := cycleWelcomeBoxStyle.Width(boxWidth).Render(b.String())
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		box,
-		lipgloss.WithWhitespaceBackground(colorBgSurface),
-	)
+	innerWidth := cycleWelcomeInnerWidth(minInt(94, m.width-8))
+	rows := []string{
+		cycleWelcomeLine(cycleWelcomeTitleStyle, "New development cycle created", innerWidth),
+		cycleWelcomeBlank(innerWidth),
+		cycleWelcomeLine(cycleWelcomeLeadStyle, "Thank you for starting a new development cycle with Hero!", innerWidth),
+		cycleWelcomeBlank(innerWidth),
+		cycleWelcomeWrapped(cycleWelcomeBodyStyle, "Before you begin, review these recommendations:", innerWidth),
+		cycleWelcomeBlank(innerWidth),
+		cycleWelcomeBullet("Make sure you are authenticated with every Harness you intend to use.", []string{
+			"See each Harness documentation for instructions on signing in or verifying authentication.",
+		}, innerWidth),
+		cycleWelcomeBlank(innerWidth),
+		cycleWelcomeBullet("Check that your favorite Skills are available in every Harness you intend to use.", []string{
+			"You can ask Hero's AI directly in Free Chat. For example:",
+			"\"Equalize my Skills across the configured Harnesses and install any that are missing.\"",
+		}, innerWidth),
+		cycleWelcomeBlank(innerWidth),
+		cycleWelcomeTip("You can save time by creating a file that describes your idea in:", "docs/idea/", innerWidth),
+		cycleWelcomeIndented("You can also develop and refine that idea beforehand with an agent in Hero Free Chat.", innerWidth),
+		cycleWelcomeBlank(innerWidth),
+		cycleWelcomeTip("You can configure the cycle you just created by editing:", ".workflow-hero/cycles/current/workflow-config.yml", innerWidth),
+		cycleWelcomeIndented("Or use Hero's TUI Config section.", innerWidth),
+		cycleWelcomeBlank(innerWidth),
+		m.renderCycleWelcomeButtons(innerWidth),
+	}
+	return m.placeCycleWelcomeBox(strings.Join(rows, "\n"), innerWidth)
 }
 
 func (m model) renderCompactCycleWelcomeDialog() string {
-	boxWidth := max(1, m.width-4)
-	innerWidth := boxWidth - cycleWelcomeBoxStyle.GetHorizontalFrameSize()
-	var b strings.Builder
-	b.WriteString(cycleWelcomeTitleStyle.Render("New cycle created"))
-	b.WriteString("\n\n")
-	b.WriteString(cycleWelcomeBodyStyle.Render("Resize the terminal to review the setup guide."))
-	b.WriteString("\n")
-	b.WriteString(cycleWelcomeDetailStyle.Render("You can also open Config now."))
-	b.WriteString("\n\n")
-	b.WriteString(m.renderCycleWelcomeButtons(innerWidth))
-	box := cycleWelcomeBoxStyle.Width(boxWidth).Render(b.String())
+	innerWidth := cycleWelcomeInnerWidth(max(1, m.width-4))
+	rows := []string{
+		cycleWelcomeLine(cycleWelcomeTitleStyle, "New cycle created", innerWidth),
+		cycleWelcomeBlank(innerWidth),
+		cycleWelcomeWrapped(cycleWelcomeBodyStyle, "Resize the terminal to review the setup guide.", innerWidth),
+		cycleWelcomeLine(cycleWelcomeDetailStyle, "You can also open Config now.", innerWidth),
+		cycleWelcomeBlank(innerWidth),
+		m.renderCycleWelcomeButtons(innerWidth),
+	}
+	return m.placeCycleWelcomeBox(strings.Join(rows, "\n"), innerWidth)
+}
+
+func (m model) placeCycleWelcomeBox(content string, innerWidth int) string {
+	// Width is the content box including padding, not the border. Matching
+	// that here keeps lipgloss from synthesizing a second, unstyled pad.
+	box := cycleWelcomeBoxStyle.Width(innerWidth + cycleWelcomeBoxStyle.GetHorizontalPadding()).Render(content)
 	return lipgloss.Place(
 		m.width,
 		m.height,
@@ -143,12 +156,18 @@ func (m model) renderCycleWelcomeButtons(width int) string {
 		goConfig = cycleWelcomeButtonStyle.Render(goConfig)
 		close = cycleWelcomeSelectedStyle.Render(close)
 	}
-	return lipgloss.PlaceHorizontal(width, lipgloss.Center, goConfig+"   "+close)
+	row := lipgloss.PlaceHorizontal(
+		width,
+		lipgloss.Center,
+		goConfig+"   "+close,
+		lipgloss.WithWhitespaceBackground(colorBgSurface),
+	)
+	return cycleWelcomeFillStyle.Width(width).Render(row)
 }
 
 func cycleWelcomeBullet(head string, details []string, width int) string {
 	var b strings.Builder
-	b.WriteString(cycleWelcomeBodyStyle.Render("• " + head))
+	b.WriteString(cycleWelcomeWrapped(cycleWelcomeBodyStyle, "• "+head, width))
 	for _, detail := range details {
 		b.WriteByte('\n')
 		b.WriteString(cycleWelcomeIndented(detail, width))
@@ -157,14 +176,46 @@ func cycleWelcomeBullet(head string, details []string, width int) string {
 }
 
 func cycleWelcomeTip(head, path string, width int) string {
-	return cycleWelcomeTipStyle.Render("• Tip: "+head) + "\n" + cycleWelcomeIndented(path, width)
+	return cycleWelcomeWrapped(cycleWelcomeTipStyle, "• Tip: "+head, width) + "\n" + cycleWelcomeIndented(path, width)
 }
 
 func cycleWelcomeIndented(text string, width int) string {
 	contentWidth := max(12, width-4)
 	lines := wrapOutputLine(text, contentWidth)
+	out := make([]string, len(lines))
 	for i, line := range lines {
-		lines[i] = "    " + line
+		out[i] = cycleWelcomeLine(cycleWelcomeDetailStyle, "    "+line, width)
 	}
-	return cycleWelcomeDetailStyle.Render(strings.Join(lines, "\n"))
+	return strings.Join(out, "\n")
+}
+
+func cycleWelcomeWrapped(style lipgloss.Style, text string, width int) string {
+	lines := wrapOutputLine(text, width)
+	if len(lines) == 0 {
+		return cycleWelcomeLine(style, "", width)
+	}
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		out[i] = cycleWelcomeLine(style, line, width)
+	}
+	return strings.Join(out, "\n")
+}
+
+func cycleWelcomeLine(style lipgloss.Style, text string, width int) string {
+	if width < 1 {
+		width = 1
+	}
+	return style.Width(width).MaxWidth(width).Render(text)
+}
+
+func cycleWelcomeBlank(width int) string {
+	return cycleWelcomeLine(cycleWelcomeFillStyle, "", width)
+}
+
+func cycleWelcomeInnerWidth(boxWidth int) int {
+	inner := boxWidth - cycleWelcomeBoxStyle.GetHorizontalFrameSize()
+	if inner < 12 {
+		return 12
+	}
+	return inner
 }

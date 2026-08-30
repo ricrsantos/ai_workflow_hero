@@ -47,6 +47,29 @@ func TestCycleWelcomeDialogPaintsItsFullScreenBackdrop(t *testing.T) {
 	}
 }
 
+func TestCycleWelcomeDialogFillsInnerRowsWithSurface(t *testing.T) {
+	forceColorProfile(t, termenv.ANSI)
+	const inner = 40
+	detail := cycleWelcomeIndented("short detail", inner)
+	for _, line := range strings.Split(detail, "\n") {
+		if got := lipgloss.Width(line); got != inner {
+			t.Fatalf("detail line width=%d want %d: %q", got, inner, line)
+		}
+	}
+
+	m := NewTestModel(nil)
+	row := m.renderCycleWelcomeButtons(inner)
+	if got := lipgloss.Width(row); got != inner {
+		t.Fatalf("button row width=%d want %d", got, inner)
+	}
+	surfaceCell := lipgloss.NewStyle().Background(colorBgSurface).Render(" ")
+	background, _, _ := strings.Cut(surfaceCell, "m")
+	background += "m"
+	if !strings.Contains(row, background) {
+		t.Fatalf("button row must paint leftover cells with the surface background:\n%q", row)
+	}
+}
+
 func TestCycleWelcomeDialogCloseAndGoToConfig(t *testing.T) {
 	m := NewTestModel(nil)
 	m.status.CycleNumber = 1

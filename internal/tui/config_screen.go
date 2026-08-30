@@ -748,6 +748,7 @@ func (m model) cycleConfigChoice(field configField) model {
 		choices := m.enabledHarnessIDs()
 		if len(choices) > 0 {
 			agent.Harness = nextChoice(agent.Harness, choices)
+			agent = m.normalizeConfigAgentProperties(agent)
 		}
 	case "model":
 		current := agent.Model
@@ -761,21 +762,51 @@ func (m model) cycleConfigChoice(field configField) model {
 			} else {
 				agent.Model = nextChoice(agent.Model, choices)
 			}
+			agent = m.normalizeConfigAgentProperties(agent)
 		} else {
 			m.config.message = "⚠ Model catalog unavailable; existing YAML model retained."
 			return m
 		}
 	case "property":
-		if isSubagent && strings.HasSuffix(field.path, ".thinking") {
-			agent.Subagent.Thinking = nextChoice(agent.Subagent.Thinking, []string{"na", "true", "false"})
-		} else if isSubagent && strings.HasSuffix(field.path, ".reasoning_effort") {
-			agent.Subagent.ReasoningEffort = nextChoice(agent.Subagent.ReasoningEffort, []string{"na", "low", "medium", "high"})
-		} else if strings.HasSuffix(field.path, ".thinking") {
-			agent.Thinking = nextChoice(agent.Thinking, []string{"na", "true", "false"})
-		} else if strings.HasSuffix(field.path, ".reasoning_effort") {
-			agent.ReasoningEffort = nextChoice(agent.ReasoningEffort, []string{"na", "low", "medium", "high"})
-		} else {
+		if strings.HasSuffix(field.path, ".enable_fast_model") {
 			return m.toggleConfigField(field)
+		}
+		property := ""
+		switch {
+		case strings.HasSuffix(field.path, ".thinking"):
+			property = harness.PropertyThink
+		case strings.HasSuffix(field.path, ".reasoning_effort"):
+			property = harness.PropertyEffort
+		default:
+			return m
+		}
+		snapAgent := agent
+		current := agent.Thinking
+		if property == harness.PropertyEffort {
+			current = agent.ReasoningEffort
+		}
+		if isSubagent {
+			snapAgent.Model = agent.Subagent.Model
+			snapAgent.Thinking = agent.Subagent.Thinking
+			snapAgent.ReasoningEffort = agent.Subagent.ReasoningEffort
+			snapAgent.EnableFastModel = agent.Subagent.EnableFastModel
+			if property == harness.PropertyEffort {
+				current = agent.Subagent.ReasoningEffort
+			} else {
+				current = agent.Subagent.Thinking
+			}
+		}
+		next := nextChoice(current, m.configPropertyChoices(snapAgent, property, current))
+		if isSubagent {
+			if property == harness.PropertyEffort {
+				agent.Subagent.ReasoningEffort = next
+			} else {
+				agent.Subagent.Thinking = next
+			}
+		} else if property == harness.PropertyEffort {
+			agent.ReasoningEffort = next
+		} else {
+			agent.Thinking = next
 		}
 	}
 	if agentName == "fallback_model" {
@@ -812,6 +843,89 @@ func (m model) configModelChoices(harnessID, current string) []string {
 		filtered = append(filtered, current)
 	}
 	return filtered
+}
+
+// configPropertyChoices returns the workflow values the focused thinking/effort
+// control may cycle through. Catalog/cache snapshots are authoritative (same
+// source as /hero-model); na remains selectable because workflow YAML uses it as
+// the explicit unset sentinel. A configured value that metadata does not list
+// stays in the wheel so the user can leave it without a silent substitution.
+func (m model) configPropertyChoices(agent workflowconfig.AgentModelConfig, property, current string) []string {
+	choices := make([]string, 0, 8)
+	seen := map[string]bool{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[strings.ToLower(value)] {
+			return
+		}
+		seen[strings.ToLower(value)] = true
+		choices = append(choices, value)
+	}
+	add("na")
+	if m.propsSvc != nil {
+		cap := m.propsSvc.Snapshot(agent.Harness, agent.Model).Property(property)
+		if cap.Available {
+			for _, value := range cap.AcceptedValues {
+				add(value)
+			}
+		}
+	}
+	add(current)
+	if len(choices) == 0 {
+		add("na")
+	}
+	return choices
+}
+
+// normalizeConfigAgentProperties keeps thinking/effort/fast aligned with the
+// selected harness+model after those fields change. Unknown snapshots preserve
+// the current YAML; unavailable properties collapse to na/false.
+func (m model) normalizeConfigAgentProperties(agent workflowconfig.AgentModelConfig) workflowconfig.AgentModelConfig {
+	agent.Thinking = m.configNormalizedProperty(agent, harness.PropertyThink, agent.Thinking)
+	agent.ReasoningEffort = m.configNormalizedProperty(agent, harness.PropertyEffort, agent.ReasoningEffort)
+	if !m.configPropertyVisible(agent, harness.PropertyFast) {
+		agent.EnableFastModel = false
+	}
+	if !agent.Subagent.SameOfAgent {
+		sub := agent
+		sub.Model = agent.Subagent.Model
+		sub.Thinking = agent.Subagent.Thinking
+		sub.ReasoningEffort = agent.Subagent.ReasoningEffort
+		sub.EnableFastModel = agent.Subagent.EnableFastModel
+		agent.Subagent.Thinking = m.configNormalizedProperty(sub, harness.PropertyThink, agent.Subagent.Thinking)
+		agent.Subagent.ReasoningEffort = m.configNormalizedProperty(sub, harness.PropertyEffort, agent.Subagent.ReasoningEffort)
+		if !m.configPropertyVisible(sub, harness.PropertyFast) {
+			agent.Subagent.EnableFastModel = false
+		}
+	}
+	return agent
+}
+
+func (m model) configNormalizedProperty(agent workflowconfig.AgentModelConfig, property, current string) string {
+	current = strings.TrimSpace(current)
+	if current == "" || strings.EqualFold(current, "na") {
+		return "na"
+	}
+	if m.propsSvc == nil {
+		return current
+	}
+	snap := m.propsSvc.Snapshot(agent.Harness, agent.Model)
+	if snap.Source == modelprops.SourceUnknown {
+		return current
+	}
+	cap := snap.Property(property)
+	if !cap.Available {
+		return "na"
+	}
+	for _, value := range cap.AcceptedValues {
+		if strings.EqualFold(strings.TrimSpace(value), current) {
+			return value
+		}
+	}
+	if def := strings.TrimSpace(cap.DefaultValue); def != "" {
+		return def
+	}
+	return "na"
 }
 
 func nextChoice(current string, choices []string) string {
@@ -886,16 +1000,16 @@ func (m model) configSaveCmd(start bool) tea.Cmd {
 func (m model) configValidationOptions() workflowconfig.ValidationOptions {
 	opts := workflowconfig.ValidationOptions{}
 	opts.ModelKnown = func(harnessID, modelID string) (bool, bool) {
-		known := false
-		for _, option := range m.modelOptions {
-			if strings.EqualFold(option.Harness, harnessID) {
-				known = true
-				if strings.EqualFold(option.Model, modelID) {
-					return true, true
-				}
+		choices := m.configModelChoices(harnessID, modelID)
+		if len(choices) == 0 {
+			return false, false
+		}
+		for _, choice := range choices {
+			if strings.EqualFold(choice, modelID) {
+				return true, true
 			}
 		}
-		return known, false
+		return true, false
 	}
 	opts.PropertyCapability = func(harnessID, modelID, property string) (bool, bool, []string) {
 		if m.propsSvc == nil {

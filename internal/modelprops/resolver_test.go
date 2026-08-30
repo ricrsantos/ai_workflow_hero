@@ -232,3 +232,18 @@ func TestResolveMergesIncompleteCacheWithCatalog(t *testing.T) {
 		t.Fatalf("catalog must expand effort values: %+v", ef)
 	}
 }
+
+func TestResolveMergesPartialEffortListWithCatalogMax(t *testing.T) {
+	cat := Catalog{
+		"opencode-go/gpt-5.6-luna": CatalogModel{Properties: map[string]CatalogProperty{
+			"ef": {Available: true, Values: []string{"none", "low", "medium", "high", "xhigh", "max"}, Default: "medium", HasProperty: true},
+		}},
+	}
+	cached := `{"ef":{"available":true,"values":["none","low","medium","high","xhigh"],"default":"medium"}}`
+	snap := Resolve("opencode", "opencode-go/gpt-5.6-luna", nil, nil,
+		cacheRow(cached, "2026-08-18T00:00:00Z"), true, cat)
+	ef := snap.Property("ef")
+	if !ef.Available || !containsValue(ef.AcceptedValues, "max") {
+		t.Fatalf("partial live effort list must gain catalog max: %+v", ef)
+	}
+}

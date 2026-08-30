@@ -4,6 +4,25 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-29 — Welcome inner black gaps and Config property wheels
+
+**Problem**: The post-`/hero-new` checklist still showed black bars inside the
+dialog: nested foreground-only styles reset the surface fill on short wrapped
+lines, and the button row's `PlaceHorizontal` leftover cells were unstyled.
+Config thinking/effort controls cycled a hardcoded `na/true/false` and
+`na/low/medium/high` list, so GPT-5.6 Luna stopped at `xhigh` instead of
+catalog `max`.
+
+**Change**: Welcome inner rows now share the surface background and are filled
+to the content width before the bordered box is placed. Config property
+wheels read C5 snapshot accepted values (plus YAML `na`), normalize
+thinking/effort/fast when harness or model changes, and validate models
+through the same catalog cascade as the picker. Catalog merge now expands a
+partial live/cache effort list when it is missing later rungs such as `max`.
+
+**Validation**: `go test ./... -count=1` passes, including welcome inner-fill
+coverage and Luna effort/thinking Config cycle tests.
+
 ## 2026-08-29 — TUI welcome backdrop and Config model choices
 
 **Problem**: The post-`/hero-new` guidance dialog left the cells outside its
