@@ -101,7 +101,14 @@ func (m model) renderCycleWelcomeDialog() string {
 	b.WriteString(m.renderCycleWelcomeButtons(innerWidth))
 
 	box := cycleWelcomeBoxStyle.Width(boxWidth).Render(b.String())
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		box,
+		lipgloss.WithWhitespaceBackground(colorBgSurface),
+	)
 }
 
 func (m model) renderCompactCycleWelcomeDialog() string {
@@ -116,7 +123,14 @@ func (m model) renderCompactCycleWelcomeDialog() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.renderCycleWelcomeButtons(innerWidth))
 	box := cycleWelcomeBoxStyle.Width(boxWidth).Render(b.String())
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	return lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		box,
+		lipgloss.WithWhitespaceBackground(colorBgSurface),
+	)
 }
 
 func (m model) renderCycleWelcomeButtons(width int) string {

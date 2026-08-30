@@ -82,6 +82,8 @@
 
 ## Recent Decisions
 
+- **2026-08-29 — Welcome backdrop and Config catalogs**: The post-`/hero-new` welcome dialog paints all terminal whitespace with the Hero surface color. Config model choices combine boot rows, persisted model-list cache, and the embedded harness catalog; opening Config starts an enabled-harness refresh asynchronously.
+
 - **2026-08-29 — Cycle archive preserves idea workspace boundaries**: `hero cycle archive` moves active files and subfolders directly under `docs/idea/` into `docs/idea/archive/`, preserving their relative structure. The root `README.md`, `tobe/`, and the existing `archive/` directory are never moved; destination collisions fail before any active idea entry is changed.
 
 - **2026-08-29 — TUI Chat verbosity Settings**: Added a Settings sidebar screen with four curated profiles: Compact, Standard, Detailed, and Debug. `chat_verbosity` persists in `hero.json`; missing and unrecognized values resolve to Debug so established projects retain their prior transcript. Settings is last without an active cycle and immediately precedes Config while Config is visible. `alt+1-6` and `alt+1-7` reflect those two layouts. Compact renders agent text only; Standard adds tools/Task lifecycle; Detailed adds thinking, activities, and warnings; Debug preserves all transcript rows. Permission/question gates, session failures, activity bookkeeping, and warning status remain safety-visible.

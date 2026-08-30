@@ -1,40 +1,40 @@
 {
   "cli": {
-    "version": "2.9.0",
+    "version": "2.9.1",
     "installedAt": "2026-08-04T19:30:24Z",
     "tools": [
       "cursor"
     ]
   },
   "assets": {
-    "version": "2.9.0",
-    "installedAt": "2026-08-29T23:58:23Z"
+    "version": "2.9.1",
+    "installedAt": "2026-08-30T01:54:26Z"
   },
   "harnesses": {
     "codex": {
       "enabled": true,
       "model": "gpt-5.6-terra",
       "enable_fast_model": false,
-      "permission_profile": "auto-project"
+      "permission_profile": "auto-all"
     },
     "cursor": {
       "enabled": true,
       "model": "auto",
       "enable_fast_model": false,
-      "permission_profile": "auto-project"
+      "permission_profile": "auto-all"
     },
     "opencode": {
       "enabled": true,
       "model": "opencode-go/deepseek-v4-flash",
       "enable_fast_model": false,
-      "permission_profile": "auto-project"
+      "permission_profile": "auto-all"
     }
   },
   "freechat_default": {
     "harness": "codex",
     "model": "gpt-5.6-terra"
   },
-  "chat_verbosity": "compact",
+  "chat_verbosity": "debug",
   "model_properties": {
     "codex": {
       "gpt-5.6-luna": {

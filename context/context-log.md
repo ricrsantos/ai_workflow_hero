@@ -4,6 +4,24 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-29 — TUI welcome backdrop and Config model choices
+
+**Problem**: The post-`/hero-new` guidance dialog left the cells outside its
+centered panel unstyled, which showed as black gaps in dark terminals. The
+cycle Config screen consulted only the boot-time model rows; boot intentionally
+does not launch OpenCode or Codex, so their agent models could appear absent
+and could not be changed.
+
+**Change**: The centered welcome dialog now paints all placement whitespace
+with Hero's surface background. Config now resolves a model choice through the
+same local boot/cache/catalog cascade as the model picker, preserves an
+unknown configured value, and starts the enabled-harness C5 refresh
+asynchronously after the Config document loads.
+
+**Validation**: Added TUI regression coverage for the full-screen backdrop and
+for changing a Codex agent model when boot has only Cursor rows. Focused tests
+pass; the full `internal/tui` suite was also run.
+
 ## 2026-08-29 — Release v2.9.1
 
 **Outcome**: Tagged `v2.9.1` (patch bump from `v2.9.0`). Ships TUI timer/watchdog fixes, `auto-all` harness permission profile, idea-folder auto-archive on cycle archive, and removes accidental upgrade conflict backup files.

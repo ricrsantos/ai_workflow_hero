@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
@@ -154,6 +155,31 @@ func TestConfigSameOfAgentToggleRevealsSubagentControls(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("same_of_agent=false must reveal subagent controls")
+	}
+}
+
+func TestConfigModelChoiceUsesHarnessCatalogBeyondBootModels(t *testing.T) {
+	m := NewTestModel(nil)
+	// TUI boot intentionally has no managed Codex/OpenCode rows. Config must
+	// still use its local catalog/cache to make this agent's model editable.
+	m.modelOptions = []harnessmgr.ModelOption{{Harness: "cursor", Model: "composer-2.5"}}
+	m.config.draft = workflowconfig.ManagedConfig{
+		Agents: map[string]workflowconfig.AgentModelConfig{
+			"orchestration_agent": {Harness: "codex", Model: "gpt-5.4"},
+		},
+	}
+	field := configField{kind: "model", agent: "orchestration_agent"}
+
+	choices := m.configModelChoices("codex", "gpt-5.4")
+	if len(choices) < 2 {
+		t.Fatalf("Codex catalog choices=%v, want multiple models", choices)
+	}
+	next := m.cycleConfigChoice(field)
+	if got := next.config.draft.Agents["orchestration_agent"].Model; got == "gpt-5.4" {
+		t.Fatalf("Config model did not change; choices=%v", choices)
+	}
+	if !next.config.dirty {
+		t.Fatal("changing an agent model must dirty the Config draft")
 	}
 }
 

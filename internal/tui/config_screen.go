@@ -153,6 +153,14 @@ func (m model) handleConfigMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.dirty = false
 		m.config.err = ""
 		m.config.fieldErrors = nil
+		// Config is an explicit request to choose agent models. Start the C5
+		// refresh here (never at TUI boot) so OpenCode/Codex lists are persisted
+		// for this form without blocking its initial render. Until it completes,
+		// configModelChoices uses the cache and embedded catalog.
+		if enabled := m.enabledHarnessIDs(); m.propsSvc != nil && !m.propsRefreshBusy && len(enabled) > 0 {
+			m.propsRefreshBusy = true
+			return m, m.startModelPropsRefresh(enabled)
+		}
 		return m, nil
 	case configSavedMsg:
 		m.config.saving = false
@@ -742,12 +750,11 @@ func (m model) cycleConfigChoice(field configField) model {
 			agent.Harness = nextChoice(agent.Harness, choices)
 		}
 	case "model":
-		var choices []string
-		for _, option := range m.modelOptions {
-			if strings.EqualFold(option.Harness, agent.Harness) {
-				choices = append(choices, option.Model)
-			}
+		current := agent.Model
+		if isSubagent {
+			current = agent.Subagent.Model
 		}
+		choices := m.configModelChoices(agent.Harness, current)
 		if len(choices) > 0 {
 			if isSubagent {
 				agent.Subagent.Model = nextChoice(agent.Subagent.Model, choices)
@@ -779,6 +786,32 @@ func (m model) cycleConfigChoice(field configField) model {
 	m.config.draft = c
 	m.config.dirty = true
 	return m
+}
+
+// configModelChoices returns every locally known model for an enabled harness.
+// Boot deliberately avoids launching managed OpenCode/Codex processes, so
+// modelOptions alone can contain only Cursor rows. modelsForHarness adds the
+// persisted capability cache and embedded catalog, which keeps Config usable
+// immediately and lets the asynchronous refresh replace that local view later.
+func (m model) configModelChoices(harnessID, current string) []string {
+	choices := m.modelsForHarness(harnessID)
+	seen := make(map[string]bool, len(choices)+1)
+	filtered := make([]string, 0, len(choices)+1)
+	for _, choice := range choices {
+		choice = strings.TrimSpace(choice)
+		if choice == "" || seen[strings.ToLower(choice)] {
+			continue
+		}
+		seen[strings.ToLower(choice)] = true
+		filtered = append(filtered, choice)
+	}
+	// A configured model that is absent from metadata must remain visible and
+	// selectable; catalog gaps are warnings, never silent substitutions.
+	current = strings.TrimSpace(current)
+	if current != "" && !seen[strings.ToLower(current)] {
+		filtered = append(filtered, current)
+	}
+	return filtered
 }
 
 func nextChoice(current string, choices []string) string {

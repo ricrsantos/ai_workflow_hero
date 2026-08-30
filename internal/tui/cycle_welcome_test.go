@@ -3,6 +3,9 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func TestCycleWelcomeDialogRendersGuidanceAndButtons(t *testing.T) {
@@ -25,6 +28,22 @@ func TestCycleWelcomeDialogRendersGuidanceAndButtons(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("welcome dialog missing %q:\n%s", want, view)
 		}
+	}
+}
+
+func TestCycleWelcomeDialogPaintsItsFullScreenBackdrop(t *testing.T) {
+	forceColorProfile(t, termenv.ANSI)
+	m := NewTestModel(nil)
+	m.width = 120
+	m.height = 42
+	m.cycleWelcomeDialog = true
+
+	view := ViewForTest(m)
+	surfaceCell := lipgloss.NewStyle().Background(colorBgSurface).Render(" ")
+	background, _, _ := strings.Cut(surfaceCell, "m")
+	background += "m"
+	if got := strings.Count(view, background); got < m.height {
+		t.Fatalf("backdrop cells with surface background=%d, want at least %d", got, m.height)
 	}
 }
 
