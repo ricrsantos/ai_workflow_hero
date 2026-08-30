@@ -309,8 +309,10 @@ Portanto, Telegram não é somente um canal de comandos. Ele é uma interface re
 
 # 8. Configuração do Telegram 
 
-O token do BotFather e o chatId não devem ser armazenado no código-fonte, neste primeiro momento eles devem ser configurados através de um slash command (/hero-telegram-config) em qualquer instância do Hero e deve ser salvos no SQLite global em ~/.workflow-hero/hero.db
-O usuário deve ter a opção de excluir o token e o chatId e também enviar uma mensagem de teste, na mesma caixa de configuração.
+O token do BotFather e o chatId não devem ser armazenado no código-fonte. A configuração deve ser realizada na tela de settings do Hero em qualquer instância do Hero e deve ser salvos no SQLite global em ~/.workflow-hero/hero.db
+O usuário deve ter a opção de excluir o token e o chatId e também enviar uma mensagem de teste, na mesma tela de settings. 
+
+Após configurado, a tela não deve exibir as credenciais que o usuário cadastrou (token e chatid), deve apenas indicar algo como "Configured". O usuário pode apenas sobrescrever a configuração atual ou limpar a mesma.
 
 No código deve ser tratado como uma váriável de ambiante
 

@@ -588,6 +588,31 @@ func TestPermission_AutoProjectApprovesWorkspaceFileChange(t *testing.T) {
 	}
 }
 
+func TestPermission_AutoAllApprovesEveryRequest(t *testing.T) {
+	peer := newMockPeer()
+	peer.injectApproval = true
+	peer.approvalMethod = "item/commandExecution/requestApproval"
+	a := codex.NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "/mock/codex", nil }
+	a.Runner = peer
+	called := false
+	_, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt:            "hi",
+		Stream:            true,
+		PermissionProfile: harness.PermissionProfileAutoAll,
+		OnPermissionRequest: func(context.Context, harness.PermissionRequest) (harness.PermissionResponse, error) {
+			called = true
+			return harness.PermissionResponse{Approved: false}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("auto-all must not prompt the TUI")
+	}
+}
+
 func TestEnsureAppServer_NeverAttachesForeign(t *testing.T) {
 	// Starting twice reuses the Hero-managed child; Runner is only called once.
 	peer := newMockPeer()

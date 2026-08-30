@@ -39,14 +39,14 @@ func (m model) openHarnessPicker() (model, tea.Cmd) {
 	m.harnessDraft = make(map[string]bool, len(install.SupportedHarnessIDs))
 	m.harnessPermissionDraft = make(map[string]map[harness.PermissionProfile]bool, len(install.SupportedHarnessIDs))
 
-	items := make([]paletteItem, 0, len(install.SupportedHarnessIDs)*3)
+	items := make([]paletteItem, 0, len(install.SupportedHarnessIDs)*6)
 	for _, id := range install.SupportedHarnessIDs {
 		enabled := install.IsHarnessEnabled(hero, id)
 		m.harnessDraft[id] = enabled
 		profile := install.HarnessPermissionProfile(hero, id)
-		m.harnessPermissionDraft[id] = map[harness.PermissionProfile]bool{
-			harness.PermissionProfileAsk:         profile == harness.PermissionProfileAsk,
-			harness.PermissionProfileAutoProject: profile == harness.PermissionProfileAutoProject,
+		m.harnessPermissionDraft[id] = make(map[harness.PermissionProfile]bool)
+		for _, candidate := range harnessPermissionProfiles() {
+			m.harnessPermissionDraft[id][candidate] = profile == candidate
 		}
 		items = append(items, paletteItem{
 			label:     harnessDisplayName(id),
@@ -54,10 +54,13 @@ func (m model) openHarnessPicker() (model, tea.Cmd) {
 			action:    actionToggleHarness,
 			harnessID: id,
 		})
-		items = append(items,
-			paletteItem{label: harness.PermissionProfileLabel(harness.PermissionProfileAsk), action: actionToggleHarnessPermission, harnessID: id, modelSlug: string(harness.PermissionProfileAsk)},
-			paletteItem{label: harness.PermissionProfileLabel(harness.PermissionProfileAutoProject), action: actionToggleHarnessPermission, harnessID: id, modelSlug: string(harness.PermissionProfileAutoProject)},
-		)
+		items = append(items, paletteItem{label: "Permissions:", action: actionHarnessPermissionHeading, harnessID: id})
+		for _, candidate := range harnessPermissionProfiles() {
+			items = append(items, paletteItem{label: harness.PermissionProfileLabel(candidate), action: actionToggleHarnessPermission, harnessID: id, modelSlug: string(candidate)})
+		}
+		if id != install.SupportedHarnessIDs[len(install.SupportedHarnessIDs)-1] {
+			items = append(items, paletteItem{action: actionHarnessSpacer})
+		}
 	}
 	m.paletteItems = items
 	m = m.ensurePaletteVisible()
@@ -93,7 +96,9 @@ func (m model) toggleHarnessPickerDraft() (model, tea.Cmd) {
 			m.harnessPermissionDraft[id] = make(map[harness.PermissionProfile]bool)
 		}
 		profile := harness.NormalizePermissionProfile(harness.PermissionProfile(item.modelSlug))
-		m.harnessPermissionDraft[id][profile] = !m.harnessPermissionDraft[id][profile]
+		for _, candidate := range harnessPermissionProfiles() {
+			m.harnessPermissionDraft[id][candidate] = candidate == profile
+		}
 	}
 	return m, nil
 }
@@ -249,15 +254,36 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 	return m, nil
 }
 
-// draftHarnessPermissionProfile resolves the checkbox pair to Hero's portable
-// profile. No selection is intentionally conservative (Ask); when both are
-// selected, automatic project approval wins as agreed by the Harness Manager UX.
+// draftHarnessPermissionProfile resolves a permission selection to Hero's
+// portable profile. No selection is intentionally conservative (Ask).
 func (m model) draftHarnessPermissionProfile(id string) harness.PermissionProfile {
 	draft := m.harnessPermissionDraft[id]
+	if draft[harness.PermissionProfileAutoAll] {
+		return harness.PermissionProfileAutoAll
+	}
 	if draft[harness.PermissionProfileAutoProject] {
 		return harness.PermissionProfileAutoProject
 	}
 	return harness.PermissionProfileAsk
+}
+
+func harnessPermissionProfiles() []harness.PermissionProfile {
+	return []harness.PermissionProfile{
+		harness.PermissionProfileAsk,
+		harness.PermissionProfileAutoProject,
+		harness.PermissionProfileAutoAll,
+	}
+}
+
+func (m model) moveHarnessPickerSelection(delta int) model {
+	items := m.filteredPaletteItems()
+	for index := m.paletteIndex + delta; index >= 0 && index < len(items); index += delta {
+		if items[index].action == actionToggleHarness || items[index].action == actionToggleHarnessPermission {
+			m.paletteIndex = index
+			break
+		}
+	}
+	return m.ensurePaletteVisible()
 }
 
 func (m model) harnessEnabled(id string) bool {

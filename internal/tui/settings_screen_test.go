@@ -62,13 +62,13 @@ func TestChatVerbosityFiltersOnlyTranscriptDetails(t *testing.T) {
 	}
 }
 
-func TestCompactVerbosityDoesNotResetResponseTimerForHiddenThinking(t *testing.T) {
+func TestCompactVerbosityResetsResponseTimerForHiddenThinking(t *testing.T) {
 	m := NewTestModel(nil)
 	m.settings.verbosity = install.ChatVerbosityCompact
 	started := time.Now().Add(-time.Minute)
 	m.aiResponseTimer = aiTimerState{startedAt: started, displayed: time.Minute, running: true}
 	m = m.appendStreamDelta(harness.StreamDelta{Kind: harness.StreamKindThinking, Text: "hidden"})
-	if !m.aiResponseTimer.startedAt.Equal(started) {
-		t.Fatalf("hidden thinking reset AI rp: %+v", m.aiResponseTimer)
+	if !m.aiResponseTimer.running || !m.aiResponseTimer.startedAt.After(started) || m.aiResponseTimer.displayed != 0 {
+		t.Fatalf("hidden thinking did not reset AI rp: %+v", m.aiResponseTimer)
 	}
 }

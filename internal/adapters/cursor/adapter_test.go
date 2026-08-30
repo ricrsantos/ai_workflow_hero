@@ -401,6 +401,24 @@ func TestExecuteAutoProjectUsesSmartAutoWithoutMCPApproval(t *testing.T) {
 	}
 }
 
+func TestExecuteAutoAllUsesUnrestrictedFlags(t *testing.T) {
+	dir := withCursorAssets(t)
+	var gotArgs []string
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func([]string) bool { return true },
+		result:    cursoradapter.RunResult{Stdout: []byte(`{"type":"result","subtype":"success","session_id":"s-yolo","result":"ok"}`)},
+		capture:   &gotArgs,
+	}}}
+	if _, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "hi", PermissionProfile: harness.PermissionProfileAutoAll}); err != nil {
+		t.Fatal(err)
+	}
+	if !containsArg(gotArgs, "--force") || !containsArg(gotArgs, "--approve-mcps") || !containsArg(gotArgs, "disabled") || containsArg(gotArgs, "--auto-review") {
+		t.Fatalf("auto-all args=%v", gotArgs)
+	}
+}
+
 func TestExecutePassesModePlanFlag(t *testing.T) {
 	dir := withCursorAssets(t)
 	fixture := `{"type":"result","subtype":"success","is_error":false,"duration_ms":1,"result":"ok","session_id":"s-mode"}`

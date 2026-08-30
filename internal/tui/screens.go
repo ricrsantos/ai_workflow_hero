@@ -290,6 +290,8 @@ func (m model) renderPalette() string {
 			switch item.action {
 			case actionToggleHarness:
 				line = formatHarnessCheckboxLine(item.label, item.hint, m.harnessDraft[item.harnessID])
+			case actionHarnessPermissionHeading:
+				line = "    " + item.label
 			case actionToggleHarnessPermission:
 				enabled := m.harnessDraft[item.harnessID]
 				checked := m.harnessPermissionDraft[item.harnessID][harness.PermissionProfile(item.modelSlug)]
@@ -310,7 +312,7 @@ func (m model) renderPalette() string {
 		default:
 			line = fmt.Sprintf(" %s — %s", item.label, item.hint)
 		}
-		if i == m.paletteIndex {
+		if i == m.paletteIndex && item.action != actionHarnessPermissionHeading && item.action != actionHarnessSpacer {
 			list.WriteString(selectedStyle.Render("▸ " + line))
 		} else {
 			list.WriteString("  " + line)

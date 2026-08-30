@@ -357,6 +357,9 @@ func (a *Adapter) startServeProcessWithProfile(ctx context.Context, profile harn
 // precedence over opencode.json, so changing a Hero profile never rewrites a
 // user's project configuration.
 func permissionConfigContent(profile harness.PermissionProfile) string {
+	if harness.NormalizePermissionProfile(profile) == harness.PermissionProfileAutoAll {
+		return `{"permission":"allow"}`
+	}
 	if harness.NormalizePermissionProfile(profile) == harness.PermissionProfileAutoProject {
 		return `{"permission":{"*":"allow","bash":"ask","external_directory":"ask","webfetch":"ask","websearch":"ask","mcp_*":"ask"}}`
 	}

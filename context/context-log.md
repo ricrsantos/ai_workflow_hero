@@ -4,6 +4,19 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-08-29 — Archive active idea notes with cycles
+
+**Change**: `hero cycle archive` now moves every direct file and subfolder under
+`docs/idea/` into `docs/idea/archive/`, preserving relative structure. The root
+`README.md`, `tobe/`, and the existing `archive/` directory remain untouched.
+The archive preflights destination collisions and rolls back idea moves when a
+later Hero cycle filesystem step fails.
+
+**Validation**: `go test ./internal/cycle -count=1` passes. The full
+`go test ./... -count=1` suite passes all affected packages and is limited by
+the two known restricted-sandbox OpenCode serve-spawn tests that cannot expose
+a listening URL.
+
 ## 2026-08-29 — TUI Chat verbosity Settings
 
 **Change**: Added the persistent Settings screen to the navbar. It offers Compact, Standard, Detailed, and Debug profiles; the default/legacy value is Debug, preserving existing transcript output. The setting is saved as `chat_verbosity` in `hero.json`. Settings is the final normal navigation item and moves immediately before the conditional Config item. Shortcut range labels now follow the visible nav list (`alt+1-6` normally; `alt+1-7` with Config; `alt+1-2` for free chat).
@@ -178,6 +191,24 @@ previous entry.
 **Outcome**: Tagged `v2.9.0` (minor bump from `v2.8.0`). Ships TUI settings screen, checklist window, harness config adjustments, auto-hide Config after archive, TUI label/status-bar polish, and `docs/idea` folder support.
 
 **Validation**: `go test ./...` green before tag; `scripts/release.sh` artifacts published to GitHub Releases.
+
+## 2026-08-29 — AI rp tracks harness responsiveness independently of transcript detail
+
+**Decision**: `AI rp` measures elapsed time without response content from the harness, rather than time since the last response visible in the Chat detail profile. Hidden thinking, tool, activity, or warning response content therefore resets it.
+
+**Implementation**: Removed the transcript-verbosity condition from TUI response-timer resets and added coverage for Compact mode hiding thinking.
+
+## 2026-08-29 — Harness Manager visual grouping and unrestricted profile
+
+**Decision**: User authorized an unrestricted per-harness `auto-all` profile. It is labeled `Auto approve every time (Yolo)` and may approve shell, network, MCP, and external-path operations through the native harness mechanisms.
+
+**Implementation**: `/harness` now groups each harness's three exclusive approval choices under `Permissions:` with blank separation between harnesses. Cursor maps `auto-all` to force/MCP approval with sandbox disabled, OpenCode to `permission: allow`, and Codex to no-approval danger-full-access plus automatic replies to residual requests.
+
+## 2026-08-29 — Pause watchdog during interactive harness callbacks
+
+**Decision**: A permission or question callback is an expected harness pause. Its user-wait duration must not count toward the harness inactivity timeout.
+
+**Implementation**: Added watchdog pause/resume accounting around interactive callback lifecycle, preserving the active time before the callback and resuming it after the response.
 
 ## 2026-08-28 — Release v2.8.0
 

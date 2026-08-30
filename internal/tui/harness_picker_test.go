@@ -82,12 +82,13 @@ func TestHarnessPickerPersistsAutoProjectPermissionProfileInline(t *testing.T) {
 
 	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
 	view := tui.ViewForTest(next)
-	if !strings.Contains(view, "[x] Cursor") || !strings.Contains(view, "Ask every time") || !strings.Contains(view, "Automatic in project") {
+	if !strings.Contains(view, "[x] Cursor") || strings.Count(view, "Permissions:") != 3 || !strings.Contains(view, "Ask every time") || !strings.Contains(view, "Auto approve in project") || !strings.Contains(view, "Auto approve every time (Yolo)") {
 		t.Fatalf("expected inline permission controls: %q", view)
 	}
 
-	// Cursor is the first Harness; its two indented permission options follow.
-	next = tui.SetPaletteIndexForTest(next, 2)
+	// Cursor is the first Harness; its three permission options follow the
+	// non-selectable Permissions heading.
+	next = tui.SetPaletteIndexForTest(next, 3)
 	next, _ = tui.HandleTestKey(next, " ")
 	next, _ = tui.HandleTestKey(next, "enter")
 	hero, err := install.LoadHeroJSON(dir)
@@ -117,16 +118,17 @@ func TestHarnessPickerDisabledPermissionRowsDoNotChangeAndNoSelectionDefaultsToA
 
 	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
 	view := tui.ViewForTest(next)
-	if !strings.Contains(view, "[ ] OpenCode") || !strings.Contains(view, "Automatic in project") {
+	if !strings.Contains(view, "[ ] OpenCode") || !strings.Contains(view, "Auto approve in project") {
 		t.Fatalf("expected disabled Harness and its permission rows: %q", view)
 	}
 
-	// OpenCode's Automatic option is row 5. Its Harness is disabled, so Space
+	// OpenCode's Automatic option is row 9. Its Harness is disabled, so Space
 	// must be a no-op and its persisted profile must remain untouched.
-	next = tui.SetPaletteIndexForTest(next, 5)
+	next = tui.SetPaletteIndexForTest(next, 9)
 	next, _ = tui.HandleTestKey(next, " ")
 
-	// Cursor's Automatic option is row 2. Unchecking it leaves no selection, which
+	// Cursor's Automatic option is row 3. Selecting Ask restores the conservative
+	// profile after a previously automatic selection.
 	// must persist as the conservative Ask profile.
 	next = tui.SetPaletteIndexForTest(next, 2)
 	next, _ = tui.HandleTestKey(next, " ")
@@ -141,6 +143,31 @@ func TestHarnessPickerDisabledPermissionRowsDoNotChangeAndNoSelectionDefaultsToA
 	}
 	if got := install.HarnessPermissionProfile(hero, "opencode"); got != "auto-project" {
 		t.Fatalf("disabled Harness profile=%q, want unchanged auto-project", got)
+	}
+}
+
+func TestHarnessPickerPersistsYoloPermissionProfile(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}, "codex": {"enabled": false}}
+}
+`))
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
+	next = tui.SetPaletteIndexForTest(next, 4)
+	next, _ = tui.HandleTestKey(next, " ")
+	next, _ = tui.HandleTestKey(next, "enter")
+	hero, err := install.LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := install.HarnessPermissionProfile(hero, "cursor"); got != "auto-all" {
+		t.Fatalf("profile=%q want auto-all", got)
 	}
 }
 

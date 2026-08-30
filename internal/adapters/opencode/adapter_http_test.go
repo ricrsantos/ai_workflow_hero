@@ -40,6 +40,9 @@ func TestPermissionConfigContent(t *testing.T) {
 			t.Fatalf("auto config missing %s: %s", want, got)
 		}
 	}
+	if got := permissionConfigContent(harness.PermissionProfileAutoAll); got != `{"permission":"allow"}` {
+		t.Fatalf("auto-all config=%s", got)
+	}
 }
 
 func TestEnsureServeNeverAttachesToForeignPort(t *testing.T) {

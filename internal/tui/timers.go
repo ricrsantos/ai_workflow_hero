@@ -221,9 +221,9 @@ func (m model) resetAITimer() model {
 	return m
 }
 
-// restartAIResponseTimer records a harness response that has been added to the
-// Chat transcript. Unlike AI wk, AI rp continues after the Execute finishes so
-// it exposes a gap with no subsequent harness response.
+// restartAIResponseTimer records a harness response. Unlike AI wk, AI rp
+// continues after the Execute finishes so it exposes a gap with no subsequent
+// harness response. Transcript detail profiles do not affect this timer.
 func (m model) restartAIResponseTimer(at time.Time) model {
 	if at.IsZero() {
 		at = time.Now()

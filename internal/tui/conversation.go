@@ -1557,6 +1557,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case harnessPermissionRequestMsg:
 		m = m.clearHarnessHealthWarnings()
+		m.harnessWatchdog.Pause(time.Now())
 		m.harnessPermissionPending = true
 		m.harnessPermissionReq = msg.req
 		m.harnessPermissionRespCh = msg.respCh
@@ -1570,6 +1571,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case harnessQuestionRequestMsg:
 		m = m.clearHarnessHealthWarnings()
+		m.harnessWatchdog.Pause(time.Now())
 		m.harnessQuestionPending = true
 		m.harnessQuestionReq = msg.req
 		m.harnessQuestionRespCh = msg.respCh
@@ -1836,7 +1838,10 @@ func (m model) bindExecuteView(executeID string) model {
 }
 
 func (m model) appendStreamDelta(d harness.StreamDelta) model {
-	if streamDeltaRendersAIChatResponse(d) && m.chatVerbosityShows(d) {
+	// AI rp measures harness responsiveness, not transcript visibility. A
+	// detail profile may hide a valid response (for example, thinking in
+	// Compact), but that response still proves the harness is active.
+	if streamDeltaRendersAIChatResponse(d) {
 		m = m.restartAIResponseTimer(time.Now())
 	}
 	if d.Phase == harness.StreamPhaseStarted {
@@ -1970,10 +1975,12 @@ func (m model) chatVerbosityShows(d harness.StreamDelta) bool {
 	}
 }
 
-// streamDeltaRendersAIChatResponse identifies harness events that become Chat
-// transcript content. Session metadata and callback markers do not add a row;
-// completed tools only update live-agent state. Local watchdog warnings never
-// pass through this stream path and therefore cannot mask a silent harness.
+// streamDeltaRendersAIChatResponse identifies response content emitted by the
+// harness. The transcript detail profile can hide that content, but it still
+// resets AI rp. Session metadata and callback markers do not count as a
+// response; completed tools only update live-agent state. Local watchdog
+// warnings never pass through this stream path and therefore cannot mask a
+// silent harness.
 func streamDeltaRendersAIChatResponse(d harness.StreamDelta) bool {
 	if d.Phase == harness.StreamPhaseCompleted && d.Kind == harness.StreamKindTool {
 		return false
@@ -2008,6 +2015,7 @@ func (m model) clearHarnessPermission() model {
 	m.harnessPermissionPending = false
 	m.harnessPermissionMsg = ""
 	m.harnessPermissionRespCh = nil
+	m.harnessWatchdog.Resume(time.Now())
 	return m
 }
 
@@ -2018,6 +2026,7 @@ func (m model) replyHarnessPermission(approved bool) model {
 	m.harnessPermissionPending = false
 	m.harnessPermissionMsg = ""
 	m.harnessPermissionRespCh = nil
+	m.harnessWatchdog.Resume(time.Now())
 	return m
 }
 

@@ -239,7 +239,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 - **Boot** validates harness availability (`IsAvailable`); may prompt for harness selection when `cli.tools` is empty (ADR-027).
 - **Default harness model** is stored in `hero.json` → `harnesses.<tool>` (ADR-030); per-cycle agent models live in `workflow-config.yml`. Freechat and `/hero-new` use the harness default; orchestrator slashes use YAML `orchestration_agent` (then `fallback_model`, then `/hero-model`).
 - **Cycle Config (C7)**: the TUI edits only managed YAML nodes; the latest file supplies unmanaged comments/unknown keys during Save. Successful Save calls cycle sync; completed stages remain protected, and a changed failed stage can be explicitly requeued through `cycle.Service.RetryFailedStage`.
-- **Shared TUI timers**: one second tick drives the blue bottom-navbar `Session`, `AI wk`, and `AI rp` values. `Session` starts at zero on TUI boot, persists active cycle seconds in `cycles.session_duration_seconds` for explicit `/hero-start`/`/hero-resume` recovery, stops at a terminal cycle state, and resets on `/hero-new`, archive, or an ordinary first chat prompt before a cycle session is restored. `AI wk` measures a live Execute; process-local `AI rp` starts on the first harness response rendered in Chat and restarts on every later response, exposing the elapsed response gap.
+- **Shared TUI timers**: one second tick drives the blue bottom-navbar `Session`, `AI wk`, and `AI rp` values. `Session` starts at zero on TUI boot, persists active cycle seconds in `cycles.session_duration_seconds` for explicit `/hero-start`/`/hero-resume` recovery, stops at a terminal cycle state, and resets on `/hero-new`, archive, or an ordinary first chat prompt before a cycle session is restored. `AI wk` measures a live Execute; process-local `AI rp` starts on the first harness response and restarts on every later response-content event, even when the active detail profile filters it from Chat, exposing the elapsed response gap.
 
 ---
 
@@ -370,7 +370,7 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
 | `activity` | Observability (file edits, todos, LSP, TUI events) |
 | `session` | Idle / running / failed lifecycle |
 
-**Project-scoped permission profiles:** `hero.json` stores `harnesses.<id>.permission_profile`; blank legacy values normalize to conservative `ask`. `/hero-harness` manages the enabled set and then profiles for every enabled adapter. `auto-project` never grants unrestricted yolo: OpenCode receives process-local inline rules (workspace tools allowed; shell, network, MCP, and external directories ask), Codex retains native `on-request` and auto-replies only to workspace-confined file changes, and Cursor uses sandboxed Smart Auto without MCP auto-approval.
+**Project-scoped permission profiles:** `hero.json` stores `harnesses.<id>.permission_profile`; blank legacy values normalize to conservative `ask`. `/hero-harness` presents `Ask every time`, `Auto approve in project`, and `Auto approve every time (Yolo)` for each enabled adapter. `auto-project` remains workspace-scoped. `auto-all` deliberately enables each harness's unrestricted native mode: Cursor uses force plus MCP approval with its sandbox disabled, OpenCode receives process-local `allow`, and Codex uses `never` approval with a danger-full-access sandbox while automatically accepting any residual request.
 
 **Rules:**
 
@@ -403,6 +403,8 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
 ```
 
 - Stall timeouts: Cursor 5m, OpenCode/Codex **3m** (`internal/harness/health.go`).
+- Permission and question callbacks pause the watchdog while the TUI waits for
+  the user; that expected wait is excluded from the inactivity window.
 - `HealthFailed` (process dead or OpenCode session 404) ends the stream (`cancelStreamCmd`); `HealthSuspected` stays warn-only while the session is still `busy`.
 - OpenCode health: `GET /global/health` + read-only `GET /session/{id}` (no `ensureServe`); Cursor: `HasInFlight()` + session status.
 - OpenCode Execute: `ResumeSession` before `prompt_async`; `session.bound` persists the id before SSE; idle/gone probes close a silent `GET /event`; `Cancel("")` cancels every in-flight `runCtx`. Serve is started with `exec.Command` (not `CommandContext(runCtx)`) so recovery survives Cancel.

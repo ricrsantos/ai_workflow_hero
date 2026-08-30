@@ -677,7 +677,8 @@ func (a *Adapter) replyApproval(ctx context.Context, rpc *rpcConn, id json.RawMe
 	// workspaceWrite+writableRoots is attached in turnStartParams. It makes a
 	// file-change approval project-scoped, while commands, MCP permissions, and
 	// any network-capable operation still reach the TUI for a human decision.
-	if harness.NormalizePermissionProfile(req.PermissionProfile) == harness.PermissionProfileAutoProject && method == "item/fileChange/requestApproval" {
+	profile := harness.NormalizePermissionProfile(req.PermissionProfile)
+	if profile == harness.PermissionProfileAutoAll || (profile == harness.PermissionProfileAutoProject && method == "item/fileChange/requestApproval") {
 		_ = rpc.Respond(id, approvalDecision(method, true))
 		return
 	}

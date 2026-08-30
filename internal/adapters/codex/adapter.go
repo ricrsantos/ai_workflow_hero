@@ -575,13 +575,19 @@ func truncate(s string, n int) string {
 }
 
 func turnStartParams(threadID string, req harness.ExecuteRequest, projectDir string) map[string]any {
+	approvalPolicy := "on-request"
+	sandboxPolicyType := codexSandboxPolicyType
+	if harness.NormalizePermissionProfile(req.PermissionProfile) == harness.PermissionProfileAutoAll {
+		approvalPolicy = "never"
+		sandboxPolicyType = "dangerFullAccess"
+	}
 	params := map[string]any{
 		"threadId": threadID,
 		// Codex must emit native requests even for AutoProject: the adapter only
 		// pre-approves file changes after workspace-write confines the target.
-		"approvalPolicy": "on-request",
+		"approvalPolicy": approvalPolicy,
 		"sandboxPolicy": map[string]any{
-			"type":          codexSandboxPolicyType,
+			"type":          sandboxPolicyType,
 			"networkAccess": true,
 		},
 		"input": []map[string]string{

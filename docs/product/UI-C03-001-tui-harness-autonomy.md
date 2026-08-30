@@ -71,11 +71,11 @@ cycle session, even if a cycle is already stored; it continues across later
 prompts until the TUI exits or a cycle is started. `AI wk` starts with each
 Execute and stops when the response (including concurrent Executes) completes
 or is cancelled. `AI rp` begins at zero when the TUI opens and remains stopped
-until the first harness response is displayed in Chat. Every harness response
-that adds Chat content restarts it at zero; it then keeps counting until the
-next displayed response, including after an Execute ends. Both AI counters are
-process-local and use `HH:MM:SS` with continuous hours and one-second
-resolution.
+until the first harness response. Every response-content event restarts it at
+zero, including content filtered from Chat by the selected detail profile; it
+then keeps counting until the next response, including after an Execute ends.
+Both AI counters are process-local and use `HH:MM:SS` with continuous hours and
+one-second resolution.
 
 Chat **works without an active cycle/etapa** using `hero.json` → `harnesses.<tool>` defaults (Cursor: `composer-2.5`, `enable_fast_model: false`). Freechat session ids stay in TUI memory for the process lifetime.
 

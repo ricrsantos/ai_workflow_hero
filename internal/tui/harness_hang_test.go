@@ -2,6 +2,7 @@ package tui
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
@@ -50,5 +51,22 @@ func TestHarnessHealthSkipsExpectedHarnessResponse(t *testing.T) {
 				t.Fatalf("unexpected watchdog alert while waiting: %d transcript rows", len(next.transcript))
 			}
 		})
+	}
+}
+
+func TestHarnessPermissionPausesWatchdogUntilResponse(t *testing.T) {
+	m := NewTestModel(nil)
+	m.harnessWatchdog.Reset(time.Now())
+	respCh := make(chan harness.PermissionResponse, 1)
+
+	updated, _ := m.handleConversationMsg(harnessPermissionRequestMsg{respCh: respCh})
+	next, ok := updated.(model)
+	if !ok || !next.harnessPermissionPending || !next.harnessWatchdog.IsPaused() {
+		t.Fatalf("permission must pause watchdog: %+v", next)
+	}
+
+	next = next.replyHarnessPermission(true)
+	if next.harnessPermissionPending || next.harnessWatchdog.IsPaused() {
+		t.Fatalf("permission response must resume watchdog: %+v", next)
 	}
 }

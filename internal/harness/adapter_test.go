@@ -77,6 +77,9 @@ func TestNormalizePermissionProfileDefaultsToAsk(t *testing.T) {
 	if got := harness.NormalizePermissionProfile(harness.PermissionProfileAutoProject); got != harness.PermissionProfileAutoProject {
 		t.Fatalf("auto profile = %q", got)
 	}
+	if got := harness.NormalizePermissionProfile(harness.PermissionProfileAutoAll); got != harness.PermissionProfileAutoAll {
+		t.Fatalf("yolo profile = %q", got)
+	}
 }
 
 func TestExecutionResultUsage(t *testing.T) {

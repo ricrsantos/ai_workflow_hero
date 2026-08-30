@@ -150,14 +150,14 @@ func TestSetHarnessPermissionProfile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, cursoradapter.HeroJSONPath), append(data, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetHarnessPermissionProfile(dir, "cursor", "auto-project"); err != nil {
+	if err := SetHarnessPermissionProfile(dir, "cursor", "auto-all"); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := LoadHeroJSON(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := HarnessPermissionProfile(loaded, "cursor"); got != "auto-project" {
+	if got := HarnessPermissionProfile(loaded, "cursor"); got != "auto-all" {
 		t.Fatalf("profile=%q", got)
 	}
 }

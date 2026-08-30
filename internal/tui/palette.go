@@ -37,6 +37,8 @@ const (
 	actionToggleHarness
 	actionApplyHarness
 	actionToggleHarnessPermission
+	actionHarnessPermissionHeading
+	actionHarnessSpacer
 	actionHarnessReset
 	actionSelectHarnessReset
 	actionConfigUpdate

@@ -626,12 +626,18 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m = m.closePalette()
 		return m, nil
 	case "up":
+		if m.pickingHarness {
+			return m.moveHarnessPickerSelection(-1), nil
+		}
 		if m.paletteIndex > 0 {
 			m.paletteIndex--
 		}
 		m = m.ensurePaletteVisible()
 		return m, nil
 	case "down":
+		if m.pickingHarness {
+			return m.moveHarnessPickerSelection(1), nil
+		}
 		items := m.filteredPaletteItems()
 		if m.paletteIndex < len(items)-1 {
 			m.paletteIndex++

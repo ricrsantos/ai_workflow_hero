@@ -11,7 +11,8 @@ product needs three second-resolution counters in the navbar:
 
 - `Session`: the active cycle session or the current free-chat session.
 - `AI wk`: the currently executing demand only.
-- `AI rp`: elapsed time since the latest harness response rendered in Chat.
+- `AI rp`: elapsed time since the latest harness response content, whether or
+  not the active transcript-detail profile displays it.
 
 Cycle session time must be available for explicit recovery after a TUI restart
 and must not include time after a cycle is finished or archived. Free-chat time
@@ -37,12 +38,14 @@ and both AI counters must not be persisted.
 4. Start `AI wk` on the first Execute of a demand, stop it when the last
    concurrent Execute returns or is cancelled, and reset it for the next
    demand. `AI wk` is process-local and never written to SQLite.
-5. Keep `AI rp` at zero when the TUI opens. Start it only after a harness event
-   adds content to Chat, restart it for every such response (including text,
-   thinking, tools, activity, warnings, and interactive callbacks), and let it
-   continue after an Execute ends. Session metadata and local watchdog alerts
-   do not restart it, so a silent harness remains observable. `AI rp` is
-   process-local and never written to SQLite.
+5. Keep `AI rp` at zero when the TUI opens. Start it only after a harness
+   response-content event, restart it for every such response (including text,
+   thinking, tools, activity, and warnings), and let it continue after an
+   Execute ends. This applies even when the selected transcript-detail profile
+   filters the event from Chat. Interactive callbacks restart it when they are
+   presented to the user. Session metadata and local watchdog alerts do not
+   restart it, so a silent harness remains observable. `AI rp` is process-local
+   and never written to SQLite.
 6. Render `Session`, `AI wk`, and `AI rp` as the bottom subdivision of the left navbar,
    beneath the navigation shortcut hint, using the existing blue info accent.
    The footer status bar remains responsible only for action state/messages.

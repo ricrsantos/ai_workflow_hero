@@ -1,14 +1,14 @@
 {
   "cli": {
-    "version": "2.5.0_042f0db",
+    "version": "2.9.0",
     "installedAt": "2026-08-04T19:30:24Z",
     "tools": [
       "cursor"
     ]
   },
   "assets": {
-    "version": "2.5.0_042f0db",
-    "installedAt": "2026-08-22T02:46:08Z"
+    "version": "2.9.0",
+    "installedAt": "2026-08-29T23:58:23Z"
   },
   "harnesses": {
     "codex": {
@@ -34,6 +34,7 @@
     "harness": "codex",
     "model": "gpt-5.6-terra"
   },
+  "chat_verbosity": "compact",
   "model_properties": {
     "codex": {
       "gpt-5.6-luna": {

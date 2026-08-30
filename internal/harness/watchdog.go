@@ -10,6 +10,8 @@ type Watchdog struct {
 	lastActivityAt time.Time
 	hasEvent       bool
 	hasActivity    bool
+	pausedAt       time.Time
+	paused         bool
 }
 
 // Reset starts a new watchdog window (call at beginConversationExecute).
@@ -22,6 +24,49 @@ func (w *Watchdog) Reset(now time.Time) {
 	w.lastActivityAt = time.Time{}
 	w.hasEvent = false
 	w.hasActivity = false
+	w.pausedAt = time.Time{}
+	w.paused = false
+}
+
+// Pause excludes an expected, user-driven harness wait from stall detection.
+// Repeated calls while paused leave the original start time intact.
+func (w *Watchdog) Pause(now time.Time) {
+	if w.paused {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	w.pausedAt = now
+	w.paused = true
+}
+
+// Resume continues stall detection while preserving elapsed active time from
+// before Pause. Time spent waiting for the user is not counted as inactivity.
+func (w *Watchdog) Resume(now time.Time) {
+	if !w.paused {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	pausedFor := now.Sub(w.pausedAt)
+	if pausedFor > 0 {
+		w.startedAt = w.startedAt.Add(pausedFor)
+		if w.hasEvent {
+			w.lastEventAt = w.lastEventAt.Add(pausedFor)
+		}
+		if w.hasActivity {
+			w.lastActivityAt = w.lastActivityAt.Add(pausedFor)
+		}
+	}
+	w.pausedAt = time.Time{}
+	w.paused = false
+}
+
+// IsPaused reports whether stall-time accounting is currently suspended.
+func (w *Watchdog) IsPaused() bool {
+	return w.paused
 }
 
 // RecordDelta updates event/activity timestamps from a live stream delta.
@@ -73,6 +118,9 @@ func (w *Watchdog) Evaluate(now time.Time, probe HarnessHealth, stallTimeout tim
 	}
 	if !probe.SessionAlive {
 		return HealthFailed
+	}
+	if w.paused {
+		return HealthHealthy
 	}
 
 	activityAt := w.lastActivityAt

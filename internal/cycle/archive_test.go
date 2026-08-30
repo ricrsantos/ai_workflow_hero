@@ -35,6 +35,101 @@ func mkdirOpenspecChange(t *testing.T, dir, name string) {
 	}
 }
 
+func writeArchiveTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func requireArchiveTestFileContent(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	if string(got) != want {
+		t.Fatalf("content %s=%q want %q", path, got, want)
+	}
+}
+
+func TestArchiveMovesActiveIdeaEntriesAndPreservesExcluded(t *testing.T) {
+	dir := setupProject(t)
+	ideaRoot := filepath.Join(dir, "docs", "idea")
+	writeArchiveTestFile(t, filepath.Join(ideaRoot, "active.md"), "active")
+	writeArchiveTestFile(t, filepath.Join(ideaRoot, ".draft.md"), "draft")
+	writeArchiveTestFile(t, filepath.Join(ideaRoot, "v3_0", "telegram.md"), "telegram")
+	writeArchiveTestFile(t, filepath.Join(ideaRoot, "README.md"), "keep readme")
+	writeArchiveTestFile(t, filepath.Join(ideaRoot, "tobe", "future.md"), "keep future")
+	writeArchiveTestFile(t, filepath.Join(ideaRoot, "archive", "previous.md"), "keep previous")
+
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if _, err := svc.NewCycle("Idea archive", ""); err != nil {
+		t.Fatal(err)
+	}
+	finishCycleForArchive(t, svc)
+
+	if _, err := svc.Archive(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		filepath.Join(ideaRoot, "active.md"),
+		filepath.Join(ideaRoot, ".draft.md"),
+		filepath.Join(ideaRoot, "v3_0"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("active idea entry still exists at %s: %v", path, err)
+		}
+	}
+	requireArchiveTestFileContent(t, filepath.Join(ideaRoot, "archive", "active.md"), "active")
+	requireArchiveTestFileContent(t, filepath.Join(ideaRoot, "archive", ".draft.md"), "draft")
+	requireArchiveTestFileContent(t, filepath.Join(ideaRoot, "archive", "v3_0", "telegram.md"), "telegram")
+	requireArchiveTestFileContent(t, filepath.Join(ideaRoot, "README.md"), "keep readme")
+	requireArchiveTestFileContent(t, filepath.Join(ideaRoot, "tobe", "future.md"), "keep future")
+	requireArchiveTestFileContent(t, filepath.Join(ideaRoot, "archive", "previous.md"), "keep previous")
+}
+
+func TestArchiveIdeaDestinationCollisionLeavesCycleAndIdeasUntouched(t *testing.T) {
+	dir := setupProject(t)
+	ideaRoot := filepath.Join(dir, "docs", "idea")
+	writeArchiveTestFile(t, filepath.Join(ideaRoot, "active.md"), "active")
+	writeArchiveTestFile(t, filepath.Join(ideaRoot, "archive", "active.md"), "existing archive")
+
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if _, err := svc.NewCycle("Idea archive", ""); err != nil {
+		t.Fatal(err)
+	}
+	finishCycleForArchive(t, svc)
+
+	if _, err := svc.Archive(); err == nil || !strings.Contains(err.Error(), "destination already exists") {
+		t.Fatalf("archive error=%v, want destination collision", err)
+	}
+	requireArchiveTestFileContent(t, filepath.Join(ideaRoot, "active.md"), "active")
+	requireArchiveTestFileContent(t, filepath.Join(ideaRoot, "archive", "active.md"), "existing archive")
+	if _, err := os.Stat(filepath.Join(dir, ".workflow-hero", "cycles", "current")); err != nil {
+		t.Fatalf("current cycle should remain after failed archive: %v", err)
+	}
+	cycles, err := svc.Store.ListCycles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cycles) != 1 || cycles[0].Status == store.CycleStatusArchived {
+		t.Fatalf("cycle should remain unarchived: %+v", cycles)
+	}
+}
+
 func TestArchiveWithOptionsZeroOpenspecChanges(t *testing.T) {
 	dir := setupProject(t)
 	svc, err := cycle.OpenService(dir)

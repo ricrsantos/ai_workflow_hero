@@ -55,7 +55,7 @@
 **Decision**:
 1. Treat `internal/adapters/opencode` as the **normative behavioral template** for Codex (HarnessAdapter methods, streaming, permissions, watchdog, reset, Prepare-on-start, projection lifecycle, doctor, catalog, TUI labels).
 2. Treat the idea file as **non-normative**. On any conflict, OpenCode wins.
-3. Explicitly out of C6 because they are idea-only or contradict OpenCode: MCP, image attachments, Hero web-search config, dump-all-events Chat, Hero→Codex skill/AGENTS.md conversion pipelines, `--yolo`, Hero sandbox/approval YAML, plugin marketplace replication.
+3. Explicitly out of C6 because they are idea-only or contradict OpenCode: MCP, image attachments, Hero web-search config, dump-all-events Chat, Hero→Codex skill/AGENTS.md conversion pipelines, Hero sandbox/approval YAML, plugin marketplace replication. The later per-harness `auto-all` profile is an explicit user-authorized exception for yolo behavior.
 4. Codex-only gaps OpenCode cannot analogize (ChatGPT login, app-server stdio, native model catalog, capability detection for the installed CLI) are specified in [PRD-C06-001](../product/PRD-C06-001-codex-adapter.md) §4.4.
 
 **Consequences**:

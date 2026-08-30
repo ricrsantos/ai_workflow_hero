@@ -355,7 +355,8 @@ func (s *Service) Archive() (ArchiveResult, error) {
 	return s.ArchiveWithOptions(ArchiveOptions{})
 }
 
-// ArchiveWithOptions archives the cycle after optional OpenSpec archive (ADR-023).
+// ArchiveWithOptions archives the cycle after optional OpenSpec archive (ADR-023)
+// and moves active docs/idea entries into docs/idea/archive.
 func (s *Service) ArchiveWithOptions(opts ArchiveOptions) (ArchiveResult, error) {
 	c, err := s.resolveArchiveCycle()
 	if err != nil {
@@ -382,8 +383,19 @@ func (s *Service) ArchiveWithOptions(opts ArchiveOptions) (ArchiveResult, error)
 		slog.Info("openspec change already archived or missing; skipping openspec CLI", "change", name)
 	}
 
+	ideaPlan, err := prepareIdeaArchive(s.ProjectDir)
+	if err != nil {
+		return ArchiveResult{}, err
+	}
+	if err := ideaPlan.apply(); err != nil {
+		return ArchiveResult{}, err
+	}
+
 	heroResult, err := s.archiveHeroCycle(c)
 	if err != nil {
+		if rollbackErr := ideaPlan.rollback(); rollbackErr != nil {
+			return ArchiveResult{}, errors.Join(err, fmt.Errorf("restore idea entries after archive failure: %w", rollbackErr))
+		}
 		return ArchiveResult{}, err
 	}
 	result.CycleNumber = heroResult.CycleNumber

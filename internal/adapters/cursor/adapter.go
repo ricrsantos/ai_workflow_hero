@@ -190,14 +190,15 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		format = "stream-json"
 	}
 	// --workspace pins the agent to the consumer project (cmd.Dir alone is not
-	// enough when Cursor walks up for a git/workspace root). Keep the native
-	// sandbox on for both profiles: Hero never grants the unrestricted yolo mode.
+	// enough when Cursor walks up for a git/workspace root).
 	args := []string{"--print", "--output-format", format, "--trust", "--sandbox", "enabled"}
 	if req.PermissionProfile == harness.PermissionProfileAutoProject {
 		// Cursor CLI has no resource-scoped yolo flag. Smart Auto is its narrowest
 		// automatic mode: it auto-runs only Cursor-classified safe calls and keeps
 		// the rest in the native approval flow. MCPs are deliberately never added.
 		args = append(args, "--auto-review")
+	} else if req.PermissionProfile == harness.PermissionProfileAutoAll {
+		args = []string{"--print", "--output-format", format, "--trust", "--sandbox", "disabled", "--force", "--approve-mcps"}
 	}
 	if dir != "" {
 		args = append(args, "--workspace", dir)

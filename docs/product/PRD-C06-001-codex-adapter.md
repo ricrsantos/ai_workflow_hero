@@ -64,7 +64,7 @@ The Codex adapter MUST provide the OpenCode-equivalent of:
 - Attach **only** to the app-server **this Hero process created**. Never attach to a foreign Codex process or socket.
 - Persist registry in **project `hero.db`** (pid and identity; stdio has no serve URL — store what the OpenCode registry analog needs for reap/stop without inventing a HTTP URL).
 - Stream mapping to Hero `StreamDelta` (text, thinking, tool, warning, permission, activity, session). Unknown Codex events → **warning**, never silent drop.
-- Permission/approval requests → existing TUI `Allow? [y/N]` (`OnPermissionRequest`). **Do not** run Codex with `--yolo`.
+- Permission/approval requests → existing TUI `Allow? [y/N]` (`OnPermissionRequest`) unless the selected per-harness profile is `auto-all`, which uses Codex's native non-interactive approval policy and danger-full-access sandbox.
 - Session binding: Hero `harness_session_id` ↔ Codex thread id; never resume a Cursor/OpenCode session as Codex.
 - `/harness-reset` includes Codex when enabled (stop Hero-managed app-server; warn if not started).
 - Prepare-on-`/hero-start` when any agent uses `harness: codex`: sync projection agent definitions from workflow-config (OpenCode analog), reset managed app-server, probe one configured agent. Probe failure stops `/hero-start` with instructions to exit TUI and retry (same copy pattern as OpenCode).
@@ -177,7 +177,7 @@ The implementation is accepted when:
 6. Cursor IDE slash Runtime still ignores `harness` and never starts Codex.
 7. OpenCode and Cursor adapters remain green under the existing suite.
 8. Unknown App Server events produce warnings, not silent ignores or panics.
-9. Permission prompts use the existing TUI Allow? [y/N] path (no `--yolo`).
+9. Ask and project-scoped profiles use the existing TUI Allow? [y/N] path as needed; `auto-all` completes native approvals without TUI prompts.
 10. `go test ./...` passes.
 
 ## 9. Reference

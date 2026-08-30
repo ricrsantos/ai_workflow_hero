@@ -53,6 +53,23 @@ func TestWatchdogActivityResetsStallClock(t *testing.T) {
 	}
 }
 
+func TestWatchdogPauseExcludesExpectedUserWait(t *testing.T) {
+	var w harness.Watchdog
+	start := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
+	w.Reset(start)
+	w.RecordDelta(harness.StreamDelta{Kind: harness.StreamKindPermission}, start.Add(time.Minute))
+	w.Pause(start.Add(2 * time.Minute))
+	w.Resume(start.Add(12 * time.Minute))
+	probe := harness.HarnessHealth{ProcessAlive: true, ServerAlive: true, SessionAlive: true}
+
+	if got := w.Evaluate(start.Add(13*time.Minute+59*time.Second), probe, 3*time.Minute); got != harness.HealthHealthy {
+		t.Fatalf("status=%q want healthy while paused time is excluded", got)
+	}
+	if got := w.Evaluate(start.Add(14*time.Minute), probe, 3*time.Minute); got != harness.HealthSuspected {
+		t.Fatalf("status=%q want suspected_hang after active timeout", got)
+	}
+}
+
 func TestWatchdogHealthyWithinTimeout(t *testing.T) {
 	var w harness.Watchdog
 	start := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)

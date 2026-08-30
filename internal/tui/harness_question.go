@@ -3,6 +3,7 @@ package tui
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
@@ -117,6 +118,7 @@ func (m model) clearHarnessQuestionState() model {
 	m.harnessQuestionRespCh = nil
 	m.harnessQuestionIndex = 0
 	m.harnessQuestionAnswers = nil
+	m.harnessWatchdog.Resume(time.Now())
 	return m
 }
 
