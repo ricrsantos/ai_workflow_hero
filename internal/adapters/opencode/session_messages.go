@@ -16,19 +16,22 @@ type sessionMessage struct {
 	Parts []part         `json:"parts"`
 }
 
-// fetchLatestAssistantOutput reads GET /session/{id}/message when SSE missed
-// session.idle (e.g. subscribe-after-prompt race on fast completions).
-func (a *Adapter) fetchLatestAssistantOutput(ctx context.Context, sessionID, projectDir string) (text string, usage harness.Usage, ok bool, err error) {
+type storedMessage struct {
+	Info  map[string]any   `json:"info"`
+	Parts []map[string]any `json:"parts"`
+}
+
+func (a *Adapter) fetchSessionMessages(ctx context.Context, sessionID, projectDir string) ([]storedMessage, error) {
 	a.mu.Lock()
 	base := a.baseURL
 	a.mu.Unlock()
 	if base == "" {
-		return "", harness.Usage{}, false, fmt.Errorf("opencode serve not running")
+		return nil, fmt.Errorf("opencode serve not running")
 	}
 	path := withDirectoryQuery("/session/"+sessionID+"/message", projectDir, a.ProjectDir)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
 	if err != nil {
-		return "", harness.Usage{}, false, err
+		return nil, err
 	}
 	client := a.HTTP
 	if client == nil {
@@ -36,22 +39,45 @@ func (a *Adapter) fetchLatestAssistantOutput(ctx context.Context, sessionID, pro
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", harness.Usage{}, false, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return "", harness.Usage{}, false, nil
+		return nil, nil
 	}
 	if err := httpOK(resp); err != nil {
-		return "", harness.Usage{}, false, err
+		return nil, err
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
 	if err != nil {
-		return "", harness.Usage{}, false, err
+		return nil, err
 	}
-	var messages []sessionMessage
+	var messages []storedMessage
 	if err := json.Unmarshal(body, &messages); err != nil {
-		return "", harness.Usage{}, false, fmt.Errorf("decode session messages: %w", err)
+		return nil, fmt.Errorf("decode session messages: %w", err)
+	}
+	return messages, nil
+}
+
+func textFromStoredParts(parts []map[string]any) string {
+	var b strings.Builder
+	for _, p := range parts {
+		typ, _ := p["type"].(string)
+		if !strings.EqualFold(typ, "text") {
+			continue
+		}
+		text, _ := p["text"].(string)
+		b.WriteString(text)
+	}
+	return b.String()
+}
+
+// fetchLatestAssistantOutput reads GET /session/{id}/message when SSE missed
+// session.idle (e.g. subscribe-after-prompt race on fast completions).
+func (a *Adapter) fetchLatestAssistantOutput(ctx context.Context, sessionID, projectDir string) (text string, usage harness.Usage, ok bool, err error) {
+	messages, err := a.fetchSessionMessages(ctx, sessionID, projectDir)
+	if err != nil {
+		return "", harness.Usage{}, false, err
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
@@ -59,7 +85,7 @@ func (a *Adapter) fetchLatestAssistantOutput(ctx context.Context, sessionID, pro
 		if !strings.EqualFold(role, "assistant") {
 			continue
 		}
-		out := extractText(msg.Parts)
+		out := textFromStoredParts(msg.Parts)
 		if strings.TrimSpace(out) == "" {
 			continue
 		}

@@ -64,9 +64,12 @@ func (a *Adapter) readExecuteSSE(
 		return nil
 	}
 
+	continues := 0
+	baselineGen := a.serveGenerationValue()
 	for attempt := 0; attempt < sseReconnectAttempts; attempt++ {
 		var events io.ReadCloser
 		var err error
+		serveRestarted := false
 		if attempt == 0 && initialEvents != nil {
 			events = initialEvents
 			initialEvents = nil
@@ -80,6 +83,19 @@ func (a *Adapter) readExecuteSSE(
 					continue
 				}
 				return err
+			}
+			serveRestarted = a.serveGenerationValue() > baselineGen
+		}
+
+		if attempt > 0 {
+			outcome, resumeErr := a.resumeTurnAfterReconnect(ctx, sessionID, projectDir, req, state, buf, serveRestarted, &continues)
+			if resumeErr != nil {
+				events.Close()
+				return resumeErr
+			}
+			if outcome == resumeTurnFinished {
+				events.Close()
+				return nil
 			}
 		}
 

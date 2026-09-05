@@ -349,6 +349,7 @@ func (a *Adapter) startServeProcessWithProfile(ctx context.Context, profile harn
 	a.servePort = port
 	a.serveHandle = handle
 	a.serveProfile = harness.NormalizePermissionProfile(profile)
+	a.serveGeneration++
 	a.mu.Unlock()
 	return url, port, pid, nil
 }

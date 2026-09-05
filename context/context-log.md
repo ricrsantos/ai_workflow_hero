@@ -4,6 +4,14 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-04 — OpenCode Execute continues after serve restart
+
+**Problem**: During C9 Implementation the OpenCode serve died mid-turn (`go test ./...` tool left `running`, no `session.idle`). Hero restarted serve and reconnected SSE, then waited forever because `GET /session/{id}` has no `status` on OpenCode 1.18.23 and message recovery requires assistant text. Ctrl+C is ignored by design (Esc / Alt+Q).
+
+**Change**: After SSE disconnect, if `opencode serve` generation increased, Execute inspects the last assistant message. A completed turn with text is recovered. A dead/incomplete turn is aborted and continued on the same session with a short continuation prompt (original task is not re-sent). A plain SSE blip without process restart does not re-prompt. Limit: two continues per Execute.
+
+**Validation**: `go test ./...` passes, including continue-after-restart, recover-completed-after-restart, and SSE-blip-does-not-continue tests.
+
 ## 2026-09-04 — Cursor TUI login false positive
 
 **Problem**: During C9 Planning, the TUI reported `Cursor Agent CLI authentication required` three times and told the user to run `cursor agent login`. The CLI had already emitted `system/init` with `session_id`, model, and `apiKeySource: "login"` and run for 30s–2.5min. The same session later resumed successfully (also seen 2026-08-20). Cause: `IsAuthFailure` scanned the entire stream-json stdout for `"cursor agent login"`, which appears in docs/tool results; `AuthError.Detail` then used the first stdout line (the init JSON). A related bug treated `NonRetriableError` as retriable because the needle was `retriableerror`.

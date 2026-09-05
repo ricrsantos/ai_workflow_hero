@@ -148,15 +148,16 @@ type Adapter struct {
 	HTTP            HTTPDoer
 	ResolveServeURL ServeURLResolver
 
-	mu           sync.Mutex
-	serveStartMu sync.Mutex
-	baseURL      string
-	servePID     int
-	servePort    int
-	serveHandle  ProcessHandle
-	serveProfile harness.PermissionProfile
-	sessions     map[string]*sessionState
-	cancels      map[string]context.CancelFunc
+	mu              sync.Mutex
+	serveStartMu    sync.Mutex
+	baseURL         string
+	servePID        int
+	servePort       int
+	serveHandle     ProcessHandle
+	serveProfile    harness.PermissionProfile
+	serveGeneration int
+	sessions        map[string]*sessionState
+	cancels         map[string]context.CancelFunc
 }
 
 type sessionState struct {
@@ -296,23 +297,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	}()
 
 	start := time.Now()
-	model := strings.TrimSpace(req.Model)
-	parts := []map[string]string{{"type": "text", "text": req.Prompt}}
-	payload := map[string]any{
-		"parts": parts,
-	}
-	if modelObj := modelPayload(model); modelObj != nil {
-		payload["model"] = modelObj
-	}
-	// C5: normalized fs/th/ef values map to native OpenCode option keys here,
-	// inside the adapter (ADR-041); the TUI never builds provider payloads.
-	if opts := nativePropertyOptions(req.Properties); opts != nil {
-		payload["options"] = opts
-	}
-	if req.AgentName != "" {
-		payload["agent"] = req.AgentName
-	}
-	body, _ := json.Marshal(payload)
+	body := executePromptBody(req, req.Prompt)
 
 	if req.Stream && req.OnStreamDelta != nil {
 		return a.executeStream(runCtx, sessionID, body, req, start)
@@ -323,7 +308,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, rejectionFromBody(resp, model, req.Properties)
+		return nil, rejectionFromBody(resp, strings.TrimSpace(req.Model), req.Properties)
 	}
 	var msgResp messageResponse
 	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
@@ -672,6 +657,7 @@ func (a *Adapter) adoptFromRegistry(ctx context.Context) bool {
 	a.baseURL = latest.URL
 	a.servePID = latest.PID
 	a.servePort = latest.Port
+	a.serveGeneration++
 	a.mu.Unlock()
 	a.log().Info("adopted existing opencode serve", "pid", latest.PID, "url", latest.URL)
 	return true
@@ -874,6 +860,31 @@ type providerEntry struct {
 type modelMeta struct {
 	ID   string `json:"id,omitempty"`
 	Name string `json:"name,omitempty"`
+}
+
+func executePromptBody(req harness.ExecuteRequest, text string) []byte {
+	payload := map[string]any{
+		"parts": []map[string]string{{"type": "text", "text": text}},
+	}
+	if modelObj := modelPayload(strings.TrimSpace(req.Model)); modelObj != nil {
+		payload["model"] = modelObj
+	}
+	// C5: normalized fs/th/ef values map to native OpenCode option keys here,
+	// inside the adapter (ADR-041); the TUI never builds provider payloads.
+	if opts := nativePropertyOptions(req.Properties); opts != nil {
+		payload["options"] = opts
+	}
+	if req.AgentName != "" {
+		payload["agent"] = req.AgentName
+	}
+	body, _ := json.Marshal(payload)
+	return body
+}
+
+func (a *Adapter) serveGenerationValue() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.serveGeneration
 }
 
 func extractText(parts []part) string {
