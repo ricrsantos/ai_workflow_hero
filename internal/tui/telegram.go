@@ -3,14 +3,17 @@ package tui
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
+	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/plugin"
 	"github.com/ricrsantos/ai_workflow_hero/internal/telegram"
 	"github.com/ricrsantos/ai_workflow_hero/internal/telegram/ipc"
@@ -46,6 +49,9 @@ type telegramState struct {
 	abbrev string
 
 	client *telegramClient // nil when the plugin is not installed
+
+	// recordOutbound captures conversation replies in tests before IPC send.
+	recordOutbound func(string)
 }
 
 // telegramMsg is the base for all tea.Msg payloads delivered from the client
@@ -146,8 +152,14 @@ const (
 func (c *telegramClient) run() {
 	defer close(c.done)
 	backoff := telegramInitialBackoff
+	var lastSpawn time.Time
 	for {
 		err := c.connectOnce()
+		select {
+		case <-c.quit:
+			return
+		default:
+		}
 		if err == nil {
 			backoff = telegramInitialBackoff
 			select {
@@ -158,13 +170,17 @@ func (c *telegramClient) run() {
 			continue
 		}
 
-		// Surface the failure to Chat/Settings and retry with bounded backoff.
-		c.msgCh <- telegramDisconnectedMsg{err: err.Error()}
+		c.emit(telegramDisconnectedMsg{err: err.Error()})
 
-		// First failure after a previously working connection may mean the
-		// daemon crashed; try to respawn it once before backing off.
-		if c.daemonPath != "" {
-			_ = spawnDaemon(c.daemonPath)
+		if c.daemonPath != "" && (lastSpawn.IsZero() || time.Since(lastSpawn) >= 2*time.Second) {
+			_ = spawnDaemon(c.daemonPath, c.socketPath)
+			lastSpawn = time.Now()
+			select {
+			case <-c.quit:
+				return
+			case <-time.After(150 * time.Millisecond):
+			}
+			continue
 		}
 
 		select {
@@ -217,8 +233,8 @@ func (c *telegramClient) connectOnce() error {
 	c.addr = reg.Address
 	c.mu.Unlock()
 
-	c.msgCh <- telegramConnectedMsg{}
-	c.msgCh <- telegramRegisteredMsg{address: reg.Address, paired: reg.Paired}
+	c.emit(telegramConnectedMsg{})
+	c.emit(telegramRegisteredMsg{address: reg.Address, paired: reg.Paired})
 
 	// Relay daemon-pushed frames until the connection ends.
 	for {
@@ -231,17 +247,27 @@ func (c *telegramClient) connectOnce() error {
 		}
 		switch m.Type {
 		case ipc.TypeInbound:
-			c.msgCh <- telegramInboundMsg{
+			c.emit(telegramInboundMsg{
 				inboundID: m.InboundID,
 				text:      m.Text,
 				isCommand: m.IsCommand,
 				address:   c.address(),
-			}
+			})
 		case ipc.TypeEvent:
-			c.msgCh <- telegramEventMsg{eventType: m.EventType, data: m.EventData}
+			c.emit(telegramEventMsg{eventType: m.EventType, data: m.EventData})
 		case ipc.TypeError:
-			c.msgCh <- telegramDisconnectedMsg{err: m.ErrorText}
+			c.emit(telegramDisconnectedMsg{err: m.ErrorText})
 		}
+	}
+}
+
+func (c *telegramClient) emit(msg tea.Msg) {
+	if c == nil || c.msgCh == nil {
+		return
+	}
+	select {
+	case <-c.quit:
+	case c.msgCh <- msg:
 	}
 }
 
@@ -251,19 +277,58 @@ func (c *telegramClient) address() string {
 	return c.addr
 }
 
-// spawnDaemon starts the installed daemon binary detached from the TUI.
-func spawnDaemon(daemonPath string) error {
+// spawnDaemon starts the installed daemon binary in its own session so the TUI
+// TTY does not own it. If a daemon is already listening, this is a no-op so a
+// second process cannot steal Bot API getUpdates (ADR-059).
+func spawnDaemon(daemonPath, socketPath string) error {
+	if daemonListening(socketPath) {
+		slog.Debug("telegram daemon already listening")
+		return nil
+	}
+	if strings.TrimSpace(daemonPath) == "" {
+		return fmt.Errorf("telegram: daemon binary path is empty")
+	}
+	if _, err := os.Stat(daemonPath); err != nil {
+		return fmt.Errorf("telegram: daemon binary: %w", err)
+	}
 	cmd := exec.Command(daemonPath)
 	cmd.Dir = filepath.Dir(daemonPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	dn, dnErr := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if dnErr == nil {
+		cmd.Stdin = dn
+		cmd.Stdout = dn
+		cmd.Stderr = dn
+		defer dn.Close()
+	}
 	if err := cmd.Start(); err != nil {
-		slog.Debug("telegram daemon spawn failed", "path", daemonPath, "error", err)
+		slog.Warn("telegram daemon spawn failed", "path", daemonPath, "error", err)
 		return err
 	}
-	// Release the process so it outlives the TUI; the daemon exits when the
-	// last client unregisters (ADR-059).
 	go func() { _ = cmd.Wait() }()
 	slog.Info("telegram daemon spawned", "path", daemonPath)
 	return nil
+}
+
+func daemonListening(socketPath string) bool {
+	if strings.TrimSpace(socketPath) == "" {
+		return false
+	}
+	conn, err := ipc.Dial(socketPath)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+func spawnTelegramDaemonCmd(daemonPath, socketPath string) tea.Cmd {
+	return func() tea.Msg {
+		if err := spawnDaemon(daemonPath, socketPath); err != nil {
+			return telegramDisconnectedMsg{err: err.Error()}
+		}
+		return nil
+	}
 }
 
 // telegramPluginInstalled resolves whether the Telegram plugin is installed and
@@ -299,11 +364,12 @@ func (m model) startTelegram(version string) model {
 		mode = ipc.ModeFree
 	}
 
+	abbrev := loadTelegramAbbrev(projectDir)
 	st := &telegramState{
 		installed:       true,
 		pluginVersion:   pluginVersion,
 		protocolVersion: protocol,
-		abbrev:          projectAbbrev(projectDir),
+		abbrev:          abbrev,
 	}
 	m.telegram = st
 
@@ -320,7 +386,7 @@ func (m model) startTelegram(version string) model {
 	client := &telegramClient{
 		projectDir:    projectDir,
 		mode:          mode,
-		abbrev:        projectAbbrev(projectDir),
+		abbrev:        abbrev,
 		pluginVersion: pluginVersion,
 		socketPath:    socketPath,
 		daemonPath:    daemonPath,
@@ -341,6 +407,37 @@ func (m model) stopTelegram() {
 	_ = m.telegram.client.Send(ipc.Message{Type: ipc.TypeUnregister})
 	m.telegram.client.Close()
 	m.telegram.client = nil
+	if m.telegramMsgCh != nil {
+		close(m.telegramMsgCh)
+		m.telegramMsgCh = nil
+	}
+}
+
+// relayTelegramMsgs pushes daemon frames into the Bubble Tea program so inbound
+// does not depend on re-issuing waitTelegramMsg after every Update.
+func relayTelegramMsgs(p *tea.Program, ch <-chan tea.Msg) {
+	if p == nil || ch == nil {
+		return
+	}
+	go func() {
+		for msg := range ch {
+			p.Send(msg)
+		}
+	}()
+}
+
+// loadTelegramAbbrev returns the persisted Settings Project ID, or the
+// directory basename when hero.json has no telegram.project_abbrev.
+func loadTelegramAbbrev(projectDir string) string {
+	fallback := projectAbbrev(projectDir)
+	hero, err := install.LoadHeroJSON(projectDir)
+	if err != nil {
+		return fallback
+	}
+	if saved := strings.TrimSpace(hero.Telegram.ProjectAbbrev); saved != "" {
+		return normalizeTelegramAbbrev(saved)
+	}
+	return fallback
 }
 
 // projectAbbrev derives a project abbreviation from the project directory base
@@ -423,9 +520,21 @@ func formatTelegramEvent(e conversation.Event) string {
 	}
 }
 
+// telegramListenCmd is a test helper that reads one daemon frame from the
+// client channel. Production uses relayTelegramMsgs → tea.Program.Send.
+func (m model) telegramListenCmd() tea.Cmd {
+	if m.telegramMsgCh == nil {
+		return nil
+	}
+	return waitTelegramMsg(m.telegramMsgCh)
+}
+
 // waitTelegramMsg relays a single message from the client goroutine into the
 // Update loop. It is re-issued after each handled message.
 func waitTelegramMsg(ch chan tea.Msg) tea.Cmd {
+	if ch == nil {
+		return nil
+	}
 	return func() tea.Msg {
 		m, ok := <-ch
 		if !ok {

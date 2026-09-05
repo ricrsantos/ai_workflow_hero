@@ -392,7 +392,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case configLoadedMsg, configSavedMsg, configRetryMsg:
 		return m.handleConfigMsg(msg)
 
-	case settingsSavedMsg:
+	case settingsSavedMsg, telegramAbbrevSavedMsg:
 		return m.handleSettingsMsg(msg)
 
 	case actionResultMsg:
@@ -493,6 +493,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.cycleWelcomeDialog {
 			return m.handleCycleWelcomeKey(msg)
+		}
+		// Pairing owns every key until the modal closes, including Tab and
+		// navbar focus. Otherwise Enter/Esc never reach the instructions.
+		if m.telegram != nil && m.telegram.pairing {
+			return m.handleTelegramPairingKey(msg)
 		}
 		if m.harnessPermissionPending {
 			return m.handleHarnessPermissionKey(msg)

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -111,6 +112,7 @@ func NewMessageID() string {
 
 // Conn wraps a stream with framed JSON encode/decode.
 type Conn struct {
+	mu  sync.Mutex
 	enc *json.Encoder
 	dec *json.Decoder
 	raw net.Conn
@@ -125,7 +127,8 @@ func NewConn(c net.Conn) *Conn {
 	}
 }
 
-// Send writes one frame.
+// Send writes one frame. Concurrent Send calls are serialized; Recv may run
+// on another goroutine (full-duplex unix socket).
 func (c *Conn) Send(m Message) error {
 	if c.enc == nil {
 		return fmt.Errorf("ipc: nil encoder")
@@ -136,6 +139,8 @@ func (c *Conn) Send(m Message) error {
 	if m.MessageID == "" {
 		m.MessageID = NewMessageID()
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.enc.Encode(m)
 }
 

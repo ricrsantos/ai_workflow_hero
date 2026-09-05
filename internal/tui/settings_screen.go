@@ -116,17 +116,31 @@ func (m model) saveSettingsCmd() tea.Cmd {
 }
 
 func (m model) handleSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
-	saved, ok := msg.(settingsSavedMsg)
-	if !ok {
+	switch saved := msg.(type) {
+	case settingsSavedMsg:
+		m.settings.saving = false
+		if saved.err != nil {
+			m.settings.err = saved.err.Error()
+			return m, nil
+		}
+		m = m.setStatusResult(true, "settings", "Chat verbosity: "+verbosityOptionLabel(m.settings.verbosity))
+		return m, nil
+	case telegramAbbrevSavedMsg:
+		if saved.err != nil {
+			m.settings.err = saved.err.Error()
+			m = m.setStatusResult(false, "telegram", saved.err.Error())
+			return m, nil
+		}
+		m.settings.err = ""
+		id := ""
+		if m.telegram != nil {
+			id = m.telegram.abbrev
+		}
+		m = m.setStatusResult(true, "telegram", "Project ID saved: "+id)
+		return m, nil
+	default:
 		return m, nil
 	}
-	m.settings.saving = false
-	if saved.err != nil {
-		m.settings.err = saved.err.Error()
-		return m, nil
-	}
-	m = m.setStatusResult(true, "settings", "Chat verbosity: "+verbosityOptionLabel(m.settings.verbosity))
-	return m, nil
 }
 
 func (m model) renderSettings() string {

@@ -57,11 +57,14 @@ func (m model) settingsRows() []settingsRow {
 		label: "Project ID",
 		desc:  fmt.Sprintf("%s (live: %s)", t.abbrev, displayAddress(t.address)),
 	})
+	if !t.connected {
+		rows = append(rows, settingsRow{kind: rowTelegramAction, label: "Retry", desc: "Start or reconnect the Telegram daemon", action: "retry"})
+	}
 	if t.paired {
 		rows = append(rows, settingsRow{kind: rowTelegramAction, label: "Replace", desc: "Re-pair with a different chat", action: "replace"})
 		rows = append(rows, settingsRow{kind: rowTelegramAction, label: "Clear", desc: "Remove stored credentials", action: "clear"})
 		rows = append(rows, settingsRow{kind: rowTelegramAction, label: "Test", desc: "Send a test message", action: "test"})
-	} else {
+	} else if t.connected {
 		rows = append(rows, settingsRow{kind: rowTelegramAction, label: "Pair", desc: "Pair with your bot", action: "pair"})
 	}
 	return rows
@@ -120,6 +123,14 @@ func (m model) renderTelegramInstalled(rows []settingsRow, width int) string {
 		b.WriteString(warnStyle.Render("Disconnected — retrying…"))
 	default:
 		b.WriteString(mutedStyle.Render("Disconnected"))
+	}
+	if !t.connected {
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("  Start the daemon with Retry, then Pair."))
+		if errText := strings.TrimSpace(t.daemonErr); errText != "" {
+			b.WriteByte('\n')
+			b.WriteString(warnStyle.Render("  " + truncateDisplayWidth(errText, max(8, width-2))))
+		}
 	}
 	b.WriteString("\n\n")
 
@@ -195,26 +206,27 @@ func (m model) renderProjectIDRow(row settingsRow, focused bool, width int) stri
 	return marker + configLabelStyle.Render(label) + configValueStyle.Render(truncateDisplayWidth(value, remain))
 }
 
-// openTelegramPairingModal opens the pairing modal (telegram-tui R2).
+// openTelegramPairingModal starts pairing immediately and opens the instruction
+// modal (telegram-tui R2; UI-C09-001 §2). The token field is only shown later
+// if the daemon reports that the vault is empty.
 func (m model) openTelegramPairingModal() model {
 	if m.telegram == nil || !m.telegram.installed {
 		return m
 	}
 	if !m.telegram.connected {
-		m = m.appendTelegramNotice("⚠ Telegram daemon is not connected — pair after it reconnects.")
+		notice := "Telegram daemon is not connected — pair after it reconnects."
+		m = m.setStatusWarning("telegram", notice)
+		m = m.appendTelegramNotice("⚠ " + notice)
 		return m
 	}
 	m.telegram.pairing = true
-	m.telegram.pairState = "token"
+	m.telegram.pairState = "waiting"
 	m.telegram.pairToken = ""
 	m.telegram.pairCode = ""
-	return m
-}
-
-// renderTelegramPairingModalOpen marks the modal as open after the daemon
-// issues a code (used by handleTelegramEvent when not on the Settings screen).
-func (m model) renderTelegramPairingModalOpen() model {
-	m.telegram.pairing = true
+	m.telegram.pairDeadline = time.Time{}
+	if m.telegram.client != nil {
+		_ = m.telegram.client.Send(ipc.Message{Type: ipc.TypePairStart})
+	}
 	return m
 }
 
@@ -224,6 +236,7 @@ func (m model) cancelTelegramPairing() (model, tea.Cmd) {
 	m.telegram.pairState = ""
 	m.telegram.pairToken = ""
 	m.telegram.pairCode = ""
+	m.telegram.pairDeadline = time.Time{}
 	if m.telegram.client != nil {
 		_ = m.telegram.client.Send(ipc.Message{Type: ipc.TypePairCancel})
 	}
@@ -278,6 +291,14 @@ func (m model) handleTelegramPairingKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleTelegramSettingsAction dispatches a Telegram action row.
 func (m model) handleTelegramSettingsAction(action string) (model, tea.Cmd) {
 	switch action {
+	case "retry":
+		m.telegram.retrying = true
+		m.telegram.daemonErr = ""
+		m = m.setStatusWarning("telegram", "Starting Telegram daemon…")
+		if m.telegram.client != nil && m.telegram.client.daemonPath != "" {
+			return m, spawnTelegramDaemonCmd(m.telegram.client.daemonPath, m.telegram.client.socketPath)
+		}
+		return m, nil
 	case "pair", "replace":
 		return m.openTelegramPairingModal(), nil
 	case "clear":
@@ -296,43 +317,76 @@ func (m model) handleTelegramSettingsAction(action string) (model, tea.Cmd) {
 	return m, nil
 }
 
-// renderTelegramPairingModal renders the focused pairing modal (telegram-tui
-// R2): numbered steps, a masked token field, visible code + countdown, and
-// waiting/success/expiry states. It never renders the token or chat id.
+// renderTelegramPairingModal renders the focused pairing dialog (telegram-tui
+// R2; UI-C09-001 §2). It never renders a token or chat id.
 func (m model) renderTelegramPairingModal() string {
+	if m.telegram == nil {
+		return ""
+	}
+	boxWidth := minInt(72, max(40, m.width-8))
+	if m.width < 48 || m.height < 16 {
+		boxWidth = max(24, m.width-4)
+	}
+	innerWidth := cycleWelcomeInnerWidth(boxWidth)
 	t := m.telegram
-	var b strings.Builder
-	b.WriteString(headerStyle.Render("Pair with Telegram"))
-	b.WriteByte('\n')
-	b.WriteByte('\n')
-	b.WriteString(mutedStyle.Render("1. Open your Telegram bot and send it the pairing code."))
-	b.WriteByte('\n')
+	rows := []string{
+		cycleWelcomeLine(cycleWelcomeTitleStyle, "Pair Telegram", innerWidth),
+		cycleWelcomeLine(cycleWelcomeDetailStyle, "[Esc: cancel]", innerWidth),
+		cycleWelcomeBlank(innerWidth),
+	}
 	switch t.pairState {
 	case "token":
-		b.WriteString(mutedStyle.Render("2. Enter your bot token (stored only in the OS vault)."))
-		b.WriteByte('\n')
-		b.WriteString(infoStyle.Render("   Token: " + strings.Repeat("•", len(t.pairToken))))
-		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("   (enter submits; press enter empty to reuse a stored token)"))
-	case "waiting":
-		if t.pairCode != "" {
-			b.WriteString(infoStyle.Render("2. Pairing code: " + t.pairCode))
-		} else {
-			b.WriteString(infoStyle.Render("2. Waiting for the daemon to issue a code…"))
-		}
-		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("   Countdown: " + pairingRemaining(t.pairDeadline)))
-		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("3. Send /start <code> (or the bare code) to the bot."))
+		rows = append(rows,
+			cycleWelcomeWrapped(cycleWelcomeBodyStyle, "The daemon needs a bot token before pairing can start. Paste it here; it is stored only in the OS vault and is never shown.", innerWidth),
+			cycleWelcomeBlank(innerWidth),
+			cycleWelcomeLine(cycleWelcomeLeadStyle, "Token: "+strings.Repeat("•", len(t.pairToken))+"█", innerWidth),
+			cycleWelcomeBlank(innerWidth),
+			cycleWelcomeLine(cycleWelcomeDetailStyle, "enter submit · leave empty to retry a stored token", innerWidth),
+		)
 	case "success":
-		b.WriteString(successStyle.Render("✓ Paired successfully."))
+		rows = append(rows, cycleWelcomeLine(cycleWelcomeLeadStyle, "✓ Telegram paired.", innerWidth))
 	case "expired":
-		b.WriteString(errorStyle.Render("Pairing code expired."))
+		rows = append(rows, cycleWelcomeWrapped(cycleWelcomeBodyStyle, "⚠ Pairing code expired. Start pairing again.", innerWidth))
+	default:
+		rows = append(rows, m.renderTelegramPairingWaitingRows(innerWidth)...)
 	}
-	b.WriteByte('\n')
-	b.WriteByte('\n')
-	b.WriteString(mutedStyle.Render("esc cancel"))
-	return b.String()
+	rows = append(rows,
+		cycleWelcomeBlank(innerWidth),
+		renderPairingCancelButton(innerWidth),
+	)
+	return m.placeCycleWelcomeBox(strings.Join(rows, "\n"), innerWidth)
+}
+
+func (m model) renderTelegramPairingWaitingRows(innerWidth int) []string {
+	t := m.telegram
+	rows := []string{
+		cycleWelcomeWrapped(cycleWelcomeBodyStyle, "1. Open the configured Telegram bot.", innerWidth),
+	}
+	if t.pairCode != "" {
+		rows = append(rows, cycleWelcomeLine(cycleWelcomeLeadStyle, "2. Send: /start "+t.pairCode, innerWidth))
+	} else {
+		rows = append(rows, cycleWelcomeWrapped(cycleWelcomeDetailStyle, "2. Waiting for a pairing code from the daemon…", innerWidth))
+	}
+	rows = append(rows,
+		cycleWelcomeWrapped(cycleWelcomeBodyStyle, "3. Return here; pairing will complete automatically.", innerWidth),
+		cycleWelcomeBlank(innerWidth),
+	)
+	if !t.pairDeadline.IsZero() {
+		rows = append(rows, cycleWelcomeLine(cycleWelcomeDetailStyle, "Code expires in "+pairingRemaining(t.pairDeadline), innerWidth))
+	}
+	rows = append(rows, cycleWelcomeLine(cycleWelcomeLeadStyle, "Waiting for confirmation…", innerWidth))
+	return rows
+}
+
+func renderPairingCancelButton(width int) string {
+	cancel := cycleWelcomeSelectedStyle.Render("[Cancel]")
+	row := lipgloss.PlaceHorizontal(
+		width,
+		lipgloss.Center,
+		cancel,
+		lipgloss.WithWhitespaceBackground(colorBgSurface),
+	)
+	return cycleWelcomeFillStyle.Width(width).Render(row)
 }
 
 // telegramSettingsAction dispatches enter on a Telegram settings row.
@@ -354,20 +408,35 @@ func (m model) telegramSettingsEnter(row settingsRow) (model, tea.Cmd) {
 	return m, nil
 }
 
-// commitTelegramAbbrev persists the edited abbreviation and re-registers with
-// the daemon so the allocated address reflects the new base.
-func (m model) commitTelegramAbbrev() model {
+type telegramAbbrevSavedMsg struct{ err error }
+
+// commitTelegramAbbrev applies the edited abbreviation, re-registers with the
+// daemon, and writes telegram.project_abbrev to hero.json (PRD-C09-001 §3.2).
+func (m model) commitTelegramAbbrev() (model, tea.Cmd) {
+	if m.telegram == nil {
+		return m, nil
+	}
 	normalized := normalizeTelegramAbbrev(m.settings.abbrevDraft)
 	m.settings.editingAbbrev = false
 	m.settings.abbrevDraft = ""
-	if normalized == m.telegram.abbrev {
-		return m
-	}
 	m.telegram.abbrev = normalized
 	if m.telegram.client != nil {
 		m.telegram.client.setAbbrev(normalized)
 	}
-	return m
+	projectDir := ""
+	if m.svc != nil {
+		projectDir = m.svc.ProjectDir
+	}
+	return m, saveTelegramAbbrevCmd(projectDir, normalized)
+}
+
+func saveTelegramAbbrevCmd(projectDir, abbrev string) tea.Cmd {
+	return func() tea.Msg {
+		if projectDir == "" {
+			return telegramAbbrevSavedMsg{err: fmt.Errorf("project unavailable")}
+		}
+		return telegramAbbrevSavedMsg{err: install.SetTelegramProjectAbbrev(projectDir, abbrev)}
+	}
 }
 
 // telegramSettingsKey handles key input while editing the abbreviation.
@@ -378,7 +447,7 @@ func (m model) handleTelegramAbbrevKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		m.settings.abbrevDraft = ""
 		return m, nil
 	case "enter":
-		return m.commitTelegramAbbrev(), nil
+		return m.commitTelegramAbbrev()
 	case "backspace":
 		if len(m.settings.abbrevDraft) > 0 {
 			m.settings.abbrevDraft = m.settings.abbrevDraft[:len(m.settings.abbrevDraft)-1]
@@ -393,11 +462,13 @@ func (m model) handleTelegramAbbrevKey(msg tea.KeyMsg) (model, tea.Cmd) {
 }
 
 func pairingRemaining(t time.Time) string {
+	if t.IsZero() {
+		return "00:00"
+	}
 	rem := time.Until(t)
 	if rem < 0 {
-		return "0:00"
+		return "00:00"
 	}
-	m := int(rem.Minutes())
-	s := int(rem.Seconds()) % 60
-	return fmt.Sprintf("%d:%02d", m, s)
+	total := int(rem.Seconds())
+	return fmt.Sprintf("%02d:%02d", total/60, total%60)
 }

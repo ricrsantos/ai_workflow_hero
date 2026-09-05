@@ -18,11 +18,13 @@ type fakeBot struct {
 	mu      sync.Mutex
 	sent    []string
 	updates []Update
+	polls   int
 }
 
 func (f *fakeBot) GetUpdates(_ context.Context, _ int64) ([]Update, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.polls++
 	u := f.updates
 	f.updates = nil
 	return u, nil
@@ -219,5 +221,27 @@ func TestDaemonRegisterTwoClientsViaSocket(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("daemon did not exit on context cancel")
+	}
+}
+
+func TestPollLoopSkipsWhenNoClients(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("daemon did not exit")
+	}
+	bot.mu.Lock()
+	polls := bot.polls
+	bot.mu.Unlock()
+	if polls != 0 {
+		t.Fatalf("idle daemon polled Bot API %d times", polls)
 	}
 }

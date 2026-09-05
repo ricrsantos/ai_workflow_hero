@@ -23,6 +23,7 @@ type convExecute struct {
 	UsageGeneration int64
 	SessionID       string
 	AgentMsgIndex   int
+	Origin          string // telegram:<address> when the turn came from Telegram
 	relay           *conversationStreamRelay
 }
 

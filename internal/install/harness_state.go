@@ -47,6 +47,16 @@ func SetChatVerbosity(projectDir string, value ChatVerbosity) error {
 	return saveHeroJSON(projectDir, hero)
 }
 
+// SetTelegramProjectAbbrev persists the TUI Settings Project ID (PRD-C09-001).
+func SetTelegramProjectAbbrev(projectDir, abbrev string) error {
+	hero, err := LoadHeroJSON(projectDir)
+	if err != nil {
+		return err
+	}
+	hero.Telegram.ProjectAbbrev = strings.TrimSpace(abbrev)
+	return saveHeroJSON(projectDir, hero)
+}
+
 // SupportedHarnessIDs lists harness identifiers Hero supports in the TUI
 // (ADR-034; Cursor + OpenCode from C4; Codex added in C6 / Hero 2.5.0 per ADR-043/048).
 var SupportedHarnessIDs = []string{"cursor", "opencode", "codex"}

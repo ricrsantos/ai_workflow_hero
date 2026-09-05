@@ -27,8 +27,9 @@ func (d *Daemon) sleep(ctx context.Context, dur time.Duration) {
 }
 
 // pollLoop long-polls the Bot API and feeds updates into processUpdate. It only
-// polls when a token and a client are present (the daemon owns Bot API
-// connectivity — ADR-059).
+// polls when a token and a live client are present so a shutting-down or
+// duplicate daemon cannot steal getUpdates from the process that owns the TUI
+// (ADR-059).
 func (d *Daemon) pollLoop(ctx context.Context) {
 	var offset int64
 	for {
@@ -38,7 +39,7 @@ func (d *Daemon) pollLoop(ctx context.Context) {
 		default:
 		}
 		token, _, bot := d.creds()
-		if token == "" || bot == nil {
+		if token == "" || bot == nil || d.registry.count() == 0 {
 			d.sleep(ctx, time.Second)
 			continue
 		}
@@ -48,11 +49,15 @@ func (d *Daemon) pollLoop(ctx context.Context) {
 			d.sleep(ctx, 2*time.Second)
 			continue
 		}
+		var maxID int64
 		for _, u := range updates {
-			if u.UpdateID > offset {
-				offset = u.UpdateID
+			if u.UpdateID > maxID {
+				maxID = u.UpdateID
 			}
 			d.processUpdate(ctx, u)
+		}
+		if maxID > 0 {
+			offset = maxID + 1
 		}
 		d.sleep(ctx, 200*time.Millisecond)
 	}
@@ -142,6 +147,7 @@ func (d *Daemon) routeInbound(ctx context.Context, u Update, text string) {
 		// Known but offline → durable queue; unknown → generic, no disclosure.
 		if d.store != nil {
 			if known, err := d.store.AddressKnown(address); err == nil && known {
+				d.log.Info("inbound queued; no live client", "address", address)
 				d.enqueue(u, address, arg, action == actionCommand)
 				return
 			}
@@ -158,9 +164,10 @@ func (d *Daemon) routeInbound(ctx context.Context, u Update, text string) {
 	}
 	select {
 	case cli.outbound <- msg:
-		d.log.Debug("inbound pushed to live client", "address", address)
+		d.log.Info("inbound pushed to live client", "address", address)
 	default:
 		// Channel full: treat as temporarily unavailable and queue.
+		d.log.Info("inbound queued; live client backlog", "address", address)
 		d.enqueue(u, address, arg, action == actionCommand)
 	}
 }

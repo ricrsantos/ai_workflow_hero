@@ -56,6 +56,7 @@ type Daemon struct {
 
 	shutdownMu sync.Mutex
 	shutdownFn func()
+	exitTimer  *time.Timer
 }
 
 // New builds a Daemon from opts, applying defaults for nil fields.
@@ -152,10 +153,28 @@ func (d *Daemon) setShutdown(fn func()) {
 
 func (d *Daemon) requestShutdown() {
 	d.shutdownMu.Lock()
+	defer d.shutdownMu.Unlock()
+	if d.exitTimer != nil {
+		d.exitTimer.Stop()
+	}
 	fn := d.shutdownFn
-	d.shutdownMu.Unlock()
-	if fn != nil {
-		fn()
+	d.exitTimer = time.AfterFunc(3*time.Second, func() {
+		if d.registry.count() > 0 {
+			return
+		}
+		d.log.Info("last client disconnected, daemon will exit")
+		if fn != nil {
+			fn()
+		}
+	})
+}
+
+func (d *Daemon) cancelScheduledShutdown() {
+	d.shutdownMu.Lock()
+	defer d.shutdownMu.Unlock()
+	if d.exitTimer != nil {
+		d.exitTimer.Stop()
+		d.exitTimer = nil
 	}
 }
 
@@ -204,7 +223,6 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 		if reg != nil {
 			d.registry.unregister(reg)
 			if d.registry.count() == 0 {
-				d.log.Info("last client disconnected, daemon will exit")
 				d.requestShutdown()
 			}
 		}
@@ -247,6 +265,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 					return
 				}
 				reg, _ = d.registry.register(m.ProjectDir, m.Mode, m.ProjectAbbrev, outbound)
+				d.cancelScheduledShutdown()
 				if d.store != nil {
 					_ = d.store.MarkAddressKnown(reg.address, m.Mode, m.ProjectAbbrev, d.now())
 				}
@@ -280,7 +299,9 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 				d.handleAck(m.AckID)
 			case ipc.TypeOutbound:
 				if reg != nil {
-					d.sendOutbound(ctx, reg.address, m.OutboundText)
+					addr := reg.address
+					text := m.OutboundText
+					go d.sendOutbound(ctx, addr, text)
 				}
 			}
 		case m := <-outbound:

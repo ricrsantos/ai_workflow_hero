@@ -31,10 +31,13 @@
     }
   },
   "freechat_default": {
-    "harness": "codex",
-    "model": "gpt-5.6-terra"
+    "harness": "opencode",
+    "model": "opencode-go/deepseek-v4-flash"
   },
   "chat_verbosity": "debug",
+  "telegram": {
+    "project_abbrev": "aiwkhero"
+  },
   "model_properties": {
     "codex": {
       "gpt-5.6-luna": {

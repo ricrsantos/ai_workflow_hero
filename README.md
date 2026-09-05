@@ -63,6 +63,7 @@ Designed for an open-source workflow, it helps you move through:
 - Upgrade safety: customized Hero files are never silently overwritten (checksum comparison)
 - Uninstall removes only Hero-owned paths; project knowledge (`AGENTS.md`, `docs/`, `context/`, `openspec/`) is preserved
 - Installed user guide at `.workflow-hero/docs/workflow-help.md` (path printed after `hero install`)
+- Optional **Telegram plugin** (`hero plugin install telegram`): pair one chat and drive the same TUI conversation remotely
 
 ---
 
@@ -134,10 +135,60 @@ hero events
 hero variables
 hero upgrade
 hero update-models
+hero plugin install telegram
 hero uninstall
 ```
 
 Cycle control from the CLI (same API the TUI and chat agents use) includes `hero approve`, `hero reject`, `hero finish`, `hero cycle archive`, and related verbs — see `.workflow-hero/docs/workflow-help.md`.
+
+---
+
+## Telegram plugin
+
+Telegram is an **optional** remote interface for the Hero TUI. It is not installed by `hero install`. One local daemon per OS user owns the Bot API; the TUI never shows the bot token or chat id.
+
+### 1. Create a bot
+
+In Telegram, open [@BotFather](https://t.me/BotFather) and send:
+
+1. `/newbot`
+2. A display name (for example `Hero`)
+3. A username ending in `bot` (for example `my_hero_bot`)
+
+BotFather replies with a token. Keep it private. Hero stores it only in the OS credential vault.
+
+### 2. Install the plugin
+
+Use a Hero **3.0+** binary (`hero version`). Then:
+
+```bash
+hero plugin install telegram
+```
+
+This downloads the matching `hero-telegram-daemon` from the Hero GitHub Release for your OS/architecture into `~/.workflow-hero/plugins/telegram/`.
+
+### 3. Pair in the TUI
+
+1. Open `hero` (or `hero chat`) in a real terminal.
+2. Go to **Settings** (left navbar) → **TELEGRAM PLUGIN**.
+3. Daemon must read `Connected`. If it shows `Disconnected`, focus **| Retry |** and press Enter, then wait for `Connected`.
+4. Focus **| Pair |** and press Enter.
+5. If asked, paste the BotFather token (it is shown only as `•`) and press Enter.
+6. In Telegram, open **your** bot and send `/start <code>` (or the code alone). The code is valid for 10 minutes.
+7. Settings should show `Configured`. Use **| Test |** to receive `Test message from Hero.`
+
+Only one Telegram chat can be authorized. **| Replace |** re-pairs; **| Clear |** removes the stored credentials.
+
+### 4. Send messages
+
+Address every inbound line with the **Project ID** shown in Settings (live suffix is display-only), for example:
+
+```text
+ai_workflow: what is the current status?
+ai_workflow: /hero-status
+```
+
+Free Chat instances use `free_1`, `free_2`, and so on. Messages without that prefix are ignored. Keep the TUI open; undelivered messages stay queued for 24 hours.
 
 ---
 
@@ -439,6 +490,7 @@ Projetado para um fluxo open source, ele ajuda você a avançar em:
 - Segurança no upgrade: arquivos customizados do Hero nunca são sobrescritos em silêncio (checksum)
 - Uninstall remove apenas caminhos do Hero; o conhecimento do projeto (`AGENTS.md`, `docs/`, `context/`, `openspec/`) é preservado
 - Guia do usuário instalado em `.workflow-hero/docs/workflow-help.md` (caminho exibido após `hero install`)
+- Plugin opcional de **Telegram** (`hero plugin install telegram`): emparelha um chat e conduz a mesma conversa da TUI remotamente
 
 ---
 
@@ -510,10 +562,60 @@ hero events
 hero variables
 hero upgrade
 hero update-models
+hero plugin install telegram
 hero uninstall
 ```
 
 O controle de ciclo pela CLI (a mesma API que a TUI e os agentes do chat usam) inclui `hero approve`, `hero reject`, `hero finish`, `hero cycle archive` e afins — veja `.workflow-hero/docs/workflow-help.md`.
+
+---
+
+## Plugin Telegram
+
+O Telegram é uma interface remota **opcional** da TUI do Hero. O `hero install` **não** o instala. Um daemon local por usuário do SO é dono da Bot API; a TUI nunca mostra o token do bot nem o chat id.
+
+### 1. Criar o bot
+
+No Telegram, abra o [@BotFather](https://t.me/BotFather) e envie:
+
+1. `/newbot`
+2. Um nome de exibição (por exemplo `Hero`)
+3. Um username que termine com `bot` (por exemplo `meu_hero_bot`)
+
+O BotFather devolve um token. Guarde-o em privado. O Hero armazena o token só no cofre de credenciais do sistema operacional.
+
+### 2. Instalar o plugin
+
+Use um binário Hero **3.0+** (`hero version`). Depois:
+
+```bash
+hero plugin install telegram
+```
+
+Isso baixa o `hero-telegram-daemon` correspondente à release do Hero (SO/arquitetura) em `~/.workflow-hero/plugins/telegram/`.
+
+### 3. Emparelhar na TUI
+
+1. Abra `hero` (ou `hero chat`) num terminal de verdade.
+2. Vá em **Settings** (navbar à esquerda) → **TELEGRAM PLUGIN**.
+3. O Daemon precisa estar `Connected`. Se aparecer `Disconnected`, foque **| Retry |** e pressione Enter; espere `Connected`.
+4. Foque **| Pair |** e pressione Enter.
+5. Se for pedido, cole o token do BotFather (ele aparece só como `•`) e pressione Enter.
+6. No Telegram, abra **o seu** bot e envie `/start <código>` (ou só o código). O código vale 10 minutos.
+7. Settings deve mostrar `Configured`. Use **| Test |** para receber `Test message from Hero.`
+
+Só um chat do Telegram fica autorizado. **| Replace |** refaz o emparelhamento; **| Clear |** apaga as credenciais.
+
+### 4. Enviar mensagens
+
+Toda mensagem de entrada precisa do **Project ID** visível em Settings (o sufixo ao vivo é só exibição), por exemplo:
+
+```text
+ai_workflow: qual o status atual?
+ai_workflow: /hero-status
+```
+
+Instâncias de Free Chat usam `free_1`, `free_2`, e assim por diante. Sem esse prefixo a mensagem é ignorada. Deixe a TUI aberta; mensagens não entregues ficam na fila por 24 horas.
 
 ---
 

@@ -117,6 +117,7 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 	defer m.stopTelegram()
 	err := opencodeadapter.RunServeWatchdog(context.Background(), svc.ProjectDir, svc.Store, func() error {
 		p := tea.NewProgram(m, tea.WithAltScreen())
+		relayTelegramMsgs(p, m.telegramMsgCh)
 		_, runErr := p.Run()
 		return runErr
 	})

@@ -50,10 +50,19 @@ type HeroJSON struct {
 	// renders. An omitted value intentionally resolves to Debug for backwards
 	// compatibility with the pre-settings behaviour.
 	ChatVerbosity ChatVerbosity `json:"chat_verbosity,omitempty"`
+	// Telegram holds non-secret TUI Telegram settings (PRD-C09-001 §3.2;
+	// ADR-062). Credentials stay in the OS vault, never here.
+	Telegram TelegramConfig `json:"telegram,omitempty"`
 	// ModelProperties persists string-valued model properties per harness/native
 	// model pair (C5; ADR-040). Missing maps unmarshal as empty and never cause
 	// a migration failure.
 	ModelProperties map[string]map[string]map[string]string `json:"model_properties,omitempty"`
+}
+
+// TelegramConfig persists the editable project abbreviation used for Telegram
+// addressing. An omitted ProjectAbbrev falls back to the directory basename.
+type TelegramConfig struct {
+	ProjectAbbrev string `json:"project_abbrev,omitempty"`
 }
 
 // CLIInfo holds CLI installation metadata.

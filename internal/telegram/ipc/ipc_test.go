@@ -89,6 +89,24 @@ func TestListenSocketPermissions(t *testing.T) {
 	}
 }
 
+func TestListenDoesNotStealLiveSocket(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "live.sock")
+	ln, err := Listen(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	if _, err := Listen(path); err == nil {
+		t.Fatal("second Listen must not steal a live socket")
+	}
+	conn, err := Dial(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.Close()
+}
+
 func TestListenReplacesStaleSocket(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "stale.sock")

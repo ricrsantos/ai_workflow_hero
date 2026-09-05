@@ -708,6 +708,7 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 		StageName:       stageName,
 		UsageGeneration: m.contextUsageGeneration,
 		AgentMsgIndex:   m.agentMsgIndex,
+		Origin:          origin,
 	}
 
 	if m.convStreamCh == nil {
@@ -1555,6 +1556,7 @@ func (m model) cancelStreamCmd() tea.Cmd {
 func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case conversationBatchMsg:
+		var cmds []tea.Cmd
 		streamChanged := false
 		for _, item := range msg.messages {
 			if item == nil {
@@ -1565,12 +1567,15 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				streamChanged = true
 				continue
 			}
-			updated, _ := m.handleConversationMsg(item)
+			updated, cmd := m.handleConversationMsg(item)
 			next, ok := updated.(model)
 			if !ok {
-				return updated, nil
+				return updated, cmd
 			}
 			m = next
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 			if !m.streaming {
 				break
 			}
@@ -1579,6 +1584,12 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// One scroll calculation per coalesced stream batch avoids walking a
 			// long transcript once for every character-sized delta.
 			m = m.maybeFollowTranscriptBottom()
+		}
+		if len(cmds) > 0 {
+			// executeDone/cancel already re-issued the stream waiter when needed.
+			// Returning those cmds is what delivers Telegram replies (they used
+			// to be discarded here, so outbound never left the TUI).
+			return m, combineTimerCmds(cmds...)
 		}
 		if m.streaming && m.convStreamCh != nil {
 			return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
@@ -1728,10 +1739,11 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !siblingsRemain && m.runtimeCommandName == "new" {
 				m = m.resetSessionTimer()
 			}
+			replyCmd := m.telegramTurnReplyCmd(m.telegramTurnOrigin(executeMeta), "", errText, !siblingsRemain)
 			if siblingsRemain && m.convStreamCh != nil {
-				return m, waitConvBatchMsg(m.convStreamCh)
+				return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), replyCmd)
 			}
-			return m, nil
+			return m, replyCmd
 		}
 		if msg.result != nil {
 			promptForUsage := m.lastExecutePrompt
@@ -1805,18 +1817,26 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m = m.maybeFollowTranscriptBottom()
 		slog.Info("tui conversation execute complete", "stage", m.conversationStage, "remaining", len(m.executes))
+		reply := ""
+		if msg.result != nil {
+			reply = msg.result.Output
+		}
+		if strings.TrimSpace(reply) == "" && executeMeta.AgentMsgIndex >= 0 && executeMeta.AgentMsgIndex < len(m.transcript) {
+			reply = m.transcript[executeMeta.AgentMsgIndex].content
+		}
+		replyCmd := m.telegramTurnReplyCmd(m.telegramTurnOrigin(executeMeta), reply, "", !siblingsRemain)
 		if siblingsRemain {
 			if m.convStreamCh != nil {
-				return m, waitConvBatchMsg(m.convStreamCh)
+				return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), replyCmd)
 			}
-			return m, nil
+			return m, replyCmd
 		}
 		next, handoffCmd := m.maybeHandoffAfterExecute()
 		if handoffCmd != nil {
-			return next, combineTimerCmds(next.refreshCmd(), handoffCmd, convWaitTickCmd(), sessionSaveCmd, next.ensureTimerLoop())
+			return next, combineTimerCmds(next.refreshCmd(), handoffCmd, convWaitTickCmd(), sessionSaveCmd, replyCmd, next.ensureTimerLoop())
 		}
 		next = next.completeBusyExecuteStatus(true, busyExecuteCompletedText(next.statusLabel))
-		return next, combineTimerCmds(next.refreshCmd(), sessionSaveCmd, next.ensureTimerLoop())
+		return next, combineTimerCmds(next.refreshCmd(), sessionSaveCmd, replyCmd, next.ensureTimerLoop())
 
 	case streamCancelDoneMsg:
 		m = m.stopAITimer(time.Now())

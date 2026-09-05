@@ -262,7 +262,7 @@ Hero's own installation metadata (never edited by hand).
 }
 ```
 
-`assets.version` always equals `cli.version` (ADR-001). `harnesses.<tool>` holds TUI/CLI Execute defaults (ADR-030); Cursor V1 default model is `composer-2.5` with fast disabled.
+`assets.version` always equals `cli.version` (ADR-001). `harnesses.<tool>` holds TUI/CLI Execute defaults (ADR-030); Cursor V1 default model is `composer-2.5` with fast disabled. Optional `telegram.project_abbrev` stores the TUI Settings Project ID (PRD-C09-001); omitted values fall back to the project directory name. Credentials never appear here (ADR-062).
 
 ### `.workflow-hero/config/project.json`
 

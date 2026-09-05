@@ -31,27 +31,26 @@ func telegramOriginLabel(msg convMessage) (string, bool) {
 	}
 }
 
-// handleTelegramMsg processes a daemon-pushed frame and keeps the listener
-// alive by re-issuing waitTelegramMsg. It never blocks the Update loop: all
-// connection work happened in the client goroutine (telegram-ipc R3).
+// handleTelegramMsg processes a daemon-pushed frame. Production delivers these
+// via tea.Program.Send (launch relay), so this handler must not depend on
+// re-issuing waitTelegramMsg.
 func (m model) handleTelegramMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.telegram == nil {
 		return m, nil
 	}
-	next := waitTelegramMsg(m.telegramMsgCh)
 
 	switch msg := msg.(type) {
 	case telegramConnectedMsg:
 		m.telegram.connected = true
 		m.telegram.retrying = false
 		m.telegram.daemonErr = ""
-		return m, next
+		return m, nil
 
 	case telegramRegisteredMsg:
 		m.telegram.address = msg.address
 		m.telegram.paired = msg.paired
 		slog.Info("telegram client registered", "address", msg.address, "paired", msg.paired)
-		return m, next
+		return m, nil
 
 	case telegramDisconnectedMsg:
 		wasConnected := m.telegram.connected
@@ -62,49 +61,47 @@ func (m model) handleTelegramMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.appendTelegramNotice("⚠ Telegram daemon disconnected; retrying…")
 		}
 		slog.Debug("telegram client disconnected", "error", msg.err)
-		return m, next
+		return m, nil
 
 	case telegramEventMsg:
-		return m.handleTelegramEvent(msg), next
+		return m.handleTelegramEvent(msg), nil
 
 	case telegramInboundMsg:
-		nextM, cmd := m.handleTelegramInbound(msg)
-		if cmd == nil {
-			return nextM, next
-		}
-		return nextM, tea.Batch(cmd, next)
+		return m.handleTelegramInbound(msg)
 	}
-	return m, next
+	return m, nil
 }
 
 func (m model) handleTelegramEvent(msg telegramEventMsg) model {
 	switch msg.eventType {
 	case ipc.EventPairingProgress:
 		if msg.data == "missing-token" {
+			m.telegram.pairing = true
 			m.telegram.pairState = "token"
 			m.telegram.pairCode = ""
 			return m
 		}
+		m.telegram.pairing = true
 		m.telegram.pairCode = msg.data
 		m.telegram.pairState = "waiting"
 		m.telegram.pairDeadline = time.Now().Add(10 * time.Minute)
-		if m.screen == screenSettings {
-			m = m.renderTelegramPairingModalOpen()
-		}
 	case ipc.EventPairingSuccess:
 		m.telegram.pairing = false
-		m.telegram.pairState = "success"
+		m.telegram.pairState = ""
+		m.telegram.pairCode = ""
+		m.telegram.pairToken = ""
+		m.telegram.pairDeadline = time.Time{}
 		m.telegram.paired = true
-		if m.screen == screenSettings {
-			m = m.appendTelegramNotice("✓ Telegram pairing succeeded.")
-		}
+		m = m.appendTelegramNotice("✓ Telegram paired.")
+		m = m.setStatusResult(true, "telegram", "Telegram paired.")
 	case ipc.EventPairingExpired:
 		if m.telegram.pairing {
 			m.telegram.pairing = false
-			m.telegram.pairState = "expired"
-			if m.screen == screenSettings {
-				m = m.appendTelegramNotice("Pairing code expired.")
-			}
+			m.telegram.pairState = ""
+			m.telegram.pairCode = ""
+			m.telegram.pairDeadline = time.Time{}
+			m = m.appendTelegramNotice("⚠ Pairing code expired. Start pairing again.")
+			m = m.setStatusWarning("telegram", "Pairing code expired. Start pairing again.")
 		}
 	case ipc.EventDaemonUp:
 		m.telegram.connected = true
@@ -122,10 +119,7 @@ func (m model) handleTelegramEvent(msg telegramEventMsg) model {
 // slash-vs-plain classification as the composer (conversation-service R1) and
 // acknowledges queued deliveries (telegram-ipc R3).
 func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
-	// Acknowledge queued deliveries first so the daemon can mark them processed.
-	if msg.inboundID != "" && m.telegram != nil && m.telegram.client != nil {
-		_ = m.telegram.client.Send(ipc.Message{Type: ipc.TypeAckDelivery, AckID: msg.inboundID})
-	}
+	ack := m.telegramAckCmd(msg.inboundID)
 
 	// Classify through the shared service so the remote transport obeys the
 	// same slash-vs-text rule as the composer (ADR-061).
@@ -135,10 +129,28 @@ func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 	}
 
 	origin := "telegram:" + msg.address
+	var next model
+	var cmd tea.Cmd
 	if isCommand {
-		return m.submitRemoteCommand(msg.text, origin)
+		next, cmd = m.submitRemoteCommand(msg.text, origin)
+	} else {
+		next, cmd = m.submitRemoteTurn(msg.text, origin)
 	}
-	return m.submitRemoteTurn(msg.text, origin)
+	return next, combineTimerCmds(ack, cmd)
+}
+
+func (m model) telegramAckCmd(inboundID string) tea.Cmd {
+	if inboundID == "" || m.telegram == nil || m.telegram.client == nil {
+		return nil
+	}
+	client := m.telegram.client
+	id := inboundID
+	return func() tea.Msg {
+		if err := client.Send(ipc.Message{Type: ipc.TypeAckDelivery, AckID: id}); err != nil {
+			slog.Debug("telegram ack failed", "error", err)
+		}
+		return nil
+	}
 }
 
 // submitRemoteCommand routes a Telegram-originated slash command through the
@@ -209,4 +221,90 @@ func (m model) setRemoteOrigin(origin string) model {
 func (m model) appendTelegramNotice(text string) model {
 	m.transcript = append(m.transcript, convMessage{role: convRoleWarning, content: text})
 	return m
+}
+
+func telegramAddressOf(origin string) (string, bool) {
+	if !strings.HasPrefix(origin, "telegram:") {
+		return "", false
+	}
+	addr := strings.TrimPrefix(origin, "telegram:")
+	if addr == "" {
+		return "", false
+	}
+	return addr, true
+}
+
+func (m model) telegramTurnOrigin(meta convExecute) string {
+	if _, ok := telegramAddressOf(meta.Origin); ok {
+		return meta.Origin
+	}
+	if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
+		return m.transcript[m.agentMsgIndex].origin
+	}
+	return ""
+}
+
+func telegramTurnReplyText(origin, output, errText string, turnComplete bool) string {
+	if !turnComplete {
+		return ""
+	}
+	if _, ok := telegramAddressOf(origin); !ok {
+		return ""
+	}
+	if text := strings.TrimSpace(output); text != "" {
+		return text
+	}
+	return strings.TrimSpace(errText)
+}
+
+// telegramMaxOutboundRunes leaves headroom for the daemon's address prefix
+// (Telegram Bot API messages are capped at 4096 characters).
+const telegramMaxOutboundRunes = 3900
+
+func splitTelegramOutbound(text string) []string {
+	runes := []rune(text)
+	if len(runes) <= telegramMaxOutboundRunes {
+		if text == "" {
+			return nil
+		}
+		return []string{text}
+	}
+	out := make([]string, 0, (len(runes)+telegramMaxOutboundRunes-1)/telegramMaxOutboundRunes)
+	for len(runes) > 0 {
+		n := telegramMaxOutboundRunes
+		if n > len(runes) {
+			n = len(runes)
+		}
+		out = append(out, string(runes[:n]))
+		runes = runes[n:]
+	}
+	return out
+}
+
+func (m model) telegramTurnReplyCmd(origin, output, errText string, turnComplete bool) tea.Cmd {
+	return m.telegramOutboundCmd(telegramTurnReplyText(origin, output, errText, turnComplete))
+}
+
+func (m model) telegramOutboundCmd(text string) tea.Cmd {
+	text = strings.TrimSpace(text)
+	if text == "" || m.telegram == nil || !m.telegram.connected {
+		return nil
+	}
+	if m.telegram.recordOutbound != nil {
+		m.telegram.recordOutbound(text)
+	}
+	if m.telegram.client == nil {
+		return nil
+	}
+	client := m.telegram.client
+	chunks := splitTelegramOutbound(text)
+	return func() tea.Msg {
+		for _, chunk := range chunks {
+			if err := client.Send(ipc.Message{Type: ipc.TypeOutbound, OutboundText: chunk}); err != nil {
+				slog.Debug("telegram conversation reply failed", "error", err)
+				return nil
+			}
+		}
+		return nil
+	}
 }

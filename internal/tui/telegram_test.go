@@ -1,10 +1,16 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 )
 
 func TestTelegramOriginLabel(t *testing.T) {
@@ -56,6 +62,70 @@ func TestProjectAbbrevNormalization(t *testing.T) {
 	}
 	if got := normalizeTelegramAbbrev("My-Proj_2"); got != "my-proj_2" {
 		t.Fatalf("abbrev=%q", got)
+	}
+}
+
+func TestLoadTelegramAbbrevPrefersHeroJSON(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"cli":{},"assets":{},"telegram":{"project_abbrev":"aiwkhero"}}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadTelegramAbbrev(dir); got != "aiwkhero" {
+		t.Fatalf("abbrev=%q want aiwkhero (not directory name %q)", got, projectAbbrev(dir))
+	}
+}
+
+func TestLoadTelegramAbbrevFallsBackToDirectoryName(t *testing.T) {
+	dir := t.TempDir()
+	if got := loadTelegramAbbrev(dir); got != projectAbbrev(dir) {
+		t.Fatalf("abbrev=%q want directory fallback %q", got, projectAbbrev(dir))
+	}
+}
+
+func TestCommitTelegramAbbrevWritesHeroJSON(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), []byte(`{"cli":{},"assets":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := model{
+		svc:      &cycle.Service{ProjectDir: dir},
+		telegram: &telegramState{installed: true, abbrev: projectAbbrev(dir)},
+	}
+	m.settings.editingAbbrev = true
+	m.settings.abbrevDraft = "aiwkhero"
+	m, cmd := m.commitTelegramAbbrev()
+	if m.telegram.abbrev != "aiwkhero" {
+		t.Fatalf("in-memory abbrev=%q", m.telegram.abbrev)
+	}
+	if cmd == nil {
+		t.Fatal("expected persist command")
+	}
+	msg := cmd()
+	saved, ok := msg.(telegramAbbrevSavedMsg)
+	if !ok {
+		t.Fatalf("msg type %T", msg)
+	}
+	if saved.err != nil {
+		t.Fatal(saved.err)
+	}
+	hero, err := install.LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hero.Telegram.ProjectAbbrev != "aiwkhero" {
+		t.Fatalf("hero.json project_abbrev=%q", hero.Telegram.ProjectAbbrev)
+	}
+	if got := loadTelegramAbbrev(dir); got != "aiwkhero" {
+		t.Fatalf("reload=%q", got)
 	}
 }
 
@@ -121,4 +191,280 @@ func TestSettingsRows_InstalledShowsControls(t *testing.T) {
 	if got := m.settingsRows()[m.settings.cursor]; got.kind != rowTelegramAction || got.action != "pair" {
 		t.Fatalf("cursor=%+v want Pair", got)
 	}
+}
+
+func TestPairEnterOpensInstructionModal(t *testing.T) {
+	m := settingsFocusedOnPair(t, true)
+	m, _ = HandleTestKey(m, "enter")
+	if m.telegram == nil || !m.telegram.pairing {
+		t.Fatal("Pair must open the pairing modal")
+	}
+	if m.telegram.pairState != "waiting" {
+		t.Fatalf("pairState=%q want waiting so pairing starts immediately", m.telegram.pairState)
+	}
+	plain := stripANSI(ViewForTest(m))
+	for _, want := range []string{
+		"Pair Telegram",
+		"Open the configured Telegram bot",
+		"Waiting for a pairing code",
+		"pairing will complete automatically",
+		"Waiting for confirmation",
+		"[Cancel]",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("missing %q in pairing modal: %q", want, plain)
+		}
+	}
+	if strings.Contains(plain, "Token:") {
+		t.Fatalf("Pair must not start on the token form: %q", plain)
+	}
+}
+
+func TestDisconnectedSettingsShowsRetryNotPair(t *testing.T) {
+	m := settingsFocusedOnRetry(t)
+	plain := stripANSI(ViewForTest(m))
+	if !strings.Contains(plain, "Retry") {
+		t.Fatalf("disconnected Settings must offer Retry: %q", plain)
+	}
+	if !strings.Contains(plain, "Start the daemon with Retry") {
+		t.Fatalf("missing recovery guidance: %q", plain)
+	}
+	if strings.Contains(plain, "| Pair |") {
+		t.Fatalf("Pair must wait until the daemon is connected: %q", plain)
+	}
+	m, _ = HandleTestKey(m, "enter")
+	if !m.telegram.retrying {
+		t.Fatal("Retry must mark the daemon as retrying")
+	}
+	if m.telegram.pairing {
+		t.Fatal("Retry must not open the pairing modal")
+	}
+}
+
+func TestTelegramConnectedEnablesPair(t *testing.T) {
+	m := settingsFocusedOnRetry(t)
+	next, _ := m.Update(telegramConnectedMsg{})
+	m = next.(model)
+	if !m.telegram.connected {
+		t.Fatal("telegramConnectedMsg must set connected")
+	}
+	plain := stripANSI(ViewForTest(m))
+	if !strings.Contains(plain, "Connected") || !strings.Contains(plain, "Pair") {
+		t.Fatalf("connected Settings must show Pair: %q", plain)
+	}
+}
+
+func TestTelegramTurnReplyTextOnlyForCompletedTelegramTurns(t *testing.T) {
+	if got := telegramTurnReplyText("telegram:aiwkhero", "Estou no repositório", "", false); got != "" {
+		t.Fatalf("incomplete turn must not reply: %q", got)
+	}
+	if got := telegramTurnReplyText("", "Estou no repositório", "", true); got != "" {
+		t.Fatalf("local turn must not reply: %q", got)
+	}
+	if got := telegramTurnReplyText("telegram:aiwkhero", "Estou no repositório", "ignored", true); got != "Estou no repositório" {
+		t.Fatalf("got %q", got)
+	}
+	if got := telegramTurnReplyText("telegram:aiwkhero", "", "boom", true); got != "boom" {
+		t.Fatalf("error reply=%q", got)
+	}
+}
+
+func TestExecuteDoneSendsTelegramConversationReply(t *testing.T) {
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
+	var got []string
+	m.telegram = &telegramState{
+		installed: true,
+		connected: true,
+		recordOutbound: func(text string) {
+			got = append(got, text)
+		},
+	}
+	m.streaming = true
+	m.agentMsgIndex = 1
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "em que projeto vc está?", origin: "telegram:aiwkhero"},
+		{role: convRoleAgent, content: "", origin: "telegram:aiwkhero"},
+	}
+	m.executes = map[string]convExecute{
+		"ex-1": {ID: "ex-1", Origin: "telegram:aiwkhero", AgentMsgIndex: 1},
+	}
+	next, _ := m.Update(executeDoneMsg{
+		executeID: "ex-1",
+		result:    &harness.ExecutionResult{Output: "Estou no repositório AI Workflow Hero"},
+	})
+	m = next.(model)
+	if len(got) != 1 || got[0] != "Estou no repositório AI Workflow Hero" {
+		t.Fatalf("outbound=%q", got)
+	}
+}
+
+func TestExecuteDoneInConversationBatchSendsTelegramReply(t *testing.T) {
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
+	var got []string
+	m.telegram = &telegramState{
+		installed: true,
+		connected: true,
+		recordOutbound: func(text string) {
+			got = append(got, text)
+		},
+	}
+	m.streaming = true
+	m.agentMsgIndex = 1
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "em que projeto vc está?", origin: "telegram:aiwkhero"},
+		{role: convRoleAgent, content: "", origin: "telegram:aiwkhero"},
+	}
+	m.executes = map[string]convExecute{
+		"ex-1": {ID: "ex-1", Origin: "telegram:aiwkhero", AgentMsgIndex: 1},
+	}
+	next, cmd := m.Update(conversationBatchMsg{messages: []tea.Msg{
+		executeDoneMsg{
+			executeID: "ex-1",
+			result:    &harness.ExecutionResult{Output: "Estou no repositório AI Workflow Hero"},
+		},
+	}})
+	_ = next
+	if len(got) != 1 || got[0] != "Estou no repositório AI Workflow Hero" {
+		t.Fatalf("batch outbound=%q", got)
+	}
+	if cmd == nil {
+		t.Fatal("batch must keep the Telegram outbound command")
+	}
+}
+
+func TestExecuteDoneLocalTurnDoesNotSendTelegramReply(t *testing.T) {
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
+	var got []string
+	m.telegram = &telegramState{
+		installed: true,
+		connected: true,
+		recordOutbound: func(text string) {
+			got = append(got, text)
+		},
+	}
+	m.streaming = true
+	m.agentMsgIndex = 1
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "hello"},
+		{role: convRoleAgent, content: ""},
+	}
+	m.executes = map[string]convExecute{
+		"ex-1": {ID: "ex-1", AgentMsgIndex: 1},
+	}
+	next, _ := m.Update(executeDoneMsg{
+		executeID: "ex-1",
+		result:    &harness.ExecutionResult{Output: "local only"},
+	})
+	_ = next
+	if len(got) != 0 {
+		t.Fatalf("local turn leaked to Telegram: %q", got)
+	}
+}
+
+func TestTelegramListenCmdDeliversBufferedFrames(t *testing.T) {
+	m := NewTestModel(nil)
+	ch := make(chan tea.Msg, 1)
+	m.telegramMsgCh = ch
+	ch <- telegramConnectedMsg{}
+	cmd := m.telegramListenCmd()
+	if cmd == nil {
+		t.Fatal("listener cmd must be issued when the channel exists")
+	}
+	msg := cmd()
+	if _, ok := msg.(telegramConnectedMsg); !ok {
+		t.Fatalf("got %T, want telegramConnectedMsg", msg)
+	}
+}
+
+func TestPairingProgressShowsStartCode(t *testing.T) {
+	m := settingsFocusedOnPair(t, true)
+	m, _ = HandleTestKey(m, "enter")
+	next, _ := m.Update(telegramEventMsg{eventType: "pairing_progress", data: "428391"})
+	m = next.(model)
+	plain := stripANSI(ViewForTest(m))
+	if !strings.Contains(plain, "Send: /start 428391") {
+		t.Fatalf("expected pairing code instructions, got %q", plain)
+	}
+	if !strings.Contains(plain, "Code expires in") {
+		t.Fatalf("expected countdown, got %q", plain)
+	}
+}
+
+func TestPairingEscCancelsEvenWithNavbarFocus(t *testing.T) {
+	m := settingsFocusedOnPair(t, true)
+	m, _ = HandleTestKey(m, "enter")
+	m.shellFocus = shellFocusNavbar
+	m, _ = HandleTestKey(m, "esc")
+	if m.telegram.pairing {
+		t.Fatal("esc must close the pairing modal even if the navbar had focus")
+	}
+	plain := stripANSI(ViewForTest(m))
+	if strings.Contains(plain, "Pair Telegram") {
+		t.Fatalf("modal still visible after esc: %q", plain)
+	}
+}
+
+func TestPairingMissingTokenAsksWithoutEchoingSecret(t *testing.T) {
+	m := settingsFocusedOnPair(t, true)
+	m, _ = HandleTestKey(m, "enter")
+	next, _ := m.Update(telegramEventMsg{eventType: "pairing_progress", data: "missing-token"})
+	m = next.(model)
+	plain := stripANSI(ViewForTest(m))
+	if !strings.Contains(plain, "Token:") {
+		t.Fatalf("missing-token should prompt for a masked token: %q", plain)
+	}
+	m, _ = HandleTestKey(m, "a")
+	m, _ = HandleTestKey(m, "b")
+	m, _ = HandleTestKey(m, "c")
+	plain = stripANSI(ViewForTest(m))
+	if strings.Contains(plain, "abc") {
+		t.Fatalf("token value must not be rendered: %q", plain)
+	}
+}
+
+func settingsFocusedOnPair(t *testing.T, connected bool) model {
+	t.Helper()
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
+	m.telegram = &telegramState{
+		installed:       true,
+		pluginVersion:   "2.9.2",
+		protocolVersion: 1,
+		connected:       connected,
+		address:         "ai_workflow_2",
+		abbrev:          "ai_workflow",
+	}
+	m, _ = m.openSettings()
+	m, _ = HandleTestKey(m, "down")
+	m, _ = HandleTestKey(m, "down")
+	got := m.settingsRows()[m.settings.cursor]
+	if got.kind != rowTelegramAction || got.action != "pair" {
+		t.Fatalf("cursor=%+v want Pair", got)
+	}
+	return m
+}
+
+func settingsFocusedOnRetry(t *testing.T) model {
+	t.Helper()
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
+	m.telegram = &telegramState{
+		installed:       true,
+		pluginVersion:   "2.9.2",
+		protocolVersion: 1,
+		connected:       false,
+		abbrev:          "ai_workflow",
+		daemonErr:       "ipc: dial: connection refused",
+	}
+	m, _ = m.openSettings()
+	m, _ = HandleTestKey(m, "down")
+	m, _ = HandleTestKey(m, "down")
+	got := m.settingsRows()[m.settings.cursor]
+	if got.kind != rowTelegramAction || got.action != "retry" {
+		t.Fatalf("cursor=%+v want Retry", got)
+	}
+	return m
 }

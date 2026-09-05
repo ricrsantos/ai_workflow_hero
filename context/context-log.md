@@ -4,6 +4,60 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-05 — Telegram inbound only after TUI restart
+
+**Problem**: Replies reached Telegram, but inbound text still appeared in Chat only after quitting and reopening the TUI. Every TUI start spawned a new daemon that unlinked the live socket, so two processes polled `getUpdates`. The idle process stole updates and queued them; flush happened on the next register.
+
+**Change**: Dial an existing daemon instead of always spawning. `Listen` refuses to steal a live socket. `getUpdates` runs only while a TUI is registered. Last-client shutdown waits 3s so a reconnect reuses the same poller.
+
+**Validation**: `go test ./...` pass.
+
+## 2026-09-05 — Telegram inbound stuck until TUI restart; replies still not sent
+
+**Problem**: Live Telegram messages did not appear in Chat until the TUI was restarted (then the queued question arrived). The harness answer stayed in the TUI and was never sent back. Production `executeDone` is wrapped in `conversationBatchMsg`, which discarded the outbound `tea.Cmd`. Inbound after the first turn depended on re-issuing `waitTelegramMsg`, which did not survive that batch.
+
+**Change**: `conversationBatchMsg` keeps nested cmds (Telegram `outbound` included). Launch relays daemon frames with `tea.Program.Send`. ACK/outbound IPC writes stay in cmds; `ipc.Conn.Send` is mutex-serialized; daemon Bot API send no longer blocks the IPC serve loop.
+
+**Validation**: `go test ./...` pass.
+
+## 2026-09-05 — Telegram Project ID not persisted
+
+**Problem**: Changing Settings Project ID (e.g. `aiwkhero`) only updated in-memory TUI state. Boot always derived the abbreviation from the directory basename (`ai_workflow_hero`), so reopening Settings reset the field.
+
+**Change**: Persist `telegram.project_abbrev` in `.workflow-hero/config/hero.json` on Enter. `startTelegram` loads the saved value when present, otherwise falls back to the directory name. Credentials remain vault-only (ADR-062).
+
+**Validation**: `go test ./...` pass.
+
+## 2026-09-05 — Telegram harness replies stayed in the TUI
+
+**Problem**: Inbound Telegram text ran a harness turn and the transcript showed `→ [Telegram · addr]`, but the final agent output was never sent on IPC `outbound`. Lifecycle `Notifier` only covers cycle/stage/approval/error/final events, not conversation replies.
+
+**Change**: On `executeDone` of a Telegram-originated turn (no remaining sibling Executes), send the harness `Output` (or error text) to the daemon as `outbound`, chunked under the Bot API size limit. Local composer turns are unchanged.
+
+**Validation**: `go test ./...` pass.
+
+## 2026-09-05 — README Telegram setup
+
+**Change**: Added bilingual README sections **Telegram plugin** / **Plugin Telegram** (BotFather, `hero plugin install telegram`, TUI Retry/Pair, addressed messages). Also listed the plugin in Features and the post-install CLI commands.
+
+**Validation**: README EN + PT-BR sections reviewed in place.
+
+## 2026-09-05 — Telegram Settings stuck on Disconnected
+
+**Problem**: Plugin installed but Settings showed `Daemon: Disconnected` with only `| Pair |`, which refused to pair. `startTelegram` wrote Connected/Disconnected into `telegramMsgCh`, but `Init` never issued `waitTelegramMsg`, so the TUI never learned the daemon was up. Pair gated on the stale `connected=false` flag.
+
+**Change**: `Init` batches the telegram listener. The client spawns the daemon at start (with a 2s respawn cooldown, detached session). Disconnected Settings shows `| Retry |` plus recovery copy; Pair appears after Connected.
+
+**Validation**: `go test ./...` pass.
+
+## 2026-09-05 — Settings Pair button showed no pairing UI
+
+**Problem**: Enter on Settings `| Pair |` did not start pairing or show instructions. The handler opened a token form (`pairState=token`) without sending `pair_start`, rendered a few dim lines instead of a full-screen dialog (alt-screen looked empty), and navbar/Tab stole keys before the modal. Disconnected Pair only appended a Chat transcript notice, invisible on Settings.
+
+**Change**: Pair/Replace send `pair_start` immediately and open a centered instruction dialog (UI-C09-001 §2). The masked token field appears only on daemon `missing-token`. Pairing keys are handled before navbar/Tab. Disconnected/success/expiry feedback uses the Settings status bar.
+
+**Validation**: `go test ./...` pass.
+
 ## 2026-09-05 — Release Hero v3.0.1
 
 **Change**: Patch release — `hero plugin install telegram` downloads the platform-matched daemon from the matching Hero GitHub Release into `~/.workflow-hero/plugins/telegram/` (no local copy next to `hero` required).

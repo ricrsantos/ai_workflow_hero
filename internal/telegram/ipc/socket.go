@@ -10,12 +10,16 @@ import (
 
 // Listen opens an OS-user-private unix socket at path. The parent directory is
 // created 0700 and the socket is chmod'd 0600 so only the effective UID can
-// connect (ADR-060). Existing sockets are removed first.
+// connect (ADR-060). A live listener is left alone; only a stale socket file is
+// removed so a second daemon cannot steal getUpdates from the first.
 func Listen(path string) (net.Listener, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("ipc: mkdir run dir: %w", err)
 	}
-	// Remove any stale socket from a previous daemon run.
+	if conn, err := net.Dial("unix", path); err == nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("ipc: socket already in use")
+	}
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("ipc: remove stale socket: %w", err)
 	}
