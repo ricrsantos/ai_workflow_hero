@@ -9,6 +9,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/doctor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/plugin"
 	"github.com/ricrsantos/ai_workflow_hero/internal/status"
 	"github.com/ricrsantos/ai_workflow_hero/internal/tui"
 	"github.com/ricrsantos/ai_workflow_hero/internal/uninstall"
@@ -76,6 +77,7 @@ Stages: Configuration → Research → Planning → Implementation → QA → Ju
 		status.NewCommand(),
 		variables.NewCommand(),
 		update_models.NewCommand(),
+		plugin.NewCommand(version),
 		tui.NewCommand(),
 		tui.NewChatCommand(),
 		newVersionCommand(),
