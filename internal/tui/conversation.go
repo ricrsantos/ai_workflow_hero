@@ -52,6 +52,12 @@ type convMessage struct {
 	interrupted bool
 	failed      bool
 
+	// origin labels a Telegram-routed turn (e.g. "telegram:ai_workflow_2"). It
+	// is empty for local composer turns. User messages render a left-arrow
+	// label and the answering agent message renders a right-arrow label
+	// (UI-C09-001 §3). It never carries a token or chat id.
+	origin string
+
 	// responseLines caches the expensive wrapping/styling work for a transcript
 	// message. The cache is invalidated whenever the message content/state changes.
 	responseLines        []string
@@ -663,13 +669,16 @@ func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) m
 		Model:   parentModel,
 		Harness: parentHarness,
 	})
-	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: userLabel})
+	origin := m.nextUserOrigin
+	m.nextUserOrigin = ""
+	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: userLabel, origin: origin})
 	m.transcript = append(m.transcript, convMessage{
 		role:      convRoleAgent,
 		content:   "",
 		agentName: parentName,
 		modelSlug: parentModel,
 		harnessID: parentHarness,
+		origin:    origin,
 	})
 	m.agentMsgIndex = len(m.transcript) - 1
 	m.thinkingMsgIndex = -1
@@ -970,6 +979,9 @@ func (m model) submitConversation() (model, tea.Cmd) {
 			m.convError = "Rejection reason is required."
 		}
 		return m, nil
+	}
+	if m.convService != nil {
+		slog.Debug("conversation turn classified", "kind", m.convService.Classify(text).Kind)
 	}
 
 	if m.awaitingRejectReason {
@@ -2443,6 +2455,9 @@ func (m model) transcriptContentLines(contentW int) []string {
 			continue
 		}
 		bar, label := m.transcriptMessageChrome(*msg)
+		if originLabel, ok := telegramOriginLabel(*msg); ok {
+			out = append(out, chatThinBarRow(chatBarMuted, chatInMuted.Render(originLabel), rowW))
+		}
 		out = append(out, chatThinBarRow(bar, label, rowW))
 		body := m.transcriptMessageBody(msg, contentW)
 		for _, line := range body {

@@ -33,6 +33,8 @@ const (
 	TypeSetCredentials = "set_credentials"
 	TypePairStart      = "pair_start"
 	TypePairCancel     = "pair_cancel"
+	TypeClear          = "clear"
+	TypeTest           = "test"
 )
 
 // Registration modes.
@@ -49,6 +51,7 @@ const (
 	EventDaemonDown      = "daemon_down"
 	EventDaemonUp        = "daemon_up"
 	EventQueueNotice     = "queue_notice"
+	EventCleared         = "cleared"
 )
 
 // Message is a single wire frame. Payload fields are optional per type

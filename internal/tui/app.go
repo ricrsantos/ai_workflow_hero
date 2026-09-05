@@ -13,6 +13,7 @@ import (
 	codexadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
+	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
@@ -98,6 +99,7 @@ type model struct {
 	agentMsgIndex           int
 	thinkingMsgIndex        int
 	convStreamCh            chan tea.Msg
+	nextUserOrigin          string // Telegram origin applied to the next user+agent pair
 	chatInputFocused        bool
 
 	// Chat panes: composer scroll + linear transcript scroll/follow.
@@ -199,6 +201,18 @@ type model struct {
 	lastExecutePrompt     string
 
 	testMode bool // NewTestModel: omit long-lived execute timers (health probe).
+
+	// Optional Telegram plugin state (telegram-tui; ADR-059/060). telegram is a
+	// pointer so the engine Notifier adapter installed at boot observes later
+	// connection changes; telegramMsgCh relays daemon frames into Update.
+	telegram      *telegramState
+	telegramMsgCh chan tea.Msg
+
+	// convService is the transport-neutral conversation service shared with the
+	// Telegram ingress (ADR-061). The TUI classifies every turn through it so
+	// both transports follow the same slash-vs-text rule (conversation-service
+	// R1).
+	convService *conversation.Service
 }
 
 type refreshDataMsg struct {
@@ -245,6 +259,7 @@ func newModel(svc *cycle.Service) model {
 	m.contextWindows = loadContextWindowCatalog(projectDir)
 	m = m.reloadPaletteItems()
 	m = m.initModelProps(projectDir)
+	m.convService = conversation.New(nil, nil)
 	return m.syncConversationContext()
 }
 
@@ -455,6 +470,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)
+
+	case telegramConnectedMsg, telegramRegisteredMsg, telegramInboundMsg, telegramEventMsg, telegramDisconnectedMsg:
+		return m.handleTelegramMsg(msg)
 
 	case tea.KeyMsg:
 		if m.cycleWelcomeDialog {

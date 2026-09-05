@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **2.9.2** (Config model catalog picker, welcome dialog fill, Config property/catalog cascade). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired.
+> **Status:** reflects codebase at Hero **2.9.2** (Config model catalog picker, welcome dialog fill, Config property/catalog cascade). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -158,7 +158,7 @@ Repository layout: **feature-based vertical slices** under `internal/<feature>/`
 | **Models** | `update-models` | Fetches upstream pricing YAML from GitHub |
 | **TUI** | `tui` | Explicit TUI entry (same as default) |
 | **Cycle API** | `metrics`, `events`, `approve`, `reject`, `cancel`, `finish`, `continue` | CLI-as-API (ADR-014) |
-| **Stage** | `stage start`, `stage close` | Direct stage transitions |
+| **Stage** | `stage start`, `stage close`, `stage loop-back` | Direct stage transitions. `loop-back` reopens Implementation after QA/Judge/E2E failure (PRD §5.4) |
 | **Cycle** | `cycle new`, `cycle sync-config`, `cycle archive`, `cycle resume`, `cycle openspec-change` | Lifecycle + OpenSpec coupling |
 | **Harness** | `run` | One-shot harness Execute (tests / automation) |
 
@@ -183,7 +183,7 @@ Global flags: `--verbose`, `--debug` (registered; not fully wired to stack trace
 
 ### Workflow engine
 
-`internal/engine` implements the **AI Loop** state machine (ADR-012): enabled stages, iterations, human approval gates, escalation, and transitions. It does **not** orchestrate LLMs — it only validates and persists state.
+`internal/engine` implements the **AI Loop** state machine (ADR-012): enabled stages, iterations, human approval gates, escalation, QA/Judge failure loop-back to Implementation, and transitions. It does **not** orchestrate LLMs — it only validates and persists state.
 
 ---
 
@@ -315,7 +315,7 @@ Agents: `orchestration_agent`, `discover_agent`, `planning_agent`, `context_agen
 
 **SQLite** (`internal/store`) holds cycles, stages, events, metrics, artifact metadata, harness session references per stage where persisted, and the accumulated active cycle Session timer seconds.
 
-### Planned Telegram plugin (C09)
+### Telegram plugin (C09, landed)
 
 ```
  Telegram Bot API
@@ -328,10 +328,18 @@ TUI A TUI A_2      Free Chat free_1
   │     │              │
   └─────┴──────────────┘
         │
- shared ConversationService → HarnessAdapter → selected harness
+ shared conversation.Service → HarnessAdapter → selected harness
 ```
 
-The daemon owns Telegram credentials and Bot API transport. TUI clients own rendering and use the shared, transport-neutral conversation service; they do not poll SQLite for live Telegram events. Credentials belong in the OS vault, while the daemon's global store retains non-sensitive queue/de-duplication/audit state. See ADR-059–064.
+The daemon owns Telegram credentials and Bot API transport. TUI clients own rendering and use the shared, transport-neutral `internal/conversation` service; they do not poll SQLite for live Telegram events. Credentials belong in the OS vault, while the daemon's global store retains non-sensitive queue/de-duplication/audit state. See ADR-059–064.
+
+**Landed wiring (C09 Implementation):**
+
+- `hero plugin install|uninstall|list telegram` copies a platform-matched `hero-telegram-daemon` binary from the release layout and records `manifest.json` (`internal/plugin`). `hero install`/`hero upgrade` never enable it.
+- The daemon (`cmd/hero-telegram-daemon`, `internal/telegram/daemon`) owns the Bot API, registers TUIs over a `0600` UDS (`internal/telegram/ipc`), allocates `base`/`_2`/`free_N` suffixes atomically, routes addressed inbound text/slash commands, durably queues offline targets (24h), and sends lifecycle-only outbound notifications.
+- The TUI (`internal/tui/telegram*.go`) runs an IPC client as a `tea.Cmd` goroutine with bounded backoff reconnect, renders Settings Telegram section + pairing modal, and labels remote turns `← [Telegram · addr]` / `→ [Telegram · addr]`. The engine publishes `conversation.Event`s through a `Notifier`; the TUI adapter forwards only cycle/stage/approval/error/final events to the daemon outbound path.
+- Project TUI logs rotate under `.workflow-hero/logs/tui.log` (10 MB × 10) with a one-time legacy migration; the daemon logs under `~/.workflow-hero/logs/telegram-daemon.log`. All writes pass shared `internal/common/redact` token/chat-id redaction. `.workflow-hero/logs/` is added to the managed `.gitignore` block.
+- `doctor`/`status` report plugin installed / daemon binary / version compatibility.
 
 **Schema v8** (`internal/store/migrate.go`):
 
@@ -440,10 +448,11 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
 
 ## Conversation model (three layers)
 
-There is **no** standalone `internal/conversation` package. Conversation appears in three places:
+Conversation now has a shared core (`internal/conversation`) plus three surfaces:
 
 | Layer | Where | Lifetime |
 |---|---|---|
+| **Conversation service** | `internal/conversation` — transport-neutral `Service`, `Input`/`Dispatch` classification, and `Notifier` lifecycle events (ADR-061). The TUI and the Telegram ingress both classify turns through it | Process lifetime |
 | **TUI Chat UI** | `internal/tui/conversation.go` + `stage_handoff.go` — transcript in memory; one or more tagged Executes multiplexed on one channel | Process lifetime; optional resume via harness session id |
 | **IDE Runtime** | Cursor chat + Task sessions | IDE session / Task isolation (ADR-005) |
 | **SQLite `conversation` table** | `internal/store` | Persisted messages; **not** wired as the TUI chat transcript SoT in V1 |
@@ -496,10 +505,10 @@ Parity between TUI and chat is **intentional but not identical** — see [idea n
 
 | Concept | V1 state |
 |---|---|
-| Generic **Conversation Layer** service | Chat in TUI + IDE only |
+| Generic **Conversation Layer** service | `internal/conversation` (classification + Notifier); full dispatch extraction remains TUI-owned for behavior stability |
 | **Multi-harness** adapters | Cursor + OpenCode with normalized stream events; further harnesses post-2.x |
-| **Daemon / RPC** | CLI-as-API only (ADR-014) |
-| **Distributed event bus** | Events in SQLite |
+| **Daemon / RPC** | Optional Telegram plugin daemon over local IPC (ADR-059); generic `hero serve` still deferred |
+| **Distributed event bus** | Events in SQLite + engine `Notifier` for the Telegram outbound path |
 | **LLM inside CLI** | Forbidden (ADR-003) |
 
 ---
@@ -559,8 +568,14 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/doctor` · `status` · `variables` | Diagnostics and introspection (`doctor/cursor_cli.go` checks Agent CLI) |
 | `internal/update_models` | Upstream model pricing sync |
 | `internal/cycle` | CLI-as-API, archive, OpenSpec coupling, legacy import |
-| `internal/engine` | Deterministic AI Loop state machine |
+| `internal/engine` | Deterministic AI Loop state machine + `conversation.Notifier` lifecycle publishing |
+| `internal/conversation` | Transport-neutral conversation service: input classification, session/context types, `Notifier` events (ADR-061) |
 | `internal/store` | SQLite operational store + migrations |
+| `internal/plugin` | Optional plugin install/uninstall/list + Telegram manifest/health |
+| `internal/telegram` | Shared path layout (`paths.go`) under `~/.workflow-hero` |
+| `internal/telegram/ipc` | Versioned newline-delimited JSON IPC frames + `0600` UDS (`ipc.go`, `socket.go`) |
+| `internal/telegram/vault` | OS credential vault abstraction (token + authorized chat id) with in-memory fake |
+| `internal/telegram/daemon` | Bot API ownership, pairing, addressed routing, durable queue, suffix allocator, SQLite store |
 | `internal/harness` | `HarnessAdapter` interface, `StreamDelta` normalization, marker detection |
 | `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import, NDJSON parse |
 | `internal/adapters/opencode` | OpenCode serve adapter: HTTP+SSE, ResumeSession, idle/gone SSE probe, serve lifecycle (PID registry, `exec.Command` not Execute-scoped), orphan reap, C5 properties |
@@ -573,7 +588,9 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/common/template` | `{{path.key}}` substitution (ADR-006) |
 | `internal/common/clierr` | Formatted CLI errors with suggestions |
 | `internal/common/output` | Table/JSON output helpers |
-| `internal/common/envhygiene` | `.env.example`, gitignore secrets patterns |
+| `internal/common/envhygiene` | `.env.example`, gitignore secrets patterns, rotating logs dir ignore |
+| `internal/common/logrotate` | 10 MB × 10 rotating redacting writer + legacy TUI log migration |
+| `internal/common/redact` | Shared Telegram token/chat-id redaction for logs and errors |
 | `internal/common/userpath` | nvm/fnm/volta/`~/.local/bin` discovery for subprocess PATH |
 
 ---

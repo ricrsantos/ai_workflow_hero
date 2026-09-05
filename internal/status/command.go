@@ -9,11 +9,12 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/plugin"
 	"github.com/spf13/cobra"
 )
 
 // NewCommand creates the `hero status` cobra command.
-func NewCommand() *cobra.Command {
+func NewCommand(version string) *cobra.Command {
 	var asJSON bool
 
 	cmd := &cobra.Command{
@@ -43,11 +44,16 @@ Outputs a table by default, or JSON with --json.`,
 			}
 
 			if asJSON {
+				out := map[string]interface{}{
+					"workflow": ws,
+					"telegram": pluginStatus(version),
+				}
 				enc := json.NewEncoder(stdout)
 				enc.SetIndent("", "  ")
-				_ = enc.Encode(ws)
+				_ = enc.Encode(out)
 			} else {
 				PrintTable(stdout, ws)
+				PrintTelegramStatus(stdout, version)
 			}
 
 			return nil
@@ -98,4 +104,29 @@ func PrintTable(w io.Writer, ws cycle.StatusView) {
 		rows = append(rows, []string{s.Name, s.Status, s.Iteration, s.HumanApproval})
 	}
 	output.Table(w, headers, rows)
+}
+
+// PrintTelegramStatus writes the optional Telegram plugin health to w.
+func PrintTelegramStatus(w io.Writer, version string) {
+	h := pluginStatus(version)
+	fmt.Fprintln(w)
+	if h.Installed {
+		state := "ok"
+		if !h.DaemonExists {
+			state = "warn: daemon binary missing"
+		} else if !h.VersionMatches {
+			state = fmt.Sprintf("warn: version mismatch (plugin %s vs hero %s)", h.Version, version)
+		}
+		fmt.Fprintf(w, "Telegram plugin: installed (v%s, protocol v%d) — %s\n", h.Version, h.ProtocolVersion, state)
+		return
+	}
+	fmt.Fprintln(w, "Telegram plugin: not installed (run `hero plugin install telegram` to enable)")
+}
+
+func pluginStatus(version string) plugin.Health {
+	h, err := plugin.CheckTelegramHealth(version)
+	if err != nil {
+		return plugin.Health{}
+	}
+	return h
 }

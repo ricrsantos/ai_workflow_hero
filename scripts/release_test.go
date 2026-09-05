@@ -45,12 +45,15 @@ func TestReleaseScript_ArtifactNamingContract(t *testing.T) {
 		"darwin/amd64",
 		"darwin/arm64",
 		"hero_${TAG}_${OS}_${ARCH}",
+		"hero-telegram-daemon_${TAG}_${OS}_${ARCH}",
 		`VERSION="${TAG#v}"`,
 		`rm -rf "${DIST}"`,
 		`chmod +x "${OUTPUT}"`,
+		`chmod +x "${DAEMON_OUTPUT}"`,
 		"checksums.txt",
 		`-X main.version=`,
 		"./cmd/hero",
+		"./cmd/hero-telegram-daemon",
 	}
 	for _, want := range required {
 		if !strings.Contains(src, want) {

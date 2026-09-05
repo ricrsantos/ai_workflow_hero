@@ -264,3 +264,87 @@ func TestFindProjectRoot(t *testing.T) {
 		t.Fatalf("root=%q err=%v want %q", root, err, dir)
 	}
 }
+
+func TestServiceLoopBackToImplementation(t *testing.T) {
+	dir := t.TempDir()
+	cycleDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")
+	if err := os.MkdirAll(cycleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `title: Loop Back
+objective: Judge gaps
+stages:
+  implementation:
+    enabled: true
+    max_iterations: 4
+    timeout_minutes: 60
+    require_human_approval: false
+  qa:
+    enabled: true
+    max_iterations: 2
+    timeout_minutes: 15
+    require_human_approval: false
+  judge:
+    enabled: true
+    max_iterations: 3
+    timeout_minutes: 10
+    require_human_approval: false
+`
+	if err := os.WriteFile(filepath.Join(cycleDir, "workflow-config.yml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.MkdirAll(filepath.Join(dir, ".workflow-hero", "config"), 0o755)
+
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("implementation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CloseStage("implementation", "done", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("qa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CloseStage("qa", "ok", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("judge"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CloseStage("judge", "gaps", "", true); err != nil {
+		t.Fatal(err)
+	}
+	reason := "Judge found gaps"
+	if err := svc.LoopBackToImplementation("judge", reason); err != nil {
+		t.Fatal(err)
+	}
+	c, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	impl, err := svc.Store.GetStage(c.ID, "implementation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if impl.Status != store.StageWaiting || impl.Summary != reason {
+		t.Fatalf("implementation=%+v", impl)
+	}
+	judge, err := svc.Store.GetStage(c.ID, "judge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if judge.Status != store.StageWaiting {
+		t.Fatalf("judge=%s want Waiting", judge.Status)
+	}
+	ev, err := svc.Events(store.EventLoopBack, 5)
+	if err != nil || len(ev.Events) != 1 {
+		t.Fatalf("loop-back events=%+v err=%v", ev, err)
+	}
+}

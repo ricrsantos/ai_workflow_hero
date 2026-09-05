@@ -14,6 +14,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/plugin"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -209,7 +210,38 @@ func Run(opts Options) Report {
 		addCodexCLIChecks(opts.ProjectDir, addCheck)
 	}
 
+	// 12. Optional Telegram plugin health (ADR-059; telegram-plugin R2).
+	addTelegramPluginChecks(opts.BinaryVersion, addCheck)
+
 	return report
+}
+
+// addTelegramPluginChecks reports the optional Telegram plugin install state:
+// whether it is installed, whether the daemon binary is present, and whether
+// the plugin version matches the running binary (warning on mismatch).
+func addTelegramPluginChecks(binaryVersion string, addCheck func(name, status, message string)) {
+	h, err := plugin.CheckTelegramHealth(binaryVersion)
+	if err != nil {
+		slog.Error("telegram plugin health check failed", "error", err)
+		addCheck("telegram-plugin", "warn", "could not inspect Telegram plugin state")
+		return
+	}
+	if !h.Installed {
+		addCheck("telegram-plugin", "ok", "Telegram plugin not installed (optional)")
+		return
+	}
+	if !h.DaemonExists {
+		addCheck("telegram-plugin", "warn", "plugin installed but daemon binary missing — run `hero plugin install telegram` to repair")
+		return
+	}
+	if !h.VersionMatches {
+		addCheck("telegram-plugin", "warn", fmt.Sprintf(
+			"plugin version %s does not match hero %s — run `hero plugin install telegram` to update",
+			h.Version, binaryVersion,
+		))
+		return
+	}
+	addCheck("telegram-plugin", "ok", fmt.Sprintf("Telegram plugin installed (v%s, protocol v%d)", h.Version, h.ProtocolVersion))
 }
 
 func addHarnessMarkerChecks(projectDir string, configuredTools []string, addCheck func(name, status, message string)) {

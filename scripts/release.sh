@@ -41,6 +41,7 @@ TARGETS=(
 )
 
 MODULE_PATH="./cmd/hero"
+DAEMON_MODULE_PATH="./cmd/hero-telegram-daemon"
 LDFLAGS="-X main.version=${VERSION}"
 
 for TARGET in "${TARGETS[@]}"; do
@@ -54,6 +55,17 @@ for TARGET in "${TARGETS[@]}"; do
     "${MODULE_PATH}"
   chmod +x "${OUTPUT}"
   echo "✓ Built ${OUTPUT}"
+
+  # Optional Telegram plugin daemon (ADR-059): publish a platform-matched
+  # daemon binary next to hero so `hero plugin install telegram` can copy it.
+  DAEMON_OUTPUT="${DIST}/hero-telegram-daemon_${TAG}_${OS}_${ARCH}"
+  echo "→ Building ${DAEMON_OUTPUT}..."
+  GOOS="${OS}" GOARCH="${ARCH}" go build \
+    -ldflags "${LDFLAGS}" \
+    -o "${DAEMON_OUTPUT}" \
+    "${DAEMON_MODULE_PATH}"
+  chmod +x "${DAEMON_OUTPUT}"
+  echo "✓ Built ${DAEMON_OUTPUT}"
 done
 
 # Generate checksums.
@@ -72,8 +84,8 @@ fi
 for TARGET in "${TARGETS[@]}"; do
   OS="${TARGET%/*}"
   ARCH="${TARGET#*/}"
-  BIN="${DIST}/hero_${TAG}_${OS}_${ARCH}"
   (cd "${DIST}" && ${SHA_CMD} "hero_${TAG}_${OS}_${ARCH}") >> "${CHECKSUMS_FILE}"
+  (cd "${DIST}" && ${SHA_CMD} "hero-telegram-daemon_${TAG}_${OS}_${ARCH}") >> "${CHECKSUMS_FILE}"
 done
 
 echo ""

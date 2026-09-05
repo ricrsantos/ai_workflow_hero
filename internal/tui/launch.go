@@ -13,10 +13,11 @@ import (
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
-	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/assets"
+	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/logrotate"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
@@ -111,6 +112,9 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 	if freeChat {
 		m = m.reloadPaletteItems()
 	}
+	// Wire the optional Telegram plugin client (no-op without the plugin).
+	m = m.startTelegram("")
+	defer m.stopTelegram()
 	err := opencodeadapter.RunServeWatchdog(context.Background(), svc.ProjectDir, svc.Store, func() error {
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		_, runErr := p.Run()
@@ -124,8 +128,9 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 	return nil
 }
 
-// redirectSlogForTUI sends slog to .workflow-hero/tui.log (or Discard) so INFO/ERROR
-// lines do not paint over the Bubble Tea frame.
+// redirectSlogForTUI sends slog to .workflow-hero/logs/tui.log (rotating) or
+// Discard so INFO/ERROR lines do not paint over the Bubble Tea frame. A legacy
+// .workflow-hero/tui.log is migrated to the new path exactly once (ADR-064).
 func redirectSlogForTUI(projectDir string) func() {
 	prev := slog.Default()
 	if projectDir == "" {
@@ -137,15 +142,16 @@ func redirectSlogForTUI(projectDir string) func() {
 		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 		return func() { slog.SetDefault(prev) }
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "tui.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
-		return func() { slog.SetDefault(prev) }
+	legacyPath := filepath.Join(dir, "tui.log")
+	logPath := filepath.Join(dir, "logs", "tui.log")
+	if err := logrotate.MigrateLegacy(legacyPath, logPath); err != nil {
+		slog.Warn("tui log migration failed", "error", err)
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	logWriter := logrotate.New(logPath)
+	slog.SetDefault(slog.New(slog.NewTextHandler(logWriter, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	return func() {
 		slog.SetDefault(prev)
-		_ = f.Close()
+		_ = logWriter.Close()
 	}
 }
 

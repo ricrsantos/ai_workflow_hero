@@ -160,6 +160,11 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 		return result, fmt.Errorf("env hygiene: %w", err)
 	}
 
+	// One-time migration of the legacy TUI log into the rotating logs dir.
+	if err := install.MigrateTuiLog(opts.ProjectDir); err != nil {
+		return result, fmt.Errorf("migrate tui log: %w", err)
+	}
+
 	// Update hero.json versions.
 	heroPath := filepath.Join(opts.ProjectDir, cursoradapter.HeroJSONPath)
 	heroData, err := os.ReadFile(heroPath)

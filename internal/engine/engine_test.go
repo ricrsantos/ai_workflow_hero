@@ -284,6 +284,121 @@ func TestRetryFailedStageQueuesDisabledConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoopBackToImplementationFromJudge(t *testing.T) {
+	e, s := openTestEngine(t)
+	id, err := s.CreateCycle(store.Cycle{
+		Number: 1, Title: "T", Objective: "O", Status: store.CycleStatusActive,
+		StartedAt: "2026-08-07T12:00:00Z", ConfigSnapshotJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateStages([]store.Stage{
+		{CycleID: id, Name: "research", Status: store.StageCompleted, MaxIterations: 3, Iteration: 1, SortOrder: 0},
+		{CycleID: id, Name: "planning", Status: store.StageCompleted, MaxIterations: 3, Iteration: 1, SortOrder: 1},
+		{CycleID: id, Name: "implementation", Status: store.StageCompleted, MaxIterations: 4, Iteration: 1, TimeoutMinutes: 60, StartedAt: "2026-08-07T12:00:00Z", CompletedAt: "2026-08-07T13:00:00Z", SortOrder: 2},
+		{CycleID: id, Name: "qa", Status: store.StageCompleted, MaxIterations: 2, Iteration: 1, StartedAt: "2026-08-07T13:00:00Z", CompletedAt: "2026-08-07T13:10:00Z", SortOrder: 3},
+		{CycleID: id, Name: "judge", Status: store.StageFailed, MaxIterations: 3, Iteration: 1, Summary: "12 gaps", StartedAt: "2026-08-07T13:10:00Z", CompletedAt: "2026-08-07T13:20:00Z", SortOrder: 4},
+		{CycleID: id, Name: "browser_ui_validation", Status: store.StageSkipped, MaxIterations: 2, SortOrder: 5},
+		{CycleID: id, Name: "qa_end_to_end", Status: store.StageSkipped, MaxIterations: 3, SortOrder: 6},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	reason := "Judge coverage failed: 12 SDD gaps. Re-run generic_agent."
+	if err := e.LoopBackToImplementation(id, "judge", reason); err != nil {
+		t.Fatal(err)
+	}
+
+	impl, err := s.GetStage(id, "implementation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if impl.Status != store.StageWaiting || impl.Iteration != 1 || impl.StartedAt != "" || impl.CompletedAt != "" || impl.Summary != reason {
+		t.Fatalf("implementation=%+v", impl)
+	}
+	qa, err := s.GetStage(id, "qa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qa.Status != store.StageWaiting || qa.Iteration != 1 || qa.StartedAt != "" {
+		t.Fatalf("qa=%+v", qa)
+	}
+	judge, err := s.GetStage(id, "judge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if judge.Status != store.StageWaiting || judge.Iteration != 1 || judge.StartedAt != "" {
+		t.Fatalf("judge=%+v", judge)
+	}
+	bui, err := s.GetStage(id, "browser_ui_validation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bui.Status != store.StageSkipped {
+		t.Fatalf("browser_ui_validation=%s want Skipped", bui.Status)
+	}
+	research, err := s.GetStage(id, "research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if research.Status != store.StageCompleted {
+		t.Fatalf("research=%s want Completed", research.Status)
+	}
+
+	if err := e.StartStage(id, "implementation"); err != nil {
+		t.Fatal(err)
+	}
+	impl, _ = s.GetStage(id, "implementation")
+	if impl.Status != store.StageRunning || impl.Iteration != 2 {
+		t.Fatalf("started implementation=%+v", impl)
+	}
+
+	events, err := s.ListEvents(id, store.EventLoopBack, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Type != store.EventLoopBack {
+		t.Fatalf("events=%+v", events)
+	}
+	if !strings.Contains(events[0].PayloadJSON, `"from":"judge"`) || !strings.Contains(events[0].PayloadJSON, `"to":"implementation"`) {
+		t.Fatalf("payload=%s", events[0].PayloadJSON)
+	}
+}
+
+func TestLoopBackToImplementationRejectsBadSource(t *testing.T) {
+	e, s := openTestEngine(t)
+	id := seedCycle(t, s, false)
+	err := e.LoopBackToImplementation(id, "planning", "nope")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestLoopBackToImplementationRejectsRunningStage(t *testing.T) {
+	e, s := openTestEngine(t)
+	id, err := s.CreateCycle(store.Cycle{
+		Number: 1, Title: "T", Objective: "O", Status: store.CycleStatusActive,
+		StartedAt: "2026-08-07T12:00:00Z", ConfigSnapshotJSON: "{}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateStages([]store.Stage{
+		{CycleID: id, Name: "implementation", Status: store.StageCompleted, SortOrder: 0},
+		{CycleID: id, Name: "judge", Status: store.StageRunning, SortOrder: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = e.LoopBackToImplementation(id, "judge", "gaps")
+	if err == nil || !strings.Contains(err.Error(), "Running") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestCreateCycleFromConfig(t *testing.T) {
 	dir := t.TempDir()
 	cycleDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")

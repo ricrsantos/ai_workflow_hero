@@ -240,6 +240,11 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 		m = m.withRuntimeAgent(agent)
 		m = m.applyAgentRuntimePair(agent, slug)
 		prompt := tuiStageAgentPreamble(stage, agent) + strings.TrimSpace(body) + "\n"
+		if st, err := m.svc.ActiveStage(); err == nil {
+			if sum := strings.TrimSpace(st.Summary); sum != "" {
+				prompt += "\n## Orchestrator assignment (loop-back)\n\n" + sum + "\n"
+			}
+		}
 		label := "→ " + strings.TrimSpace(stage)
 		if len(agents) > 1 {
 			label = fmt.Sprintf("→ %s (%s)", strings.TrimSpace(stage), agentShortLabel(agent))

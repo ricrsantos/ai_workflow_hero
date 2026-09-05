@@ -89,3 +89,10 @@ The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
   }
 }
 ```
+
+## Current assignment (C9 QA loop-back — remove after this Implementation pass)
+
+QA failed logging on `LoopBackToImplementation`. Implement the items in `.workflow-hero/cycles/current/qa-gaps.md`:
+
+1. Add error-level logs on failure return paths and debug-level operational logging in `internal/engine/engine.go` `LoopBackToImplementation` (info success log already exists; default remains info).
+2. Complete remaining Telegram SDD tasks in `.workflow-hero/cycles/current/judge-gaps.md` (Implementation iter 2 returned empty). Backend packages exist; wire TUI and operational paths only.

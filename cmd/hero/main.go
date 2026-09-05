@@ -74,7 +74,7 @@ Stages: Configuration → Research → Planning → Implementation → QA → Ju
 		upgrade.NewCommand(version, assets.FS),
 		uninstall.NewCommand(),
 		doctor.NewCommand(version),
-		status.NewCommand(),
+		status.NewCommand(version),
 		variables.NewCommand(),
 		update_models.NewCommand(),
 		plugin.NewCommand(version),

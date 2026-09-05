@@ -26,6 +26,10 @@ type settingsScreen struct {
 	cursor    int
 	saving    bool
 	err       string
+
+	// Telegram abbreviation inline edit (telegram-tui R1).
+	editingAbbrev bool
+	abbrevDraft   string
 }
 
 type settingsSavedMsg struct{ err error }
@@ -48,29 +52,52 @@ func (m model) openSettings() (model, tea.Cmd) {
 	m.screen = screenSettings
 	m.settings.err = ""
 	m.settings.cursor = verbosityOptionIndex(m.settings.verbosity)
+	m.settings.editingAbbrev = false
+	m.settings.abbrevDraft = ""
 	return m, nil
 }
 
 func (m model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// The Telegram pairing modal is focused and owns all keys until closed.
+	if m.telegram != nil && m.telegram.pairing {
+		return m.handleTelegramPairingKey(msg)
+	}
 	if m.settings.saving {
+		return m, nil
+	}
+	if m.settings.editingAbbrev {
+		return m.handleTelegramAbbrevKey(msg)
+	}
+
+	rows := m.settingsRows()
+	n := len(rows)
+	if n == 0 {
 		return m, nil
 	}
 	switch {
 	case key.Matches(msg, settingsKeys.Next):
-		m.settings.cursor = (m.settings.cursor + 1) % len(verbosityOptions)
+		m.settings.cursor = (m.settings.cursor + 1) % n
+		return m, nil
 	case key.Matches(msg, settingsKeys.Previous):
-		m.settings.cursor = (m.settings.cursor - 1 + len(verbosityOptions)) % len(verbosityOptions)
+		m.settings.cursor = (m.settings.cursor - 1 + n) % n
+		return m, nil
 	case key.Matches(msg, settingsKeys.Save):
-		m.settings.verbosity = verbosityOptions[m.settings.cursor].value
-		m.settings.err = ""
-		m.settings.saving = true
-		return m, m.saveSettingsCmd()
+		if m.settings.cursor < 0 || m.settings.cursor >= n {
+			return m, nil
+		}
+		row := rows[m.settings.cursor]
+		if row.kind == rowVerbosity {
+			m.settings.verbosity = verbosityOptions[m.settings.cursor].value
+			m.settings.err = ""
+			m.settings.saving = true
+			return m, m.saveSettingsCmd()
+		}
+		return m.telegramSettingsEnter(row)
 	case key.Matches(msg, settingsKeys.Leave):
 		return m.enterConversation()
 	default:
 		return m.handleKey(msg)
 	}
-	return m, nil
 }
 
 func (m model) saveSettingsCmd() tea.Cmd {
@@ -105,37 +132,65 @@ func (m model) renderSettings() string {
 	if m.frameContentHeight() < 12 {
 		return warnStyle.Render("Settings needs a taller terminal window.")
 	}
+	rows := m.settingsRows()
 	var b strings.Builder
 	b.WriteString(headerStyle.Render("Settings"))
 	b.WriteByte('\n')
 	b.WriteString(mutedStyle.Render("Choose how much live AI activity appears in Chat."))
 	b.WriteString("\n\n")
-	for i, option := range verbosityOptions {
-		selected := i == m.settings.cursor
-		active := option.value == install.NormalizeChatVerbosity(m.settings.verbosity)
-		marker := "  "
-		labelStyle := mutedStyle
-		if active {
-			marker = "✓ "
-			labelStyle = successStyle.Bold(true)
+	for i, row := range rows {
+		if row.kind == rowVerbosity {
+			option := verbosityOptions[i]
+			selected := i == m.settings.cursor
+			active := option.value == install.NormalizeChatVerbosity(m.settings.verbosity)
+			marker := "  "
+			labelStyle := mutedStyle
+			if active {
+				marker = "✓ "
+				labelStyle = successStyle.Bold(true)
+			}
+			if selected {
+				marker = "› "
+				labelStyle = selectedStyle
+			}
+			b.WriteString(labelStyle.Render(marker + option.label))
+			b.WriteByte('\n')
+			b.WriteString(mutedStyle.Render("    " + option.description))
+			b.WriteByte('\n')
+			continue
 		}
-		if selected {
-			marker = "› "
-			labelStyle = selectedStyle
-		}
-		b.WriteString(labelStyle.Render(marker + option.label))
-		b.WriteByte('\n')
-		b.WriteString(mutedStyle.Render("    " + option.description))
-		b.WriteByte('\n')
+		b.WriteString(m.renderTelegramSettingsRow(row, i))
 	}
 	b.WriteByte('\n')
 	if m.settings.saving {
 		b.WriteString(infoStyle.Render("Saving preference…"))
 	} else if m.settings.err != "" {
 		b.WriteString(errorStyle.Render("Could not save: " + m.settings.err))
+	} else if m.settings.editingAbbrev {
+		b.WriteString(infoStyle.Render("enter save abbreviation · esc cancel"))
 	} else {
 		b.WriteString(infoStyle.Render("↑↓ choose · enter apply · esc Chat"))
 	}
+	return b.String()
+}
+
+func (m model) renderTelegramSettingsRow(row settingsRow, index int) string {
+	var b strings.Builder
+	selected := index == m.settings.cursor
+	marker := "  "
+	labelStyle := mutedStyle
+	if selected {
+		marker = "› "
+		labelStyle = selectedStyle
+	}
+	b.WriteString(labelStyle.Render(marker + row.label))
+	b.WriteByte('\n')
+	if m.settings.editingAbbrev && row.kind == rowTelegramAbbrev {
+		b.WriteString(mutedStyle.Render("    " + m.settings.abbrevDraft + "_"))
+	} else {
+		b.WriteString(mutedStyle.Render("    " + row.desc))
+	}
+	b.WriteByte('\n')
 	return b.String()
 }
 

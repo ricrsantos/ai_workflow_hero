@@ -426,6 +426,9 @@ func (m model) renderFrame() string {
 	if m.cycleWelcomeDialog {
 		return m.renderCycleWelcomeDialog()
 	}
+	if m.telegram != nil && m.telegram.pairing {
+		return m.renderTelegramPairingModal()
+	}
 	var bottom strings.Builder
 	bottom.WriteString(m.renderStatusBar())
 	bottom.WriteByte('\n')

@@ -16,6 +16,7 @@ import (
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/logrotate"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
@@ -228,6 +229,11 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 		return fmt.Errorf("env hygiene: %w", err)
 	}
 
+	// 15b. One-time migration of the legacy TUI log into the rotating logs dir.
+	if err := MigrateTuiLog(opts.ProjectDir); err != nil {
+		return fmt.Errorf("migrate tui log: %w", err)
+	}
+
 	// 16. Create/migrate operational SQLite store (hero.db).
 	s, err := store.OpenProject(opts.ProjectDir)
 	if err != nil {
@@ -241,6 +247,15 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 	emitHarnessMarkerWarnings(opts.ProjectDir, enabled, stderr)
 
 	return nil
+}
+
+// MigrateTuiLog migrates the legacy single-file TUI log into the rotating logs
+// directory once (ADR-064). It is a no-op when there is nothing to migrate.
+func MigrateTuiLog(projectDir string) error {
+	dir := filepath.Join(projectDir, ".workflow-hero")
+	legacy := filepath.Join(dir, "tui.log")
+	newPath := filepath.Join(dir, "logs", "tui.log")
+	return logrotate.MigrateLegacy(legacy, newPath)
 }
 
 func normalizeSelectedTools(tools []string) []string {

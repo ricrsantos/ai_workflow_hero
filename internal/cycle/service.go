@@ -519,6 +519,16 @@ func (s *Service) RetryFailedStage(name string) error {
 	return s.Engine.RetryFailedStage(c.ID, name)
 }
 
+// LoopBackToImplementation reopens Implementation after a QA/Judge/E2E failure
+// and returns later enabled stages to Waiting (PRD §5.4).
+func (s *Service) LoopBackToImplementation(fromStage, reason string) error {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	return s.Engine.LoopBackToImplementation(c.ID, fromStage, reason)
+}
+
 // CloseStage closes a running stage (used by Runtime / tests).
 func (s *Service) CloseStage(name string, summary string, metricsJSON string, failed bool) error {
 	c, err := s.Store.GetActiveCycle()

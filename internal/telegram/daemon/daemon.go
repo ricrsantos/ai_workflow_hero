@@ -272,6 +272,10 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 			case ipc.TypePairCancel:
 				d.pairing.cancel()
 				d.broadcastEvent(ipc.EventPairingExpired, "")
+			case ipc.TypeClear:
+				d.handleClear()
+			case ipc.TypeTest:
+				d.handleTest(ctx)
 			case ipc.TypeAckDelivery:
 				d.handleAck(m.AckID)
 			case ipc.TypeOutbound:

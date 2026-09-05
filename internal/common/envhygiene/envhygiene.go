@@ -22,6 +22,11 @@ const (
 	// TUILogGitignorePath is the repo-relative path for TUI slog output.
 	TUILogGitignorePath = ".workflow-hero/tui.log"
 
+	// LogsDirGitignorePath is the repo-relative rotating log directory. All
+	// Hero runtime logs live here (ADR-064); the legacy single-file rule above
+	// remains for backward compatibility.
+	LogsDirGitignorePath = ".workflow-hero/logs/"
+
 	templateEnvExample     = "templates/env.example"
 	templateGitignoreBlock = "templates/gitignore-secrets"
 )
@@ -93,6 +98,7 @@ func ensureGitignore(projectDir string, assetsFS fs.FS) error {
 		updated = appendGitignoreBlock(updated, blockStr)
 	}
 	updated = ensureGitignoreTUILog(updated)
+	updated = ensureGitignoreLogsDir(updated)
 
 	if updated == content {
 		return nil
@@ -118,6 +124,32 @@ func ensureGitignoreTUILog(content string) string {
 		return insertLineBeforeMarkerEnd(content, TUILogGitignorePath)
 	}
 	return appendGitignoreBlock(content, "# Hero runtime log (local only)\n"+TUILogGitignorePath+"\n")
+}
+
+func ensureGitignoreLogsDir(content string) string {
+	if GitignoreIgnoresLogs(content) {
+		return content
+	}
+	if strings.Contains(content, MarkerBegin) && strings.Contains(content, MarkerEnd) {
+		return insertLineBeforeMarkerEnd(content, LogsDirGitignorePath)
+	}
+	return appendGitignoreBlock(content, "# Hero rotating runtime logs (local only)\n"+LogsDirGitignorePath+"\n")
+}
+
+// GitignoreIgnoresLogs reports whether content already ignores the rotating log
+// directory (ADR-064).
+func GitignoreIgnoresLogs(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		switch trimmed {
+		case LogsDirGitignorePath, ".workflow-hero/logs", "**/.workflow-hero/logs/":
+			return true
+		}
+	}
+	return false
 }
 
 func insertLineBeforeMarkerEnd(content, line string) string {

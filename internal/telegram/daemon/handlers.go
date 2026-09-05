@@ -235,6 +235,29 @@ func (d *Daemon) handleAck(ackID string) {
 	_ = d.store.Transition(id, StatusProcessed)
 }
 
+// handleClear removes the stored credentials (token + authorized chat id) from
+// the OS vault and notifies every registered client (ADR-062).
+func (d *Daemon) handleClear() {
+	if err := d.vault.Clear(); err != nil {
+		d.log.Error("vault clear failed", "error", err)
+		return
+	}
+	d.setCreds("", "")
+	d.pairing.cancel()
+	d.log.Info("telegram credentials cleared")
+	d.broadcastEvent(ipc.EventCleared, "")
+}
+
+// handleTest sends a test message to the authorized chat so the user can verify
+// the outbound Bot API path works (UI-C09-001 §1).
+func (d *Daemon) handleTest(ctx context.Context) {
+	_, chatID, _ := d.creds()
+	if chatID == "" {
+		return
+	}
+	d.send(ctx, chatID, "Test message from Hero.")
+}
+
 // handleSetCredentials stores the bot token in the vault (preserving any
 // existing authorized chat id) and refreshes the cached credential.
 func (d *Daemon) handleSetCredentials(_ context.Context, token string) {

@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
@@ -20,6 +21,11 @@ type Engine struct {
 	Store  *store.Store
 	Logger *slog.Logger
 	Now    func() time.Time
+	// Notifier receives lifecycle events (cycle/stage/approval/error/final)
+	// after successful transitions, so downstream transports such as the
+	// Telegram outbound adapter can filter locally without importing harness
+	// types (conversation-service R3; PRD-C09-001 §3.3). May be nil.
+	Notifier conversation.Notifier
 }
 
 // New creates an Engine bound to s.
@@ -29,6 +35,21 @@ func New(s *store.Store) *Engine {
 		Logger: slog.Default(),
 		Now:    time.Now,
 	}
+}
+
+// publish forwards a lifecycle event to the configured Notifier, if any.
+func (e *Engine) publish(kind conversation.EventKind, cycleID int64, title, stageName, message string) {
+	if e == nil || e.Notifier == nil {
+		return
+	}
+	e.Notifier.Notify(conversation.Event{
+		Kind:       kind,
+		CycleID:    cycleID,
+		CycleTitle: title,
+		StageName:  stageName,
+		Message:    message,
+		Timestamp:  e.Now().UTC(),
+	})
 }
 
 func (e *Engine) now() string {
@@ -135,6 +156,7 @@ func (e *Engine) StartStage(cycleID int64, stageName string) error {
 		PayloadJSON: fmt.Sprintf(`{"stage":%q,"iteration":%d}`, stageName, st.Iteration),
 	})
 	e.Logger.Info("stage started", "cycle_id", cycleID, "stage", stageName, "iteration", st.Iteration)
+	e.publish(conversation.EventStageStarted, cycleID, "", stageName, fmt.Sprintf("stage %s started (iteration %d)", stageName, st.Iteration))
 	return err
 }
 
@@ -187,6 +209,118 @@ func (e *Engine) RetryFailedStage(cycleID int64, stageName string) error {
 	return err
 }
 
+var loopBackSources = map[string]struct{}{
+	"qa":                    {},
+	"judge":                 {},
+	"browser_ui_validation": {},
+	"qa_end_to_end":         {},
+}
+
+// LoopBackToImplementation reopens Implementation after a QA/Judge/E2E failure
+// (PRD §5.4). Downstream enabled stages return to Waiting so they re-run after
+// the fix. Iteration counters are kept; StartedAt is cleared so the timeout
+// clock restarts (same as Continue). Skipped stages stay skipped.
+func (e *Engine) LoopBackToImplementation(cycleID int64, fromStage, reason string) (err error) {
+	fromStage = strings.TrimSpace(fromStage)
+	e.Logger.Debug("loop-back to implementation requested",
+		"cycle_id", cycleID, "from_stage", fromStage, "reason", reason)
+	// Every failure return path is logged at error level; the info success log
+	// lives in appendLoopBackEvent. Reason and stage names are not secrets.
+	defer func() {
+		if err != nil {
+			e.Logger.Error("loop-back to implementation failed",
+				"cycle_id", cycleID, "from_stage", fromStage, "error", err)
+		}
+	}()
+	if _, ok := loopBackSources[fromStage]; !ok {
+		return fmt.Errorf("loop-back from %q is not allowed; use qa, judge, browser_ui_validation, or qa_end_to_end", fromStage)
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return fmt.Errorf("loop-back reason is required")
+	}
+	stages, err := e.Store.ListStages(cycleID)
+	if err != nil {
+		return err
+	}
+	var impl *store.Stage
+	var from *store.Stage
+	for i := range stages {
+		st := &stages[i]
+		if st.Status == store.StageRunning {
+			return fmt.Errorf("stage %s is Running; close it before loop-back", st.Name)
+		}
+		if st.Name == "implementation" {
+			impl = st
+		}
+		if st.Name == fromStage {
+			from = st
+		}
+	}
+	if impl == nil {
+		return fmt.Errorf("implementation stage is not in this cycle")
+	}
+	if from == nil {
+		return fmt.Errorf("stage %s is not in this cycle", fromStage)
+	}
+	if from.Status != store.StageFailed && from.Status != store.StageCompleted {
+		return fmt.Errorf("stage %s is %s, expected Failed or Completed", fromStage, from.Status)
+	}
+	switch impl.Status {
+	case store.StageCompleted, store.StageFailed, store.StageWaiting:
+	default:
+		return fmt.Errorf("implementation is %s, cannot loop back", impl.Status)
+	}
+	if impl.Status == store.StageWaiting {
+		e.Logger.Debug("implementation already waiting; recording loop-back reason only",
+			"cycle_id", cycleID, "from_stage", fromStage)
+		impl.Summary = reason
+		if err := e.Store.UpdateStage(*impl); err != nil {
+			return err
+		}
+		return e.appendLoopBackEvent(cycleID, fromStage, reason)
+	}
+	for i := range stages {
+		st := stages[i]
+		if st.SortOrder < impl.SortOrder {
+			continue
+		}
+		if st.Status == store.StageSkipped {
+			continue
+		}
+		e.Logger.Debug("resetting downstream stage for loop-back",
+			"cycle_id", cycleID, "stage", st.Name, "from", st.Status)
+		st.Status = store.StageWaiting
+		st.StartedAt = ""
+		st.CompletedAt = ""
+		if st.Name == "implementation" {
+			st.Summary = reason
+		}
+		if err := e.Store.UpdateStage(st); err != nil {
+			return err
+		}
+	}
+	return e.appendLoopBackEvent(cycleID, fromStage, reason)
+}
+
+func (e *Engine) appendLoopBackEvent(cycleID int64, fromStage, reason string) error {
+	payload, err := json.Marshal(map[string]string{
+		"from":   fromStage,
+		"to":     "implementation",
+		"reason": reason,
+	})
+	if err != nil {
+		return fmt.Errorf("loop-back event: %w", err)
+	}
+	_, err = e.Store.AppendEvent(store.Event{
+		CycleID: cycleID, Type: store.EventLoopBack, PayloadJSON: string(payload),
+	})
+	if err == nil {
+		e.Logger.Info("loop-back to implementation", "cycle_id", cycleID, "from", fromStage)
+	}
+	return err
+}
+
 // CloseStage completes a running stage into PendingApproval or Completed/Failed.
 func (e *Engine) CloseStage(cycleID int64, stageName string, in StageCloseInput) error {
 	st, err := e.Store.GetStage(cycleID, stageName)
@@ -210,6 +344,9 @@ func (e *Engine) CloseStage(cycleID int64, stageName string, in StageCloseInput)
 			CycleID: cycleID, Type: store.EventStageCompleted,
 			PayloadJSON: fmt.Sprintf(`{"stage":%q,"status":"Failed"}`, stageName),
 		})
+		if err == nil {
+			e.publish(conversation.EventError, cycleID, "", stageName, in.Summary)
+		}
 		return err
 	}
 	if st.RequireHumanApproval {
@@ -221,6 +358,9 @@ func (e *Engine) CloseStage(cycleID int64, stageName string, in StageCloseInput)
 			CycleID: cycleID, Type: store.EventPendingApproval,
 			PayloadJSON: fmt.Sprintf(`{"stage":%q}`, stageName),
 		})
+		if err == nil {
+			e.publish(conversation.EventApprovalRequired, cycleID, "", stageName, in.Summary)
+		}
 		return err
 	}
 	return e.completeAndAdvance(cycleID, st)
@@ -306,6 +446,9 @@ func (e *Engine) Finish(holder string, metrics []MetricInput) error {
 		_, err := e.Store.AppendEvent(store.Event{
 			CycleID: c.ID, Type: store.EventFinished, PayloadJSON: `{}`,
 		})
+		if err == nil {
+			e.publish(conversation.EventCycleFinished, c.ID, c.Title, "", "cycle finished")
+		}
 		return err
 	})
 }
@@ -422,6 +565,7 @@ func (e *Engine) completeAndAdvance(cycleID int64, st store.Stage) error {
 	}); err != nil {
 		return err
 	}
+	e.publish(conversation.EventStageFinished, cycleID, "", st.Name, st.Summary)
 	return e.advanceToNext(cycleID, st.SortOrder)
 }
 
@@ -704,6 +848,7 @@ func (e *Engine) CreateCycleFromConfig(opts NewCycleOptions) (NewCycleResult, er
 		return NewCycleResult{}, err
 	}
 	e.Logger.Info("cycle created", "cycle_id", id, "number", num, "stages", len(listed))
+	e.publish(conversation.EventCycleStarted, id, title, "", "cycle started")
 	return NewCycleResult{Cycle: c, Stages: listed}, nil
 }
 

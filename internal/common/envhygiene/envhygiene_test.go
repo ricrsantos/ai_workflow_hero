@@ -123,7 +123,7 @@ func TestEnsureProjectRoot_PatchesExistingHeroBlockWithTUILog(t *testing.T) {
 
 func TestGitignoreIgnoresTUILog(t *testing.T) {
 	cases := map[string]bool{
-		".workflow-hero/tui.log\n": true,
+		".workflow-hero/tui.log\n":            true,
 		"# comment\n.workflow-hero/tui.log\n": true,
 		".workflow-hero/*.log\n":              true,
 		"node_modules/\n":                     false,
@@ -132,6 +132,61 @@ func TestGitignoreIgnoresTUILog(t *testing.T) {
 		if got := envhygiene.GitignoreIgnoresTUILog(content); got != want {
 			t.Errorf("GitignoreIgnoresTUILog(%q)=%v, want %v", content, got, want)
 		}
+	}
+}
+
+func TestGitignoreIgnoresLogs(t *testing.T) {
+	cases := map[string]bool{
+		".workflow-hero/logs/\n":          true,
+		".workflow-hero/logs\n":           true,
+		"**/.workflow-hero/logs/\n":       true,
+		"# comment\n.workflow-hero/logs/": true,
+		"node_modules/\n":                 false,
+		".workflow-hero/tui.log\n":        false,
+	}
+	for content, want := range cases {
+		if got := envhygiene.GitignoreIgnoresLogs(content); got != want {
+			t.Errorf("GitignoreIgnoresLogs(%q)=%v, want %v", content, got, want)
+		}
+	}
+}
+
+func TestEnsureProjectRoot_AddsLogsDirToFreshGitignore(t *testing.T) {
+	dir := t.TempDir()
+	if err := envhygiene.EnsureProjectRoot(dir, assets.FS); err != nil {
+		t.Fatalf("EnsureProjectRoot: %v", err)
+	}
+	gi, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf(".gitignore missing: %v", err)
+	}
+	if !strings.Contains(string(gi), envhygiene.LogsDirGitignorePath) {
+		t.Errorf(".gitignore missing rotating logs dir path")
+	}
+}
+
+func TestEnsureProjectRoot_InsertsLogsDirIntoExistingHeroBlock(t *testing.T) {
+	dir := t.TempDir()
+	existing := envhygiene.MarkerBegin + "\n.env\n" + envhygiene.TUILogGitignorePath + "\n" + envhygiene.MarkerEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := envhygiene.EnsureProjectRoot(dir, assets.FS); err != nil {
+		t.Fatalf("EnsureProjectRoot: %v", err)
+	}
+	got, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	content := string(got)
+	if !strings.Contains(content, envhygiene.LogsDirGitignorePath) {
+		t.Error("expected logs dir inserted into existing Hero block")
+	}
+	logsIdx := strings.Index(content, envhygiene.LogsDirGitignorePath)
+	endIdx := strings.Index(content, envhygiene.MarkerEnd)
+	if logsIdx == -1 || endIdx == -1 || logsIdx > endIdx {
+		t.Errorf("logs dir should appear before Hero block end: %q", content)
+	}
+	// User-owned content outside the managed block is preserved verbatim.
+	if !strings.HasPrefix(content, envhygiene.MarkerBegin) {
+		t.Errorf("block start changed: %q", content)
 	}
 }
 

@@ -214,7 +214,7 @@ func newStageCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmd.AddCommand(newStageStartCommand(), newStageCloseCommand())
+	cmd.AddCommand(newStageStartCommand(), newStageCloseCommand(), newStageLoopBackCommand())
 	return cmd
 }
 
@@ -266,6 +266,29 @@ func newStageCloseCommand() *cobra.Command {
 	cmd.Flags().StringVar(&metricsJSON, "metrics-json", "", "Metrics payload JSON (object or array)")
 	cmd.Flags().BoolVar(&failed, "failed", false, "Mark the stage as Failed")
 	_ = cmd.MarkFlagRequired("name")
+	return cmd
+}
+
+func newStageLoopBackCommand() *cobra.Command {
+	var from, reason string
+	cmd := &cobra.Command{
+		Use:           "loop-back",
+		Short:         "Reopen Implementation after a QA/Judge/E2E failure",
+		Long:          `Reopen Implementation and return later enabled stages to Waiting so they re-run after the fix (PRD §5.4). Clears StartedAt so the timeout clock restarts. Keeps iteration counters.`,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
+			if err := svc.LoopBackToImplementation(from, reason); err != nil {
+				return err
+			}
+			output.Successf(cmd.OutOrStdout(), "Looped back to implementation from %s.", from)
+			return nil
+		}),
+	}
+	cmd.Flags().StringVar(&from, "from", "", "Stage that failed (qa, judge, browser_ui_validation, qa_end_to_end)")
+	cmd.Flags().StringVar(&reason, "reason", "", "Failure report passed to Implementation")
+	_ = cmd.MarkFlagRequired("from")
+	_ = cmd.MarkFlagRequired("reason")
 	return cmd
 }
 
