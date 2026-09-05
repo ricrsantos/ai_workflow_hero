@@ -41,6 +41,7 @@ Telegram and the TUI are two interfaces over the same conversation and cycle ser
 ### 3.3 Conversation, commands, events, and pending messages
 
 - A slash command after the address prefix is dispatched through the equivalent TUI command path. Ordinary text is delivered as an input turn to the target instance's `ConversationService`, then to its existing harness session.
+- `<address>: /model` keeps selection remote: Telegram sends numbered harness options, then model options, then choices for every selectable model property. The final reply atomically persists the same free-chat model/properties used by local Chat.
 - Harness responses and Telegram-originated inputs appear in the target TUI Chat transcript with an unambiguous Telegram origin/destination label.
 - The daemon sends relevant outbound notifications only: cycle/stage start and finish, approval requests, errors, and final results. It does not forward intermediate activity, thinking, tool noise, or every stream delta.
 - If the addressed instance is unavailable, the daemon stores a durable pending message. It expires after 24 hours unless delivered or cancelled.

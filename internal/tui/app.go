@@ -487,6 +487,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)
 
+	case telegramModelListMsg:
+		return m.handleTelegramModelList(msg)
+
 	case telegramConnectedMsg, telegramRegisteredMsg, telegramInboundMsg, telegramEventMsg, telegramDisconnectedMsg:
 		return m.handleTelegramMsg(msg)
 

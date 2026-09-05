@@ -379,6 +379,70 @@ func TestTelegramListenCmdDeliversBufferedFrames(t *testing.T) {
 	}
 }
 
+func TestTelegramModelSelectionUsesNumberedRemoteWizard(t *testing.T) {
+	m, dir := newPickerTestModel(t)
+	var outbound []string
+	m.telegram = &telegramState{
+		installed: true,
+		connected: true,
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	// /model from Telegram must not open the local palette.
+	next, _ := m.Update(telegramInboundMsg{text: "/model", isCommand: true, address: "proj"})
+	m = next.(model)
+	if m.screen == screenPalette {
+		t.Fatal("Telegram /model must not open the local TUI picker")
+	}
+	if len(outbound) != 1 || !strings.Contains(outbound[0], "Escolha o Harness:") || !strings.Contains(outbound[0], "1 - Cursor") {
+		t.Fatalf("harness prompt=%q", outbound)
+	}
+
+	// Cursor, full/model, then fs=true, th=max, ef=high.
+	next, _ = m.Update(telegramInboundMsg{text: "1", address: "proj"})
+	m = next.(model)
+	if !strings.Contains(outbound[len(outbound)-1], "Escolha o modelo:") {
+		t.Fatalf("model prompt=%q", outbound[len(outbound)-1])
+	}
+	next, _ = m.Update(telegramInboundMsg{text: "1", address: "proj"})
+	m = next.(model)
+	if !strings.Contains(outbound[len(outbound)-1], "Fast Mode:") {
+		t.Fatalf("fast prompt=%q", outbound[len(outbound)-1])
+	}
+	next, _ = m.Update(telegramInboundMsg{text: "1", address: "proj"})
+	m = next.(model)
+	if !strings.Contains(outbound[len(outbound)-1], "Thinking:") {
+		t.Fatalf("thinking prompt=%q", outbound[len(outbound)-1])
+	}
+	next, _ = m.Update(telegramInboundMsg{text: "2", address: "proj"})
+	m = next.(model)
+	if !strings.Contains(outbound[len(outbound)-1], "Reasoning effort:") {
+		t.Fatalf("effort prompt=%q", outbound[len(outbound)-1])
+	}
+	next, _ = m.Update(telegramInboundMsg{text: "3", address: "proj"})
+	m = next.(model)
+	if got := outbound[len(outbound)-1]; !strings.Contains(got, "Modelo selecionado: full/model · Cursor") {
+		t.Fatalf("completion=%q", got)
+	}
+	if m.telegram.modelSelection != nil {
+		t.Fatal("selection state must be cleared after save")
+	}
+	hero, err := install.LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	harnessID, modelID := install.GetFreechatDefault(hero)
+	if harnessID != "cursor" || modelID != "full/model" {
+		t.Fatalf("freechat pair=%s/%s", harnessID, modelID)
+	}
+	props := install.EffectivePairProperties(hero, "cursor", "full/model")
+	if props["fs"] != "true" || props["th"] != "max" || props["ef"] != "high" {
+		t.Fatalf("saved properties=%v", props)
+	}
+}
+
 func TestPairingProgressShowsStartCode(t *testing.T) {
 	m := settingsFocusedOnPair(t, true)
 	m, _ = HandleTestKey(m, "enter")

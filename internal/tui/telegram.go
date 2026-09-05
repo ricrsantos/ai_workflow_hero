@@ -52,6 +52,10 @@ type telegramState struct {
 
 	// recordOutbound captures conversation replies in tests before IPC send.
 	recordOutbound func(string)
+
+	// modelSelection is an address-scoped, Telegram-only /model wizard. Local
+	// /model continues to use the TUI palette.
+	modelSelection *telegramModelSelection
 }
 
 // telegramMsg is the base for all tea.Msg payloads delivered from the client

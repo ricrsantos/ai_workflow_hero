@@ -120,6 +120,14 @@ func (m model) handleTelegramEvent(msg telegramEventMsg) model {
 // acknowledges queued deliveries (telegram-ipc R3).
 func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 	ack := m.telegramAckCmd(msg.inboundID)
+	if m.telegram != nil && m.telegram.modelSelection != nil {
+		if strings.EqualFold(strings.TrimSpace(msg.text), slashModel) || strings.EqualFold(strings.TrimSpace(msg.text), "/hero-model") {
+			next, cmd := m.startTelegramModelSelection(msg.address)
+			return next, combineTimerCmds(ack, cmd)
+		}
+		next, cmd := m.handleTelegramModelSelection(msg.address, msg.text)
+		return next, combineTimerCmds(ack, cmd)
+	}
 
 	// Classify through the shared service so the remote transport obeys the
 	// same slash-vs-text rule as the composer (ADR-061).
@@ -156,6 +164,9 @@ func (m model) telegramAckCmd(inboundID string) tea.Cmd {
 // submitRemoteCommand routes a Telegram-originated slash command through the
 // exact Hero slash dispatcher used by the composer.
 func (m model) submitRemoteCommand(text, origin string) (model, tea.Cmd) {
+	if strings.EqualFold(strings.TrimSpace(text), slashModel) || strings.EqualFold(strings.TrimSpace(text), "/hero-model") {
+		return m.startTelegramModelSelection(strings.TrimPrefix(origin, "telegram:"))
+	}
 	m.nextUserOrigin = origin
 	m = m.clearChatInput()
 	next, cmd, ok := m.dispatchExactHeroSlash(text)

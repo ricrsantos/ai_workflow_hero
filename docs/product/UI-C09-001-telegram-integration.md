@@ -65,6 +65,7 @@ Estou trabalhando em AI Workflow Hero…
 ```
 
 - A Telegram slash command uses the existing command result rendering, preceded by the remote-origin line.
+- Telegram `/model` keeps the selector in Telegram rather than opening the local palette. It asks `Escolha o Harness:`, `Escolha o modelo:`, and each available friendly property name (for example `Reasoning effort:`), with one-based numbered options.
 - A cancellation command reports a concise daemon result, such as `✓ Telegram: 3 pending message(s) cancelled for ai_workflow_2.`
 - Pending/expired delivery notices are muted informational lines; they do not look like harness responses.
 - Transcript text must never contain a token or chat id.

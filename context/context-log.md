@@ -4,6 +4,14 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-05 — Telegram `/model` uses a numbered remote wizard
+
+**Problem**: Telegram `/model` reused the local slash dispatcher and opened the TUI palette, leaving the remote user unable to choose a harness, model, or reasoning properties.
+
+**Change**: Added address-scoped Telegram selection state in `internal/tui`. It sends numbered harness and model lists, then each selectable C5 property list, validates numeric replies, and atomically saves the resulting free-chat pair/properties without opening the local picker.
+
+**Validation**: `go test ./internal/tui/...` pass.
+
 ## 2026-09-05 — Telegram inbound only after TUI restart
 
 **Problem**: Replies reached Telegram, but inbound text still appeared in Chat only after quitting and reopening the TUI. Every TUI start spawned a new daemon that unlinked the live socket, so two processes polled `getUpdates`. The idle process stole updates and queued them; flush happened on the next register.
