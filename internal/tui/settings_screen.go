@@ -202,34 +202,25 @@ func settingsRadioLabelWidth() int {
 }
 
 func (m model) renderVerbosityRadio(row settingsRow, focused, applied bool, width int) string {
-	box := settingsRadioIdle.Width(width)
-	switch {
-	case applied:
-		box = settingsRadioApplied.Width(width)
-	case focused:
-		box = settingsRadioFocus.Width(width)
-	}
-	inner := width - box.GetHorizontalFrameSize()
-	if inner < 8 {
-		inner = 8
-	}
-
-	caret := "  "
-	if focused && applied {
-		caret = settingsRadioCaretStyle.Render("> ")
-	}
-	glyph := settingsRadioEmptyStyle.Render("○ ")
+	marker := "  "
 	if applied {
-		glyph = settingsRadioFilledStyle.Render("• ")
+		marker = "> "
 	}
-	label := settingsRadioNameStyle.Render(padRight(row.label, settingsRadioLabelWidth()))
-	used := lipgloss.Width(caret) + lipgloss.Width(glyph) + lipgloss.Width(padRight(row.label, settingsRadioLabelWidth())) + 1
-	descW := inner - used
+	label := padRight(row.label, settingsRadioLabelWidth())
+	used := lipgloss.Width(marker + label + " ")
+	descW := width - used
 	if descW < 4 {
 		descW = 4
 	}
-	desc := mutedStyle.Render(truncateDisplayWidth(row.desc, descW))
-	return box.Render(caret + glyph + label + " " + desc)
+	line := marker + label + " " + truncateDisplayWidth(row.desc, descW)
+	if focused {
+		return navSidebarFocusedStyle.Render(truncateNavText(line, width))
+	}
+	if applied {
+		return navSidebarActiveStyle.Render(truncateNavText(line, width))
+	}
+	name := marker + label
+	return name + " " + mutedStyle.Render(truncateDisplayWidth(row.desc, descW))
 }
 
 func (m model) renderSettingsFooterHints() string {

@@ -10,8 +10,8 @@ Settings is a two-section screen: **CHAT VERBOSITY** (radio list) then **TELEGRA
 Settings
 ────────────────────────────────────────
 CHAT VERBOSITY                  select one
-  • Compact   Responses, errors, …
-  ○ Standard  Compact plus tools …
+> Debug     Everything Hero currently shows…
+  Compact   Responses, errors, …
 
 ────────────────────────────────────────
 TELEGRAM PLUGIN            optional plugin
@@ -19,10 +19,10 @@ TELEGRAM PLUGIN            optional plugin
   Plugin:  Installed · vX.Y.Z (protocol vN)
   Daemon:  Connected
   Project ID: ai_workflow  (live: ai_workflow_2)
-  [ Replace ]  [ Clear ]  [ Test ]
+  | Replace |  | Clear |  | Test |
 ```
 
-- Before installation: badge `Not installed`, command box `$ hero plugin install telegram`, and a Copy command action (Enter copies the CLI string). Install remains a CLI operation.
+- Before installation: badge `Not installed`, command `$ hero plugin install telegram`, and `| Copy command |` (Enter copies the CLI string). Install remains a CLI operation.
 - Before pairing: badge `Not configured`; Pair is the action button; Test is not shown until configured.
 - While pairing: navigation remains available only through the modal's explicit Cancel action.
 - On daemon outage: `⚠ Telegram daemon disconnected; retrying…` appears in Chat and Settings shows retry state. Successful recovery emits `✓ Telegram daemon reconnected.`

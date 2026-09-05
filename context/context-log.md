@@ -4,11 +4,17 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-05 — Release Hero v3.0.0 / hero-telegram-daemon 0.1
+
+**Change**: Cut `v3.0.0` — first Hero release shipping the optional Telegram plugin and platform-matched `hero-telegram-daemon` binaries (`scripts/release.sh` builds 4 OS/arch pairs + checksums). Includes C9 conversation service, IPC daemon, TUI Settings Telegram section, log rotation, and doctor/status plugin health.
+
+**Validation**: `go test ./...` pass before tag; `./scripts/release.sh`; GitHub Release `v3.0.0` with 8 binaries + `checksums.txt`.
+
 ## 2026-09-05 — Settings TUI redesign
 
 **Problem**: Settings rendered Chat verbosity and Telegram as one flat selectable list, so the plugin heading looked like another verbosity profile.
 
-**Change**: Split the screen into `CHAT VERBOSITY` (one-line radios with applied bar / focus border) and `TELEGRAM PLUGIN` (status badge, copyable `hero plugin install telegram` command box, or daemon/Project ID + action buttons). Focus order is only radios, copy command or Project ID, and Pair/Replace/Clear/Test. Enter applies the focused profile’s value (not the global cursor index). No in-TUI plugin install.
+**Change**: Split the screen into `CHAT VERBOSITY` (navbar-style `>` on the applied profile and a full-width focus bar while navigating) and `TELEGRAM PLUGIN` (status badge, copyable `hero plugin install telegram`, `| Copy command |` or daemon/Project ID + piped action buttons). Focus order is only radios, copy command or Project ID, and Pair/Replace/Clear/Test. Enter applies the focused profile’s value (not the global cursor index). No in-TUI plugin install.
 
 **Validation**: `go test ./...` pass.
 

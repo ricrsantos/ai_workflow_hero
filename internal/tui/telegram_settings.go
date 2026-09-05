@@ -93,16 +93,7 @@ func (m model) renderTelegramNotInstalled(rows []settingsRow, width int) string 
 	b.WriteString(mutedStyle.Render("  Status:  "))
 	b.WriteString(settingsBadgeStyle.Render("Not installed"))
 	b.WriteString("\n\n")
-	box := settingsCommandBoxStyle.Width(width)
-	if focused {
-		box = settingsCommandBoxFocusStyle.Width(width)
-	}
-	inner := width - box.GetHorizontalFrameSize()
-	if inner < 8 {
-		inner = 8
-	}
-	cmd := settingsCommandTextStyle.Render(truncateDisplayWidth("$ "+telegramInstallCommand, inner))
-	b.WriteString(box.Render(cmd))
+	b.WriteString(settingsCommandTextStyle.Render(truncateDisplayWidth("$ "+telegramInstallCommand, width)))
 	b.WriteString("\n\n  ")
 	b.WriteString(renderSettingsButton("Copy command", focused))
 	return b.String()
@@ -175,31 +166,33 @@ func joinButtonGap(buttons []string) []string {
 }
 
 func renderSettingsButton(label string, focused bool) string {
-	text := " " + label + " "
+	text := "| " + label + " |"
 	if focused {
-		return settingsPrimaryBtnStyle.Render(text)
+		return navSidebarFocusedStyle.Render(text)
 	}
-	return settingsSecondaryBtnStyle.Render(text)
+	return mutedStyle.Render(text)
 }
 
 func (m model) renderProjectIDRow(row settingsRow, focused bool, width int) string {
-	cursor := "  "
-	labelStyle := configLabelStyle
+	marker := "  "
 	if focused {
-		cursor = settingsRadioCaretStyle.Render("> ")
-		labelStyle = configSelectedLabelStyle
+		marker = "> "
 	}
-	label := labelStyle.Render("Project ID: ")
+	label := "Project ID: "
 	value := row.desc
 	if m.settings.editingAbbrev && focused {
 		value = m.settings.abbrevDraft + "█"
 	}
-	used := lipgloss.Width(cursor) + lipgloss.Width("Project ID: ")
+	used := lipgloss.Width(marker + label)
 	remain := width - used
 	if remain < 8 {
 		remain = 8
 	}
-	return cursor + label + configValueStyle.Render(truncateDisplayWidth(value, remain))
+	line := marker + label + truncateDisplayWidth(value, remain)
+	if focused {
+		return navSidebarFocusedStyle.Render(truncateNavText(line, width))
+	}
+	return marker + configLabelStyle.Render(label) + configValueStyle.Render(truncateDisplayWidth(value, remain))
 }
 
 // openTelegramPairingModal opens the pairing modal (telegram-tui R2).

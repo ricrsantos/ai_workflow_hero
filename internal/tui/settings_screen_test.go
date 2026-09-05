@@ -42,6 +42,15 @@ func TestSettingsRendersProfilesAndKeyboardSelection(t *testing.T) {
 	if compactIdx < 0 || compactDescIdx < compactIdx || strings.Count(plain[compactIdx:compactDescIdx], "\n") != 0 {
 		t.Fatalf("Compact description must share the radio line: %q", plain)
 	}
+	if strings.Contains(plain, "○") || strings.Contains(plain, "•") {
+		t.Fatalf("verbosity radios must not use circle glyphs: %q", plain)
+	}
+	if !strings.Contains(plain, "> Debug") {
+		t.Fatalf("applied profile must use navbar caret: %q", plain)
+	}
+	if !strings.Contains(plain, "| Copy command |") {
+		t.Fatalf("copy action must be a piped button: %q", plain)
+	}
 	next, _ := HandleTestKey(m, "up")
 	if next.settings.cursor != len(verbosityOptions)-2 {
 		t.Fatalf("cursor=%d want detailed index", next.settings.cursor)
