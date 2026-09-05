@@ -101,6 +101,26 @@ func TestServiceSubmitNilDispatcher(t *testing.T) {
 	}
 }
 
+func TestServiceSubmitWithUsesTurnDispatcher(t *testing.T) {
+	serviceDispatcher := &fakeDispatcher{}
+	turnDispatcher := &fakeDispatcher{res: Result{Output: "through-turn-dispatcher"}}
+	svc := New(serviceDispatcher, nil)
+
+	d, res, err := svc.SubmitWith(context.Background(), Input{Text: "/hero-status"}, turnDispatcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Kind != KindSlash || res.Output != "through-turn-dispatcher" {
+		t.Fatalf("dispatch=%+v result=%+v", d, res)
+	}
+	if len(turnDispatcher.calls) != 1 {
+		t.Fatalf("turn dispatcher calls=%d want 1", len(turnDispatcher.calls))
+	}
+	if len(serviceDispatcher.calls) != 0 {
+		t.Fatalf("service dispatcher must not be used when a turn dispatcher is supplied")
+	}
+}
+
 func TestServicePublish(t *testing.T) {
 	fn := &fakeNotifier{}
 	svc := New(nil, fn)

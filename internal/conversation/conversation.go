@@ -113,6 +113,15 @@ type Dispatcher interface {
 	Execute(ctx context.Context, in Input) (Result, error)
 }
 
+// DispatcherFunc adapts a function to Dispatcher. It keeps transport adapters
+// small while ensuring every harness turn still crosses the Service boundary.
+type DispatcherFunc func(context.Context, Input) (Result, error)
+
+// Execute implements Dispatcher.
+func (f DispatcherFunc) Execute(ctx context.Context, in Input) (Result, error) {
+	return f(ctx, in)
+}
+
 // EventKind classifies lifecycle notifications published to the Notifier.
 type EventKind string
 
@@ -174,11 +183,19 @@ func (s *Service) Classify(text string) Dispatch {
 // correct harness path. It returns the dispatch classification alongside the
 // result so callers can render appropriately.
 func (s *Service) Submit(ctx context.Context, in Input) (Dispatch, Result, error) {
+	return s.SubmitWith(ctx, in, s.Dispatcher)
+}
+
+// SubmitWith classifies in.Text and sends the turn through dispatcher. It is
+// intended for edge adapters that need a per-turn dispatcher, such as the TUI
+// which binds a Bubble Tea stream relay to one Execute. The service remains the
+// sole transport-neutral route into that dispatcher.
+func (s *Service) SubmitWith(ctx context.Context, in Input, dispatcher Dispatcher) (Dispatch, Result, error) {
 	d := ClassifyInput(in.Text)
-	if s.Dispatcher == nil {
+	if dispatcher == nil {
 		return d, Result{}, nil
 	}
-	res, err := s.Dispatcher.Execute(ctx, in)
+	res, err := dispatcher.Execute(ctx, in)
 	return d, res, err
 }
 

@@ -45,7 +45,7 @@ func TestChatFooterUsesRealBindingsAndIncludesAllHints(t *testing.T) {
 	m = SetWidth(m, 80)
 	m = EnterConversationForTest(m)
 
-	want := "tab focus · alt+m mode · / commands · enter newline or command · alt+enter send · alt+r/i copy · ↑↓ scroll · alt+q quit"
+	want := "tab focus · alt+m mode · / commands · enter newline · alt+enter send · esc interrupt chat · alt+r/i copy · ↑↓ scroll · alt+q quit"
 	for _, state := range []struct {
 		screen    screen
 		streaming bool

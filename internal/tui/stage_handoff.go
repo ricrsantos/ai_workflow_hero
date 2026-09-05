@@ -250,10 +250,10 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 			label = fmt.Sprintf("→ %s (%s)", strings.TrimSpace(stage), agentShortLabel(agent))
 		}
 		if i == 0 {
-			m = m.beginConversationExecute(label, prompt)
+			m = m.beginSystemConversationExecute(label, prompt)
 			cmd = m.conversationExecuteCmds()
 		} else {
-			m = m.appendConversationExecute(label, prompt)
+			m = m.appendSystemConversationExecute(label, prompt)
 		}
 	}
 	return m, cmd
@@ -332,6 +332,6 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	} else {
 		prompt += "Stage agents finished with empty output. Close the stage using artifacts on disk and continue.\n"
 	}
-	m = m.beginConversationExecute("→ "+stage+" closed", prompt)
+	m = m.beginSystemConversationExecute("→ "+stage+" closed", prompt)
 	return m, m.conversationExecuteCmds()
 }

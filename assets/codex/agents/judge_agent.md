@@ -21,7 +21,7 @@ Configuration → Research → Planning → Implementation → QA → **Judge** 
    - Check that the expected files/functions/endpoints exist.
    - Verify that the acceptance criteria in the SDD are met.
 3. Identify any unimplemented or partially-implemented requirements (implementation gaps).
-4. If implementation gaps exist: report them and request the orchestrator to re-run the relevant implementation agents.
+4. If implementation gaps exist: write the gap artifact, then run `hero stage loop-back --from judge --reason '<concise gap summary>' before requesting the orchestrator to re-run the relevant implementation agents. Never run `hero stage start --name implementation` directly after a Judge failure: loop-back reopens completed Implementation and all impacted downstream stages (including QA).
 5. If, after resolving implementation gaps, ambiguity remains in the SDD itself: STOP and ask the user to choose between /hero-back (reopen Planning) or /hero-approve (accept as-is, noted in context-log.md).
 6. Each retry (gap resolution) consumes one iteration.
 7. Report structured output to the orchestrator.

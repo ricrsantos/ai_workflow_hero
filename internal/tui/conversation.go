@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	herodebug "github.com/ricrsantos/ai_workflow_hero/internal/common/debug"
+	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
@@ -22,6 +23,7 @@ type convRole string
 
 const (
 	convRoleUser     convRole = "user"
+	convRoleSystem   convRole = "system"
 	convRoleAgent    convRole = "agent"
 	convRoleThinking convRole = "thinking"
 	convRoleTool     convRole = "tool"
@@ -622,11 +624,23 @@ func joinRuntimePromptBodies(agentBody, cmdBody string) string {
 func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	m.executes = nil
 	m.convStreamCh = nil
-	return m.startTaggedExecute(userLabel, executePrompt, true)
+	return m.startTaggedExecute(convRoleUser, userLabel, executePrompt, true)
+}
+
+// beginSystemConversationExecute starts a harness turn initiated by Hero
+// itself. Its label must not be rendered as user input in the transcript.
+func (m model) beginSystemConversationExecute(label, executePrompt string) model {
+	m.executes = nil
+	m.convStreamCh = nil
+	return m.startTaggedExecute(convRoleSystem, label, executePrompt, true)
 }
 
 func (m model) appendConversationExecute(userLabel, executePrompt string) model {
-	return m.startTaggedExecute(userLabel, executePrompt, false)
+	return m.startTaggedExecute(convRoleUser, userLabel, executePrompt, false)
+}
+
+func (m model) appendSystemConversationExecute(label, executePrompt string) model {
+	return m.startTaggedExecute(convRoleSystem, label, executePrompt, false)
 }
 
 func (m model) nextExecuteID() (model, string) {
@@ -634,7 +648,7 @@ func (m model) nextExecuteID() (model, string) {
 	return m, fmt.Sprintf("ex-%d", m.executeSeq)
 }
 
-func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) model {
+func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt string, reset bool) model {
 	// A new ordinary chat turn supersedes a stale warning/error from the
 	// previous turn. Keep the running status for palette-driven actions, which
 	// use actionBusy to own the footer until their execute completes.
@@ -671,7 +685,7 @@ func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) m
 	})
 	origin := m.nextUserOrigin
 	m.nextUserOrigin = ""
-	m.transcript = append(m.transcript, convMessage{role: convRoleUser, content: userLabel, origin: origin})
+	m.transcript = append(m.transcript, convMessage{role: labelRole, content: userLabel, origin: origin})
 	m.transcript = append(m.transcript, convMessage{
 		role:      convRoleAgent,
 		content:   "",
@@ -704,7 +718,7 @@ func (m model) startTaggedExecute(userLabel, executePrompt string, reset bool) m
 	execute := m.executes[executeID]
 	execute.relay = relay
 	m.executes[executeID] = execute
-	m.startConversationExecute(executeID, executePrompt, relay)
+	m.startConversationExecute(executeID, userLabel, executePrompt, origin, relay)
 	return m.maybeFollowTranscriptBottom()
 }
 
@@ -1265,7 +1279,44 @@ func parseHeroResumeInline(text string) (int, bool) {
 	return n, true
 }
 
-func (m model) startConversationExecute(executeID, prompt string, relay *conversationStreamRelay) {
+func (m model) startConversationExecute(executeID, userText, prompt, origin string, relay *conversationStreamRelay) {
+	input := conversation.Input{
+		Text:       userText,
+		Origin:     conversation.OriginLocal,
+		Mode:       conversation.ModeCycle,
+		ProjectDir: m.executeDir(),
+	}
+	if m.freeChatMode {
+		input.Mode = conversation.ModeFree
+	}
+	if strings.HasPrefix(origin, "telegram:") {
+		input.Origin = conversation.OriginTelegram
+		input.Address = strings.TrimPrefix(origin, "telegram:")
+	}
+	go func() {
+		ctx := context.Background()
+		var execution *harness.ExecutionResult
+		var harnessID string
+		dispatcher := conversation.DispatcherFunc(func(ctx context.Context, _ conversation.Input) (conversation.Result, error) {
+			var err error
+			execution, harnessID, err = m.executeConversationTurn(ctx, executeID, prompt, relay)
+			return conversation.Result{}, err
+		})
+		if m.convService == nil {
+			relay.CloseAndWait()
+			relay.SendControl(executeDoneMsg{executeID: executeID, err: fmt.Errorf("conversation service unavailable")})
+			return
+		}
+		_, _, err := m.convService.SubmitWith(ctx, input, dispatcher)
+		relay.CloseAndWait()
+		relay.SendControl(executeDoneMsg{executeID: executeID, result: execution, err: err, harnessID: harnessID})
+	}()
+}
+
+// executeConversationTurn is the TUI edge adapter for one Service-dispatched
+// turn. It resolves a harness and relays its stream; routing into the adapter
+// itself is owned by conversation.Service.
+func (m model) executeConversationTurn(ctx context.Context, executeID, prompt string, relay *conversationStreamRelay) (*harness.ExecutionResult, string, error) {
 	svc := m.svc
 	stageName := m.conversationStage
 	agentName := m.runtimeAgentName
@@ -1274,97 +1325,89 @@ func (m model) startConversationExecute(executeID, prompt string, relay *convers
 	if mode == "" {
 		mode = harness.ModeBuild
 	}
-	go func() {
-		ctx := context.Background()
-		resolved, err := m.resolveExecuteResolution(ctx)
-		if err != nil {
-			relay.CloseAndWait()
-			relay.SendControl(executeDoneMsg{executeID: executeID, err: err})
-			return
+	resolved, err := m.resolveExecuteResolution(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	pair := resolved.pair
+	if pair.Adapter == nil {
+		return nil, "", fmt.Errorf("harness adapter unavailable")
+	}
+	if !relay.SendControl(executePairMsg{executeID: executeID, harnessID: pair.HarnessID, model: pair.Model}) {
+		return nil, pair.HarnessID, context.Canceled
+	}
+	sessionID := m.harnessSessionIDForPair(stageName, pair.HarnessID)
+	if resolved.warning != "" {
+		relay.Enqueue(harness.StreamDelta{Kind: harness.StreamKindText, Text: resolved.warning + "\n\n"})
+	}
+	if svc != nil && strings.TrimSpace(stageName) != "" {
+		if err := svc.SetStageHarnessID(stageName, pair.HarnessID); err != nil {
+			slog.Debug("tui persist stage harness id failed", "error", err)
 		}
-		pair := resolved.pair
-		if pair.Adapter == nil {
-			relay.CloseAndWait()
-			relay.SendControl(executeDoneMsg{executeID: executeID, err: fmt.Errorf("harness adapter unavailable")})
-			return
+	}
+	profile := harness.PermissionProfileAsk
+	if svc != nil {
+		if hero, err := install.LoadHeroJSON(projectDir); err == nil {
+			profile = install.HarnessPermissionProfile(hero, pair.HarnessID)
 		}
-		if !relay.SendControl(executePairMsg{executeID: executeID, harnessID: pair.HarnessID, model: pair.Model}) {
-			return
-		}
-		sessionID := m.harnessSessionIDForPair(stageName, pair.HarnessID)
-		if resolved.warning != "" {
-			relay.Enqueue(harness.StreamDelta{Kind: harness.StreamKindText, Text: resolved.warning + "\n\n"})
-		}
-		if svc != nil && strings.TrimSpace(stageName) != "" {
-			if err := svc.SetStageHarnessID(stageName, pair.HarnessID); err != nil {
-				slog.Debug("tui persist stage harness id failed", "error", err)
+	}
+	req := harness.ExecuteRequest{
+		ProjectDir:        projectDir,
+		Prompt:            prompt,
+		SessionID:         sessionID,
+		Stream:            true,
+		Debug:             herodebug.Enabled,
+		StageName:         stageName,
+		AgentName:         agentName,
+		Model:             pair.Model,
+		Mode:              mode,
+		PermissionProfile: profile,
+		// C5: attach the normalized property projection (freechat for
+		// Chat//hero-new, YAML-derived for workflow commands; ADR-041/042).
+		Properties: resolved.props,
+		OnStreamDelta: func(delta harness.StreamDelta) {
+			relay.Enqueue(delta)
+		},
+		OnPermissionRequest: func(ctx context.Context, perm harness.PermissionRequest) (harness.PermissionResponse, error) {
+			respCh := make(chan harness.PermissionResponse, 1)
+			select {
+			case relay.out <- harnessPermissionRequestMsg{req: perm, respCh: respCh}:
+			case <-ctx.Done():
+				return harness.PermissionResponse{}, ctx.Err()
+			case <-relay.ctx.Done():
+				return harness.PermissionResponse{}, context.Canceled
 			}
-		}
-		profile := harness.PermissionProfileAsk
-		if svc != nil {
-			if hero, err := install.LoadHeroJSON(projectDir); err == nil {
-				profile = install.HarnessPermissionProfile(hero, pair.HarnessID)
+			select {
+			case resp := <-respCh:
+				return resp, nil
+			case <-ctx.Done():
+				return harness.PermissionResponse{}, ctx.Err()
+			case <-relay.ctx.Done():
+				return harness.PermissionResponse{}, context.Canceled
 			}
-		}
-		req := harness.ExecuteRequest{
-			ProjectDir:        projectDir,
-			Prompt:            prompt,
-			SessionID:         sessionID,
-			Stream:            true,
-			Debug:             herodebug.Enabled,
-			StageName:         stageName,
-			AgentName:         agentName,
-			Model:             pair.Model,
-			Mode:              mode,
-			PermissionProfile: profile,
-			// C5: attach the normalized property projection (freechat for
-			// Chat//hero-new, YAML-derived for workflow commands; ADR-041/042).
-			Properties: resolved.props,
-			OnStreamDelta: func(delta harness.StreamDelta) {
-				relay.Enqueue(delta)
-			},
-			OnPermissionRequest: func(ctx context.Context, perm harness.PermissionRequest) (harness.PermissionResponse, error) {
-				respCh := make(chan harness.PermissionResponse, 1)
-				select {
-				case relay.out <- harnessPermissionRequestMsg{req: perm, respCh: respCh}:
-				case <-ctx.Done():
-					return harness.PermissionResponse{}, ctx.Err()
-				case <-relay.ctx.Done():
-					return harness.PermissionResponse{}, context.Canceled
-				}
-				select {
-				case resp := <-respCh:
-					return resp, nil
-				case <-ctx.Done():
-					return harness.PermissionResponse{}, ctx.Err()
-				case <-relay.ctx.Done():
-					return harness.PermissionResponse{}, context.Canceled
-				}
-			},
-			OnQuestionRequest: func(ctx context.Context, qreq harness.QuestionRequest) (harness.QuestionResponse, error) {
-				respCh := make(chan harness.QuestionResponse, 1)
-				select {
-				case relay.out <- harnessQuestionRequestMsg{req: qreq, respCh: respCh}:
-				case <-ctx.Done():
-					return harness.QuestionResponse{Rejected: true}, ctx.Err()
-				case <-relay.ctx.Done():
-					return harness.QuestionResponse{Rejected: true}, context.Canceled
-				}
-				select {
-				case resp := <-respCh:
-					return resp, nil
-				case <-ctx.Done():
-					return harness.QuestionResponse{Rejected: true}, ctx.Err()
-				case <-relay.ctx.Done():
-					return harness.QuestionResponse{Rejected: true}, context.Canceled
-				}
-			},
-		}
-		req = harness.NormalizeExecuteRequest(req)
-		res, err := pair.Adapter.Execute(ctx, req)
-		relay.CloseAndWait()
-		relay.SendControl(executeDoneMsg{executeID: executeID, result: res, err: err, harnessID: pair.HarnessID})
-	}()
+		},
+		OnQuestionRequest: func(ctx context.Context, qreq harness.QuestionRequest) (harness.QuestionResponse, error) {
+			respCh := make(chan harness.QuestionResponse, 1)
+			select {
+			case relay.out <- harnessQuestionRequestMsg{req: qreq, respCh: respCh}:
+			case <-ctx.Done():
+				return harness.QuestionResponse{Rejected: true}, ctx.Err()
+			case <-relay.ctx.Done():
+				return harness.QuestionResponse{Rejected: true}, context.Canceled
+			}
+			select {
+			case resp := <-respCh:
+				return resp, nil
+			case <-ctx.Done():
+				return harness.QuestionResponse{Rejected: true}, ctx.Err()
+			case <-relay.ctx.Done():
+				return harness.QuestionResponse{Rejected: true}, context.Canceled
+			}
+		},
+	}
+	req = harness.NormalizeExecuteRequest(req)
+	res, err := pair.Adapter.Execute(ctx, req)
+	return res, pair.HarnessID, err
 }
 
 // streamDeltaMustDeliver is true for transcript-critical events. Dropping them
@@ -2481,6 +2524,8 @@ func (m model) transcriptMessageChrome(msg convMessage) (lipgloss.Style, string)
 	switch msg.role {
 	case convRoleUser:
 		return chatBarUser, chatInUser.Render("You")
+	case convRoleSystem:
+		return chatBarMuted, chatInMuted.Render("Hero")
 	case convRoleThinking:
 		header := formatAgentHeader(msg.agentName, msg.modelSlug, m.harnessForMessage(msg))
 		return chatBarMuted, chatInThink.Render(header)

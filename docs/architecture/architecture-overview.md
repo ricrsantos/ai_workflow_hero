@@ -452,7 +452,7 @@ Conversation now has a shared core (`internal/conversation`) plus three surfaces
 
 | Layer | Where | Lifetime |
 |---|---|---|
-| **Conversation service** | `internal/conversation` — transport-neutral `Service`, `Input`/`Dispatch` classification, and `Notifier` lifecycle events (ADR-061). The TUI and the Telegram ingress both classify turns through it | Process lifetime |
+| **Conversation service** | `internal/conversation` — transport-neutral `Service`, `Input`/`Dispatch` routing, per-turn dispatcher boundary, and `Notifier` lifecycle events (ADR-061). The TUI and Telegram ingress both route turns through it; Bubble Tea renders the results | Process lifetime |
 | **TUI Chat UI** | `internal/tui/conversation.go` + `stage_handoff.go` — transcript in memory; one or more tagged Executes multiplexed on one channel | Process lifetime; optional resume via harness session id |
 | **IDE Runtime** | Cursor chat + Task sessions | IDE session / Task isolation (ADR-005) |
 | **SQLite `conversation` table** | `internal/store` | Persisted messages; **not** wired as the TUI chat transcript SoT in V1 |
@@ -505,7 +505,7 @@ Parity between TUI and chat is **intentional but not identical** — see [idea n
 
 | Concept | V1 state |
 |---|---|
-| Generic **Conversation Layer** service | `internal/conversation` (classification + Notifier); full dispatch extraction remains TUI-owned for behavior stability |
+| Generic **Conversation Layer** service | `internal/conversation` (turn routing + per-turn dispatcher + Notifier); Bubble Tea owns rendering only |
 | **Multi-harness** adapters | Cursor + OpenCode with normalized stream events; further harnesses post-2.x |
 | **Daemon / RPC** | Optional Telegram plugin daemon over local IPC (ADR-059); generic `hero serve` still deferred |
 | **Distributed event bus** | Events in SQLite + engine `Notifier` for the Telegram outbound path |

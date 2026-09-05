@@ -129,16 +129,16 @@ func TestTabFocusesNavbarAndEnterOpensHighlightedScreen(t *testing.T) {
 	if CurrentScreen(next) != ScreenStatus {
 		t.Fatalf("Enter opened %v, want Status", CurrentScreen(next))
 	}
-	if next.shellFocus != shellFocusNavbar {
-		t.Fatal("navbar should retain focus after opening a screen")
+	if next.shellFocus != shellFocusContent {
+		t.Fatal("selected screen should receive focus after opening")
 	}
 	if plain := stripANSI(ViewForTest(next)); !strings.Contains(plain, "> Status") {
 		t.Fatalf("active marker did not move to Status: %q", plain)
 	}
 
 	next, _ = HandleTestKey(next, "tab")
-	if next.shellFocus != shellFocusContent {
-		t.Fatal("second Tab should return focus to screen content")
+	if next.shellFocus != shellFocusNavbar {
+		t.Fatal("Tab from selected content should return focus to navbar")
 	}
 }
 

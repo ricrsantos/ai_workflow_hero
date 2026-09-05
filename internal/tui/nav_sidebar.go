@@ -233,9 +233,12 @@ func (m model) activateNavbarScreen(target screen) (model, tea.Cmd) {
 		m.outputErr = false
 	}
 	next, cmd := m.navigateToScreen(target)
-	next.shellFocus = shellFocusNavbar
+	// Enter commits navbar navigation and hands keyboard focus to the selected
+	// screen. Keeping it on the navbar made Chat and list screens feel inert
+	// until the user pressed Tab a second time.
+	next.shellFocus = shellFocusContent
 	next.navCursor = next.activeNavIndex()
-	next.chatInputFocused = false
+	next.chatInputFocused = next.screen == screenConversation
 	return next, cmd
 }
 

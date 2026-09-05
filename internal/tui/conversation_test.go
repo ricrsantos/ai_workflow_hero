@@ -726,7 +726,7 @@ func TestHeroResumeKeepsTranscriptAndShowsWait(t *testing.T) {
 
 	next, cmd := BeginHeroResumeExecuteForTest(m, 0)
 	if cmd == nil {
-		t.Fatal("expected resume execute cmd")
+		t.Fatal("expected resume transition command")
 	}
 	if len(next.transcript) < 1 || next.transcript[0].content != "prior grill" {
 		t.Fatal("resume must keep prior transcript")
@@ -734,15 +734,11 @@ func TestHeroResumeKeepsTranscriptAndShowsWait(t *testing.T) {
 	if StatusKindForTest(next) != "running" {
 		t.Fatalf("status=%s want running", StatusKindForTest(next))
 	}
-	view := stripANSI(ViewForTest(next))
-	if !strings.Contains(view, "Waiting for harness") {
-		t.Fatalf("missing wait line: %q", view)
-	}
-	if !strings.Contains(view, "/hero-resume") || !strings.Contains(view, "running") {
-		t.Fatalf("missing resume status timer: %q", view)
-	}
-	if !strings.Contains(view, "prior grill") {
-		t.Fatalf("prior transcript not visible: %q", view)
+	// The deterministic resume command runs before any harness Execute. A
+	// no-cycle service reports its error rather than opening a synthetic chat.
+	updated, _ := next.Update(cmd())
+	if StatusKindForTest(updated.(model)) != "err" {
+		t.Fatalf("resume without a cycle must report an error")
 	}
 }
 
@@ -2620,29 +2616,9 @@ func TestHeroResumeRuntimeConversation(t *testing.T) {
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v", CurrentScreen(next))
 	}
-	next = drainConversationStream(t, next, cmd)
-	if !strings.Contains(h.lastPrompt, "RESUME_RUNTIME") {
-		t.Fatalf("missing command: %q", h.lastPrompt)
-	}
-	if h.lastAgentName != "orchestration_agent" {
-		t.Fatalf("agent=%q", h.lastAgentName)
-	}
-	if ActionBusyForTest(next) {
-		t.Fatal("finished /hero-resume must clear actionBusy")
-	}
-	if StatusKindForTest(next) == "running" {
-		t.Fatal("finished /hero-resume must not leave status running")
-	}
-	if StatusTextForTest(next) != "turn completed" {
-		t.Fatalf("status=%q", StatusTextForTest(next))
-	}
-
-	started, startCmd := RunPaletteItemForTest(OpenPalette(next), "/hero-start")
-	if strings.Contains(StatusTextForTest(started), "wait for /hero-resume") {
-		t.Fatalf("/hero-start blocked as if resume still running: %q", StatusTextForTest(started))
-	}
-	if startCmd == nil && strings.Contains(StatusTextForTest(started), "busy") {
-		t.Fatalf("expected /hero-start to dispatch, got busy status %q", StatusTextForTest(started))
+	updated, _ := next.Update(cmd())
+	if StatusKindForTest(updated.(model)) != "err" {
+		t.Fatal("resume without an available cycle must report an error")
 	}
 }
 
@@ -2668,12 +2644,17 @@ func TestHeroResumeInlineCycleNumber(t *testing.T) {
 	if CurrentScreen(next) != ScreenConversation {
 		t.Fatalf("screen=%v", CurrentScreen(next))
 	}
-	next = drainConversationStream(t, next, cmd)
-	if !strings.Contains(h.lastPrompt, "INLINE_RESUME") {
-		t.Fatalf("missing command: %q", h.lastPrompt)
+	updated, _ := next.Update(cmd())
+	if StatusKindForTest(updated.(model)) != "err" {
+		t.Fatal("resume of an unavailable numbered cycle must report an error")
 	}
-	if !strings.Contains(h.lastPrompt, "Resume cycle C4") {
-		t.Fatalf("missing cycle N in preamble: %q", h.lastPrompt)
+}
+
+func TestSystemTranscriptLabelIsNotRenderedAsUserInput(t *testing.T) {
+	m := NewTestModel(nil)
+	_, label := m.transcriptMessageChrome(convMessage{role: convRoleSystem, content: "→ planning closed"})
+	if stripANSI(label) != "Hero" {
+		t.Fatalf("system label=%q, want Hero", label)
 	}
 }
 

@@ -493,7 +493,7 @@ func fitContentHeight(content string, height int, keepBottom bool) string {
 	return strings.Join(lines, "\n")
 }
 
-const fixedFooterHints = "tab focus · alt+m mode · / commands · enter newline or command · alt+enter send · alt+r/i copy · ↑↓ scroll · alt+q quit"
+const fixedFooterHints = "tab focus · alt+m mode · / commands · enter newline · alt+enter send · esc interrupt chat · alt+r/i copy · ↑↓ scroll · alt+q quit"
 
 func (m model) footerHints() string {
 	if m.cycleWelcomeDialog {

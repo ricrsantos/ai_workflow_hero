@@ -12,6 +12,24 @@
 
 **Validation**: `hero status` — QA Completed 3/4 Auto; Judge Running 2/3.
 
+## 2026-09-05 — TUI focus, resume, Judge loop-back, and transcript attribution
+
+**Change**: Enter on the navbar now transfers focus to the chosen screen. `/hero-resume` performs the deterministic `cycle.Resume` transition asynchronously and immediately enters the existing `/hero-start` bootstrap. Judge prompts now require `hero stage loop-back --from judge` for implementation gaps, reopening completed Implementation and downstream QA before agents rerun. Stage-handoff labels are rendered as `Hero` system messages instead of user input.
+
+**Validation**: focused navbar, resume, stage-handoff, and transcript tests pass; full suite pending.
+
+## 2026-09-05 — Chat footer interruption hint
+
+**Change**: Shortened the fixed Chat footer hint from `enter newline or command` to `enter newline` and added `esc interrupt chat`, making the existing stream-interrupt shortcut visible without increasing the footer footprint materially.
+
+**Validation**: TUI footer and composer hint tests pass.
+
+## 2026-09-05 — C9 Judge-gap completion: conversation boundary and E2E lock
+
+**Change**: Routed every TUI harness Execute through `conversation.Service.SubmitWith` and a per-turn edge dispatcher, preserving Bubble Tea stream rendering while making the service the sole route to the adapter. Expanded the Telegram integration lock to use injected Bot API/vault/IPC for pairing, dual instance suffixes, addressed live routing, offline queue/reconnect, daemon-owned pending cancellation, and outbound notification prefixing.
+
+**Validation**: focused conversation, TUI, and integration tests plus `go test ./...` pass. The `telegram-integration` OpenSpec link remains persisted on cycle C9.
+
 ## 2026-09-05 — C9 QA passed on TUI re-run; engine Escalated (2/2)
 
 **Problem**: After Implementation iter 3 closed, the engine escalated QA (`iteration_budget`) instead of `stage start` (QA already used 2/2). The TUI still executed `qa_agent` (`gpt-5.6-terra`). Agent report: `tests_passed: true`, logging pass, lint `go vet` pass; staticcheck/golangci-lint incompatible with Go 1.26. Coverage: engine 78.5%, daemon 57.4%, IPC 64.1%, envhygiene 86.9%.

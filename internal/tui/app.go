@@ -231,6 +231,10 @@ type actionResultMsg struct {
 	title   string // optional panel title for multiline output
 }
 
+// heroResumeDoneMsg reports the deterministic cycle-state transition before
+// the standard /hero-start bootstrap reloads context and restarts the cycle.
+type heroResumeDoneMsg struct{ err error }
+
 func newModel(svc *cycle.Service) model {
 	m := model{
 		svc:                    svc,
@@ -372,6 +376,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.clampContentOffset()
 		slog.Debug("tui data refreshed", "cycle", m.status.CycleNumber)
 		return m, timerCmd
+
+	case heroResumeDoneMsg:
+		if msg.err != nil {
+			m.actionBusy = false
+			m = m.setStatusResult(false, "/hero-resume", msg.err.Error())
+			m.convError = msg.err.Error()
+			return m, nil
+		}
+		// Resume is not a chat-only context lookup: after reactivating the
+		// selected cycle, immediately run the existing asynchronous /hero-start
+		// bootstrap, which reloads context and dispatches the current stage.
+		return m.beginHeroStart()
 
 	case configLoadedMsg, configSavedMsg, configRetryMsg:
 		return m.handleConfigMsg(msg)
@@ -1191,18 +1207,14 @@ func (m model) beginHeroResumeExecute(cycleN int) (model, tea.Cmd) {
 		m.convError = "Cycle number must be a positive integer (e.g. /hero-resume 4)."
 		return m, nil
 	}
-	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-resume")
-	if !ok {
-		if cycleN > 0 {
-			m, _ = m.enterConversation()
-			m.convError = defaultModelRequiredMessage("/hero-resume")
-			return m, nil
-		}
-		return m, cmd
-	}
 	m = m.setStatusRunning("/hero-resume")
-	next, execCmd := m.beginHeroRuntimeConversation("resume", slug, heroRuntimeOpts{ResumeCycleNumber: cycleN})
-	return next, execCmd
+	svc := m.svc
+	return m, func() tea.Msg {
+		if svc == nil {
+			return heroResumeDoneMsg{err: fmt.Errorf("cycle service unavailable")}
+		}
+		return heroResumeDoneMsg{err: svc.Resume(cycleN)}
+	}
 }
 
 func (m model) validateHeroRejectPreconditions() (errMsg string) {
