@@ -4,7 +4,7 @@
 
 ## 1. Distribution Model
 
-Hero is distributed as a single, self-contained Go binary (`hero`) via GitHub Releases on the project's public repository (BSD-2-Clause license). All assets (commands, skills, prompts, templates) are embedded into the binary via `embed.FS` — there is nothing to download separately. Optional official plugins may add matching platform artifacts; the Telegram plugin installs its local daemon only through `hero plugin install telegram` and is published with the matching Hero release.
+Hero is distributed as a single, self-contained Go binary (`hero`) via GitHub Releases on the project's public repository (BSD-2-Clause license). All assets (commands, skills, prompts, templates) are embedded into the binary via `embed.FS` — there is nothing to download separately. Optional official plugins may add matching platform artifacts; the Telegram plugin downloads its local daemon from the matching Hero GitHub Release via `hero plugin install telegram`.
 
 ## 2. Target Platforms (V1)
 

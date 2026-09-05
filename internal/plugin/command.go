@@ -1,9 +1,11 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime"
 	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
@@ -45,15 +47,9 @@ func newInstallCommand(version string) *cobra.Command {
 				return fail(stderr, ErrUnsupportedPlugin{Name: name})
 			}
 
-			src, err := DaemonSource()
-			if err != nil {
-				return fail(stderr, err)
-			}
-			pluginDir, err := telegram.PluginDir(telegram.PluginName)
-			if err != nil {
-				return fail(stderr, err)
-			}
-			m, err := InstallTelegram(pluginDir, src, version, time.Now())
+			fmt.Fprintf(stdout, "Downloading %s %s for %s/%s from GitHub releases...\n",
+				telegram.DaemonBinaryName, releaseTag(version), runtime.GOOS, runtime.GOARCH)
+			m, err := InstallTelegramFromRelease(context.Background(), version, time.Now())
 			if err != nil {
 				return fail(stderr, err)
 			}

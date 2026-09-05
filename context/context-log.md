@@ -4,6 +4,18 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-05 — Release Hero v3.0.1
+
+**Change**: Patch release — `hero plugin install telegram` downloads the platform-matched daemon from the matching Hero GitHub Release into `~/.workflow-hero/plugins/telegram/` (no local copy next to `hero` required).
+
+**Validation**: `go test ./...` pass; `./scripts/release.sh`; GitHub Release `v3.0.1`.
+
+## 2026-09-05 — Telegram plugin install downloads from GitHub Releases
+
+**Change**: `hero plugin install telegram` now fetches the platform-matched `hero-telegram-daemon` from the Hero GitHub Release that matches the running binary version (`internal/plugin/release.go`), installs it under `~/.workflow-hero/plugins/telegram/`, and no longer requires a local copy next to the `hero` executable.
+
+**Validation**: `go test ./internal/plugin/...` pass. Released as Hero **v3.0.1**.
+
 ## 2026-09-05 — Release Hero v3.0.0 / hero-telegram-daemon 0.1
 
 **Change**: Cut `v3.0.0` — first Hero release shipping the optional Telegram plugin and platform-matched `hero-telegram-daemon` binaries (`scripts/release.sh` builds 4 OS/arch pairs + checksums). Includes C9 conversation service, IPC daemon, TUI Settings Telegram section, log rotation, and doctor/status plugin health.

@@ -335,7 +335,7 @@ The daemon owns Telegram credentials and Bot API transport. TUI clients own rend
 
 **Landed wiring (C09 Implementation):**
 
-- `hero plugin install|uninstall|list telegram` copies a platform-matched `hero-telegram-daemon` binary from the release layout and records `manifest.json` (`internal/plugin`). `hero install`/`hero upgrade` never enable it.
+- `hero plugin install|uninstall|list telegram` downloads a platform-matched `hero-telegram-daemon` binary from the matching Hero GitHub Release and records `manifest.json` under `~/.workflow-hero/plugins/telegram/` (`internal/plugin`). `hero install`/`hero upgrade` never enable it.
 - The daemon (`cmd/hero-telegram-daemon`, `internal/telegram/daemon`) owns the Bot API, registers TUIs over a `0600` UDS (`internal/telegram/ipc`), allocates `base`/`_2`/`free_N` suffixes atomically, routes addressed inbound text/slash commands, durably queues offline targets (24h), and sends lifecycle-only outbound notifications.
 - The TUI (`internal/tui/telegram*.go`) runs an IPC client as a `tea.Cmd` goroutine with bounded backoff reconnect, renders Settings Telegram section + pairing modal, and labels remote turns `← [Telegram · addr]` / `→ [Telegram · addr]`. The engine publishes `conversation.Event`s through a `Notifier`; the TUI adapter forwards only cycle/stage/approval/error/final events to the daemon outbound path.
 - Project TUI logs rotate under `.workflow-hero/logs/tui.log` (10 MB × 10) with a one-time legacy migration; the daemon logs under `~/.workflow-hero/logs/telegram-daemon.log`. All writes pass shared `internal/common/redact` token/chat-id redaction. `.workflow-hero/logs/` is added to the managed `.gitignore` block.

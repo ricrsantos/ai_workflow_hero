@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/telegram"
@@ -17,25 +16,6 @@ type ErrUnsupportedPlugin struct{ Name string }
 
 func (e ErrUnsupportedPlugin) Error() string {
 	return fmt.Sprintf("unsupported plugin %q", e.Name)
-}
-
-// DaemonSource locates the platform daemon binary shipped alongside the running
-// hero executable (release layout). It fails when the artifact is missing so
-// install fails closed (telegram-plugin R1).
-func DaemonSource() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("resolve hero executable: %w", err)
-	}
-	name := telegram.DaemonBinaryName
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	candidate := filepath.Join(filepath.Dir(exe), name)
-	if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() {
-		return candidate, nil
-	}
-	return "", fmt.Errorf("telegram daemon artifact %q not found next to hero executable; reinstall a matching Hero release", name)
 }
 
 // InstallTelegram installs the Telegram plugin: it copies the daemon binary from

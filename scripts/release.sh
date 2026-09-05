@@ -57,7 +57,8 @@ for TARGET in "${TARGETS[@]}"; do
   echo "✓ Built ${OUTPUT}"
 
   # Optional Telegram plugin daemon (ADR-059): publish a platform-matched
-  # daemon binary next to hero so `hero plugin install telegram` can copy it.
+  # daemon binary so `hero plugin install telegram` can download it from GitHub
+  # Releases for the matching Hero version.
   DAEMON_OUTPUT="${DIST}/hero-telegram-daemon_${TAG}_${OS}_${ARCH}"
   echo "→ Building ${DAEMON_OUTPUT}..."
   GOOS="${OS}" GOARCH="${ARCH}" go build \
