@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   Project: AI Workflow Hero (Hero) — the Hero CLI + Runtime assets themselves.
   This is Hero's own source code repository, not a project that consumes Hero.
-  Phase: Cycle C7 — TUI Cycle Configuration Screen.
+  Phase: Cycle C9 — Telegram Remote Interface Plugin.
 
   Authoritative baseline sources — read before planning or writing any artifact:
     - AGENTS.md (project summary, doc map, reference lookup order, testing loop, ambiguity policy)
@@ -14,7 +14,7 @@ context: |
     - docs/testing/TESTING.md (testing strategy and `go test ./...`)
     - context/current-state.md (current implementation status and architecture summary)
     - context/context-log.md (recent decisions and session history)
-    - docs/idea/v2_8_config/config-screen.md (product idea source; yields to C7 PRD/UI/ADR on divergence)
+    - docs/idea/v3_0/telegram_integration.md (product idea source; yields to C9 PRD/UI/ADR on divergence)
 
   Registered documents below are generated from `.workflow-hero/config/documents.json`.
   The registry is the source of truth for the cycle-document list; do not hand-maintain it here:
@@ -43,42 +43,50 @@ context: |
     - [C07 PRD] docs/product/PRD-C07-001-tui-cycle-config.md — TUI Cycle Configuration Screen
     - [C07 ADR] docs/architecture/ADR-C07-001-tui-cycle-config.md — TUI Cycle Configuration and Failed-Stage Retry
     - [C07 UI] docs/product/UI-C07-001-tui-cycle-config.md — TUI Cycle Configuration Screen
+    - [C08 PRD] docs/product/PRD-C08-001-tui-stage-execute.md — TUI-Direct Stage Execute
+    - [C08 ADR] docs/architecture/ADR-C08-001-tui-stage-execute.md — TUI-Direct Stage Execute (ADR-054–057)
+    - [C08 UI] docs/product/UI-C08-001-tui-stage-execute.md — TUI-Direct Stage Execute
+    - [C09 ADR] docs/architecture/ADR-C09-001-tui-session-ai-timers.md — Shared TUI Session and AI Timers (ADR-058)
+    - [C09 PRD] docs/product/PRD-C09-001-telegram-integration.md — Telegram Remote Interface Plugin
+    - [C09 ADR] docs/architecture/ADR-C09-002-telegram-integration.md — Telegram Plugin and Local Conversation Daemon (ADR-059–064)
+    - [C09 UI] docs/product/UI-C09-001-telegram-integration.md — Telegram Plugin Terminal UX
+    - [C09 DEPLOY] docs/deployment/DEPLOY.md — Build, Release, and Distribution (Telegram plugin update)
+    - [C09 TESTING] docs/testing/TESTING.md — Testing strategy (Telegram plugin coverage)
 
   Terminology: **etapa** = workflow stage; **interação** = one conversational round within an etapa;
-  **enabled** = user selected harness in hero.json; **available** = adapter IsAvailable true;
-  **native model id** = harness-specific model string (Cursor slug, OpenCode provider/model, Codex native id);
-  **managed field** = YAML path owned by the Config screen (PRD-C07-001 §4.2); all other YAML is unmanaged.
+  **daemon** = local OS-user Telegram Bot API owner; **address** = project abbreviation with optional `_N` suffix or `free_N`;
+  **pending message** = durable queue row awaiting TUI delivery (24h TTL).
 
-  Authoritative C7 sources: PRD-C07-001, UI-C07-001, ADR-049–053. The idea file yields on divergence.
-  External-edit UX is ADR-050 (no reload/merge/cancel dialog): Save loads the latest valid file and applies
-  the TUI draft only to managed paths. Existing `internal/workflowconfig` Document scaffolding must be
-  aligned to that rule (current revision-mismatch rejection is not the approved behavior).
+  Authoritative C9 sources: PRD-C09-001, UI-C09-001, ADR-059–064. Idea file yields on divergence
+  (notably: Bot API is daemon-owned with IPC push, not per-TUI polling or Runtime-owned API).
+  Conversation core MUST be extracted before Telegram wiring (ADR-061). Credentials ONLY in OS vault (ADR-062).
 
-  Do not invent requirements. Preserve Cursor IDE Runtime, C4/C5/C6 harness behavior, checksum upgrade,
-  dual-entry, lazy harness boot, C5 model properties, and deterministic engine. No hero serve daemon.
-  Scope: native=true (generic_agent). Browser UI Validation and QA End-to-End are disabled for C7.
+  Do not invent requirements. Preserve Cursor IDE Runtime, C4–C8 harness/TUI behavior, checksum upgrade,
+  dual-entry, timers (ADR-058), and deterministic engine. Scope: native=true (generic_agent).
+  Browser UI Validation and QA End-to-End disabled for C9.
 
   Stack: Go, Cobra, embed.FS, Feature Based + Vertical Slice, huh + Bubble Tea (existing charmbracelet/bubbletea import; do not migrate to v2), SQLite (ADR-013).
-  Test command: `go test ./...`. Active OpenSpec change: `tui-cycle-config`.
+  Test command: `go test ./...`. Active OpenSpec change: `telegram-integration`.
   TUI skill: golang-tui Elm Architecture — WindowSizeMsg, key.Matches, tea.Cmd for I/O, strings.Builder, Lip Gloss/ANSI width.
 
 rules:
   proposal:
-    - Reference PRD-C07-001 sections; cite ADR-049–053 and UI-C07-001
-    - State in/out of scope; idea file yields to PRD/UI/ADR; ADR-050 supersedes idea-file conflict dialog
+    - Reference PRD-C09-001 sections; cite ADR-059–064 and UI-C09-001
+    - State in/out of scope; idea file yields to PRD/UI/ADR; daemon owns Bot API (not Runtime per-TUI)
     - Classify CLI vs Runtime per ADR-003; Cursor IDE stays unchanged
-    - Reuse internal/workflowconfig, modelprops, harnessmgr; do not write cycle config to hero.json
+    - No harness adapter imports of Telegram types; no secrets in SQLite/UI/logs
 
   specs:
     - Use WHEN/THEN acceptance scenarios (exactly 4 hashtags for `#### Scenario:`)
-    - Align with PRD-C07-001, UI-C07-001, and ADR-049–053
+    - Align with PRD-C09-001, UI-C09-001, and ADR-059–064
+    - Mark injectable dependencies for Bot API, vault, clock, IPC, process launcher
 
   design:
-    - Follow ADR-002, ADR-003, ADR-049–053; YAML node merge stays in internal/workflowconfig
-    - Config is an Elm Architecture child screen; I/O never blocks Update (ADR-053)
-    - Reuse C5 catalogs/capability snapshots; persist properties to YAML agent blocks only
+    - Follow ADR-002, ADR-003, ADR-059–064; conversation extraction before Telegram adapter
+    - IPC and daemon I/O never block Bubble Tea Update (tea.Cmd)
+    - Redaction helper shared across project and daemon logs
 
   tasks:
     - Atomic checklist; `go test ./...`; mark PARALLEL vs SERIES
     - Scope native → generic_agent; colocated _test.go per package touched
-    - Keep document merge, engine retry, and TUI form as standalone tracks after the document API
+    - Parallel fan-out: log rotation + plugin CLI; Settings + transcript after IPC client

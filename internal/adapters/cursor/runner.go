@@ -3,6 +3,7 @@ package cursor
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -153,26 +154,86 @@ func (e *AuthError) Error() string {
 	return fmt.Sprintf("Cursor Agent CLI authentication required (%s); run `%s`", e.Detail, LoginHint)
 }
 
-// IsAuthFailure reports whether stderr/stdout indicates a login requirement.
+// IsAuthFailure reports whether CLI stderr (and non-JSON stdout noise) indicates
+// a login requirement. NDJSON stream payloads are ignored so tool results or
+// assistant text that mention `cursor agent login` cannot false-positive.
 func IsAuthFailure(stdout, stderr string) bool {
-	combined := strings.ToLower(stdout + "\n" + stderr)
+	return containsAuthNeedle(stderr) || containsAuthNeedle(nonJSONOutput(stdout))
+}
+
+func containsAuthNeedle(s string) bool {
+	lower := strings.ToLower(s)
 	needles := []string{
 		"not logged in",
 		"not authenticated",
 		"authentication required",
 		"please log in",
 		"please login",
-		"run `cursor agent login`",
-		"cursor agent login",
-		"unauthorized",
 		"auth required",
 	}
 	for _, n := range needles {
-		if strings.Contains(combined, n) {
+		if strings.Contains(lower, n) {
 			return true
 		}
 	}
 	return false
+}
+
+func nonJSONOutput(s string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || isJSONLine(trimmed) {
+			continue
+		}
+		b.WriteString(trimmed)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func isJSONLine(line string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), "{")
+}
+
+// authFailureDetail is the user-visible AuthError.Detail: stderr first, then
+// non-JSON stdout. NDJSON init/result lines are never interpolated.
+func authFailureDetail(stderr, stdout string) string {
+	if d := firstNonJSONLine(stderr); d != "" {
+		return d
+	}
+	return firstNonJSONLine(stdout)
+}
+
+func firstNonJSONLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || isJSONLine(line) {
+			continue
+		}
+		return line
+	}
+	return ""
+}
+
+// ndjsonSessionID returns the first session_id in Cursor stream-json stdout.
+func ndjsonSessionID(stdout string) string {
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !isJSONLine(line) {
+			continue
+		}
+		var ev struct {
+			SessionID string `json:"session_id"`
+		}
+		if json.Unmarshal([]byte(line), &ev) != nil {
+			continue
+		}
+		if ev.SessionID != "" {
+			return ev.SessionID
+		}
+	}
+	return ""
 }
 
 // IsTrustFailure reports whether stderr/stdout indicates workspace trust is required.
@@ -193,5 +254,10 @@ func IsRetriableFailure(stdout, stderr string, err error) bool {
 		b.WriteString(err.Error())
 	}
 	s := strings.ToLower(b.String())
-	return strings.Contains(s, "resource_exhausted") || strings.Contains(s, "retriableerror")
+	if strings.Contains(s, "resource_exhausted") {
+		return true
+	}
+	// Match RetriableError but not NonRetriableError (the latter contains the former).
+	stripped := strings.ReplaceAll(s, "nonretriableerror", "")
+	return strings.Contains(stripped, "retriableerror")
 }

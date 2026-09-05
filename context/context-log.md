@@ -4,6 +4,14 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-04 — Cursor TUI login false positive
+
+**Problem**: During C9 Planning, the TUI reported `Cursor Agent CLI authentication required` three times and told the user to run `cursor agent login`. The CLI had already emitted `system/init` with `session_id`, model, and `apiKeySource: "login"` and run for 30s–2.5min. The same session later resumed successfully (also seen 2026-08-20). Cause: `IsAuthFailure` scanned the entire stream-json stdout for `"cursor agent login"`, which appears in docs/tool results; `AuthError.Detail` then used the first stdout line (the init JSON). A related bug treated `NonRetriableError` as retriable because the needle was `retriableerror`.
+
+**Change**: Execute classifies auth failure only when the process failed and no Cursor `session_id` was established. `IsAuthFailure` scans stderr plus non-JSON stdout and dropped the overly broad `"cursor agent login"` / `"unauthorized"` needles. `AuthError.Detail` skips NDJSON lines. `IsRetriableFailure` strips `NonRetriableError` before matching `RetriableError`. Cycle C9 was not cancelled.
+
+**Validation**: `go test ./... -count=1` passes, including stream-json login-phrase success, init-JSON detail skip, authenticated-session exit, and NonRetriableError no-retry tests.
+
 ## 2026-08-30 — Release v2.9.2
 
 **Outcome**: Tagged `v2.9.2` (patch bump from `v2.9.1`). Ships Config model catalog picker, welcome dialog surface fill, and Config property/catalog cascade (including Luna `max`).
@@ -272,6 +280,28 @@ previous entry.
 **Outcome**: Tagged `v2.8.0` (minor bump from `v2.7.0`). Ships C7 TUI cycle configuration, C8 TUI-direct stage Execute, shared Session/AI timers, OpenCode question mapping and hang workarounds, Codex stream/permission improvements, and per-harness project-local approval profiles (`ask` / `auto-project`).
 
 **Validation**: `go test ./...` green before tag; `scripts/release.sh` artifacts published to GitHub Releases.
+
+## 2026-09-04 — C09 Telegram remote interface research
+
+**Decision**: Telegram will be an optional official Hero plugin distributed in
+the same releases. A local daemon, one per OS user and machine, exclusively
+owns Bot API traffic and pushes messages to concurrent TUIs through private
+versioned IPC. The TUI and Telegram share a transport-neutral conversation
+service; SQLite is durable queue/audit state, never a live-event polling bus.
+
+**Requirements confirmed**: Pair exactly one authorized chat with a
+single-use 10-minute code in a Settings modal; keep token and chat id in the
+OS credential vault; identify project instances by a user-chosen base
+abbreviation plus stable `_2+` suffixes and Free Chats as `free_N`; queue
+unavailable-target messages for 24 hours; daemon-owned
+`/telegram-cancel-pending` cancels an address's pending queue without touching
+cycle execution. Project logs move to `.workflow-hero/logs/tui.log`, retain
+10 × 10 MB, and daemon diagnostics use a global rotating user log. Install and
+upgrade preserve `.gitignore` while ignoring the project log directory.
+
+**Research artifacts**: PRD-C09-001, ADR-C09-002 (ADR-059–064), UI-C09-001,
+plus DEPLOY/TESTING/index/architecture-overview updates and documents registry
+entries.
 
 ## 2026-08-28 — Discover auto-loads active `docs/idea` files
 

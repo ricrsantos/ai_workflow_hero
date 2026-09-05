@@ -1,7 +1,8 @@
 ---
-name: qa_agent
 description: Validates technical quality during the QA stage — tests, coverage, lint, build.
-model: inherit
+model: gpt-5.6-terra
+name: qa_agent
+reasoningEffort: medium
 ---
 
 # qa_agent — Quality Assurance Agent

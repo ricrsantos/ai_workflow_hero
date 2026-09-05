@@ -541,15 +541,131 @@ func TestExecuteDoesNotRetryAuthFailure(t *testing.T) {
 			return true
 		},
 		err:    errors.New("exit status 1"),
-		result: cursoradapter.RunResult{Stderr: []byte("Please log in with cursor agent login")},
+		result: cursoradapter.RunResult{Stderr: []byte("Please log in with cursor agent login"), ExitCode: 1},
 	}}}
 
 	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "hi"})
 	if err == nil {
 		t.Fatal("expected auth error")
 	}
+	var auth *cursoradapter.AuthError
+	if !errors.As(err, &auth) {
+		t.Fatalf("want AuthError, got %T: %v", err, err)
+	}
+	if strings.Contains(auth.Detail, `"type":"system"`) {
+		t.Fatalf("detail must not be NDJSON init: %q", auth.Detail)
+	}
 	if calls != 1 {
 		t.Fatalf("auth must not retry, calls=%d", calls)
+	}
+}
+
+func TestExecuteDoesNotTreatStreamLoginPhraseAsAuthFailure(t *testing.T) {
+	dir := withCursorAssets(t)
+	var stream bytes.Buffer
+	stream.WriteString(`{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp","session_id":"s-auth","model":"Composer 2.5","permissionMode":"default"}` + "\n")
+	stream.WriteString(`{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Read ADR-C03 and mention cursor agent login"}]},"session_id":"s-auth"}` + "\n")
+	stream.WriteString(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"LoginHint is cursor agent login"}]},"session_id":"s-auth"}` + "\n")
+	stream.WriteString(`{"type":"result","subtype":"success","is_error":false,"duration_ms":12,"result":"SDD ready.","session_id":"s-auth"}` + "\n")
+
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool { return containsArg(args, "stream-json") },
+		result:    cursoradapter.RunResult{Stdout: stream.Bytes()},
+	}}}
+
+	res, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "plan", Stream: true})
+	if err != nil {
+		t.Fatalf("authenticated stream must not fail auth: %v", err)
+	}
+	if res.SessionID != "s-auth" || res.Output != "SDD ready." {
+		t.Fatalf("result=%+v", res)
+	}
+}
+
+func TestExecuteAuthenticatedSessionIsNotAuthFailureOnExit(t *testing.T) {
+	dir := withCursorAssets(t)
+	var stream bytes.Buffer
+	stream.WriteString(`{"type":"system","subtype":"init","apiKeySource":"login","session_id":"s-live","model":"Composer 2.5"}` + "\n")
+	stream.WriteString(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"see cursor agent login"}]},"session_id":"s-live"}` + "\n")
+
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.RetrySleep = func(time.Duration) {}
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool { return containsArg(args, "stream-json") },
+		err:       errors.New("exit status 1"),
+		result:    cursoradapter.RunResult{Stdout: stream.Bytes(), ExitCode: 1},
+	}}}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "plan", Stream: true})
+	if err == nil {
+		t.Fatal("expected process failure")
+	}
+	var auth *cursoradapter.AuthError
+	if errors.As(err, &auth) {
+		t.Fatalf("session init must not become AuthError: %v", err)
+	}
+}
+
+func TestExecuteAuthFailureDetailSkipsInitJSON(t *testing.T) {
+	dir := withCursorAssets(t)
+	stdout := `{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp"}` + "\n" +
+		"Please log in with cursor agent login\n"
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.RetrySleep = func(time.Duration) {}
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool { return true },
+		err:       errors.New("exit status 1"),
+		result:    cursoradapter.RunResult{Stdout: []byte(stdout), ExitCode: 1},
+	}}}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "hi"})
+	if err == nil {
+		t.Fatal("expected auth error")
+	}
+	var auth *cursoradapter.AuthError
+	if !errors.As(err, &auth) {
+		t.Fatalf("want AuthError, got %T: %v", err, err)
+	}
+	if strings.Contains(auth.Detail, `"type":"system"`) || strings.Contains(auth.Detail, "apiKeySource") {
+		t.Fatalf("detail leaked init JSON: %q", auth.Detail)
+	}
+	if !strings.Contains(auth.Detail, "Please log in") {
+		t.Fatalf("detail=%q", auth.Detail)
+	}
+}
+
+func TestExecuteDoesNotRetryNonRetriableError(t *testing.T) {
+	dir := withCursorAssets(t)
+	var calls int
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.RetrySleep = func(time.Duration) {}
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool {
+			calls++
+			return true
+		},
+		err:    errors.New("exit status 1"),
+		result: cursoradapter.RunResult{Stderr: []byte("NonRetriableError: Provider Error We're having trouble finding the resource you requested."), ExitCode: 1},
+	}}}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "hi"})
+	if err == nil {
+		t.Fatal("expected execute error")
+	}
+	var auth *cursoradapter.AuthError
+	if errors.As(err, &auth) {
+		t.Fatalf("provider error must not be AuthError: %v", err)
+	}
+	if !strings.Contains(err.Error(), "NonRetriableError") && !strings.Contains(err.Error(), "exit status 1") {
+		t.Fatalf("err=%v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("NonRetriableError must not retry, calls=%d", calls)
 	}
 }
 

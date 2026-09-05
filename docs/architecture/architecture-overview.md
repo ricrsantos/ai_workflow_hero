@@ -44,6 +44,7 @@ ai_workflow_hero/
 ├── context/               # current-state.md, context-log.md (dogfood state)
 ├── openspec/              # living specs + archived changes
 └── .workflow-hero/        # this repo's own Hero install (config, cycles, templates)
+    └── plugins/telegram/  # optional matching-release local Telegram daemon
 ```
 
 Runtime markdown for consumers is **not** edited under `.cursor/` in the framework repo long-term — canonical copies live in `assets/cursor/` and are materialized by `hero install`.
@@ -313,6 +314,24 @@ Agents: `orchestration_agent`, `discover_agent`, `planning_agent`, `context_agen
 ```
 
 **SQLite** (`internal/store`) holds cycles, stages, events, metrics, artifact metadata, harness session references per stage where persisted, and the accumulated active cycle Session timer seconds.
+
+### Planned Telegram plugin (C09)
+
+```
+ Telegram Bot API
+        │
+ Telegram daemon (one OS user / one machine; optional plugin)
+        │  private versioned local IPC + durable queue/audit
+  ┌─────┼──────────────┐
+  │     │              │
+TUI A TUI A_2      Free Chat free_1
+  │     │              │
+  └─────┴──────────────┘
+        │
+ shared ConversationService → HarnessAdapter → selected harness
+```
+
+The daemon owns Telegram credentials and Bot API transport. TUI clients own rendering and use the shared, transport-neutral conversation service; they do not poll SQLite for live Telegram events. Credentials belong in the OS vault, while the daemon's global store retains non-sensitive queue/de-duplication/audit state. See ADR-059–064.
 
 **Schema v8** (`internal/store/migrate.go`):
 

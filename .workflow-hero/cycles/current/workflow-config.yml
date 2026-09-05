@@ -37,7 +37,7 @@ stages:
         timeout_minutes: 15
         require_human_approval: false
     judge:
-        enabled: false
+        enabled: true
         purpose: Verify SDD requirement coverage.
         max_iterations: 3
         timeout_minutes: 10
@@ -74,14 +74,14 @@ agents:
     # multiple including Cursor → cursor; never a disabled harness).
     # Cursor IDE chat ignores orchestration_agent / discover_agent model blocks and harness.
     orchestration_agent:
-        harness: opencode
-        model: opencode-go/deepseek-v4-flash
-        reasoning_effort: max
+        harness: cursor
+        model: cursor-grok-4.6-high
+        reasoning_effort: na
         enable_fast_model: false
         thinking: na
         subagent:
-            same_of_agent: true
-            model: auto
+            same_of_agent: false
+            model: composer-2.5
             reasoning_effort: na
             enable_fast_model: false
             thinking: na
@@ -163,15 +163,15 @@ agents:
             enable_fast_model: false
             thinking: na
     qa_agent:
-        harness: cursor
-        model: cursor-grok-4.6-high
-        reasoning_effort: na
+        harness: codex
+        model: gpt-5.6-terra
+        reasoning_effort: medium
         enable_fast_model: false
         thinking: na
         subagent:
             same_of_agent: false
-            model: composer-2.5
-            reasoning_effort: na
+            model: gpt-5.6-luna
+            reasoning_effort: max
             enable_fast_model: false
             thinking: na
     judge_agent:
@@ -181,9 +181,9 @@ agents:
         enable_fast_model: false
         thinking: off
         subagent:
-            same_of_agent: true
-            model: opencode-go/deepseek-v4-pro
-            reasoning_effort: na
+            same_of_agent: false
+            model: opencode-go/deepseek-v4-flash
+            reasoning_effort: max
             enable_fast_model: false
             thinking: na
     browser_ui_agent:

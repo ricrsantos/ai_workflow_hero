@@ -1,6 +1,6 @@
 # UI Spec — Hero CLI Terminal UX
 
-> "UI" for Hero means the terminal user experience of the `hero` CLI, plus the shared visual conventions also used by agents in the Runtime (chat). Baseline (0.9.x): grilling 2026-07-20. **Hero 1.0 TUI + CLI query UX:** [UI-C01-001-hero-tui.md](UI-C01-001-hero-tui.md). **C2 slash/TUI command parity:** [UI-C02-001-tui-slash-command-parity.md](UI-C02-001-tui-slash-command-parity.md). **C3 TUI harness autonomy:** [UI-C03-001-tui-harness-autonomy.md](UI-C03-001-tui-harness-autonomy.md). **C4 multi-harness:** [UI-C04-001-tui-multi-harness.md](UI-C04-001-tui-multi-harness.md). **C5 model properties:** [UI-C05-001-tui-model-properties.md](UI-C05-001-tui-model-properties.md). **C6 Codex adapter:** [UI-C06-001-tui-codex-adapter.md](UI-C06-001-tui-codex-adapter.md). **C7 cycle configuration:** [UI-C07-001-tui-cycle-config.md](UI-C07-001-tui-cycle-config.md). **C8 TUI-direct stage Execute:** [UI-C08-001-tui-stage-execute.md](UI-C08-001-tui-stage-execute.md).
+> "UI" for Hero means the terminal user experience of the `hero` CLI, plus the shared visual conventions also used by agents in the Runtime (chat). Baseline (0.9.x): grilling 2026-07-20. **Hero 1.0 TUI + CLI query UX:** [UI-C01-001-hero-tui.md](UI-C01-001-hero-tui.md). **C2 slash/TUI command parity:** [UI-C02-001-tui-slash-command-parity.md](UI-C02-001-tui-slash-command-parity.md). **C3 TUI harness autonomy:** [UI-C03-001-tui-harness-autonomy.md](UI-C03-001-tui-harness-autonomy.md). **C4 multi-harness:** [UI-C04-001-tui-multi-harness.md](UI-C04-001-tui-multi-harness.md). **C5 model properties:** [UI-C05-001-tui-model-properties.md](UI-C05-001-tui-model-properties.md). **C6 Codex adapter:** [UI-C06-001-tui-codex-adapter.md](UI-C06-001-tui-codex-adapter.md). **C7 cycle configuration:** [UI-C07-001-tui-cycle-config.md](UI-C07-001-tui-cycle-config.md). **C8 TUI-direct stage Execute:** [UI-C08-001-tui-stage-execute.md](UI-C08-001-tui-stage-execute.md). **C9 Telegram plugin:** [UI-C09-001-telegram-integration.md](UI-C09-001-telegram-integration.md).
 
 ## Cycle UI specs
 
@@ -14,6 +14,7 @@
 | [UI-C06-001-tui-codex-adapter.md](UI-C06-001-tui-codex-adapter.md) | C6 | Codex in install/`/hero-harness`/`/hero-model`, speaker id `codex`, login/app-server errors |
 | [UI-C07-001-tui-cycle-config.md](UI-C07-001-tui-cycle-config.md) | C7 | Active-cycle Config screen, round-trip-safe editing, save/start, and failed-stage retry |
 | [UI-C08-001-tui-stage-execute.md](UI-C08-001-tui-stage-execute.md) | C8 | TUI-direct stage speakers, TASK chips, parallel Implementation headers |
+| [UI-C09-001-telegram-integration.md](UI-C09-001-telegram-integration.md) | C9 | Telegram Settings, pairing modal, remote transcript labels, and daemon recovery |
 
 ## 1. Scope
 

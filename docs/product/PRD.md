@@ -1,6 +1,6 @@
 # PRD — AI Workflow Hero (Hero) CLI & Runtime
 
-> Product Requirements Document index. Baseline (0.9.x / pre-1.0 chat Runtime): design notes and grilling 2026-07-20. **Hero 1.0** requirements: [PRD-C01-001-hero-1-0.md](PRD-C01-001-hero-1-0.md) (cycle C1). **C2** slash/TUI/archive delta: [PRD-C02-001-slash-parity-tui-harness.md](PRD-C02-001-slash-parity-tui-harness.md). **C3** Cursor harness autonomy: [PRD-C03-001-cursor-harness-tui-autonomy.md](PRD-C03-001-cursor-harness-tui-autonomy.md). **C4** multi-harness (Hero 2.0.0): [PRD-C04-001-multi-harness.md](PRD-C04-001-multi-harness.md). **C5** dynamic model properties: [PRD-C05-001-model-properties-tui.md](PRD-C05-001-model-properties-tui.md). **C6** Codex adapter (Hero 2.5.0): [PRD-C06-001-codex-adapter.md](PRD-C06-001-codex-adapter.md). **C7** TUI cycle configuration: [PRD-C07-001-tui-cycle-config.md](PRD-C07-001-tui-cycle-config.md). **C8** TUI-direct stage Execute: [PRD-C08-001-tui-stage-execute.md](PRD-C08-001-tui-stage-execute.md).
+> Product Requirements Document index. Baseline (0.9.x / pre-1.0 chat Runtime): design notes and grilling 2026-07-20. **Hero 1.0** requirements: [PRD-C01-001-hero-1-0.md](PRD-C01-001-hero-1-0.md) (cycle C1). **C2** slash/TUI/archive delta: [PRD-C02-001-slash-parity-tui-harness.md](PRD-C02-001-slash-parity-tui-harness.md). **C3** Cursor harness autonomy: [PRD-C03-001-cursor-harness-tui-autonomy.md](PRD-C03-001-cursor-harness-tui-autonomy.md). **C4** multi-harness (Hero 2.0.0): [PRD-C04-001-multi-harness.md](PRD-C04-001-multi-harness.md). **C5** dynamic model properties: [PRD-C05-001-model-properties-tui.md](PRD-C05-001-model-properties-tui.md). **C6** Codex adapter (Hero 2.5.0): [PRD-C06-001-codex-adapter.md](PRD-C06-001-codex-adapter.md). **C7** TUI cycle configuration: [PRD-C07-001-tui-cycle-config.md](PRD-C07-001-tui-cycle-config.md). **C8** TUI-direct stage Execute: [PRD-C08-001-tui-stage-execute.md](PRD-C08-001-tui-stage-execute.md). **C9** Telegram remote interface plugin: [PRD-C09-001-telegram-integration.md](PRD-C09-001-telegram-integration.md).
 
 ## Cycle PRDs
 
@@ -14,6 +14,7 @@
 | [PRD-C06-001-codex-adapter.md](PRD-C06-001-codex-adapter.md) | C6 | Hero 2.5.0: TUI Codex harness (`CodexAdapter`), App Server stdio/JSON-RPC, ChatGPT login, `.codex/` projection |
 | [PRD-C07-001-tui-cycle-config.md](PRD-C07-001-tui-cycle-config.md) | C7 | Guided active-cycle YAML configuration screen, round-trip-safe save, cycle sync, and failed-stage retry |
 | [PRD-C08-001-tui-stage-execute.md](PRD-C08-001-tui-stage-execute.md) | C8 | TUI-direct Execute of named stage agents, parallel Implementation, nested TASK chips |
+| [PRD-C09-001-telegram-integration.md](PRD-C09-001-telegram-integration.md) | C9 | Optional Telegram plugin, local daemon, addressed multi-TUI conversations, pairing, queues, and rotating logs |
 
 ## 1. Overview
 

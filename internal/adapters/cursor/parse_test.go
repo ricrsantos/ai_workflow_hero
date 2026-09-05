@@ -209,6 +209,19 @@ func TestIsAuthFailure(t *testing.T) {
 	if cursoradapter.IsAuthFailure("ok", "") {
 		t.Fatal("unexpected auth failure")
 	}
+
+	init := `{"type":"system","subtype":"init","apiKeySource":"login","session_id":"s1","model":"Composer 2.5"}`
+	tool := `{"type":"tool_call","subtype":"completed","session_id":"s1","tool_call":{"readToolCall":{"args":{"path":"runner.go"},"result":{"success":{"content":"LoginHint = \"cursor agent login\""}}}}}`
+	user := `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"run cursor agent login if the harness is down"}]},"session_id":"s1"}`
+	stream := init + "\n" + user + "\n" + tool + "\n"
+	if cursoradapter.IsAuthFailure(stream, "") {
+		t.Fatal("NDJSON mentioning cursor agent login must not be an auth failure")
+	}
+
+	plain := init + "\nPlease log in with cursor agent login\n"
+	if !cursoradapter.IsAuthFailure(plain, "") {
+		t.Fatal("expected auth failure from non-JSON stdout line")
+	}
 }
 
 func TestIsTrustFailure(t *testing.T) {
@@ -229,6 +242,9 @@ func TestIsRetriableFailure(t *testing.T) {
 	}
 	if cursoradapter.IsRetriableFailure("ok", "", nil) {
 		t.Fatal("unexpected retriable")
+	}
+	if cursoradapter.IsRetriableFailure("", "NonRetriableError: Provider Error We're having trouble finding the resource you requested.", errors.New("exit status 1")) {
+		t.Fatal("NonRetriableError must not be treated as retriable")
 	}
 }
 

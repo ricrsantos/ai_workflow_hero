@@ -81,8 +81,8 @@ func (a *Adapter) IsAvailable(ctx context.Context) error {
 	verRes, err := runner.Run(ctx, a.ProjectDir, spec.Path, spec.BuildArgs("--version"))
 	if err != nil {
 		stdout, stderr := string(verRes.Stdout), string(verRes.Stderr)
-		if IsAuthFailure(stdout, stderr) {
-			return &AuthError{Detail: firstLine(stderr, stdout)}
+		if containsAuthNeedle(stdout + "\n" + stderr) {
+			return &AuthError{Detail: authFailureDetail(stderr, stdout)}
 		}
 		return fmt.Errorf("cursor agent CLI not executable: %w", err)
 	}
@@ -91,8 +91,8 @@ func (a *Adapter) IsAvailable(ctx context.Context) error {
 	// Lightweight auth probe: status/whoami when supported (no LLM).
 	statusRes, statusErr := runner.Run(ctx, a.ProjectDir, spec.Path, spec.BuildArgs("status", "--format", "json"))
 	combinedOut := string(statusRes.Stdout) + string(statusRes.Stderr)
-	if IsAuthFailure(string(statusRes.Stdout), string(statusRes.Stderr)) {
-		return &AuthError{Detail: firstLine(string(statusRes.Stderr), string(statusRes.Stdout))}
+	if containsAuthNeedle(combinedOut) {
+		return &AuthError{Detail: authFailureDetail(string(statusRes.Stderr), string(statusRes.Stdout))}
 	}
 	if statusErr != nil {
 		// Older CLIs may lack `status`; treat unknown failures as unavailable only when auth-like.
@@ -103,8 +103,8 @@ func (a *Adapter) IsAvailable(ctx context.Context) error {
 		}
 		// Fall back to whoami.
 		whoRes, whoErr := runner.Run(ctx, a.ProjectDir, spec.Path, spec.BuildArgs("whoami"))
-		if IsAuthFailure(string(whoRes.Stdout), string(whoRes.Stderr)) {
-			return &AuthError{Detail: firstLine(string(whoRes.Stderr), string(whoRes.Stdout))}
+		if containsAuthNeedle(string(whoRes.Stdout) + "\n" + string(whoRes.Stderr)) {
+			return &AuthError{Detail: authFailureDetail(string(whoRes.Stderr), string(whoRes.Stdout))}
 		}
 		if whoErr != nil {
 			a.log().Debug("cursor agent auth probe inconclusive", "error", whoErr)
@@ -249,9 +249,11 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 			}
 		}
 		stdout, stderr := string(res.Stdout), string(res.Stderr)
-		if IsAuthFailure(stdout, stderr) {
+		processFailed := err != nil || res.ExitCode != 0
+		authenticated := (parsed != nil && parsed.SessionID != "") || ndjsonSessionID(stdout) != ""
+		if processFailed && !authenticated && IsAuthFailure(stdout, stderr) {
 			a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: LoginHint})
-			return nil, &AuthError{Detail: firstLine(stderr, stdout)}
+			return nil, &AuthError{Detail: authFailureDetail(stderr, stdout)}
 		}
 		if IsTrustFailure(stdout, stderr) {
 			msg := firstLine(stderr, stdout)

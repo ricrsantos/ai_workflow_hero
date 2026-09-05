@@ -231,6 +231,46 @@
       "slug": "tui-session-ai-timers",
       "path": "docs/architecture/ADR-C09-001-tui-session-ai-timers.md",
       "title": "Shared TUI Session and AI Timers (ADR-058)"
+    },
+    {
+      "category": "PRD",
+      "cycle": "C09",
+      "seq": 1,
+      "slug": "telegram-integration",
+      "path": "docs/product/PRD-C09-001-telegram-integration.md",
+      "title": "Telegram Remote Interface Plugin"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C09",
+      "seq": 2,
+      "slug": "telegram-integration",
+      "path": "docs/architecture/ADR-C09-002-telegram-integration.md",
+      "title": "Telegram Plugin and Local Conversation Daemon (ADR-059–064)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C09",
+      "seq": 1,
+      "slug": "telegram-integration",
+      "path": "docs/product/UI-C09-001-telegram-integration.md",
+      "title": "Telegram Plugin Terminal UX"
+    },
+    {
+      "category": "DEPLOY",
+      "cycle": "C09",
+      "seq": 0,
+      "slug": "living",
+      "path": "docs/deployment/DEPLOY.md",
+      "title": "Build, Release, and Distribution (Telegram plugin update)"
+    },
+    {
+      "category": "TESTING",
+      "cycle": "C09",
+      "seq": 0,
+      "slug": "living",
+      "path": "docs/testing/TESTING.md",
+      "title": "Testing strategy (Telegram plugin coverage)"
     }
   ]
 }

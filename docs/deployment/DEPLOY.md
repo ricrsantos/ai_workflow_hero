@@ -4,7 +4,7 @@
 
 ## 1. Distribution Model
 
-Hero is distributed as a single, self-contained Go binary (`hero`) via GitHub Releases on the project's public repository (BSD-2-Clause license). All assets (commands, skills, prompts, templates) are embedded into the binary via `embed.FS` — there is nothing to download separately.
+Hero is distributed as a single, self-contained Go binary (`hero`) via GitHub Releases on the project's public repository (BSD-2-Clause license). All assets (commands, skills, prompts, templates) are embedded into the binary via `embed.FS` — there is nothing to download separately. Optional official plugins may add matching platform artifacts; the Telegram plugin installs its local daemon only through `hero plugin install telegram` and is published with the matching Hero release.
 
 ## 2. Target Platforms (V1)
 
@@ -117,6 +117,7 @@ sha256sum -c checksums.txt --ignore-missing
 - `hero upgrade`: re-copies updated assets from the new binary version, but never silently overwrites a file the user has customized (detected via checksum comparison against what was originally installed); it warns instead, listing outdated files for manual merge.
 - `hero uninstall`: removes only Hero-owned paths (`.cursor/agents/`, `.cursor/commands/hero-*.md`, `.cursor/skills/workflow-hero/`, `.cursor/skills/grilling/`, `.workflow-hero/`), preserving project artifacts (`AGENTS.md`, `context/`, `docs/`, `openspec/`).
 - `hero doctor`: verifies installation integrity — presence of expected files/folders, version consistency between `hero.json` and the running binary, config file syntax, and git repository presence. Also warn-only soft secrets hygiene: missing `.env.example`, `.gitignore` not ignoring `.env`, or sensitive files tracked by git.
+- Telegram plugin install/upgrade verifies a matching daemon artifact, preserves OS-vault credentials, migrates `.workflow-hero/tui.log` to `.workflow-hero/logs/tui.log` safely, and ensures Hero's managed `.gitignore` block ignores `.workflow-hero/logs/` without altering user entries.
 
 ## 8. Pricing Data Updates
 
