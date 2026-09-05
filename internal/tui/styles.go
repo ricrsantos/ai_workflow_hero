@@ -128,6 +128,57 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(colorBorder).
 				Background(colorBgSurface)
+
+	// Settings screen (radio list + plugin card). Width is applied per render.
+	settingsTitleStyle       = lipgloss.NewStyle().Bold(true).Foreground(colorTextPri)
+	settingsSectionStyle     = lipgloss.NewStyle().Bold(true).Foreground(colorAccentUser)
+	settingsSectionHintStyle = lipgloss.NewStyle().Foreground(colorTextDim)
+	settingsRuleStyle        = lipgloss.NewStyle().Foreground(colorBorder)
+	settingsRadioIdle        = lipgloss.NewStyle().Padding(0, 1)
+	settingsRadioApplied     = lipgloss.NewStyle().Padding(0, 1).Background(colorBgSurface2)
+	settingsRadioFocus       = lipgloss.NewStyle().
+					Padding(0, 1).
+					Border(lipgloss.RoundedBorder()).
+					BorderForeground(colorBorder)
+	settingsRadioCaretStyle  = lipgloss.NewStyle().Bold(true).Foreground(colorAccentAI)
+	settingsRadioFilledStyle = lipgloss.NewStyle().Foreground(colorAccentAI)
+	settingsRadioEmptyStyle  = lipgloss.NewStyle().Foreground(colorTextDim)
+	settingsRadioNameStyle   = lipgloss.NewStyle().Bold(true).Foreground(colorTextPri)
+	settingsBadgeStyle       = lipgloss.NewStyle().
+					Foreground(colorTextPri).
+					Background(colorAccentUser).
+					Padding(0, 1)
+	settingsBadgeOKStyle = lipgloss.NewStyle().
+				Foreground(colorBgBase).
+				Background(colorOK).
+				Padding(0, 1)
+	settingsCommandBoxStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colorBorder).
+				Background(colorBgSurface).
+				Padding(0, 1)
+	settingsCommandBoxFocusStyle = lipgloss.NewStyle().
+					Border(lipgloss.RoundedBorder()).
+					BorderForeground(colorAccentAI).
+					Background(colorBgSurface).
+					Padding(0, 1)
+	settingsCommandTextStyle = lipgloss.NewStyle().Foreground(colorAccentAI)
+	settingsPrimaryBtnStyle  = lipgloss.NewStyle().
+					Foreground(colorBgBase).
+					Background(colorAccentAI).
+					Border(lipgloss.RoundedBorder()).
+					BorderForeground(colorAccentAI).
+					Padding(0, 1).
+					Bold(true)
+	settingsSecondaryBtnStyle = lipgloss.NewStyle().
+					Foreground(colorTextPri).
+					Border(lipgloss.RoundedBorder()).
+					BorderForeground(colorBorder).
+					Padding(0, 1)
+	settingsKeyChipStyle = lipgloss.NewStyle().
+				Foreground(colorTextPri).
+				Background(colorBgSurface2).
+				Padding(0, 1)
 )
 
 // chatBarGlyph is the per-line transcript accent (thin vertical bar).

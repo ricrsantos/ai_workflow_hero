@@ -6,66 +6,55 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/telegram/ipc"
 )
 
-// settingsRowKind classifies one row in the Settings screen. Verbosity profiles
-// keep their existing behavior; Telegram rows are appended only when the plugin
-// is installed (hero-tui R1; telegram-tui R1).
+const telegramInstallCommand = "hero plugin install telegram"
+
+// settingsRowKind classifies one focusable row in the Settings screen.
+// Status chrome (plugin badge, daemon line) is display-only.
 type settingsRowKind int
 
 const (
 	rowVerbosity settingsRowKind = iota
-	rowTelegramInfo
-	rowTelegramDaemon
-	rowTelegramState
+	rowTelegramCopyCommand
 	rowTelegramAbbrev
 	rowTelegramAction
-	rowTelegramNotInstalled
 )
 
 type settingsRow struct {
-	kind   settingsRowKind
-	label  string
-	desc   string
-	action string // rowTelegramAction: pair | replace | clear | test
+	kind      settingsRowKind
+	label     string
+	desc      string
+	action    string // rowTelegramAction: pair | replace | clear | test
+	verbosity install.ChatVerbosity
 }
 
 // settingsRows returns the ordered, selectable Settings rows.
 func (m model) settingsRows() []settingsRow {
 	rows := make([]settingsRow, 0, 8)
 	for _, o := range verbosityOptions {
-		rows = append(rows, settingsRow{kind: rowVerbosity, label: o.label, desc: o.description})
+		rows = append(rows, settingsRow{
+			kind:      rowVerbosity,
+			label:     o.label,
+			desc:      o.description,
+			verbosity: o.value,
+		})
 	}
 	if m.telegram == nil || !m.telegram.installed {
 		rows = append(rows, settingsRow{
-			kind:  rowTelegramNotInstalled,
-			label: "Telegram",
-			desc:  "Not installed — Install with: hero plugin install telegram",
+			kind:  rowTelegramCopyCommand,
+			label: "Copy command",
+			desc:  "Install with: " + telegramInstallCommand,
 		})
 		return rows
 	}
 	t := m.telegram
 	rows = append(rows, settingsRow{
-		kind:  rowTelegramInfo,
-		label: "Telegram",
-		desc:  fmt.Sprintf("Installed v%s (protocol v%d)", t.pluginVersion, t.protocolVersion),
-	})
-	daemonDesc := "Daemon: disconnected"
-	if t.connected {
-		daemonDesc = "Daemon: connected · " + t.address
-	} else if t.retrying {
-		daemonDesc = "Daemon: disconnected — retrying…"
-	}
-	rows = append(rows, settingsRow{kind: rowTelegramDaemon, label: "Daemon", desc: daemonDesc})
-	stateDesc := "State: Not configured"
-	if t.paired {
-		stateDesc = "State: Configured"
-	}
-	rows = append(rows, settingsRow{kind: rowTelegramState, label: "Pairing", desc: stateDesc})
-	rows = append(rows, settingsRow{
 		kind:  rowTelegramAbbrev,
-		label: "Project address",
+		label: "Project ID",
 		desc:  fmt.Sprintf("%s (live: %s)", t.abbrev, displayAddress(t.address)),
 	})
 	if t.paired {
@@ -83,6 +72,134 @@ func displayAddress(addr string) string {
 		return "—"
 	}
 	return addr
+}
+
+func (m model) renderTelegramPluginSection(rows []settingsRow, width int) string {
+	if m.telegram == nil || !m.telegram.installed {
+		return m.renderTelegramNotInstalled(rows, width)
+	}
+	return m.renderTelegramInstalled(rows, width)
+}
+
+func (m model) renderTelegramNotInstalled(rows []settingsRow, width int) string {
+	focused := false
+	for i, row := range rows {
+		if row.kind == rowTelegramCopyCommand && i == m.settings.cursor {
+			focused = true
+			break
+		}
+	}
+	var b strings.Builder
+	b.WriteString(mutedStyle.Render("  Status:  "))
+	b.WriteString(settingsBadgeStyle.Render("Not installed"))
+	b.WriteString("\n\n")
+	box := settingsCommandBoxStyle.Width(width)
+	if focused {
+		box = settingsCommandBoxFocusStyle.Width(width)
+	}
+	inner := width - box.GetHorizontalFrameSize()
+	if inner < 8 {
+		inner = 8
+	}
+	cmd := settingsCommandTextStyle.Render(truncateDisplayWidth("$ "+telegramInstallCommand, inner))
+	b.WriteString(box.Render(cmd))
+	b.WriteString("\n\n  ")
+	b.WriteString(renderSettingsButton("Copy command", focused))
+	return b.String()
+}
+
+func (m model) renderTelegramInstalled(rows []settingsRow, width int) string {
+	t := m.telegram
+	var b strings.Builder
+	b.WriteString(mutedStyle.Render("  Status:  "))
+	if t.paired {
+		b.WriteString(settingsBadgeOKStyle.Render("Configured"))
+	} else {
+		b.WriteString(settingsBadgeStyle.Render("Not configured"))
+	}
+	b.WriteByte('\n')
+	b.WriteString(mutedStyle.Render("  Plugin:  "))
+	b.WriteString(configValueStyle.Render(fmt.Sprintf("Installed · v%s (protocol v%d)", t.pluginVersion, t.protocolVersion)))
+	b.WriteByte('\n')
+	b.WriteString(mutedStyle.Render("  Daemon:  "))
+	switch {
+	case t.connected:
+		b.WriteString(successStyle.Render("Connected"))
+	case t.retrying:
+		b.WriteString(warnStyle.Render("Disconnected — retrying…"))
+	default:
+		b.WriteString(mutedStyle.Render("Disconnected"))
+	}
+	b.WriteString("\n\n")
+
+	abbrevFocused := false
+	var actions []settingsRow
+	actionFocus := -1
+	for i, row := range rows {
+		switch row.kind {
+		case rowTelegramAbbrev:
+			abbrevFocused = i == m.settings.cursor
+			b.WriteString(m.renderProjectIDRow(row, abbrevFocused, width))
+			b.WriteByte('\n')
+		case rowTelegramAction:
+			if i == m.settings.cursor {
+				actionFocus = len(actions)
+			}
+			actions = append(actions, row)
+		}
+	}
+	if len(actions) > 0 {
+		b.WriteByte('\n')
+		b.WriteString("  ")
+		var parts []string
+		for i, a := range actions {
+			parts = append(parts, renderSettingsButton(a.label, i == actionFocus))
+		}
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, joinButtonGap(parts)...))
+	}
+	return b.String()
+}
+
+func joinButtonGap(buttons []string) []string {
+	if len(buttons) == 0 {
+		return buttons
+	}
+	out := make([]string, 0, len(buttons)*2-1)
+	for i, btn := range buttons {
+		if i > 0 {
+			out = append(out, "  ")
+		}
+		out = append(out, btn)
+	}
+	return out
+}
+
+func renderSettingsButton(label string, focused bool) string {
+	text := " " + label + " "
+	if focused {
+		return settingsPrimaryBtnStyle.Render(text)
+	}
+	return settingsSecondaryBtnStyle.Render(text)
+}
+
+func (m model) renderProjectIDRow(row settingsRow, focused bool, width int) string {
+	cursor := "  "
+	labelStyle := configLabelStyle
+	if focused {
+		cursor = settingsRadioCaretStyle.Render("> ")
+		labelStyle = configSelectedLabelStyle
+	}
+	label := labelStyle.Render("Project ID: ")
+	value := row.desc
+	if m.settings.editingAbbrev && focused {
+		value = m.settings.abbrevDraft + "█"
+	}
+	used := lipgloss.Width(cursor) + lipgloss.Width("Project ID: ")
+	remain := width - used
+	if remain < 8 {
+		remain = 8
+	}
+	return cursor + label + configValueStyle.Render(truncateDisplayWidth(value, remain))
 }
 
 // openTelegramPairingModal opens the pairing modal (telegram-tui R2).
@@ -228,7 +345,13 @@ func (m model) renderTelegramPairingModal() string {
 // telegramSettingsAction dispatches enter on a Telegram settings row.
 func (m model) telegramSettingsEnter(row settingsRow) (model, tea.Cmd) {
 	switch row.kind {
+	case rowTelegramCopyCommand:
+		m = m.setStatusResult(true, "settings", "Copied: "+telegramInstallCommand)
+		return m, copyToClipboardCmd(telegramInstallCommand)
 	case rowTelegramAbbrev:
+		if m.telegram == nil {
+			return m, nil
+		}
 		m.settings.editingAbbrev = true
 		m.settings.abbrevDraft = m.telegram.abbrev
 		return m, nil

@@ -60,36 +60,65 @@ func TestProjectAbbrevNormalization(t *testing.T) {
 }
 
 func TestSettingsRows_NotInstalledShowsGuidance(t *testing.T) {
-	m := model{}
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
 	rows := m.settingsRows()
 	if len(rows) != len(verbosityOptions)+1 {
 		t.Fatalf("rows=%d", len(rows))
 	}
 	last := rows[len(rows)-1]
-	if last.kind != rowTelegramNotInstalled {
-		t.Fatalf("expected not-installed guidance row, got %d", last.kind)
+	if last.kind != rowTelegramCopyCommand {
+		t.Fatalf("expected copy-command row, got %d", last.kind)
 	}
-	if !strings.Contains(last.desc, "hero plugin install telegram") {
+	if !strings.Contains(last.desc, telegramInstallCommand) {
 		t.Fatalf("guidance missing install command: %q", last.desc)
+	}
+	m, _ = m.openSettings()
+	plain := stripANSI(ViewForTest(m))
+	if !strings.Contains(plain, "Not installed") {
+		t.Fatalf("missing not-installed badge: %q", plain)
+	}
+	if !strings.Contains(plain, telegramInstallCommand) {
+		t.Fatalf("missing install command box: %q", plain)
+	}
+	if strings.Contains(plain, "› Telegram") || strings.Contains(plain, "> Telegram") {
+		t.Fatalf("install guidance must not look like a verbosity radio: %q", plain)
 	}
 }
 
 func TestSettingsRows_InstalledShowsControls(t *testing.T) {
-	m := model{telegram: &telegramState{installed: true, pluginVersion: "2.9.2", protocolVersion: 1, connected: true, address: "ai_workflow_2"}}
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
+	m.telegram = &telegramState{installed: true, pluginVersion: "2.9.2", protocolVersion: 1, connected: true, address: "ai_workflow_2", abbrev: "ai_workflow"}
 	rows := m.settingsRows()
 	kinds := map[settingsRowKind]bool{}
 	for _, r := range rows {
 		kinds[r.kind] = true
 	}
-	if !kinds[rowTelegramInfo] || !kinds[rowTelegramDaemon] || !kinds[rowTelegramState] || !kinds[rowTelegramAbbrev] || !kinds[rowTelegramAction] {
-		t.Fatalf("missing installed telegram rows: %+v", kinds)
+	if kinds[rowTelegramCopyCommand] || !kinds[rowTelegramAbbrev] || !kinds[rowTelegramAction] {
+		t.Fatalf("installed rows=%+v", kinds)
 	}
-	// Configured state shows no numeric chat id or token anywhere.
 	for _, r := range rows {
 		for _, secret := range []string{"token", "chat_id"} {
 			if strings.Contains(strings.ToLower(r.desc), secret) {
 				t.Fatalf("row %q leaks secret word %q", r.desc, secret)
 			}
 		}
+	}
+	m, _ = m.openSettings()
+	plain := stripANSI(ViewForTest(m))
+	for _, want := range []string{"Not configured", "Installed · v2.9.2", "Connected", "Project ID", "Pair"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("missing %q: %q", want, plain)
+		}
+	}
+	// Down from Debug lands on Project ID, then Pair — never a status badge.
+	m, _ = HandleTestKey(m, "down")
+	if got := m.settingsRows()[m.settings.cursor].kind; got != rowTelegramAbbrev {
+		t.Fatalf("after debug, cursor kind=%d want Project ID", got)
+	}
+	m, _ = HandleTestKey(m, "down")
+	if got := m.settingsRows()[m.settings.cursor]; got.kind != rowTelegramAction || got.action != "pair" {
+		t.Fatalf("cursor=%+v want Pair", got)
 	}
 }

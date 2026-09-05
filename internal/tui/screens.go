@@ -520,7 +520,21 @@ func (m model) footerHints() string {
 		if m.settings.saving {
 			return "saving settings…"
 		}
-		return "tab navbar · ↑↓ choose · enter apply · esc chat · alt+q quit"
+		if m.settings.editingAbbrev {
+			return "tab navbar · enter save abbreviation · esc cancel · alt+q quit"
+		}
+		enter := "apply"
+		if row, ok := m.focusedSettingsRow(); ok {
+			switch row.kind {
+			case rowTelegramCopyCommand:
+				enter = "copy"
+			case rowTelegramAbbrev:
+				enter = "edit"
+			case rowTelegramAction:
+				enter = strings.ToLower(row.label)
+			}
+		}
+		return "tab navbar · ↑↓ navigate · enter " + enter + " · esc chat · alt+q quit"
 	}
 	return fixedFooterHints
 }

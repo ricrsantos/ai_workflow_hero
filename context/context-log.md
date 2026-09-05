@@ -4,6 +4,14 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-05 — Settings TUI redesign
+
+**Problem**: Settings rendered Chat verbosity and Telegram as one flat selectable list, so the plugin heading looked like another verbosity profile.
+
+**Change**: Split the screen into `CHAT VERBOSITY` (one-line radios with applied bar / focus border) and `TELEGRAM PLUGIN` (status badge, copyable `hero plugin install telegram` command box, or daemon/Project ID + action buttons). Focus order is only radios, copy command or Project ID, and Pair/Replace/Clear/Test. Enter applies the focused profile’s value (not the global cursor index). No in-TUI plugin install.
+
+**Validation**: `go test ./...` pass.
+
 ## 2026-09-05 — C9 /hero-continue 2: QA closed, Judge started
 
 **Problem**: QA was Escalated 2/2 after a passing TUI `qa_agent` run; `hero stage close` required Running.

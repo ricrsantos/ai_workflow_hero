@@ -4,20 +4,26 @@
 
 ## 1. Settings section
 
-Settings includes a Telegram section only when the optional plugin is installed. It uses the normal focused-label styling and shows no secret values.
+Settings is a two-section screen: **CHAT VERBOSITY** (radio list) then **TELEGRAM PLUGIN** (status card). Section headers, rules, and status badges are not in the focus order. The Telegram card shows no secret values.
 
 ```text
-Telegram
-Plugin:     Installed · vX.Y.Z
-Daemon:     Connected
-Status:     Configured
-Project ID: ai_workflow
+Settings
+────────────────────────────────────────
+CHAT VERBOSITY                  select one
+  • Compact   Responses, errors, …
+  ○ Standard  Compact plus tools …
 
-[Pair] [Send test] [Replace] [Clear]
+────────────────────────────────────────
+TELEGRAM PLUGIN            optional plugin
+  Status:  [ Configured ]
+  Plugin:  Installed · vX.Y.Z (protocol vN)
+  Daemon:  Connected
+  Project ID: ai_workflow  (live: ai_workflow_2)
+  [ Replace ]  [ Clear ]  [ Test ]
 ```
 
-- Before installation: `Telegram plugin is not installed. Install with: hero plugin install telegram`.
-- Before pairing: `Status: Not configured`; Pair is enabled, test is disabled.
+- Before installation: badge `Not installed`, command box `$ hero plugin install telegram`, and a Copy command action (Enter copies the CLI string). Install remains a CLI operation.
+- Before pairing: badge `Not configured`; Pair is the action button; Test is not shown until configured.
 - While pairing: navigation remains available only through the modal's explicit Cancel action.
 - On daemon outage: `⚠ Telegram daemon disconnected; retrying…` appears in Chat and Settings shows retry state. Successful recovery emits `✓ Telegram daemon reconnected.`
 - Project ID is editable in Settings. The live per-instance suffix is display-only, e.g. `ai_workflow_2`.

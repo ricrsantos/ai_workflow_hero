@@ -26,7 +26,7 @@ func TestSettingsIsLastWithoutCycleAndDebugIsDefault(t *testing.T) {
 
 func TestSettingsRendersProfilesAndKeyboardSelection(t *testing.T) {
 	m := SetWidth(NewTestModel(nil), 100)
-	m = SetHeight(m, 28)
+	m = SetHeight(m, 40)
 	m, _ = m.openSettings()
 	plain := stripANSI(ViewForTest(m))
 	for _, label := range []string{"Compact", "Standard", "Detailed", "Debug"} {
@@ -34,9 +34,54 @@ func TestSettingsRendersProfilesAndKeyboardSelection(t *testing.T) {
 			t.Fatalf("missing %q from settings: %q", label, plain)
 		}
 	}
+	if !strings.Contains(plain, "CHAT VERBOSITY") || !strings.Contains(plain, "TELEGRAM PLUGIN") {
+		t.Fatalf("missing section headers: %q", plain)
+	}
+	compactIdx := strings.Index(plain, "Compact")
+	compactDescIdx := strings.Index(plain, "Responses, errors, and required approvals.")
+	if compactIdx < 0 || compactDescIdx < compactIdx || strings.Count(plain[compactIdx:compactDescIdx], "\n") != 0 {
+		t.Fatalf("Compact description must share the radio line: %q", plain)
+	}
 	next, _ := HandleTestKey(m, "up")
 	if next.settings.cursor != len(verbosityOptions)-2 {
 		t.Fatalf("cursor=%d want detailed index", next.settings.cursor)
+	}
+}
+
+func TestSettingsEnterAppliesFocusedVerbosityNotCursorIndex(t *testing.T) {
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
+	m, _ = m.openSettings()
+	// Debug (index 3) → copy command → Compact (index 0).
+	m, _ = HandleTestKey(m, "down")
+	m, _ = HandleTestKey(m, "down")
+	if m.settings.cursor != 0 {
+		t.Fatalf("cursor=%d want compact", m.settings.cursor)
+	}
+	next, _ := HandleTestKey(m, "enter")
+	if next.settings.verbosity != install.ChatVerbosityCompact {
+		t.Fatalf("verbosity=%q want compact", next.settings.verbosity)
+	}
+}
+
+func TestSettingsCopyCommandDoesNotChangeVerbosity(t *testing.T) {
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
+	m, _ = m.openSettings()
+	before := m.settings.verbosity
+	m, _ = HandleTestKey(m, "down")
+	if got := m.settingsRows()[m.settings.cursor].kind; got != rowTelegramCopyCommand {
+		t.Fatalf("cursor kind=%d want copy command", got)
+	}
+	next, cmd := HandleTestKey(m, "enter")
+	if next.settings.verbosity != before {
+		t.Fatalf("verbosity changed to %q", next.settings.verbosity)
+	}
+	if cmd == nil {
+		t.Fatal("copy command must return clipboard cmd")
+	}
+	if !strings.Contains(next.statusText, telegramInstallCommand) {
+		t.Fatalf("status=%q", next.statusText)
 	}
 }
 
