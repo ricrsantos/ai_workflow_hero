@@ -519,8 +519,29 @@ func TestProcessSSEEventSessionError(t *testing.T) {
 		},
 	}
 	out := a.processSSEEvent(context.Background(), evt, "sess-1", state, harness.ExecuteRequest{}, nil)
-	if out.err == nil {
-		t.Fatal("expected error")
+	if out.err == nil || !strings.Contains(out.err.Error(), "boom") {
+		t.Fatalf("err=%v", out.err)
+	}
+}
+
+func TestProcessSSEEventSessionErrorNested(t *testing.T) {
+	a := &Adapter{}
+	state := newStreamState()
+	evt := map[string]any{
+		"type": "session.error",
+		"properties": map[string]any{
+			"sessionID": "sess-1",
+			"error": map[string]any{
+				"name": "AI_APICallError",
+				"error": map[string]any{
+					"message": `thinking: invalid type: string "off", expected struct ThinkingOptions`,
+				},
+			},
+		},
+	}
+	out := a.processSSEEvent(context.Background(), evt, "sess-1", state, harness.ExecuteRequest{}, nil)
+	if out.err == nil || !strings.Contains(out.err.Error(), "ThinkingOptions") {
+		t.Fatalf("err=%v", out.err)
 	}
 }
 

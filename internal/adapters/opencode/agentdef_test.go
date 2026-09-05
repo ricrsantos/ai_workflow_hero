@@ -49,7 +49,8 @@ thinking: true
 	for _, want := range []string{
 		"model: opencode-go/gpt-5.6-luna",
 		"reasoningEffort: max",
-		"thinking: false",
+		"thinking:",
+		"type: disabled",
 		"fast: true",
 		"name: backend_agent",
 		"description: backend work",
@@ -64,6 +65,9 @@ thinking: true
 	}
 	if strings.Contains(text, "thinking: true") {
 		t.Fatalf("stale thinking remained: %s", text)
+	}
+	if strings.Contains(text, "thinking: false") || strings.Contains(text, `thinking: "off"`) {
+		t.Fatalf("thinking must be a ThinkingOptions object, got:\n%s", text)
 	}
 }
 

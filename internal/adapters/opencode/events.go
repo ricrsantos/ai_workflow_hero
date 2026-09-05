@@ -180,10 +180,7 @@ func (h *streamHandler) handle(evt map[string]any) streamOutcome {
 		return streamOutcome{}
 
 	case "session.error":
-		msg := stringProp(props, "error", "message")
-		if msg == "" {
-			msg = "session error"
-		}
+		msg := sessionErrorMessage(props)
 		h.emit(harness.SessionDelta(harness.SessionStateFailed, msg, evtType, h.sessionID))
 		return streamOutcome{err: fmt.Errorf("opencode session error: %s", msg)}
 
@@ -1163,6 +1160,37 @@ func int64Field(m map[string]any, keys ...string) int64 {
 		}
 	}
 	return 0
+}
+
+func sessionErrorMessage(props map[string]any) string {
+	if s := stringProp(props, "error", "message"); s != "" {
+		return s
+	}
+	if errObj, ok := props["error"].(map[string]any); ok {
+		if s := nestedErrorString(errObj, 0); s != "" {
+			return s
+		}
+	}
+	return "session error"
+}
+
+func nestedErrorString(m map[string]any, depth int) string {
+	if m == nil || depth > 4 {
+		return ""
+	}
+	for _, k := range []string{"message", "error", "data"} {
+		switch v := m[k].(type) {
+		case string:
+			if s := strings.TrimSpace(v); s != "" {
+				return s
+			}
+		case map[string]any:
+			if s := nestedErrorString(v, depth+1); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // stringPropRaw preserves whitespace-only deltas (e.g. inter-token spaces).

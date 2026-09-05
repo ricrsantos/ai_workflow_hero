@@ -97,17 +97,33 @@ func TestNativePropertyOptionsMapping(t *testing.T) {
 	if opts["fast"] != true {
 		t.Fatalf("fs mapping: %v", opts)
 	}
-	if opts["thinking"] != "max" || opts["reasoning_effort"] != "high" {
+	if thinkingType(opts["thinking"]) != "enabled" || opts["reasoning_effort"] != "high" {
 		t.Fatalf("th/ef mapping: %v", opts)
 	}
 	if opts := nativePropertyOptions(map[string]string{"fs": "false"}); opts["fast"] != false {
 		t.Fatalf("fs=false mapping: %v", opts)
+	}
+	off := nativePropertyOptions(map[string]string{"th": "off"})
+	if thinkingType(off["thinking"]) != "disabled" {
+		t.Fatalf("th=off must send ThinkingOptions disabled, got %v", off)
 	}
 	if opts := nativePropertyOptions(map[string]string{"future_key": "x"}); opts != nil {
 		t.Fatalf("future keys must not enter the native payload: %v", opts)
 	}
 	if opts := nativePropertyOptions(nil); opts != nil {
 		t.Fatal("nil props → nil options")
+	}
+}
+
+func thinkingType(v any) string {
+	switch m := v.(type) {
+	case map[string]string:
+		return m["type"]
+	case map[string]any:
+		s, _ := m["type"].(string)
+		return s
+	default:
+		return ""
 	}
 }
 
@@ -141,7 +157,8 @@ func TestExecuteBuildsNativePayloadForDeepSeek(t *testing.T) {
 		t.Fatalf("model payload: %v", model)
 	}
 	opts := captured["options"].(map[string]any)
-	if opts["fast"] != true || opts["thinking"] != "max" || opts["reasoning_effort"] != "high" {
+	th := thinkingType(opts["thinking"])
+	if opts["fast"] != true || th != "enabled" || opts["reasoning_effort"] != "high" {
 		t.Fatalf("native options payload: %v", opts)
 	}
 }

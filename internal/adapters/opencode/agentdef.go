@@ -132,16 +132,9 @@ func reasoningEffortFrontmatterValue(effort string) (string, bool) {
 }
 
 func thinkingFrontmatterValue(th string) (any, bool) {
-	th = strings.TrimSpace(th)
-	if th == "" || strings.EqualFold(th, "na") {
+	mapped := thinkingOptionValue(th)
+	if mapped == nil {
 		return nil, false
 	}
-	switch strings.ToLower(th) {
-	case "true":
-		return true, true
-	case "false":
-		return false, true
-	default:
-		return th, true
-	}
+	return mapped, true
 }

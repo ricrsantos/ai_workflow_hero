@@ -106,7 +106,9 @@ func nativePropertyOptions(props map[string]string) map[string]any {
 		out["fast"] = strings.EqualFold(strings.TrimSpace(fs), "true")
 	}
 	if th := strings.TrimSpace(props[harness.PropertyThink]); th != "" {
-		out["thinking"] = th
+		if mapped := thinkingOptionValue(th); mapped != nil {
+			out["thinking"] = mapped
+		}
 	}
 	if ef := strings.TrimSpace(props[harness.PropertyEffort]); ef != "" {
 		out["reasoning_effort"] = ef
@@ -115,6 +117,21 @@ func nativePropertyOptions(props map[string]string) map[string]any {
 		return nil
 	}
 	return out
+}
+
+// thinkingOptionValue maps a normalized C5 thinking value to the OpenCode
+// provider payload. Console Go / DeepSeek V4 reject a string or bool
+// (`expected struct ThinkingOptions`); the wire shape is {type: enabled|disabled}.
+// "off" must send type=disabled: omitting the field defaults DeepSeek V4 to enabled.
+func thinkingOptionValue(th string) map[string]string {
+	switch strings.ToLower(strings.TrimSpace(th)) {
+	case "", "na":
+		return nil
+	case "off", "false", "disabled", "none", "0":
+		return map[string]string{"type": "disabled"}
+	default:
+		return map[string]string{"type": "enabled"}
+	}
 }
 
 // propertyRejection inspects an OpenCode API error body and, when it blames a

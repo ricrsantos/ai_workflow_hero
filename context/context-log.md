@@ -4,6 +4,18 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-05 — OpenCode thinking "off" rejected by Console Go
+
+**Problem**: Judge (`opencode-go/deepseek-v4-pro`) failed immediately with TUI `opencode session error: session error`. OpenCode log: `thinking: invalid type: string "off", expected struct ThinkingOptions`. Agent frontmatter and prompt options sent C5 `th=off` as a string; DeepSeek V4 requires `{type: disabled|enabled}`. Nested `session.error` objects were flattened to the generic "session error" text.
+
+**Change**: OpenCode adapter maps thinking to `{type: disabled}` (`off`/`false`) or `{type: enabled}` (`max`/`true`). Agent sync writes the same object into `.opencode/agents` frontmatter. SSE `session.error` unwraps nested `error.message` so the TUI shows the provider text.
+
+**Validation**: `go test ./...` passes, including native payload, agentdef frontmatter, and nested session.error tests.
+
+## 2026-09-05 — C9 QA: flaky tui TempDir cleanup
+
+**Outcome**: Cycle C9 QA (`go test ./...`) failed once in `internal/tui` (`TestConversationCancelDuringStreamWithoutSessionID` left `.workflow-hero` non-empty during `TempDir` cleanup). The isolated test passed 5/5 reruns; git diff was only `.workflow-hero/hero.db`. QA auto-closed (no human approval) and Judge started. Treat as a cleanup race, not an implementation gap from this cycle.
+
 ## 2026-09-04 — OpenCode Execute continues after serve restart
 
 **Problem**: During C9 Implementation the OpenCode serve died mid-turn (`go test ./...` tool left `running`, no `session.idle`). Hero restarted serve and reconnected SSE, then waited forever because `GET /session/{id}` has no `status` on OpenCode 1.18.23 and message recovery requires assistant text. Ctrl+C is ignored by design (Esc / Alt+Q).

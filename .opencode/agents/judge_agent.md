@@ -3,7 +3,8 @@ description: Validates SDD requirement coverage during the Judge stage. Does not
 model: opencode-go/deepseek-v4-pro
 name: judge_agent
 reasoningEffort: high
-thinking: "off"
+thinking:
+  type: disabled
 ---
 
 # judge_agent — SDD Coverage Judge Agent
