@@ -82,6 +82,10 @@ CREATE TABLE IF NOT EXISTS telegram_addresses (
   abbrev TEXT NOT NULL,
   last_seen TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS telegram_selection (
+  singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+  address TEXT NOT NULL
+);
 `)
 	return err
 }
@@ -118,6 +122,35 @@ func (s *Store) AddressKnown(address string) (bool, error) {
 	var n int
 	err := s.db.QueryRow("SELECT COUNT(*) FROM telegram_addresses WHERE address = ?", address).Scan(&n)
 	return n > 0, err
+}
+
+// SetSelectedAddress persists the authorized chat's selected live instance.
+// The daemon supports one authorized chat, so no chat identifier is stored in
+// SQLite (ADR-062).
+func (s *Store) SetSelectedAddress(address string) error {
+	_, err := s.db.Exec(
+		"INSERT INTO telegram_selection(singleton, address) VALUES(1, ?) ON CONFLICT(singleton) DO UPDATE SET address = excluded.address",
+		address,
+	)
+	return err
+}
+
+// SelectedAddress returns the persisted selected instance address. An empty
+// result means the authorized chat has not selected an instance yet.
+func (s *Store) SelectedAddress() (string, error) {
+	var address string
+	err := s.db.QueryRow("SELECT address FROM telegram_selection WHERE singleton = 1").Scan(&address)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return address, err
+}
+
+// ClearSelectedAddress removes the selected instance, for example when the
+// authorized chat is replaced or credentials are cleared.
+func (s *Store) ClearSelectedAddress() error {
+	_, err := s.db.Exec("DELETE FROM telegram_selection WHERE singleton = 1")
+	return err
 }
 
 // UpdateProcessed reports whether updateID was already processed.

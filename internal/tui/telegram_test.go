@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
@@ -126,6 +127,83 @@ func TestCommitTelegramAbbrevWritesHeroJSON(t *testing.T) {
 	}
 	if got := loadTelegramAbbrev(dir); got != "aiwkhero" {
 		t.Fatalf("reload=%q", got)
+	}
+}
+
+func TestTelegramStatusText(t *testing.T) {
+	now := time.Now()
+	m := NewTestModel(nil)
+	m.status = cycle.StatusView{
+		CycleNumber: 7,
+		Title:       "Telegram status",
+		Objective:   "Verify remote status",
+		Status:      "active",
+		Stages:      []cycle.StatusStage{{Name: "Implementation", Status: "Running", Iteration: "1/3"}},
+	}
+	m.sessionTimer = sessionTimerState{startedAt: now.Add(-2 * time.Minute), running: true}
+	m.aiTimer = aiTimerState{startedAt: now.Add(-time.Minute), running: true}
+	m.aiResponseTimer = aiTimerState{startedAt: now.Add(-30 * time.Second), running: true}
+	m.contextUsedTokens = 100000
+	m.chatModelSlug = "test-model"
+	m.contextWindows = contextWindowCatalog{"test-model": 250000}
+
+	got := m.telegramStatusText(now)
+	for _, want := range []string{
+		"Cycle C7: Telegram status",
+		"Current stage: Implementation (Running, iteration 1/3)",
+		"Session: 00:02:00",
+		"AI wk: 00:01:00",
+		"AI rp: 00:00:30",
+		"Context: 100k/250k",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("status missing %q: %q", want, got)
+		}
+	}
+
+	m.status = cycle.StatusView{}
+	m.streaming = true
+	if got := m.telegramStatusText(now); !strings.HasPrefix(got, "Waiting for harness\n") {
+		t.Fatalf("free-chat status=%q", got)
+	}
+	m.streaming = false
+	if got := m.telegramStatusText(now); got != "idle" {
+		t.Fatalf("idle status=%q", got)
+	}
+}
+
+func TestTelegramStatusCommandAndAutoReportSendStatus(t *testing.T) {
+	now := time.Now()
+	var outbound []string
+	m := NewTestModel(nil)
+	m.telegram = &telegramState{
+		installed:         true,
+		connected:         true,
+		paired:            true,
+		autoReportMinutes: 1,
+		nextAutoReportAt:  now.Add(-time.Second),
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	next, cmd := m.handleTelegramInbound(telegramInboundMsg{text: telegramStatusCommand, isCommand: true, address: "proj"})
+	if cmd != nil {
+		_ = cmd()
+	}
+	if len(outbound) != 1 || outbound[0] != "idle" {
+		t.Fatalf("/status outbound=%v", outbound)
+	}
+
+	cmd = next.maybeTelegramAutoReport(now)
+	if cmd != nil {
+		_ = cmd()
+	}
+	if len(outbound) != 2 || outbound[1] != "idle" {
+		t.Fatalf("auto-report outbound=%v", outbound)
+	}
+	if !next.telegram.nextAutoReportAt.After(now) {
+		t.Fatal("auto report schedule was not advanced")
 	}
 }
 

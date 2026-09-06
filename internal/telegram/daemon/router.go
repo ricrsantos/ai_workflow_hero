@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -8,13 +9,18 @@ import (
 // (ADR-063). It never maps to /hero-cancel or a harness interrupt.
 const cancelPendingCommand = "/telegram-cancel-pending"
 
+const (
+	listCommand   = "/list"
+	selectCommand = "/select"
+)
+
 // inboundAction classifies an addressed payload.
 type inboundAction int
 
 const (
-	actionPlain        inboundAction = iota // ordinary text → one harness turn
-	actionCommand                           // slash command → TUI command path
-	actionCancelPending                     // daemon-owned queue cancellation
+	actionPlain         inboundAction = iota // ordinary text → one harness turn
+	actionCommand                            // slash command → TUI command path
+	actionCancelPending                      // daemon-owned queue cancellation
 )
 
 // parseAddressed splits an inbound message into "<address>:" and its payload.
@@ -44,4 +50,18 @@ func classifyInbound(payload string) (inboundAction, string) {
 		return actionCommand, p
 	}
 	return actionPlain, p
+}
+
+// parseSelect parses the daemon-owned /select command. It accepts only a
+// one-based list position so addresses never need to be repeated by users.
+func parseSelect(text string) (int, bool) {
+	fields := strings.Fields(text)
+	if len(fields) != 2 || fields[0] != selectCommand {
+		return 0, false
+	}
+	n, err := strconv.Atoi(fields[1])
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
 }

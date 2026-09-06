@@ -57,6 +57,26 @@ func SetTelegramProjectAbbrev(projectDir, abbrev string) error {
 	return saveHeroJSON(projectDir, hero)
 }
 
+// NormalizeTelegramAutoReportMinutes constrains automatic Telegram status
+// reports to the supported project-local range. Zero disables reporting.
+func NormalizeTelegramAutoReportMinutes(minutes int) int {
+	if minutes < 1 || minutes > 300 {
+		return 0
+	}
+	return minutes
+}
+
+// SetTelegramAutoReportMinutes persists the automatic Telegram status-report
+// interval. Zero disables it; enabled values are 1 through 300 minutes.
+func SetTelegramAutoReportMinutes(projectDir string, minutes int) error {
+	hero, err := LoadHeroJSON(projectDir)
+	if err != nil {
+		return err
+	}
+	hero.Telegram.AutoReportMinutes = NormalizeTelegramAutoReportMinutes(minutes)
+	return saveHeroJSON(projectDir, hero)
+}
+
 // SupportedHarnessIDs lists harness identifiers Hero supports in the TUI
 // (ADR-034; Cursor + OpenCode from C4; Codex added in C6 / Hero 2.5.0 per ADR-043/048).
 var SupportedHarnessIDs = []string{"cursor", "opencode", "codex"}

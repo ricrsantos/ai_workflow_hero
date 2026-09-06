@@ -120,6 +120,9 @@ func (m model) handleTelegramEvent(msg telegramEventMsg) model {
 // acknowledges queued deliveries (telegram-ipc R3).
 func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 	ack := m.telegramAckCmd(msg.inboundID)
+	if strings.EqualFold(strings.TrimSpace(msg.text), telegramStatusCommand) {
+		return m, combineTimerCmds(ack, m.telegramOutboundCmd(m.telegramStatusText(time.Now())))
+	}
 	if m.telegram != nil && m.telegram.modelSelection != nil {
 		if strings.EqualFold(strings.TrimSpace(msg.text), slashModel) || strings.EqualFold(strings.TrimSpace(msg.text), "/hero-model") {
 			next, cmd := m.startTelegramModelSelection(msg.address)
@@ -176,6 +179,9 @@ func (m model) submitRemoteCommand(text, origin string) (model, tea.Cmd) {
 		m = m.setRemoteOrigin(origin)
 		return m.submitRemoteTurn(text, origin)
 	}
+	if next.streaming {
+		cmd = combineTimerCmds(cmd, next.telegramOutboundCmd(next.telegramStatusText(time.Now())))
+	}
 	return next, cmd
 }
 
@@ -185,7 +191,7 @@ func (m model) submitRemoteTurn(text, origin string) (model, tea.Cmd) {
 	m.nextUserOrigin = origin
 	if m.streaming {
 		// Queue the turn behind the active one rather than interrupting it.
-		return m, m.appendTelegramPendingTurnCmd(text, origin)
+		return m, combineTimerCmds(m.appendTelegramPendingTurnCmd(text, origin), m.telegramOutboundCmd(m.telegramStatusText(time.Now())))
 	}
 
 	if m.researchLive {
@@ -210,7 +216,7 @@ func (m model) submitRemoteTurn(text, origin string) (model, tea.Cmd) {
 	m.runtimeCommandName = ""
 	m = m.syncConversationContext()
 	m = m.beginConversationExecute(text, controlSlashFollowUpPrompt(text))
-	return m, m.conversationExecuteCmds()
+	return m, combineTimerCmds(m.conversationExecuteCmds(), m.telegramOutboundCmd(m.telegramStatusText(time.Now())))
 }
 
 // appendTelegramPendingTurnCmd defers a Telegram turn until the active harness

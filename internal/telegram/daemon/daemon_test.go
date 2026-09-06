@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -84,6 +85,62 @@ func TestProcessUpdateRoutesCommandToClient(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("no inbound delivered")
+	}
+	if got := bot.sentTexts(); len(got) != 1 || got[0] != "CHAT::OK, Received." {
+		t.Fatalf("confirmation=%v want OK, Received", got)
+	}
+}
+
+func TestProcessUpdateListSelectAndRouteSelectedInstance(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+	first := make(chan ipc.Message, 1)
+	second := make(chan ipc.Message, 1)
+	_, _ = d.registry.register("/p1", ipc.ModeCycle, "alpha", first)
+	_, _ = d.registry.register("/p2", ipc.ModeCycle, "beta", second)
+
+	d.processUpdate(context.Background(), Update{UpdateID: 1, ChatID: "CHAT", Text: "/list"})
+	d.processUpdate(context.Background(), Update{UpdateID: 2, ChatID: "CHAT", Text: "/select 2"})
+	d.processUpdate(context.Background(), Update{UpdateID: 3, ChatID: "CHAT", Text: "hello"})
+
+	select {
+	case m := <-second:
+		if m.Text != "hello" || m.IsCommand {
+			t.Fatalf("selected inbound=%+v", m)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("selected instance did not receive input")
+	}
+	select {
+	case m := <-first:
+		t.Fatalf("unselected instance received input: %+v", m)
+	default:
+	}
+	if got, err := d.store.SelectedAddress(); err != nil || got != "beta" {
+		t.Fatalf("selected address=%q err=%v", got, err)
+	}
+	want := []string{
+		"CHAT::Connected instances:\n1. alpha\n2. beta",
+		"CHAT::Selected instance: beta.",
+		"CHAT::OK, Received.",
+	}
+	if got := bot.sentTexts(); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("replies=%v want %v", got, want)
+	}
+}
+
+func TestProcessUpdateSelectedDisconnectedInstanceReturnsError(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+	if err := d.store.SetSelectedAddress("proj"); err != nil {
+		t.Fatal(err)
+	}
+
+	d.processUpdate(context.Background(), Update{UpdateID: 1, ChatID: "CHAT", Text: "hello"})
+
+	want := "CHAT::Selected instance is disconnected. Send /list, then /select <number>."
+	if got := bot.sentTexts(); len(got) != 1 || got[0] != want {
+		t.Fatalf("replies=%v want %q", got, want)
 	}
 }
 

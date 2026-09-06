@@ -36,11 +36,13 @@ Telegram and the TUI are two interfaces over the same conversation and cycle ser
 - Free Chat instances receive `free_1`, `free_2`, and so on, under the same allocation rule.
 - On registration, and after successful pairing/configuration, each instance sends an announcement to the authorized Telegram chat identifying its project/free-chat name and assigned abbreviation.
 - All relevant outbound Telegram messages identify their source abbreviation.
-- A Telegram input must start with `<abbreviation>:`. The daemon routes it only to the matching live instance. Nonmatching or malformed input receives no project information.
+- The daemon lists live instances with `/list` and persists the authorized chat's one-based `/select n` choice without storing its chat id in SQLite. Subsequent ordinary text and slash commands route to that selected live instance without an address prefix; selection is invalid while its instance is disconnected and produces an actionable error rather than a queued turn. Explicit `<abbreviation>:` input remains supported for targeted delivery and pending-queue management.
 
 ### 3.3 Conversation, commands, events, and pending messages
 
-- A slash command after the address prefix is dispatched through the equivalent TUI command path. Ordinary text is delivered as an input turn to the target instance's `ConversationService`, then to its existing harness session.
+- A slash command after selection (or the explicit address prefix) is dispatched through the equivalent TUI command path. Ordinary text is delivered as an input turn to the target instance's `ConversationService`, then to its existing harness session. The daemon returns `OK, Received.` when it accepts live delivery to that instance.
+- Telegram `/status` is TUI-owned and does not consume a harness turn. It returns `idle` when the instance is idle; an active cycle returns its cycle and current-stage state plus the TUI `Session`, `AI wk`, `AI rp`, and context-window `used/max` values; an active free-chat turn returns `Waiting for harness` with those same counters. Every Telegram request that starts or queues a harness turn also receives this status immediately.
+- Project Settings persists `telegram.auto_report_minutes`: `0` disables automatic status reports and `1` through `300` sends the same status on that interval while Telegram is paired and connected.
 - `<address>: /model` keeps selection remote: Telegram sends numbered harness options, then model options, then choices for every selectable model property. The final reply atomically persists the same free-chat model/properties used by local Chat.
 - Harness responses and Telegram-originated inputs appear in the target TUI Chat transcript with an unambiguous Telegram origin/destination label.
 - The daemon sends relevant outbound notifications only: cycle/stage start and finish, approval requests, errors, and final results. It does not forward intermediate activity, thinking, tool noise, or every stream delta.
@@ -93,7 +95,7 @@ Telegram and the TUI are two interfaces over the same conversation and cycle ser
 1. A matching-release Telegram plugin installs separately and a configured first TUI starts its daemon; the daemon stops after the last registered TUI closes.
 2. Pairing binds one chat only, expires after ten minutes, masks credentials everywhere, and ignores an unauthorized chat safely.
 3. Two project TUIs receive stable `name` and `name_2` addresses, while Free Chats receive `free_1`, `free_2`.
-4. `<address>: /hero-status` follows the normal command behavior; `<address>: plain text` reaches only that target harness and the response is shown locally and returned remotely.
+4. `/list` returns numbered live instances; `/select n` persists a selected instance; then `/hero-status` and plain text reach only that selected live harness and receive `OK, Received.` after live delivery. A disconnected selected instance returns an actionable error.
 5. An unavailable target retains a message for 24 hours; `/telegram-cancel-pending` cancels its queue without changing any cycle/harness state.
 6. Important cycle notifications are delivered with source identity, while intermediate activity is not.
 7. Logs rotate at 10 × 10 MB, the old TUI log path migrates safely, and install/upgrade ignore the new project log directory without overwriting user `.gitignore` entries.

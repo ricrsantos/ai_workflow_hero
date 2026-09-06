@@ -57,7 +57,7 @@ func timerTickCmd(generation uint64) tea.Cmd {
 }
 
 func (m model) hasTimerWork() bool {
-	return m.sessionTimer.running || m.aiTimer.running || m.aiResponseTimer.running
+	return m.sessionTimer.running || m.aiTimer.running || m.aiResponseTimer.running || m.telegramAutoReportEnabled()
 }
 
 func (m *model) ensureTimerLoop() tea.Cmd {
@@ -286,11 +286,12 @@ func (m model) handleTimerTick(msg timerTickMsg) (model, tea.Cmd) {
 			saveCmd = m.saveSessionDurationCmd(seconds)
 		}
 	}
+	reportCmd := m.maybeTelegramAutoReport(at)
 	if !m.hasTimerWork() {
 		m.invalidateTimerLoop()
-		return m, saveCmd
+		return m, combineTimerCmds(saveCmd, reportCmd)
 	}
-	return m, combineTimerCmds(saveCmd, timerTickCmd(m.timerGeneration))
+	return m, combineTimerCmds(saveCmd, reportCmd, timerTickCmd(m.timerGeneration))
 }
 
 func parseCycleTimerTime(raw string) (time.Time, bool) {

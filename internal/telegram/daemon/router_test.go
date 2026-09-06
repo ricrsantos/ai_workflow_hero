@@ -31,3 +31,23 @@ func TestClassifyInbound(t *testing.T) {
 		t.Fatalf("action=%d arg=%q", a, arg)
 	}
 }
+
+func TestParseSelect(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want int
+		ok   bool
+	}{
+		{text: "/select 1", want: 1, ok: true},
+		{text: "/select 42", want: 42, ok: true},
+		{text: "/select", ok: false},
+		{text: "/select 0", ok: false},
+		{text: "/select one", ok: false},
+		{text: "/select 1 extra", ok: false},
+	} {
+		got, ok := parseSelect(tc.text)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("parseSelect(%q)=(%d, %v), want (%d, %v)", tc.text, got, ok, tc.want, tc.ok)
+		}
+	}
+}

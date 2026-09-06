@@ -47,9 +47,11 @@
 
 **Context:** Multiple instances of the same project must not answer one message twice. A target can be temporarily unavailable, and the user needs a safe way to retract undelivered inputs.
 
-**Decision:** The daemon allocates a project base abbreviation then `_2+` suffixes, retaining them until the project's final instance leaves; Free Chat uses `free_N`. It accepts only `<address>:`-prefixed input, tracks each message by provider update id and a finite delivery state, and holds unavailable-target messages for 24 hours. The daemon owns `/telegram-cancel-pending`, which moves every pending message for the address to `cancelled` without invoking the cycle command dispatcher.
+**Decision:** The daemon allocates a project base abbreviation then `_2+` suffixes, retaining them until the project's final instance leaves; Free Chat uses `free_N`. `/list` returns a stable numbered live-instance list and `/select n` persists the one authorized chat's selection without retaining its chat id in SQLite. Unprefixed input routes to that selected instance; if it disconnects, the daemon returns an actionable error rather than queues a turn. Explicit `<address>:` input remains supported for targeted delivery, tracks each message by provider update id and a finite delivery state, and holds unavailable targets for 24 hours. The daemon owns `/telegram-cancel-pending`, which moves every pending message for the address to `cancelled` without invoking the cycle command dispatcher.
 
 **Consequences:** User messages cannot be deleted from Telegram and already delivered work cannot be rolled back. Status transitions are audit-worthy. Explicit addressing makes multi-project and multi-instance routing deterministic.
+
+**Status reporting extension:** `/status` is handled by the selected TUI rather than by the daemon or a harness. It uses the TUI's live cycle, execution, timer, and context-window state, and project-local `telegram.auto_report_minutes` (`0` or `1–300`) schedules the same reply using the existing non-blocking Bubble Tea timer tick. This keeps the daemon transport-only and avoids a second status model.
 
 ## ADR-064: Project and daemon rotating logs with managed ignore migration
 

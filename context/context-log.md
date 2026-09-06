@@ -492,6 +492,39 @@ upgrade preserve `.gitignore` while ignoring the project log directory.
 plus DEPLOY/TESTING/index/architecture-overview updates and documents registry
 entries.
 
+## 2026-09-05 — Telegram instance selection commands
+
+**Decision**: The authorized Telegram chat selects a live *instance* (not only
+the project base name), so concurrent project TUIs remain unambiguous. `/list`
+returns sorted numbered instance addresses; `/select n` persists the chosen
+address in the daemon SQLite store without retaining the credential-vault-only
+chat id. Selection is cleared when the authorized chat is replaced or cleared.
+
+**Implementation**: Unprefixed ordinary text and slash commands now route to
+the selected live instance. If it disconnects, the daemon reports an actionable
+`/list` + `/select` error rather than queuing the turn. Explicit addressed
+input remains compatible and keeps its existing offline durable queue behavior.
+The daemon replies `OK, Received.` after accepting a live delivery to a TUI.
+
+**Validation**: Added daemon/store/router coverage for deterministic listing,
+selection persistence, selected routing, disconnection errors, and live-delivery
+confirmation. `go test ./internal/telegram/daemon -count=1`,
+`go test ./internal/tui -count=1`, and `go test ./...` pass.
+
+## 2026-09-05 — Telegram status and auto report
+
+**Implementation**: Added TUI-owned Telegram `/status`: it reports `idle`,
+active cycle/current-stage data, or `Waiting for harness`, with Session, AI wk,
+AI rp, and context-window counters. Telegram turns that start or wait for a
+harness turn emit the same immediate status. Settings now persists
+`telegram.auto_report_minutes` per project (`0` disabled; `1–300` minutes),
+and the existing non-blocking Bubble Tea timer sends periodic status while
+Telegram remains connected and paired.
+
+**Validation**: Added focused install/TUI coverage. `go test ./internal/tui
+-run 'TestTelegram(StatusText|StatusCommandAndAutoReportSendStatus)' -count=1`
+and `go test ./...` pass.
+
 ## 2026-08-28 — Discover auto-loads active `docs/idea` files
 
 **Decision**: Research should consider optional design notes under `docs/idea/` at session start. Top-level `archive/` and `tobe/` are excluded; empty folder is fine.

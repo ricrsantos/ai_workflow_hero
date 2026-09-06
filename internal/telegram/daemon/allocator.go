@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -106,6 +107,7 @@ func (r *registry) addresses() []string {
 	for a := range r.byAddr {
 		out = append(out, a)
 	}
+	sort.Strings(out)
 	return out
 }
 

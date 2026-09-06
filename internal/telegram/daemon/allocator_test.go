@@ -107,6 +107,17 @@ func TestRegistryLookupAndCount(t *testing.T) {
 	}
 }
 
+func TestRegistryAddressesAreSorted(t *testing.T) {
+	r := newRegistry()
+	ch := make(chan ipc.Message, 1)
+	_, _ = r.register("/p", ipc.ModeCycle, "zebra", ch)
+	_, _ = r.register("/p", ipc.ModeCycle, "alpha", ch)
+
+	if got := r.addresses(); fmt.Sprint(got) != "[alpha zebra]" {
+		t.Fatalf("addresses=%v want sorted addresses", got)
+	}
+}
+
 func TestPrefixAddress(t *testing.T) {
 	if got := prefixAddress("ai_workflow_2", "Cycle #42 started."); got != fmt.Sprintf("ai_workflow_2: Cycle #42 started.") {
 		t.Fatalf("unexpected prefix: %q", got)

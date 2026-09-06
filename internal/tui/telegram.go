@@ -46,7 +46,9 @@ type telegramState struct {
 
 	// abbrev is the editable project abbreviation (display-only live suffix is
 	// in address).
-	abbrev string
+	abbrev            string
+	autoReportMinutes int
+	nextAutoReportAt  time.Time
 
 	client *telegramClient // nil when the plugin is not installed
 
@@ -370,10 +372,14 @@ func (m model) startTelegram(version string) model {
 
 	abbrev := loadTelegramAbbrev(projectDir)
 	st := &telegramState{
-		installed:       true,
-		pluginVersion:   pluginVersion,
-		protocolVersion: protocol,
-		abbrev:          abbrev,
+		installed:         true,
+		pluginVersion:     pluginVersion,
+		protocolVersion:   protocol,
+		abbrev:            abbrev,
+		autoReportMinutes: loadTelegramAutoReportMinutes(projectDir),
+	}
+	if st.autoReportMinutes > 0 {
+		st.nextAutoReportAt = time.Now().Add(time.Duration(st.autoReportMinutes) * time.Minute)
 	}
 	m.telegram = st
 
@@ -442,6 +448,14 @@ func loadTelegramAbbrev(projectDir string) string {
 		return normalizeTelegramAbbrev(saved)
 	}
 	return fallback
+}
+
+func loadTelegramAutoReportMinutes(projectDir string) int {
+	hero, err := install.LoadHeroJSON(projectDir)
+	if err != nil {
+		return 0
+	}
+	return install.NormalizeTelegramAutoReportMinutes(hero.Telegram.AutoReportMinutes)
 }
 
 // projectAbbrev derives a project abbreviation from the project directory base

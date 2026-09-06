@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ const (
 	rowVerbosity settingsRowKind = iota
 	rowTelegramCopyCommand
 	rowTelegramAbbrev
+	rowTelegramAutoReport
 	rowTelegramAction
 )
 
@@ -57,6 +59,11 @@ func (m model) settingsRows() []settingsRow {
 		label: "Project ID",
 		desc:  fmt.Sprintf("%s (live: %s)", t.abbrev, displayAddress(t.address)),
 	})
+	rows = append(rows, settingsRow{
+		kind:  rowTelegramAutoReport,
+		label: "Auto report",
+		desc:  telegramAutoReportLabel(t.autoReportMinutes),
+	})
 	if !t.connected {
 		rows = append(rows, settingsRow{kind: rowTelegramAction, label: "Retry", desc: "Start or reconnect the Telegram daemon", action: "retry"})
 	}
@@ -68,6 +75,14 @@ func (m model) settingsRows() []settingsRow {
 		rows = append(rows, settingsRow{kind: rowTelegramAction, label: "Pair", desc: "Pair with your bot", action: "pair"})
 	}
 	return rows
+}
+
+func telegramAutoReportLabel(minutes int) string {
+	minutes = install.NormalizeTelegramAutoReportMinutes(minutes)
+	if minutes == 0 {
+		return "Disabled"
+	}
+	return fmt.Sprintf("Every %d min", minutes)
 }
 
 func displayAddress(addr string) string {
@@ -143,6 +158,9 @@ func (m model) renderTelegramInstalled(rows []settingsRow, width int) string {
 			abbrevFocused = i == m.settings.cursor
 			b.WriteString(m.renderProjectIDRow(row, abbrevFocused, width))
 			b.WriteByte('\n')
+		case rowTelegramAutoReport:
+			b.WriteString(m.renderTelegramAutoReportRow(row, i == m.settings.cursor, width))
+			b.WriteByte('\n')
 		case rowTelegramAction:
 			if i == m.settings.cursor {
 				actionFocus = len(actions)
@@ -160,6 +178,25 @@ func (m model) renderTelegramInstalled(rows []settingsRow, width int) string {
 		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, joinButtonGap(parts)...))
 	}
 	return b.String()
+}
+
+func (m model) renderTelegramAutoReportRow(row settingsRow, focused bool, width int) string {
+	marker := "  "
+	if focused {
+		marker = "> "
+	}
+	label := "Auto report: "
+	value := row.desc
+	if m.settings.editingAutoReport && focused {
+		value = m.settings.autoReportDraft + "█"
+	}
+	used := lipgloss.Width(marker + label)
+	remain := max(8, width-used)
+	line := marker + label + truncateDisplayWidth(value, remain)
+	if focused {
+		return navSidebarFocusedStyle.Render(truncateNavText(line, width))
+	}
+	return marker + configLabelStyle.Render(label) + configValueStyle.Render(truncateDisplayWidth(value, remain))
 }
 
 func joinButtonGap(buttons []string) []string {
@@ -402,6 +439,10 @@ func (m model) telegramSettingsEnter(row settingsRow) (model, tea.Cmd) {
 		m.settings.editingAbbrev = true
 		m.settings.abbrevDraft = m.telegram.abbrev
 		return m, nil
+	case rowTelegramAutoReport:
+		m.settings.editingAutoReport = true
+		m.settings.autoReportDraft = fmt.Sprintf("%d", m.telegram.autoReportMinutes)
+		return m, nil
 	case rowTelegramAction:
 		return m.handleTelegramSettingsAction(row.action)
 	}
@@ -409,6 +450,11 @@ func (m model) telegramSettingsEnter(row settingsRow) (model, tea.Cmd) {
 }
 
 type telegramAbbrevSavedMsg struct{ err error }
+
+type telegramAutoReportSavedMsg struct {
+	minutes int
+	err     error
+}
 
 // commitTelegramAbbrev applies the edited abbreviation, re-registers with the
 // daemon, and writes telegram.project_abbrev to hero.json (PRD-C09-001 §3.2).
@@ -439,6 +485,15 @@ func saveTelegramAbbrevCmd(projectDir, abbrev string) tea.Cmd {
 	}
 }
 
+func saveTelegramAutoReportCmd(projectDir string, minutes int) tea.Cmd {
+	return func() tea.Msg {
+		if projectDir == "" {
+			return telegramAutoReportSavedMsg{err: fmt.Errorf("project unavailable")}
+		}
+		return telegramAutoReportSavedMsg{minutes: minutes, err: install.SetTelegramAutoReportMinutes(projectDir, minutes)}
+	}
+}
+
 // telegramSettingsKey handles key input while editing the abbreviation.
 func (m model) handleTelegramAbbrevKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
@@ -456,6 +511,43 @@ func (m model) handleTelegramAbbrevKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	default:
 		if len(msg.Runes) > 0 && !msg.Alt {
 			m.settings.abbrevDraft += string(msg.Runes)
+		}
+		return m, nil
+	}
+}
+
+func (m model) handleTelegramAutoReportKey(msg tea.KeyMsg) (model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.settings.editingAutoReport = false
+		m.settings.autoReportDraft = ""
+		return m, nil
+	case "enter":
+		minutes, err := strconv.Atoi(strings.TrimSpace(m.settings.autoReportDraft))
+		if err != nil || minutes < 0 || minutes > 300 {
+			m.settings.err = "Auto report must be 0 (disabled) or 1–300 minutes."
+			return m, nil
+		}
+		m.settings.editingAutoReport = false
+		m.settings.autoReportDraft = ""
+		projectDir := ""
+		if m.svc != nil {
+			projectDir = m.svc.ProjectDir
+		}
+		return m, saveTelegramAutoReportCmd(projectDir, minutes)
+	case "backspace":
+		if len(m.settings.autoReportDraft) > 0 {
+			m.settings.autoReportDraft = m.settings.autoReportDraft[:len(m.settings.autoReportDraft)-1]
+		}
+		return m, nil
+	default:
+		if len(msg.Runes) > 0 && !msg.Alt {
+			for _, r := range msg.Runes {
+				if r < '0' || r > '9' {
+					return m, nil
+				}
+			}
+			m.settings.autoReportDraft += string(msg.Runes)
 		}
 		return m, nil
 	}

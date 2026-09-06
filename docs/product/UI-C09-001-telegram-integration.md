@@ -19,6 +19,7 @@ TELEGRAM PLUGIN            optional plugin
   Plugin:  Installed · vX.Y.Z (protocol vN)
   Daemon:  Connected
   Project ID: ai_workflow  (live: ai_workflow_2)
+  Auto report: Every 15 min
   | Replace |  | Clear |  | Test |
 ```
 
@@ -27,6 +28,7 @@ TELEGRAM PLUGIN            optional plugin
 - While pairing: navigation remains available only through the modal's explicit Cancel action.
 - On daemon outage: `⚠ Telegram daemon disconnected; retrying…` appears in Chat and Settings shows retry state. Successful recovery emits `✓ Telegram daemon reconnected.`
 - Project ID is editable in Settings. The live per-instance suffix is display-only, e.g. `ai_workflow_2`.
+- Auto report is editable per project: `0` means `Disabled`; `1` through `300` mean `Every N min`.
 
 ## 2. Pairing modal
 
@@ -67,6 +69,8 @@ Estou trabalhando em AI Workflow Hero…
 - A Telegram slash command uses the existing command result rendering, preceded by the remote-origin line.
 - Telegram `/model` keeps the selector in Telegram rather than opening the local palette. It asks `Escolha o Harness:`, `Escolha o modelo:`, and each available friendly property name (for example `Reasoning effort:`), with one-based numbered options.
 - A cancellation command reports a concise daemon result, such as `✓ Telegram: 3 pending message(s) cancelled for ai_workflow_2.`
+- `/list` returns a numbered list of connected instances. `/select n` confirms and persists the selected instance; subsequent text and slash commands need no prefix. If that instance disconnects, the daemon asks the user to run `/list` and select again. A live forwarded message receives `OK, Received.`.
+- Telegram `/status` replies `idle`, active-cycle details, or `Waiting for harness`, as applicable. Active replies include `Session`, `AI wk`, `AI rp`, and `Context: used/max`; Auto report sends that same compact reply at its configured interval.
 - Pending/expired delivery notices are muted informational lines; they do not look like harness responses.
 - Transcript text must never contain a token or chat id.
 

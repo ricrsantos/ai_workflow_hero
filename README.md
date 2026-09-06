@@ -181,14 +181,18 @@ Only one Telegram chat can be authorized. **| Replace |** re-pairs; **| Clear |*
 
 ### 4. Send messages
 
-Address every inbound line with the **Project ID** shown in Settings (live suffix is display-only), for example:
+List the currently connected instances and select one by its number:
 
 ```text
-ai_workflow: what is the current status?
-ai_workflow: /hero-status
+/list
+1. ai_workflow
+2. ai_workflow_2
+/select 1
 ```
 
-Free Chat instances use `free_1`, `free_2`, and so on. Messages without that prefix are ignored. Keep the TUI open; undelivered messages stay queued for 24 hours.
+After selection, send ordinary text or Hero slash commands without a prefix. The daemon replies `OK, Received.` once it forwards a message to the live instance. The selection survives daemon restarts, but if that instance disconnects the daemon asks you to run `/list` and `/select` again. Free Chat instances use `free_1`, `free_2`, and so on. You may still use an explicit address (for example, `ai_workflow_2: /hero-status`) for targeted delivery; unavailable explicitly addressed targets stay queued for 24 hours.
+
+Send `/status` to see `idle`, the active cycle/stage, or `Waiting for harness`, with the TUI Session, AI wk, AI rp, and context-window counters. In Settings → Telegram Plugin, set **Auto report** to `0` (disabled) or an interval from `1` to `300` minutes for periodic status messages.
 
 ---
 
@@ -608,14 +612,18 @@ Só um chat do Telegram fica autorizado. **| Replace |** refaz o emparelhamento;
 
 ### 4. Enviar mensagens
 
-Toda mensagem de entrada precisa do **Project ID** visível em Settings (o sufixo ao vivo é só exibição), por exemplo:
+Liste as instâncias conectadas e selecione uma pelo número:
 
 ```text
-ai_workflow: qual o status atual?
-ai_workflow: /hero-status
+/list
+1. ai_workflow
+2. ai_workflow_2
+/select 1
 ```
 
-Instâncias de Free Chat usam `free_1`, `free_2`, e assim por diante. Sem esse prefixo a mensagem é ignorada. Deixe a TUI aberta; mensagens não entregues ficam na fila por 24 horas.
+Depois da seleção, envie texto normal ou comandos Hero sem prefixo. O daemon responde `OK, Received.` quando encaminha a mensagem para a instância conectada. A seleção sobrevive a reinicializações do daemon, mas, se a instância desconectar, ele pede que você execute `/list` e `/select` novamente. Instâncias de Free Chat usam `free_1`, `free_2`, e assim por diante. Ainda é possível usar um endereço explícito (por exemplo, `ai_workflow_2: /hero-status`) para entrega direcionada; destinos explicitamente endereçados e indisponíveis permanecem na fila por 24 horas.
+
+Envie `/status` para ver `idle`, o ciclo/etapa ativos ou `Waiting for harness`, junto dos contadores Session, AI wk, AI rp e da janela de contexto. Em Settings → Telegram Plugin, configure **Auto report** como `0` (desabilitado) ou um intervalo de `1` a `300` minutos para receber status periódicos.
 
 ---
 

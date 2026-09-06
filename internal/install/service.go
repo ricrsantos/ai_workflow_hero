@@ -59,10 +59,10 @@ type HeroJSON struct {
 	ModelProperties map[string]map[string]map[string]string `json:"model_properties,omitempty"`
 }
 
-// TelegramConfig persists the editable project abbreviation used for Telegram
-// addressing. An omitted ProjectAbbrev falls back to the directory basename.
+// TelegramConfig persists non-secret project-local Telegram preferences.
 type TelegramConfig struct {
-	ProjectAbbrev string `json:"project_abbrev,omitempty"`
+	ProjectAbbrev     string `json:"project_abbrev,omitempty"`
+	AutoReportMinutes int    `json:"auto_report_minutes,omitempty"`
 }
 
 // CLIInfo holds CLI installation metadata.

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,8 +30,10 @@ type settingsScreen struct {
 	err       string
 
 	// Telegram abbreviation inline edit (telegram-tui R1).
-	editingAbbrev bool
-	abbrevDraft   string
+	editingAbbrev     bool
+	abbrevDraft       string
+	editingAutoReport bool
+	autoReportDraft   string
 }
 
 type settingsSavedMsg struct{ err error }
@@ -55,6 +58,8 @@ func (m model) openSettings() (model, tea.Cmd) {
 	m.settings.cursor = verbosityOptionIndex(m.settings.verbosity)
 	m.settings.editingAbbrev = false
 	m.settings.abbrevDraft = ""
+	m.settings.editingAutoReport = false
+	m.settings.autoReportDraft = ""
 	return m, nil
 }
 
@@ -68,6 +73,9 @@ func (m model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.settings.editingAbbrev {
 		return m.handleTelegramAbbrevKey(msg)
+	}
+	if m.settings.editingAutoReport {
+		return m.handleTelegramAutoReportKey(msg)
 	}
 
 	rows := m.settingsRows()
@@ -138,6 +146,22 @@ func (m model) handleSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m = m.setStatusResult(true, "telegram", "Project ID saved: "+id)
 		return m, nil
+	case telegramAutoReportSavedMsg:
+		if saved.err != nil {
+			m.settings.err = saved.err.Error()
+			return m, nil
+		}
+		if m.telegram != nil {
+			m.telegram.autoReportMinutes = saved.minutes
+			if saved.minutes > 0 {
+				m.telegram.nextAutoReportAt = time.Now().Add(time.Duration(saved.minutes) * time.Minute)
+			} else {
+				m.telegram.nextAutoReportAt = time.Time{}
+			}
+		}
+		m.settings.err = ""
+		m = m.setStatusResult(true, "telegram", "Auto report: "+telegramAutoReportLabel(saved.minutes))
+		return m, m.ensureTimerLoop()
 	default:
 		return m, nil
 	}
@@ -245,11 +269,19 @@ func (m model) renderSettingsFooterHints() string {
 			settingsHintChip("esc", "cancel"),
 		)
 	}
+	if m.settings.editingAutoReport {
+		return joinSettingsHints(
+			settingsHintChip("enter", "save interval"),
+			settingsHintChip("esc", "cancel"),
+		)
+	}
 	if row, ok := m.focusedSettingsRow(); ok {
 		switch row.kind {
 		case rowTelegramCopyCommand:
 			enter = "copy"
 		case rowTelegramAbbrev:
+			enter = "edit"
+		case rowTelegramAutoReport:
 			enter = "edit"
 		case rowTelegramAction:
 			enter = row.label

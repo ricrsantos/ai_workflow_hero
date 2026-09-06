@@ -85,3 +85,25 @@ func TestStoreExpirePending(t *testing.T) {
 		t.Fatalf("unexpected pending rows: %+v", rows)
 	}
 }
+
+func TestStoreSelectedAddress(t *testing.T) {
+	s := openTestStore(t)
+	got, err := s.SelectedAddress()
+	if err != nil || got != "" {
+		t.Fatalf("initial selected address=%q err=%v", got, err)
+	}
+	if err := s.SetSelectedAddress("proj_2"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.SelectedAddress()
+	if err != nil || got != "proj_2" {
+		t.Fatalf("selected address=%q err=%v", got, err)
+	}
+	if err := s.ClearSelectedAddress(); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.SelectedAddress()
+	if err != nil || got != "" {
+		t.Fatalf("cleared selected address=%q err=%v", got, err)
+	}
+}

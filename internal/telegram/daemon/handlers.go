@@ -64,7 +64,7 @@ func (d *Daemon) pollLoop(ctx context.Context) {
 }
 
 // processUpdate handles one Bot API update: idempotent dedup, pairing, and
-// addressed routing (ADR-063).
+// selection-based routing (ADR-063).
 func (d *Daemon) processUpdate(ctx context.Context, u Update) {
 	if u.UpdateID <= 0 {
 		return
@@ -120,6 +120,11 @@ func (d *Daemon) processPairing(ctx context.Context, u Update, text string) {
 	}
 	d.pairing.consume()
 	d.setCreds(token, u.ChatID)
+	if d.store != nil {
+		if err := d.store.ClearSelectedAddress(); err != nil {
+			d.log.Error("clear selected instance after pairing failed", "error", err)
+		}
+	}
 	d.broadcastEvent(ipc.EventPairingSuccess, "")
 	d.send(ctx, u.ChatID, "Paired successfully.")
 	for _, addr := range d.registry.addresses() {
@@ -127,14 +132,84 @@ func (d *Daemon) processPairing(ctx context.Context, u Update, text string) {
 	}
 }
 
-// routeInbound routes an authorized, addressed message to its target TUI,
-// enqueueing a durable pending row when the target is offline (ADR-063).
+// routeInbound handles daemon-owned instance selection commands, then routes
+// ordinary input to the selected live TUI. Explicit addressing is retained for
+// backwards-compatible pending-queue cancellation and delivery.
 func (d *Daemon) routeInbound(ctx context.Context, u Update, text string) {
-	address, payload, ok := parseAddressed(text)
-	if !ok {
-		d.genericReply(ctx, u.ChatID)
+	if text == listCommand {
+		d.listInstances(ctx, u.ChatID)
 		return
 	}
+	if n, ok := parseSelect(text); ok {
+		d.selectInstance(ctx, u.ChatID, n)
+		return
+	}
+	if strings.HasPrefix(text, selectCommand) {
+		d.send(ctx, u.ChatID, "Usage: /select <number>. Send /list to view connected instances.")
+		return
+	}
+
+	address, payload, ok := parseAddressed(text)
+	if ok {
+		d.routeAddressed(ctx, u, address, payload)
+		return
+	}
+	if d.store == nil {
+		d.send(ctx, u.ChatID, "No instance selected. Send /list, then /select <number>.")
+		return
+	}
+	address, err := d.store.SelectedAddress()
+	if err != nil {
+		d.log.Error("read selected instance failed", "error", err)
+		d.send(ctx, u.ChatID, "Unable to read the selected instance. Send /list and try again.")
+		return
+	}
+	if address == "" {
+		d.send(ctx, u.ChatID, "No instance selected. Send /list, then /select <number>.")
+		return
+	}
+	if _, found := d.registry.lookup(address); !found {
+		d.send(ctx, u.ChatID, "Selected instance is disconnected. Send /list, then /select <number>.")
+		return
+	}
+	d.routeAddressed(ctx, u, address, text)
+}
+
+func (d *Daemon) listInstances(ctx context.Context, chatID string) {
+	addresses := d.registry.addresses()
+	if len(addresses) == 0 {
+		d.send(ctx, chatID, "No connected instances.")
+		return
+	}
+	var b strings.Builder
+	b.WriteString("Connected instances:\n")
+	for i, address := range addresses {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, address)
+	}
+	d.send(ctx, chatID, strings.TrimSuffix(b.String(), "\n"))
+}
+
+func (d *Daemon) selectInstance(ctx context.Context, chatID string, n int) {
+	addresses := d.registry.addresses()
+	if n > len(addresses) {
+		d.send(ctx, chatID, "Invalid selection. Send /list to view connected instances.")
+		return
+	}
+	address := addresses[n-1]
+	if d.store == nil {
+		d.send(ctx, chatID, "Unable to save the selected instance.")
+		return
+	}
+	if err := d.store.SetSelectedAddress(address); err != nil {
+		d.log.Error("save selected instance failed", "error", err)
+		d.send(ctx, chatID, "Unable to save the selected instance. Try again.")
+		return
+	}
+	d.log.Info("telegram instance selected", "address", address)
+	d.send(ctx, chatID, fmt.Sprintf("Selected instance: %s.", address))
+}
+
+func (d *Daemon) routeAddressed(ctx context.Context, u Update, address, payload string) {
 	action, arg := classifyInbound(payload)
 
 	if action == actionCancelPending {
@@ -165,6 +240,7 @@ func (d *Daemon) routeInbound(ctx context.Context, u Update, text string) {
 	select {
 	case cli.outbound <- msg:
 		d.log.Info("inbound pushed to live client", "address", address)
+		d.send(ctx, u.ChatID, "OK, Received.")
 	default:
 		// Channel full: treat as temporarily unavailable and queue.
 		d.log.Info("inbound queued; live client backlog", "address", address)
@@ -250,6 +326,11 @@ func (d *Daemon) handleClear() {
 		return
 	}
 	d.setCreds("", "")
+	if d.store != nil {
+		if err := d.store.ClearSelectedAddress(); err != nil {
+			d.log.Error("clear selected instance failed", "error", err)
+		}
+	}
 	d.pairing.cancel()
 	d.log.Info("telegram credentials cleared")
 	d.broadcastEvent(ipc.EventCleared, "")

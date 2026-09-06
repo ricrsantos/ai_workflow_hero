@@ -329,7 +329,7 @@ func (m model) executeDir() string {
 
 func (m model) Init() tea.Cmd {
 	slog.Debug("tui init")
-	return m.refreshCmd()
+	return combineTimerCmds(m.refreshCmd(), m.ensureTimerLoop())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -392,7 +392,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case configLoadedMsg, configSavedMsg, configRetryMsg:
 		return m.handleConfigMsg(msg)
 
-	case settingsSavedMsg, telegramAbbrevSavedMsg:
+	case settingsSavedMsg, telegramAbbrevSavedMsg, telegramAutoReportSavedMsg:
 		return m.handleSettingsMsg(msg)
 
 	case actionResultMsg:
