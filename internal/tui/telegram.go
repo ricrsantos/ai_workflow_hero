@@ -58,6 +58,11 @@ type telegramState struct {
 	// modelSelection is an address-scoped, Telegram-only /model wizard. Local
 	// /model continues to use the TUI palette.
 	modelSelection *telegramModelSelection
+
+	// configWizard is the address-scoped remote cycle configuration wizard.
+	// Drafts remain in the TUI until the user explicitly confirms the summary;
+	// workflow-config.yml remains the only persisted source of truth.
+	configWizard *telegramConfigWizard
 }
 
 // telegramMsg is the base for all tea.Msg payloads delivered from the client

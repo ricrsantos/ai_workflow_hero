@@ -971,6 +971,40 @@ func (m model) beginConfigSave(start bool) (model, tea.Cmd) {
 	return m, m.configSaveCmd(start)
 }
 
+// persistWorkflowConfigDraft is the shared commit path for the local Config
+// screen and the Telegram configuration wizard. Both surfaces validate the
+// same managed draft, enforce enabled harnesses, atomically write the YAML,
+// and synchronize the active cycle from that source of truth.
+func (m model) persistWorkflowConfigDraft(doc *workflowconfig.Document, draft, before workflowconfig.ManagedConfig) (*workflowconfig.Document, map[string]bool, error) {
+	if doc == nil || m.svc == nil {
+		return nil, nil, fmt.Errorf("configuration service unavailable")
+	}
+	hero, err := install.LoadHeroJSON(m.svc.ProjectDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read enabled harnesses: %w", err)
+	}
+	opts := m.configValidationOptions()
+	opts.ValidateEnabledHarnesses = true
+	opts.EnabledHarnesses = install.ListEnabledHarnesses(hero)
+	if err := doc.Write(draft, opts); err != nil {
+		return nil, nil, err
+	}
+	if err := m.svc.SyncCycleConfig(); err != nil {
+		return nil, nil, err
+	}
+	updated, err := workflowconfig.LoadDocument(doc.Path())
+	if err != nil {
+		return nil, nil, err
+	}
+	retries := make(map[string]bool)
+	for _, name := range failedStageNames(m.svc) {
+		if configChangedStage(workflowconfig.ManagedDiff(before, draft), name) {
+			retries[name] = true
+		}
+	}
+	return updated, retries, nil
+}
+
 func (m model) configSaveCmd(start bool) tea.Cmd {
 	doc := m.config.doc
 	draft := m.config.draft
@@ -980,28 +1014,9 @@ func (m model) configSaveCmd(start bool) tea.Cmd {
 		if doc == nil || svc == nil {
 			return configSavedMsg{err: fmt.Errorf("configuration service unavailable")}
 		}
-		hero, err := install.LoadHeroJSON(svc.ProjectDir)
-		if err != nil {
-			return configSavedMsg{err: fmt.Errorf("read enabled harnesses: %w", err)}
-		}
-		opts := m.configValidationOptions()
-		opts.ValidateEnabledHarnesses = true
-		opts.EnabledHarnesses = install.ListEnabledHarnesses(hero)
-		if err := doc.Write(draft, opts); err != nil {
-			return configSavedMsg{err: err}
-		}
-		if err := svc.SyncCycleConfig(); err != nil {
-			return configSavedMsg{err: err}
-		}
-		updated, err := workflowconfig.LoadDocument(doc.Path())
+		updated, retries, err := m.persistWorkflowConfigDraft(doc, draft, before)
 		if err != nil {
 			return configSavedMsg{err: err}
-		}
-		retries := make(map[string]bool)
-		for _, name := range failedStageNames(svc) {
-			if configChangedStage(workflowconfig.ManagedDiff(before, draft), name) {
-				retries[name] = true
-			}
 		}
 		if start {
 			// The caller receives a successful save first; start is routed through

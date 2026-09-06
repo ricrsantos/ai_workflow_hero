@@ -68,9 +68,11 @@ Estou trabalhando em AI Workflow Hero…
 
 - A Telegram slash command uses the existing command result rendering, preceded by the remote-origin line.
 - Telegram `/model` keeps the selector in Telegram rather than opening the local palette. It asks `Escolha o Harness:`, `Escolha o modelo:`, and each available friendly property name (for example `Reasoning effort:`), with one-based numbered options.
+- After `/hero-new`, the reply points the user to `/hero-config`. The configuration wizard asks for the title, objective, language, scope, stages, and whether to review cycle-agent models. Each model review uses the same numbered harness → model → property sequence as `/model`; the final summary offers `Salvar configuração`, `Revisar modelos`, or `Cancelar`.
+- `/hero-config-show` displays a compact, non-secret summary of the canonical cycle configuration; while a wizard is active it displays the in-memory draft. `/hero-config cancel` discards that draft. No wizard answer is persisted before the explicit save choice.
 - A cancellation command reports a concise daemon result, such as `✓ Telegram: 3 pending message(s) cancelled for ai_workflow_2.`
 - `/list` returns a numbered list of connected instances. `/select n` confirms and persists the selected instance; subsequent text and slash commands need no prefix. If that instance disconnects, the daemon asks the user to run `/list` and select again. A live forwarded message receives `OK, Received.`.
-- Telegram `/status` replies `idle`, active-cycle details, or `Waiting for harness`, as applicable. Active replies include `Session`, `AI wk`, `AI rp`, and `Context: used/max`; Auto report sends that same compact reply at its configured interval.
+- Telegram `/status` replies `idle`, active-cycle details, or `Waiting for harness`, as applicable. Active replies include `Session`, `AI wk`, `AI rp`, and `Context: used/max`, plus an `Agents` block with `agent: model` rows for operating agents. The Free Chat parent is named `harness`; Auto report sends that same compact reply at its configured interval.
 - Pending/expired delivery notices are muted informational lines; they do not look like harness responses.
 - Transcript text must never contain a token or chat id.
 

@@ -184,6 +184,14 @@ After `/hero-new`, prefer a **new empty chat** for `/hero-start` so the orchestr
 
 In the new chat, **select the IDE agent/model you want as the Hero orchestrator / grill-me** before `/hero-start`. That session model drives orchestration; specialized agents still use models from `workflow-config.yml` via the Task tool.
 
+### Configure the active cycle from Telegram
+
+With the optional Telegram plugin connected to the target TUI, send `/hero-config` after `/hero-new` to open the guided cycle-configuration wizard. It collects the title, objective, preferred chat language, scope, and enabled stages, then optionally reviews the cycle-agent and fallback models.
+
+Each model review uses the same numbered Telegram flow as `/model`: choose the harness, choose the model, and choose each available model property. The wizard keeps an in-memory draft until the final `Save configuration` choice. `/hero-config-show` displays a compact, non-secret view of the canonical `workflow-config.yml`; while the wizard is open it displays the draft. `/hero-config cancel` discards the draft without changing the file. Cycle-agent model choices are saved in the cycle YAML and do not change the free-chat default in `hero.json`.
+
+Telegram `/status` and automatic reports keep the `idle` response compact. During an active turn, they also include an `Agents` block with each operating agent and its model; the ordinary Free Chat parent is reported as `harness`.
+
 ### 8.1 Key fields in `workflow-config.yml`
 
 | Section | Purpose |
@@ -511,6 +519,14 @@ Atualiza assets com proteção por checksum (customizações locais não são so
 Quando já existem ciclos anteriores, o `/hero-new` **sempre importa** `workflow_config`, `fallback_model`, `stages` e `agents` do ciclo anterior; `title`, `objective` e `scope` voltam ao padrão do template.
 
 Após o `/hero-new`, prefira um chat limpo para o `/hero-start` (orientação soft) — evita carregar grilling/Q&A da configuração na janela de contexto. No chat novo, escolha o agente/modelo da sessão IDE que fará o papel de orchestrator / grill-me antes de iniciar.
+
+### Configurar o ciclo ativo pelo Telegram
+
+Com o plugin opcional do Telegram conectado à TUI correta, envie `/hero-config` depois de `/hero-new` para abrir o wizard guiado de configuração do ciclo. Ele coleta título, objetivo, idioma preferido do chat, escopo e stages habilitados, e então oferece a revisão opcional dos modelos dos agentes do ciclo e do fallback.
+
+Cada revisão de modelo usa o mesmo fluxo numerado do `/model` pelo Telegram: escolha o harness, o modelo e cada propriedade de modelo disponível. O wizard mantém um rascunho em memória até a escolha final `Salvar configuração`. `/hero-config-show` mostra uma visão compacta e sem segredos do `workflow-config.yml` canônico; enquanto o wizard estiver aberto, mostra o rascunho. `/hero-config cancel` descarta o rascunho sem alterar o arquivo. Os modelos dos agentes do ciclo são salvos no YAML do ciclo e não alteram o modelo padrão do Free Chat em `hero.json`.
+
+O `/status` do Telegram e os relatórios automáticos mantêm a resposta `idle` compacta. Durante uma execução, eles também incluem um bloco `Agents` com cada agente em operação e seu modelo; o processo pai do Free Chat aparece como `harness`.
 
 Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`, `fallback_model`, `stages.browser_ui_validation` e `stages.qa_end_to_end.use_playwright` conforme a seção em inglês (§8) — os campos são os mesmos. Browser UI Validation exige Playwright no projeto consumidor; artefatos em `.workflow-hero/cycles/current/browser-ui/`.
 

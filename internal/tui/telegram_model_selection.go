@@ -10,6 +10,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
+	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
 type telegramModelSelectionStage string
@@ -24,16 +25,17 @@ const (
 // telegramModelSelection holds non-secret, per-instance state for the remote
 // /model wizard. It uses the same persisted free-chat pair as the TUI picker.
 type telegramModelSelection struct {
-	address    string
-	stage      telegramModelSelectionStage
-	harnesses  []string
-	models     []string
-	harnessID  string
-	modelSlug  string
-	snapshot   modelprops.Snapshot
-	keys       []string
-	keyIndex   int
-	properties map[string]string
+	address     string
+	configAgent string // empty for the free-chat /model picker
+	stage       telegramModelSelectionStage
+	harnesses   []string
+	models      []string
+	harnessID   string
+	modelSlug   string
+	snapshot    modelprops.Snapshot
+	keys        []string
+	keyIndex    int
+	properties  map[string]string
 }
 
 type telegramModelListMsg struct {
@@ -44,6 +46,20 @@ type telegramModelListMsg struct {
 }
 
 func (m model) startTelegramModelSelection(address string) (model, tea.Cmd) {
+	return m.startTelegramModelSelectionFor(address, "")
+}
+
+// startTelegramCycleModelSelection reuses the Telegram /model wizard for one
+// workflow-config agent. The only difference from free chat is where the
+// completed pair is committed: the active cycle draft instead of hero.json.
+func (m model) startTelegramCycleModelSelection(address, agentName string) (model, tea.Cmd) {
+	if m.telegram == nil || m.telegram.configWizard == nil {
+		return m, nil
+	}
+	return m.startTelegramModelSelectionFor(address, agentName)
+}
+
+func (m model) startTelegramModelSelectionFor(address, configAgent string) (model, tea.Cmd) {
 	if m.telegram == nil {
 		return m, nil
 	}
@@ -53,11 +69,16 @@ func (m model) startTelegramModelSelection(address string) (model, tea.Cmd) {
 		return m, m.telegramOutboundCmd("No harness is enabled. Use /harness in the local TUI first.")
 	}
 	m.telegram.modelSelection = &telegramModelSelection{
-		address:   address,
-		stage:     telegramModelSelectHarness,
-		harnesses: append([]string(nil), harnesses...),
+		address:     address,
+		configAgent: configAgent,
+		stage:       telegramModelSelectHarness,
+		harnesses:   append([]string(nil), harnesses...),
 	}
-	return m, m.telegramOutboundCmd(telegramNumberedOptions("Escolha o Harness:", displayHarnesses(harnesses)))
+	title := "Escolha o Harness:"
+	if configAgent != "" {
+		title = "Escolha o Harness para " + configStageLabel(configAgent) + ":"
+	}
+	return m, m.telegramOutboundCmd(telegramNumberedOptions(title, displayHarnesses(harnesses)))
 }
 
 func displayHarnesses(ids []string) []string {
@@ -162,12 +183,28 @@ func (m model) finishTelegramModelSelection() (model, tea.Cmd) {
 		return m, m.telegramOutboundCmd("Não foi possível carregar as propriedades do modelo.")
 	}
 	selection.snapshot = m.propsSvc.Snapshot(selection.harnessID, selection.modelSlug)
-	hero, err := install.LoadHeroJSON(m.svc.ProjectDir)
-	if err != nil {
-		m.telegram.modelSelection = nil
-		return m, m.telegramOutboundCmd("Não foi possível carregar a configuração do Hero: " + err.Error())
+	var saved map[string]string
+	if selection.configAgent != "" {
+		wizard := m.telegramConfigForAddress(selection.address)
+		if wizard == nil {
+			m.telegram.modelSelection = nil
+			return m, m.telegramOutboundCmd("A configuração remota expirou. Execute /hero-config novamente.")
+		}
+		agent, ok := telegramConfigAgent(wizard.draft, selection.configAgent)
+		if !ok {
+			m.telegram.modelSelection = nil
+			return m, m.telegramOutboundCmd("O agente selecionado não existe na configuração atual.")
+		}
+		saved = telegramConfigAgentProperties(agent)
+	} else {
+		hero, err := install.LoadHeroJSON(m.svc.ProjectDir)
+		if err != nil {
+			m.telegram.modelSelection = nil
+			return m, m.telegramOutboundCmd("Não foi possível carregar a configuração do Hero: " + err.Error())
+		}
+		saved = install.EffectivePairProperties(hero, selection.harnessID, selection.modelSlug)
 	}
-	selection.properties, _ = modelprops.EffectiveValues(selection.snapshot, install.EffectivePairProperties(hero, selection.harnessID, selection.modelSlug))
+	selection.properties, _ = modelprops.EffectiveValues(selection.snapshot, saved)
 	selection.properties = mergeLockedPropertyDraft(selection.snapshot, selection.properties)
 	selection.keys = selection.snapshot.SelectableKeys()
 	selection.keyIndex = 0
@@ -192,6 +229,36 @@ func (m model) commitTelegramModelSelection() (model, tea.Cmd) {
 	selection := m.telegram.modelSelection
 	if selection == nil || m.svc == nil {
 		return m, nil
+	}
+	if selection.configAgent != "" {
+		wizard := m.telegramConfigForAddress(selection.address)
+		if wizard == nil {
+			m.telegram.modelSelection = nil
+			return m, m.telegramOutboundCmd("A configuração remota expirou. Execute /hero-config novamente.")
+		}
+		agent, ok := telegramConfigAgent(wizard.draft, selection.configAgent)
+		if !ok {
+			m.telegram.modelSelection = nil
+			return m, m.telegramOutboundCmd("O agente selecionado não existe na configuração atual.")
+		}
+		agent.Harness = selection.harnessID
+		agent.Model = selection.modelSlug
+		agent = telegramConfigApplyProperties(agent, selection.properties)
+		if selection.configAgent == "fallback_model" {
+			wizard.draft.FallbackModel = agent
+		} else {
+			if wizard.draft.Agents == nil {
+				wizard.draft.Agents = make(map[string]workflowconfig.AgentModelConfig)
+			}
+			wizard.draft.Agents[selection.configAgent] = agent
+		}
+		m.telegram.modelSelection = nil
+		wizard.modelIndex++
+		next, cmd := m.telegramConfigModelPrompt()
+		return next, combineTimerCmds(
+			m.telegramOutboundCmd(fmt.Sprintf("Modelo de %s salvo.", configStageLabel(selection.configAgent))),
+			cmd,
+		)
 	}
 	if err := install.CommitModelSelection(m.svc.ProjectDir, selection.harnessID, selection.modelSlug, selection.properties); err != nil {
 		m.telegram.modelSelection = nil

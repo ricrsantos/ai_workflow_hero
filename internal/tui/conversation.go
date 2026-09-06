@@ -1824,7 +1824,13 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if strings.TrimSpace(reply) == "" && executeMeta.AgentMsgIndex >= 0 && executeMeta.AgentMsgIndex < len(m.transcript) {
 			reply = m.transcript[executeMeta.AgentMsgIndex].content
 		}
-		replyCmd := m.telegramTurnReplyCmd(m.telegramTurnOrigin(executeMeta), reply, "", !siblingsRemain)
+		turnOrigin := m.telegramTurnOrigin(executeMeta)
+		if m.runtimeCommandName == "new" && msg.err == nil && !siblingsRemain {
+			if _, ok := telegramAddressOf(turnOrigin); ok {
+				reply = appendTelegramConfigHint(reply, m.status.CycleNumber)
+			}
+		}
+		replyCmd := m.telegramTurnReplyCmd(turnOrigin, reply, "", !siblingsRemain)
 		if siblingsRemain {
 			if m.convStreamCh != nil {
 				return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), replyCmd)

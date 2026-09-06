@@ -4,6 +4,26 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-06 — Telegram status lists active agents and models
+
+**Change**: Extended TUI-owned Telegram `/status` and automatic reports to include an `Agents` block during active turns. Each row reports the operating agent name and model from the live execution state; the unnamed Free Chat parent is normalized to the stable name `harness`. Idle status remains the compact `idle` response.
+
+**Validation**: Focused Telegram status tests and full `go test ./...` pass; `go vet ./...` and `git diff --check` also pass.
+
+## 2026-09-06 — Release Hero v3.0.4
+
+**Change**: Incremented the patch version from `v3.0.3` to `v3.0.4` for the Telegram active-agent/model status enhancement. Release artifacts include the Hero CLI and platform-matched Telegram daemon binaries.
+
+**Validation**: Release gate `go test ./...` and `go vet ./...` pass before tagging.
+
+## 2026-09-06 — Telegram cycle configuration wizard
+
+**Change**: Added Telegram-only `/hero-config`, `/hero-config-show`, and `/hero-config cancel` handling in the TUI edge. `/hero-config` loads the active `workflow-config.yml` asynchronously, guides title/objective/language/scope/stages, optionally reviews the required cycle-agent and fallback models, and keeps all answers in an address-scoped draft until explicit save. Cycle-agent model choices reuse the existing numbered Telegram `/model` selector and its C5 properties, while free-chat `hero.json` remains untouched. `/hero-config-show` renders a compact non-secret canonical/draft summary, and `/hero-new` replies now advertise the setup commands.
+
+**Persistence**: Extracted the Config screen's atomic YAML write, enabled-harness validation, cycle synchronization, and retry-diff calculation into a shared TUI helper used by local Config and Telegram. Cancel and pre-write validation failures leave the workflow file unchanged.
+
+**Validation**: `go test ./internal/tui -count=1` and `go test ./...` pass, including wizard routing, canonical show, model-draft isolation, and atomic save tests.
+
 ## 2026-09-05 — Telegram `/model` uses a numbered remote wizard
 
 **Problem**: Telegram `/model` reused the local slash dispatcher and opened the TUI palette, leaving the remote user unable to choose a harness, model, or reasoning properties.

@@ -490,6 +490,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case telegramModelListMsg:
 		return m.handleTelegramModelList(msg)
 
+	case telegramConfigLoadedMsg:
+		return m.handleTelegramConfigLoaded(msg)
+
+	case telegramConfigSavedMsg:
+		return m.handleTelegramConfigSaved(msg)
+
+	case telegramConfigShowMsg:
+		return m.handleTelegramConfigShow(msg)
+
 	case telegramConnectedMsg, telegramRegisteredMsg, telegramInboundMsg, telegramEventMsg, telegramDisconnectedMsg:
 		return m.handleTelegramMsg(msg)
 

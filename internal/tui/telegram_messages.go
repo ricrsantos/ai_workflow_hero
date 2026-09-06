@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -122,6 +123,22 @@ func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 	ack := m.telegramAckCmd(msg.inboundID)
 	if strings.EqualFold(strings.TrimSpace(msg.text), telegramStatusCommand) {
 		return m, combineTimerCmds(ack, m.telegramOutboundCmd(m.telegramStatusText(time.Now())))
+	}
+	if next, cmd, handled := m.handleTelegramConfigCommand(msg.text, msg.address); handled {
+		return next, combineTimerCmds(ack, cmd)
+	}
+	if m.telegram != nil && m.telegram.configWizard != nil {
+		if m.telegram.modelSelection != nil {
+			if strings.EqualFold(strings.TrimSpace(msg.text), slashModel) || strings.EqualFold(strings.TrimSpace(msg.text), "/hero-model") {
+				selection := m.telegram.modelSelection
+				next, cmd := m.startTelegramModelSelectionFor(msg.address, selection.configAgent)
+				return next, combineTimerCmds(ack, cmd)
+			}
+			next, cmd := m.handleTelegramModelSelection(msg.address, msg.text)
+			return next, combineTimerCmds(ack, cmd)
+		}
+		next, cmd := m.handleTelegramConfigInput(msg.address, msg.text)
+		return next, combineTimerCmds(ack, cmd)
 	}
 	if m.telegram != nil && m.telegram.modelSelection != nil {
 		if strings.EqualFold(strings.TrimSpace(msg.text), slashModel) || strings.EqualFold(strings.TrimSpace(msg.text), "/hero-model") {
@@ -272,6 +289,17 @@ func telegramTurnReplyText(origin, output, errText string, turnComplete bool) st
 		return text
 	}
 	return strings.TrimSpace(errText)
+}
+
+func appendTelegramConfigHint(reply string, cycleNumber int) string {
+	hint := "\n\nCiclo preparado. Use /hero-config para configurar título, objetivo, escopo, stages e modelos; use /hero-config-show para consultar a configuração."
+	if cycleNumber > 0 {
+		hint = fmt.Sprintf("\n\nCiclo C%d preparado. Use /hero-config para configurar título, objetivo, escopo, stages e modelos; use /hero-config-show para consultar a configuração.", cycleNumber)
+	}
+	if strings.TrimSpace(reply) == "" {
+		return strings.TrimSpace(hint)
+	}
+	return strings.TrimSpace(reply) + hint
 }
 
 // telegramMaxOutboundRunes leaves headroom for the daemon's address prefix

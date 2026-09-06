@@ -51,7 +51,7 @@
 
 **Consequences:** User messages cannot be deleted from Telegram and already delivered work cannot be rolled back. Status transitions are audit-worthy. Explicit addressing makes multi-project and multi-instance routing deterministic.
 
-**Status reporting extension:** `/status` is handled by the selected TUI rather than by the daemon or a harness. It uses the TUI's live cycle, execution, timer, and context-window state, and project-local `telegram.auto_report_minutes` (`0` or `1–300`) schedules the same reply using the existing non-blocking Bubble Tea timer tick. This keeps the daemon transport-only and avoids a second status model.
+**Status reporting extension:** `/status` is handled by the selected TUI rather than by the daemon or a harness. It uses the TUI's live cycle, execution, timer, and context-window state; while a turn is active it also reports the live agent names and models, naming the ordinary Free Chat parent `harness`. Project-local `telegram.auto_report_minutes` (`0` or `1–300`) schedules the same reply using the existing non-blocking Bubble Tea timer tick. This keeps the daemon transport-only and avoids a second status model.
 
 ## ADR-064: Project and daemon rotating logs with managed ignore migration
 

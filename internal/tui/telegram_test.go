@@ -145,12 +145,17 @@ func TestTelegramStatusText(t *testing.T) {
 	m.aiResponseTimer = aiTimerState{startedAt: now.Add(-30 * time.Second), running: true}
 	m.contextUsedTokens = 100000
 	m.chatModelSlug = "test-model"
-	m.contextWindows = contextWindowCatalog{"test-model": 250000}
+	m.contextWindows = contextWindowCatalog{"test-model": 250000, "worker-model": 250000}
+	m.liveAgents = []liveAgent{
+		{Name: "orchestration_agent", Model: "orchestrator-model", Harness: "cursor"},
+		{Name: "generic_agent", Model: "worker-model", Harness: "opencode"},
+	}
 
 	got := m.telegramStatusText(now)
 	for _, want := range []string{
 		"Cycle C7: Telegram status",
 		"Current stage: Implementation (Running, iteration 1/3)",
+		"Agents:\n- orchestration_agent: orchestrator-model\n- generic_agent: worker-model",
 		"Session: 00:02:00",
 		"AI wk: 00:01:00",
 		"AI rp: 00:00:30",
@@ -163,8 +168,16 @@ func TestTelegramStatusText(t *testing.T) {
 
 	m.status = cycle.StatusView{}
 	m.streaming = true
-	if got := m.telegramStatusText(now); !strings.HasPrefix(got, "Waiting for harness\n") {
+	m.liveAgents = []liveAgent{{Model: "free-chat-model", Harness: "cursor"}}
+	got = m.telegramStatusText(now)
+	if !strings.HasPrefix(got, "Waiting for harness\nAgents:\n- harness: free-chat-model\n") {
 		t.Fatalf("free-chat status=%q", got)
+	}
+	m.liveAgents = nil
+	m.chatModelSlug = "fallback-free-model"
+	got = m.telegramStatusText(now)
+	if !strings.Contains(got, "- harness: fallback-free-model") {
+		t.Fatalf("free-chat fallback status=%q", got)
 	}
 	m.streaming = false
 	if got := m.telegramStatusText(now); got != "idle" {
@@ -260,10 +273,14 @@ func TestSettingsRows_InstalledShowsControls(t *testing.T) {
 			t.Fatalf("missing %q: %q", want, plain)
 		}
 	}
-	// Down from Debug lands on Project ID, then Pair — never a status badge.
+	// Down from Debug lands on Project ID, then Auto report, then Pair — never a status badge.
 	m, _ = HandleTestKey(m, "down")
 	if got := m.settingsRows()[m.settings.cursor].kind; got != rowTelegramAbbrev {
 		t.Fatalf("after debug, cursor kind=%d want Project ID", got)
+	}
+	m, _ = HandleTestKey(m, "down")
+	if got := m.settingsRows()[m.settings.cursor].kind; got != rowTelegramAutoReport {
+		t.Fatalf("after project ID, cursor kind=%d want Auto report", got)
 	}
 	m, _ = HandleTestKey(m, "down")
 	if got := m.settingsRows()[m.settings.cursor]; got.kind != rowTelegramAction || got.action != "pair" {
@@ -582,6 +599,7 @@ func settingsFocusedOnPair(t *testing.T, connected bool) model {
 	m, _ = m.openSettings()
 	m, _ = HandleTestKey(m, "down")
 	m, _ = HandleTestKey(m, "down")
+	m, _ = HandleTestKey(m, "down")
 	got := m.settingsRows()[m.settings.cursor]
 	if got.kind != rowTelegramAction || got.action != "pair" {
 		t.Fatalf("cursor=%+v want Pair", got)
@@ -602,6 +620,7 @@ func settingsFocusedOnRetry(t *testing.T) model {
 		daemonErr:       "ipc: dial: connection refused",
 	}
 	m, _ = m.openSettings()
+	m, _ = HandleTestKey(m, "down")
 	m, _ = HandleTestKey(m, "down")
 	m, _ = HandleTestKey(m, "down")
 	got := m.settingsRows()[m.settings.cursor]

@@ -37,16 +37,17 @@ func (m model) telegramStatusText(at time.Time) string {
 	if at.IsZero() {
 		at = time.Now()
 	}
+	agents := m.telegramStatusAgentsText()
 	if m.hasActiveCycle() {
-		return telegramCycleStatusText(m.status, m.telegramTimerAndContextText(at))
+		return telegramCycleStatusText(m.status, agents, m.telegramTimerAndContextText(at))
 	}
 	if m.streaming {
-		return "Waiting for harness\n" + m.telegramTimerAndContextText(at)
+		return telegramStatusWithAgents("Waiting for harness", agents, m.telegramTimerAndContextText(at))
 	}
 	return "idle"
 }
 
-func telegramCycleStatusText(status cycle.StatusView, timing string) string {
+func telegramCycleStatusText(status cycle.StatusView, agents, timing string) string {
 	var b strings.Builder
 	title := strings.TrimSpace(status.Title)
 	if title == "" {
@@ -66,8 +67,60 @@ func telegramCycleStatusText(status cycle.StatusView, timing string) string {
 	if stage, ok := telegramCurrentStage(status.Stages); ok {
 		fmt.Fprintf(&b, "Current stage: %s (%s, iteration %s)\n", stage.Name, stage.Status, stage.Iteration)
 	}
+	if agents != "" {
+		b.WriteString(agents)
+		b.WriteByte('\n')
+	}
 	b.WriteString(timing)
 	return strings.TrimSpace(b.String())
+}
+
+// telegramStatusWithAgents composes a non-cycle status while keeping the
+// agent list between the state line and the timing counters.
+func telegramStatusWithAgents(state, agents, timing string) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(state))
+	if agents != "" {
+		b.WriteByte('\n')
+		b.WriteString(agents)
+	}
+	if timing != "" {
+		b.WriteByte('\n')
+		b.WriteString(timing)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// telegramStatusAgentsText reports only agents currently operating in the
+// TUI. The parent execute has an empty name for ordinary Free Chat, so it is
+// exposed as the stable agent name "harness" for remote status consumers.
+func (m model) telegramStatusAgentsText() string {
+	agents := m.liveAgents
+	if len(agents) == 0 && m.streaming {
+		agents = []liveAgent{{
+			Name:    m.runtimeAgentName,
+			Model:   m.conversationModelSlug(),
+			Harness: m.conversationHarnessTool(),
+		}}
+	}
+	if len(agents) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("Agents:")
+	for _, agent := range agents {
+		name := strings.TrimSpace(agent.Name)
+		if name == "" {
+			name = "harness"
+		}
+		model := strings.TrimSpace(agent.Model)
+		if model == "" {
+			model = "not set"
+		}
+		fmt.Fprintf(&b, "\n- %s: %s", name, model)
+	}
+	return b.String()
 }
 
 func telegramCurrentStage(stages []cycle.StatusStage) (cycle.StatusStage, bool) {

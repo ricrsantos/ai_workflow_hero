@@ -192,7 +192,13 @@ List the currently connected instances and select one by its number:
 
 After selection, send ordinary text or Hero slash commands without a prefix. The daemon replies `OK, Received.` once it forwards a message to the live instance. The selection survives daemon restarts, but if that instance disconnects the daemon asks you to run `/list` and `/select` again. Free Chat instances use `free_1`, `free_2`, and so on. You may still use an explicit address (for example, `ai_workflow_2: /hero-status`) for targeted delivery; unavailable explicitly addressed targets stay queued for 24 hours.
 
-Send `/status` to see `idle`, the active cycle/stage, or `Waiting for harness`, with the TUI Session, AI wk, AI rp, and context-window counters. In Settings → Telegram Plugin, set **Auto report** to `0` (disabled) or an interval from `1` to `300` minutes for periodic status messages.
+Send `/status` to see `idle`, the active cycle/stage, or `Waiting for harness`, with the TUI Session, AI wk, AI rp, and context-window counters. While a turn is running, the response also includes an `Agents` block with each active agent and its model; Free Chat is reported as the `harness` agent. In Settings → Telegram Plugin, set **Auto report** to `0` (disabled) or an interval from `1` to `300` minutes for periodic status messages.
+
+#### Configure the active cycle from Telegram
+
+After `/hero-new`, send `/hero-config` to open the guided wizard. It collects the title, objective, preferred language, scope, and enabled stages, then optionally reviews the cycle-agent and fallback models. Model choices use the same numbered harness → model → property flow as `/model`.
+
+The wizard keeps changes in an in-memory draft until the final `Save configuration` choice. Use `/hero-config-show` to inspect the canonical configuration (or the current draft while the wizard is open), and `/hero-config cancel` to discard the draft. Cycle-agent model choices update the cycle `workflow-config.yml`; they do not change the free-chat default in `hero.json`.
 
 ---
 
@@ -623,7 +629,13 @@ Liste as instâncias conectadas e selecione uma pelo número:
 
 Depois da seleção, envie texto normal ou comandos Hero sem prefixo. O daemon responde `OK, Received.` quando encaminha a mensagem para a instância conectada. A seleção sobrevive a reinicializações do daemon, mas, se a instância desconectar, ele pede que você execute `/list` e `/select` novamente. Instâncias de Free Chat usam `free_1`, `free_2`, e assim por diante. Ainda é possível usar um endereço explícito (por exemplo, `ai_workflow_2: /hero-status`) para entrega direcionada; destinos explicitamente endereçados e indisponíveis permanecem na fila por 24 horas.
 
-Envie `/status` para ver `idle`, o ciclo/etapa ativos ou `Waiting for harness`, junto dos contadores Session, AI wk, AI rp e da janela de contexto. Em Settings → Telegram Plugin, configure **Auto report** como `0` (desabilitado) ou um intervalo de `1` a `300` minutos para receber status periódicos.
+Envie `/status` para ver `idle`, o ciclo/etapa ativos ou `Waiting for harness`, junto dos contadores Session, AI wk, AI rp e da janela de contexto. Enquanto houver uma execução, a resposta também inclui um bloco `Agents` com cada agente ativo e seu modelo; o Free Chat aparece como o agente `harness`. Em Settings → Telegram Plugin, configure **Auto report** como `0` (desabilitado) ou um intervalo de `1` a `300` minutos para receber status periódicos.
+
+#### Configurar o ciclo ativo pelo Telegram
+
+Depois de `/hero-new`, envie `/hero-config` para abrir o wizard guiado. Ele coleta título, objetivo, idioma preferido, escopo e stages habilitados, e então oferece a revisão opcional dos modelos dos agentes do ciclo e do fallback. As escolhas de modelo usam o mesmo fluxo numerado de harness → modelo → propriedades do `/model`.
+
+As alterações ficam em um rascunho em memória até a escolha final `Salvar configuração`. Use `/hero-config-show` para consultar a configuração canônica (ou o rascunho enquanto o wizard estiver aberto) e `/hero-config cancel` para descartá-lo. Os modelos dos agentes alteram o `workflow-config.yml` do ciclo; não alteram o modelo padrão do Free Chat em `hero.json`.
 
 ---
 
