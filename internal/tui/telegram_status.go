@@ -23,17 +23,32 @@ func (m model) maybeTelegramAutoReport(at time.Time) tea.Cmd {
 	if !m.telegramAutoReportEnabled() || m.telegram == nil || !m.telegram.connected || !m.telegram.paired {
 		return nil
 	}
+	if at.IsZero() {
+		at = time.Now()
+	}
 	if at.Before(m.telegram.nextAutoReportAt) {
 		return nil
 	}
 	interval := time.Duration(m.telegram.autoReportMinutes) * time.Minute
 	m.telegram.nextAutoReportAt = at.Add(interval)
-	return m.telegramOutboundCmd(m.telegramStatusText(at))
+	return m.telegramOutboundCmd(m.telegramAutoReportText(at))
 }
 
-// telegramStatusText returns the compact remote status representation shared
-// by /status, automatic reports, and the initial response to a remote turn.
+// telegramStatusText returns the compact response for the Telegram /status
+// command. Unlike automatic reports, a manual status request may legitimately
+// return idle.
 func (m model) telegramStatusText(at time.Time) string {
+	return m.telegramStatusTextAt(at, true)
+}
+
+// telegramAutoReportText returns the compact periodic status representation.
+// An idle TUI has no useful automatic update, so the empty result suppresses
+// the outbound message while the scheduler still advances to the next slot.
+func (m model) telegramAutoReportText(at time.Time) string {
+	return m.telegramStatusTextAt(at, false)
+}
+
+func (m model) telegramStatusTextAt(at time.Time, includeIdle bool) string {
 	if at.IsZero() {
 		at = time.Now()
 	}
@@ -43,6 +58,9 @@ func (m model) telegramStatusText(at time.Time) string {
 	}
 	if m.streaming {
 		return telegramStatusWithAgents("Waiting for harness", agents, m.telegramTimerAndContextText(at))
+	}
+	if !includeIdle {
+		return ""
 	}
 	return "idle"
 }

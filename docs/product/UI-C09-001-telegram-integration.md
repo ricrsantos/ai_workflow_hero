@@ -20,6 +20,7 @@ TELEGRAM PLUGIN            optional plugin
   Daemon:  Connected
   Project ID: ai_workflow  (live: ai_workflow_2)
   Auto report: Every 15 min
+  Always send: Disabled
   | Replace |  | Clear |  | Test |
 ```
 
@@ -29,6 +30,7 @@ TELEGRAM PLUGIN            optional plugin
 - On daemon outage: `⚠ Telegram daemon disconnected; retrying…` appears in Chat and Settings shows retry state. Successful recovery emits `✓ Telegram daemon reconnected.`
 - Project ID is editable in Settings. The live per-instance suffix is display-only, e.g. `ai_workflow_2`.
 - Auto report is editable per project: `0` means `Disabled`; `1` through `300` mean `Every N min`.
+- Always send is a boolean per-project setting. `Disabled` preserves the default Telegram-only reply routing; `Enabled` also forwards completed local TUI harness turn responses to Telegram.
 
 ## 2. Pairing modal
 
@@ -72,7 +74,7 @@ Estou trabalhando em AI Workflow Hero…
 - `/hero-config-show` displays a compact, non-secret summary of the canonical cycle configuration; while a wizard is active it displays the in-memory draft. `/hero-config cancel` discards that draft. No wizard answer is persisted before the explicit save choice.
 - A cancellation command reports a concise daemon result, such as `✓ Telegram: 3 pending message(s) cancelled for ai_workflow_2.`
 - `/list` returns a numbered list of connected instances. `/select n` confirms and persists the selected instance; subsequent text and slash commands need no prefix. If that instance disconnects, the daemon asks the user to run `/list` and select again. A live forwarded message receives `OK, Received.`.
-- Telegram `/status` replies `idle`, active-cycle details, or `Waiting for harness`, as applicable. Active replies include `Session`, `AI wk`, `AI rp`, and `Context: used/max`, plus an `Agents` block with `agent: model` rows for operating agents. The Free Chat parent is named `harness`; Auto report sends that same compact reply at its configured interval.
+- Telegram `/status` replies `idle`, active-cycle details, or `Waiting for harness`, as applicable. Active replies include `Session`, `AI wk`, `AI rp`, and `Context: used/max`, plus an `Agents` block with `agent: model` rows for operating agents. The Free Chat parent is named `harness`; Auto report sends the compact non-idle reply at its configured interval and remains silent while idle.
 - Pending/expired delivery notices are muted informational lines; they do not look like harness responses.
 - Transcript text must never contain a token or chat id.
 

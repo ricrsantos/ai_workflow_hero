@@ -77,6 +77,18 @@ func SetTelegramAutoReportMinutes(projectDir string, minutes int) error {
 	return saveHeroJSON(projectDir, hero)
 }
 
+// SetTelegramAlwaysSend persists whether completed local TUI turns are also
+// forwarded to the project's paired Telegram chat. The zero value preserves
+// the historical Telegram-only reply behavior.
+func SetTelegramAlwaysSend(projectDir string, enabled bool) error {
+	hero, err := LoadHeroJSON(projectDir)
+	if err != nil {
+		return err
+	}
+	hero.Telegram.AlwaysSend = enabled
+	return saveHeroJSON(projectDir, hero)
+}
+
 // SupportedHarnessIDs lists harness identifiers Hero supports in the TUI
 // (ADR-034; Cursor + OpenCode from C4; Codex added in C6 / Hero 2.5.0 per ADR-043/048).
 var SupportedHarnessIDs = []string{"cursor", "opencode", "codex"}

@@ -48,6 +48,7 @@ type telegramState struct {
 	// in address).
 	abbrev            string
 	autoReportMinutes int
+	alwaysSend        bool
 	nextAutoReportAt  time.Time
 
 	client *telegramClient // nil when the plugin is not installed
@@ -382,6 +383,7 @@ func (m model) startTelegram(version string) model {
 		protocolVersion:   protocol,
 		abbrev:            abbrev,
 		autoReportMinutes: loadTelegramAutoReportMinutes(projectDir),
+		alwaysSend:        loadTelegramAlwaysSend(projectDir),
 	}
 	if st.autoReportMinutes > 0 {
 		st.nextAutoReportAt = time.Now().Add(time.Duration(st.autoReportMinutes) * time.Minute)
@@ -461,6 +463,14 @@ func loadTelegramAutoReportMinutes(projectDir string) int {
 		return 0
 	}
 	return install.NormalizeTelegramAutoReportMinutes(hero.Telegram.AutoReportMinutes)
+}
+
+func loadTelegramAlwaysSend(projectDir string) bool {
+	hero, err := install.LoadHeroJSON(projectDir)
+	if err != nil {
+		return false
+	}
+	return hero.Telegram.AlwaysSend
 }
 
 // projectAbbrev derives a project abbreviation from the project directory base

@@ -265,6 +265,7 @@ func (m model) handleTimerTick(msg timerTickMsg) (model, tea.Cmd) {
 	if msg.generation != 0 && msg.generation != m.timerGeneration {
 		return m, nil
 	}
+	m.timerLoopStarted = true
 	at := msg.at
 	if at.IsZero() {
 		at = time.Now()

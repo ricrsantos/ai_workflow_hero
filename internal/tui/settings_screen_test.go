@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 )
@@ -54,6 +57,48 @@ func TestSettingsRendersProfilesAndKeyboardSelection(t *testing.T) {
 	next, _ := HandleTestKey(m, "up")
 	if next.settings.cursor != len(verbosityOptions)-2 {
 		t.Fatalf("cursor=%d want detailed index", next.settings.cursor)
+	}
+}
+
+func TestSettingsAlwaysSendTogglesAndPersists(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), []byte(`{"cli":{},"assets":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
+	m.svc = &cycle.Service{ProjectDir: dir}
+	m.telegram = &telegramState{installed: true}
+	m, _ = m.openSettings()
+	for i := 0; i < 3; i++ {
+		m, _ = HandleTestKey(m, "down")
+	}
+	if got := m.settingsRows()[m.settings.cursor].kind; got != rowTelegramAlwaysSend {
+		t.Fatalf("cursor kind=%d want Always send", got)
+	}
+	m, cmd := HandleTestKey(m, "enter")
+	if cmd == nil {
+		t.Fatal("Always send must return a persistence command")
+	}
+	saved := cmd()
+	updated, cmd := m.handleSettingsMsg(saved)
+	if cmd != nil {
+		t.Fatal("successful Always send save must not schedule another command")
+	}
+	m = updated.(model)
+	if m.telegram == nil || !m.telegram.alwaysSend {
+		t.Fatal("Always send was not enabled in memory")
+	}
+	hero, err := install.LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hero.Telegram.AlwaysSend {
+		t.Fatal("hero.json always_send=false want true")
 	}
 }
 

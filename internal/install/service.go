@@ -63,6 +63,7 @@ type HeroJSON struct {
 type TelegramConfig struct {
 	ProjectAbbrev     string `json:"project_abbrev,omitempty"`
 	AutoReportMinutes int    `json:"auto_report_minutes,omitempty"`
+	AlwaysSend        bool   `json:"always_send,omitempty"`
 }
 
 // CLIInfo holds CLI installation metadata.

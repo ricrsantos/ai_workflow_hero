@@ -541,9 +541,10 @@ harness turn emit the same immediate status. Settings now persists
 and the existing non-blocking Bubble Tea timer sends periodic status while
 Telegram remains connected and paired.
 
-**Validation**: Added focused install/TUI coverage. `go test ./internal/tui
--run 'TestTelegram(StatusText|StatusCommandAndAutoReportSendStatus)' -count=1`
-and `go test ./...` pass.
+**Validation**: Added focused install/TUI coverage. The Telegram status tests
+cover the manual idle response, skipped idle auto reports, and one non-idle
+report per interval; `go test ./internal/tui -count=1` and `go test ./...`
+pass.
 
 ## 2026-08-28 — Discover auto-loads active `docs/idea` files
 
@@ -576,3 +577,43 @@ and `go vet ./internal/telegram/daemon ./internal/integration` pass.
 **Change**: Incremented the patch version for the Telegram instance
 disconnection notification and prepared the matching Hero and daemon release
 artifacts.
+
+## 2026-09-06 — Telegram auto status skips idle and duplicate timer startup
+
+**Problem**: A periodic Telegram report reused the manual `/status` renderer,
+so an idle TUI emitted `idle`; the initial timer command could also be started
+from `Init` and again during the first state refresh, allowing duplicate timer
+loops around Telegram status delivery.
+
+**Change**: Split manual status rendering from automatic/turn status rendering.
+Only the manual Telegram `/status` path may emit `idle`; automatic reports and
+immediate status for remote harness turns stay silent while idle and advance
+their next interval. Timer startup is now owned by stateful `Update` paths,
+including Telegram connection registration, so `Init` cannot create an
+untracked second loop.
+
+**Validation**: Added TUI coverage for manual idle, skipped idle auto reports,
+one non-idle report per interval, and retained the existing TUI/Telegram test
+suites. Full `go test ./...` remains required before completion.
+
+## 2026-09-06 — Telegram Always send project setting
+
+**Requirement**: Add a project-local Telegram Settings toggle that forwards
+completed TUI harness responses to Telegram, while keeping the existing
+Telegram-origin-only behavior as the default.
+
+**Change**: Added `telegram.always_send` to `hero.json`, exposed it as the
+`Always send` row beside `Auto report`, and routed completed final turn replies
+through the existing outbound path when enabled. Intermediate stream, thinking,
+tool, and sibling-task output remains local; Telegram-originated replies remain
+unchanged regardless of the toggle.
+
+**Validation**: Added persistence, Settings rendering/focus/toggle, local
+forwarding, and default-off coverage. `go test ./internal/install ./internal/tui
+-count=1`, `go test ./...`, `go test -race ./internal/tui ./internal/telegram/...`,
+and `go vet ./...` pass.
+
+## 2026-09-06 — Release Hero v3.0.5
+
+**Change**: Incremented the patch version for the Telegram `Always send`
+project setting and prepared the matching Hero and daemon release artifacts.

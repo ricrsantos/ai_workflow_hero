@@ -530,6 +530,10 @@ func (m model) footerHints() string {
 				enter = "copy"
 			case rowTelegramAbbrev:
 				enter = "edit"
+			case rowTelegramAutoReport:
+				enter = "edit"
+			case rowTelegramAlwaysSend:
+				enter = "toggle"
 			case rowTelegramAction:
 				enter = strings.ToLower(row.label)
 			}

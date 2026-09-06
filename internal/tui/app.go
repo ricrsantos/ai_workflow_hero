@@ -329,7 +329,10 @@ func (m model) executeDir() string {
 
 func (m model) Init() tea.Cmd {
 	slog.Debug("tui init")
-	return combineTimerCmds(m.refreshCmd(), m.ensureTimerLoop())
+	// Timer ownership is established by Update paths after the model state is
+	// installed. Init cannot persist ensureTimerLoop's mutation, so starting a
+	// tick here could create a second loop when the first refresh also starts it.
+	return m.refreshCmd()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -392,7 +395,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case configLoadedMsg, configSavedMsg, configRetryMsg:
 		return m.handleConfigMsg(msg)
 
-	case settingsSavedMsg, telegramAbbrevSavedMsg, telegramAutoReportSavedMsg:
+	case settingsSavedMsg, telegramAbbrevSavedMsg, telegramAutoReportSavedMsg, telegramAlwaysSendSavedMsg:
 		return m.handleSettingsMsg(msg)
 
 	case actionResultMsg:

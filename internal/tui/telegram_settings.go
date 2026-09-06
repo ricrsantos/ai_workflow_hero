@@ -23,6 +23,7 @@ const (
 	rowTelegramCopyCommand
 	rowTelegramAbbrev
 	rowTelegramAutoReport
+	rowTelegramAlwaysSend
 	rowTelegramAction
 )
 
@@ -36,7 +37,7 @@ type settingsRow struct {
 
 // settingsRows returns the ordered, selectable Settings rows.
 func (m model) settingsRows() []settingsRow {
-	rows := make([]settingsRow, 0, 8)
+	rows := make([]settingsRow, 0, 9)
 	for _, o := range verbosityOptions {
 		rows = append(rows, settingsRow{
 			kind:      rowVerbosity,
@@ -64,6 +65,11 @@ func (m model) settingsRows() []settingsRow {
 		label: "Auto report",
 		desc:  telegramAutoReportLabel(t.autoReportMinutes),
 	})
+	rows = append(rows, settingsRow{
+		kind:  rowTelegramAlwaysSend,
+		label: "Always send",
+		desc:  telegramAlwaysSendLabel(t.alwaysSend),
+	})
 	if !t.connected {
 		rows = append(rows, settingsRow{kind: rowTelegramAction, label: "Retry", desc: "Start or reconnect the Telegram daemon", action: "retry"})
 	}
@@ -83,6 +89,13 @@ func telegramAutoReportLabel(minutes int) string {
 		return "Disabled"
 	}
 	return fmt.Sprintf("Every %d min", minutes)
+}
+
+func telegramAlwaysSendLabel(enabled bool) string {
+	if enabled {
+		return "Enabled"
+	}
+	return "Disabled"
 }
 
 func displayAddress(addr string) string {
@@ -161,6 +174,9 @@ func (m model) renderTelegramInstalled(rows []settingsRow, width int) string {
 		case rowTelegramAutoReport:
 			b.WriteString(m.renderTelegramAutoReportRow(row, i == m.settings.cursor, width))
 			b.WriteByte('\n')
+		case rowTelegramAlwaysSend:
+			b.WriteString(m.renderTelegramAlwaysSendRow(row, i == m.settings.cursor, width))
+			b.WriteByte('\n')
 		case rowTelegramAction:
 			if i == m.settings.cursor {
 				actionFocus = len(actions)
@@ -197,6 +213,21 @@ func (m model) renderTelegramAutoReportRow(row settingsRow, focused bool, width 
 		return navSidebarFocusedStyle.Render(truncateNavText(line, width))
 	}
 	return marker + configLabelStyle.Render(label) + configValueStyle.Render(truncateDisplayWidth(value, remain))
+}
+
+func (m model) renderTelegramAlwaysSendRow(row settingsRow, focused bool, width int) string {
+	marker := "  "
+	if focused {
+		marker = "> "
+	}
+	label := "Always send: "
+	used := lipgloss.Width(marker + label)
+	remain := max(8, width-used)
+	line := marker + label + truncateDisplayWidth(row.desc, remain)
+	if focused {
+		return navSidebarFocusedStyle.Render(truncateNavText(line, width))
+	}
+	return marker + configLabelStyle.Render(label) + configValueStyle.Render(truncateDisplayWidth(row.desc, remain))
 }
 
 func joinButtonGap(buttons []string) []string {
@@ -443,6 +474,15 @@ func (m model) telegramSettingsEnter(row settingsRow) (model, tea.Cmd) {
 		m.settings.editingAutoReport = true
 		m.settings.autoReportDraft = fmt.Sprintf("%d", m.telegram.autoReportMinutes)
 		return m, nil
+	case rowTelegramAlwaysSend:
+		if m.telegram == nil {
+			return m, nil
+		}
+		projectDir := ""
+		if m.svc != nil {
+			projectDir = m.svc.ProjectDir
+		}
+		return m, saveTelegramAlwaysSendCmd(projectDir, !m.telegram.alwaysSend)
 	case rowTelegramAction:
 		return m.handleTelegramSettingsAction(row.action)
 	}
@@ -453,6 +493,11 @@ type telegramAbbrevSavedMsg struct{ err error }
 
 type telegramAutoReportSavedMsg struct {
 	minutes int
+	err     error
+}
+
+type telegramAlwaysSendSavedMsg struct {
+	enabled bool
 	err     error
 }
 
@@ -491,6 +536,15 @@ func saveTelegramAutoReportCmd(projectDir string, minutes int) tea.Cmd {
 			return telegramAutoReportSavedMsg{err: fmt.Errorf("project unavailable")}
 		}
 		return telegramAutoReportSavedMsg{minutes: minutes, err: install.SetTelegramAutoReportMinutes(projectDir, minutes)}
+	}
+}
+
+func saveTelegramAlwaysSendCmd(projectDir string, enabled bool) tea.Cmd {
+	return func() tea.Msg {
+		if projectDir == "" {
+			return telegramAlwaysSendSavedMsg{enabled: enabled, err: fmt.Errorf("project unavailable")}
+		}
+		return telegramAlwaysSendSavedMsg{enabled: enabled, err: install.SetTelegramAlwaysSend(projectDir, enabled)}
 	}
 }
 

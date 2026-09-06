@@ -45,13 +45,13 @@ func (m model) handleTelegramMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.telegram.connected = true
 		m.telegram.retrying = false
 		m.telegram.daemonErr = ""
-		return m, nil
+		return m, m.ensureTimerLoop()
 
 	case telegramRegisteredMsg:
 		m.telegram.address = msg.address
 		m.telegram.paired = msg.paired
 		slog.Info("telegram client registered", "address", msg.address, "paired", msg.paired)
-		return m, nil
+		return m, m.ensureTimerLoop()
 
 	case telegramDisconnectedMsg:
 		wasConnected := m.telegram.connected
@@ -197,7 +197,7 @@ func (m model) submitRemoteCommand(text, origin string) (model, tea.Cmd) {
 		return m.submitRemoteTurn(text, origin)
 	}
 	if next.streaming {
-		cmd = combineTimerCmds(cmd, next.telegramOutboundCmd(next.telegramStatusText(time.Now())))
+		cmd = combineTimerCmds(cmd, next.telegramOutboundCmd(next.telegramAutoReportText(time.Now())))
 	}
 	return next, cmd
 }
@@ -208,7 +208,7 @@ func (m model) submitRemoteTurn(text, origin string) (model, tea.Cmd) {
 	m.nextUserOrigin = origin
 	if m.streaming {
 		// Queue the turn behind the active one rather than interrupting it.
-		return m, combineTimerCmds(m.appendTelegramPendingTurnCmd(text, origin), m.telegramOutboundCmd(m.telegramStatusText(time.Now())))
+		return m, combineTimerCmds(m.appendTelegramPendingTurnCmd(text, origin), m.telegramOutboundCmd(m.telegramAutoReportText(time.Now())))
 	}
 
 	if m.researchLive {
@@ -233,7 +233,7 @@ func (m model) submitRemoteTurn(text, origin string) (model, tea.Cmd) {
 	m.runtimeCommandName = ""
 	m = m.syncConversationContext()
 	m = m.beginConversationExecute(text, controlSlashFollowUpPrompt(text))
-	return m, combineTimerCmds(m.conversationExecuteCmds(), m.telegramOutboundCmd(m.telegramStatusText(time.Now())))
+	return m, combineTimerCmds(m.conversationExecuteCmds(), m.telegramOutboundCmd(m.telegramAutoReportText(time.Now())))
 }
 
 // appendTelegramPendingTurnCmd defers a Telegram turn until the active harness
@@ -285,10 +285,24 @@ func telegramTurnReplyText(origin, output, errText string, turnComplete bool) st
 	if _, ok := telegramAddressOf(origin); !ok {
 		return ""
 	}
+	return telegramTurnReplyBody(output, errText)
+}
+
+func telegramTurnReplyBody(output, errText string) string {
 	if text := strings.TrimSpace(output); text != "" {
 		return text
 	}
 	return strings.TrimSpace(errText)
+}
+
+func (m model) telegramTurnReplyText(origin, output, errText string, turnComplete bool) string {
+	if !turnComplete {
+		return ""
+	}
+	if _, ok := telegramAddressOf(origin); !ok && (m.telegram == nil || !m.telegram.alwaysSend) {
+		return ""
+	}
+	return telegramTurnReplyBody(output, errText)
 }
 
 func appendTelegramConfigHint(reply string, cycleNumber int) string {
@@ -327,7 +341,7 @@ func splitTelegramOutbound(text string) []string {
 }
 
 func (m model) telegramTurnReplyCmd(origin, output, errText string, turnComplete bool) tea.Cmd {
-	return m.telegramOutboundCmd(telegramTurnReplyText(origin, output, errText, turnComplete))
+	return m.telegramOutboundCmd(m.telegramTurnReplyText(origin, output, errText, turnComplete))
 }
 
 func (m model) telegramOutboundCmd(text string) tea.Cmd {

@@ -162,6 +162,18 @@ func (m model) handleSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.settings.err = ""
 		m = m.setStatusResult(true, "telegram", "Auto report: "+telegramAutoReportLabel(saved.minutes))
 		return m, m.ensureTimerLoop()
+	case telegramAlwaysSendSavedMsg:
+		if saved.err != nil {
+			m.settings.err = saved.err.Error()
+			m = m.setStatusResult(false, "telegram", saved.err.Error())
+			return m, nil
+		}
+		if m.telegram != nil {
+			m.telegram.alwaysSend = saved.enabled
+		}
+		m.settings.err = ""
+		m = m.setStatusResult(true, "telegram", "Always send: "+telegramAlwaysSendLabel(saved.enabled))
+		return m, nil
 	default:
 		return m, nil
 	}
@@ -283,6 +295,8 @@ func (m model) renderSettingsFooterHints() string {
 			enter = "edit"
 		case rowTelegramAutoReport:
 			enter = "edit"
+		case rowTelegramAlwaysSend:
+			enter = "toggle"
 		case rowTelegramAction:
 			enter = row.label
 		}

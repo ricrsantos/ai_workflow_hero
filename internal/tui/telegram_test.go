@@ -88,6 +88,21 @@ func TestLoadTelegramAbbrevFallsBackToDirectoryName(t *testing.T) {
 	}
 }
 
+func TestLoadTelegramAlwaysSend(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"cli":{},"assets":{},"telegram":{"always_send":true}}`
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !loadTelegramAlwaysSend(dir) {
+		t.Fatal("always_send=false want true")
+	}
+}
+
 func TestCommitTelegramAbbrevWritesHeroJSON(t *testing.T) {
 	dir := t.TempDir()
 	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
@@ -185,7 +200,7 @@ func TestTelegramStatusText(t *testing.T) {
 	}
 }
 
-func TestTelegramStatusCommandAndAutoReportSendStatus(t *testing.T) {
+func TestTelegramStatusCommandAllowsIdleButAutoReportSkipsIt(t *testing.T) {
 	now := time.Now()
 	var outbound []string
 	m := NewTestModel(nil)
@@ -212,11 +227,40 @@ func TestTelegramStatusCommandAndAutoReportSendStatus(t *testing.T) {
 	if cmd != nil {
 		_ = cmd()
 	}
-	if len(outbound) != 2 || outbound[1] != "idle" {
+	if len(outbound) != 1 {
 		t.Fatalf("auto-report outbound=%v", outbound)
 	}
 	if !next.telegram.nextAutoReportAt.After(now) {
 		t.Fatal("auto report schedule was not advanced")
+	}
+}
+
+func TestTelegramAutoReportSendsNonIdleStatusOncePerInterval(t *testing.T) {
+	now := time.Now()
+	var outbound []string
+	m := NewTestModel(nil)
+	m.status = cycle.StatusView{CycleNumber: 3, Title: "Active cycle", Status: "active"}
+	m.telegram = &telegramState{
+		installed:         true,
+		connected:         true,
+		paired:            true,
+		autoReportMinutes: 1,
+		nextAutoReportAt:  now.Add(-time.Second),
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	cmd := m.maybeTelegramAutoReport(now)
+	if cmd != nil {
+		_ = cmd()
+	}
+	if len(outbound) != 1 || !strings.HasPrefix(outbound[0], "Cycle C3: Active cycle") {
+		t.Fatalf("active auto-report outbound=%q", outbound)
+	}
+
+	if cmd := m.maybeTelegramAutoReport(now); cmd != nil {
+		t.Fatal("same interval must not schedule a second auto report")
 	}
 }
 
@@ -268,12 +312,12 @@ func TestSettingsRows_InstalledShowsControls(t *testing.T) {
 	}
 	m, _ = m.openSettings()
 	plain := stripANSI(ViewForTest(m))
-	for _, want := range []string{"Not configured", "Installed · v2.9.2", "Connected", "Project ID", "Pair"} {
+	for _, want := range []string{"Not configured", "Installed · v2.9.2", "Connected", "Project ID", "Auto report: Disabled", "Always send: Disabled", "Pair"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("missing %q: %q", want, plain)
 		}
 	}
-	// Down from Debug lands on Project ID, then Auto report, then Pair — never a status badge.
+	// Down from Debug lands on Project ID, then Auto report, Always send, then Pair — never a status badge.
 	m, _ = HandleTestKey(m, "down")
 	if got := m.settingsRows()[m.settings.cursor].kind; got != rowTelegramAbbrev {
 		t.Fatalf("after debug, cursor kind=%d want Project ID", got)
@@ -281,6 +325,10 @@ func TestSettingsRows_InstalledShowsControls(t *testing.T) {
 	m, _ = HandleTestKey(m, "down")
 	if got := m.settingsRows()[m.settings.cursor].kind; got != rowTelegramAutoReport {
 		t.Fatalf("after project ID, cursor kind=%d want Auto report", got)
+	}
+	m, _ = HandleTestKey(m, "down")
+	if got := m.settingsRows()[m.settings.cursor].kind; got != rowTelegramAlwaysSend {
+		t.Fatalf("after auto report, cursor kind=%d want Always send", got)
 	}
 	m, _ = HandleTestKey(m, "down")
 	if got := m.settingsRows()[m.settings.cursor]; got.kind != rowTelegramAction || got.action != "pair" {
@@ -459,6 +507,37 @@ func TestExecuteDoneLocalTurnDoesNotSendTelegramReply(t *testing.T) {
 	}
 }
 
+func TestExecuteDoneLocalTurnSendsTelegramReplyWhenAlwaysSendEnabled(t *testing.T) {
+	m := SetWidth(NewTestModel(nil), 100)
+	m = SetHeight(m, 40)
+	var got []string
+	m.telegram = &telegramState{
+		installed:  true,
+		connected:  true,
+		alwaysSend: true,
+		recordOutbound: func(text string) {
+			got = append(got, text)
+		},
+	}
+	m.streaming = true
+	m.agentMsgIndex = 1
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "hello"},
+		{role: convRoleAgent, content: ""},
+	}
+	m.executes = map[string]convExecute{
+		"ex-1": {ID: "ex-1", AgentMsgIndex: 1},
+	}
+	next, _ := m.Update(executeDoneMsg{
+		executeID: "ex-1",
+		result:    &harness.ExecutionResult{Output: "local turn forwarded"},
+	})
+	_ = next
+	if len(got) != 1 || got[0] != "local turn forwarded" {
+		t.Fatalf("outbound=%q", got)
+	}
+}
+
 func TestTelegramListenCmdDeliversBufferedFrames(t *testing.T) {
 	m := NewTestModel(nil)
 	ch := make(chan tea.Msg, 1)
@@ -600,6 +679,7 @@ func settingsFocusedOnPair(t *testing.T, connected bool) model {
 	m, _ = HandleTestKey(m, "down")
 	m, _ = HandleTestKey(m, "down")
 	m, _ = HandleTestKey(m, "down")
+	m, _ = HandleTestKey(m, "down")
 	got := m.settingsRows()[m.settings.cursor]
 	if got.kind != rowTelegramAction || got.action != "pair" {
 		t.Fatalf("cursor=%+v want Pair", got)
@@ -620,6 +700,7 @@ func settingsFocusedOnRetry(t *testing.T) model {
 		daemonErr:       "ipc: dial: connection refused",
 	}
 	m, _ = m.openSettings()
+	m, _ = HandleTestKey(m, "down")
 	m, _ = HandleTestKey(m, "down")
 	m, _ = HandleTestKey(m, "down")
 	m, _ = HandleTestKey(m, "down")

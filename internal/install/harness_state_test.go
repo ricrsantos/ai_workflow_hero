@@ -95,6 +95,27 @@ func TestTelegramAutoReportMinutesPersists(t *testing.T) {
 	}
 }
 
+func TestTelegramAlwaysSendPersists(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, ".workflow-hero", "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "hero.json"), []byte(`{"cli":{},"assets":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := install.SetTelegramAlwaysSend(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	hero, err := install.LoadHeroJSON(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hero.Telegram.AlwaysSend {
+		t.Fatal("always_send=false want true")
+	}
+}
+
 func TestChatVerbosityDefaultsToDebugAndPersists(t *testing.T) {
 	if got := install.NormalizeChatVerbosity(""); got != install.ChatVerbosityDebug {
 		t.Fatalf("missing chat verbosity=%q want debug", got)
