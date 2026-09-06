@@ -401,6 +401,17 @@ func (d *Daemon) announceRegistration(ctx context.Context, c *client) {
 	d.send(ctx, chatID, prefixAddress(c.address, label))
 }
 
+// announceDisconnection reports that a previously live instance is no longer
+// available. It is called only after removal from the registry, so /list and
+// selected-instance routing already reflect the disconnected state.
+func (d *Daemon) announceDisconnection(ctx context.Context, c *client) {
+	_, chatID, _ := d.creds()
+	if chatID == "" {
+		return
+	}
+	d.send(ctx, chatID, prefixAddress(c.address, "disconnected."))
+}
+
 // broadcastEvent pushes a lifecycle event frame to every registered client.
 func (d *Daemon) broadcastEvent(eventType, data string) {
 	for _, addr := range d.registry.addresses() {

@@ -194,6 +194,7 @@ func TestIntegration_TelegramDaemonEndToEnd(t *testing.T) {
 	if err := c1.Send(ipc.Message{Type: ipc.TypeUnregister}); err != nil {
 		t.Fatal(err)
 	}
+	bot.waitSent(t, "CHAT::proj: disconnected.")
 	_ = raw1.Close()
 	time.Sleep(30 * time.Millisecond)
 	bot.push(daemon.Update{UpdateID: 4, ChatID: "CHAT", Text: "proj: offline"})

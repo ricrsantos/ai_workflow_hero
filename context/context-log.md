@@ -538,3 +538,21 @@ and `go test ./...` pass.
 **Implementation**: Added `syncActiveCycleChrome()` to reconcile navbar/palette when the active cycle ends: hides Config, switches label to `alt+1-5`, leaves Config screen for Chat, and clears config draft state. Called on archive success (eager `Status()` sync) and on `refreshDataMsg` when cycle presence drops.
 
 **Validation**: `go test ./internal/tui/...` and full `go test ./...`.
+
+## 2026-09-05 — Telegram daemon announces instance disconnections
+
+**Implementation**: The daemon now removes an instance through one idempotent
+lifecycle path for both `unregister` and unexpected IPC socket loss. After
+removal, it sends `<address>: disconnected.` to the authorized Telegram chat
+with a two-second request deadline, then schedules the existing last-client
+shutdown when appropriate.
+
+**Validation**: Added clean-unregister integration coverage and an unexpected
+socket-drop daemon test. `go test ./internal/telegram/daemon ./internal/integration`
+and `go vet ./internal/telegram/daemon ./internal/integration` pass.
+
+## 2026-09-05 — Release Hero v3.0.3
+
+**Change**: Incremented the patch version for the Telegram instance
+disconnection notification and prepared the matching Hero and daemon release
+artifacts.

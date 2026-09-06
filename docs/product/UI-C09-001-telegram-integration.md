@@ -82,6 +82,7 @@ Important notifications are compact and always prefixed by the instance address:
 ai_workflow: Cycle #42 started.
 ai_workflow: Planning completed. Awaiting approval.
 ai_workflow_2: QA failed. 3 issues found.
+ai_workflow_2: disconnected.
 ```
 
 - Do not send thinking, tool, activity, stream deltas, or local diagnostics to Telegram.

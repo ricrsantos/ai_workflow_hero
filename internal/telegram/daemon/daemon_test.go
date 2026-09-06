@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -223,6 +224,74 @@ func TestProcessUpdateCancelPending(t *testing.T) {
 	if !found {
 		t.Fatalf("expected cancel confirmation, got %v", bot.sentTexts())
 	}
+}
+
+func TestUnregisterClientAnnouncesDisconnection(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+
+	c, address := d.registry.register("/p", ipc.ModeCycle, "proj", make(chan ipc.Message, 1))
+	d.unregisterClient(context.Background(), c)
+
+	if address != "proj" {
+		t.Fatalf("address=%q want proj", address)
+	}
+	if got := d.registry.count(); got != 0 {
+		t.Fatalf("live clients=%d want 0", got)
+	}
+	if got := bot.sentTexts(); fmt.Sprint(got) != "[CHAT::proj: disconnected.]" {
+		t.Fatalf("notifications=%v want disconnected announcement", got)
+	}
+}
+
+func TestDaemonConnectionDropAnnouncesDisconnection(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Error("daemon did not stop")
+		}
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	var raw net.Conn
+	for time.Now().Before(deadline) {
+		conn, err := ipc.Dial(d.socketPath)
+		if err == nil {
+			raw = conn
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if raw == nil {
+		t.Fatal("daemon socket did not become available")
+	}
+	conn := ipc.NewConn(raw)
+	if err := conn.Send(ipc.Message{Type: ipc.TypeRegister, Mode: ipc.ModeCycle, ProjectAbbrev: "proj", ProjectDir: "/p", UID: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if registered, err := conn.Recv(); err != nil || registered.Type != ipc.TypeRegistered {
+		t.Fatalf("registration=%+v err=%v", registered, err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := bot.sentTexts(); fmt.Sprint(got) == "[CHAT::proj: registered CHAT::proj: disconnected.]" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("notifications=%v want registration and disconnection", bot.sentTexts())
 }
 
 func TestDaemonRegisterTwoClientsViaSocket(t *testing.T) {

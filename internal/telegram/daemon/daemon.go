@@ -59,6 +59,8 @@ type Daemon struct {
 	exitTimer  *time.Timer
 }
 
+const disconnectNotificationTimeout = 2 * time.Second
+
 // New builds a Daemon from opts, applying defaults for nil fields.
 func New(opts Options) *Daemon {
 	if opts.Now == nil {
@@ -212,6 +214,24 @@ func (d *Daemon) send(ctx context.Context, chatID, text string) {
 	_ = bot.SendMessage(ctx, chatID, text)
 }
 
+// unregisterClient removes a TUI from the live registry, reports its departure
+// to the paired chat, and schedules daemon shutdown when it was the last one.
+// The notification has its own short deadline so a Telegram outage cannot
+// indefinitely delay the last-client shutdown.
+func (d *Daemon) unregisterClient(ctx context.Context, c *client) {
+	if c == nil || !d.registry.unregister(c) {
+		return
+	}
+
+	notifyCtx, cancel := context.WithTimeout(ctx, disconnectNotificationTimeout)
+	d.announceDisconnection(notifyCtx, c)
+	cancel()
+
+	if d.registry.count() == 0 {
+		d.requestShutdown()
+	}
+}
+
 // handleConn serves one TUI IPC connection until it disconnects.
 func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	c := ipc.NewConn(conn)
@@ -220,12 +240,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	var reg *client
 	outbound := make(chan ipc.Message, 256)
 	defer func() {
-		if reg != nil {
-			d.registry.unregister(reg)
-			if d.registry.count() == 0 {
-				d.requestShutdown()
-			}
-		}
+		d.unregisterClient(ctx, reg)
 	}()
 
 	// Reader goroutine forwards frames so writes never deadlock behind a read.
@@ -277,11 +292,8 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 				d.flushPending(ctx, reg)
 			case ipc.TypeUnregister:
 				if reg != nil {
-					d.registry.unregister(reg)
+					d.unregisterClient(ctx, reg)
 					reg = nil
-					if d.registry.count() == 0 {
-						d.requestShutdown()
-					}
 				}
 				return
 			case ipc.TypeSetCredentials:

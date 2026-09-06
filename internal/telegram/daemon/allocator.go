@@ -71,17 +71,19 @@ func (r *registry) register(projectDir, mode, abbrev string, outbound chan ipc.M
 	return c, addr
 }
 
-// unregister removes a client and frees its address.
-func (r *registry) unregister(c *client) {
+// unregister removes a client and frees its address. It reports whether the
+// client was live, so lifecycle notifications remain idempotent.
+func (r *registry) unregister(c *client) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.clients[c]; !ok {
-		return
+		return false
 	}
 	delete(r.clients, c)
 	if r.byAddr[c.address] == c {
 		delete(r.byAddr, c.address)
 	}
+	return true
 }
 
 // lookup returns the live client for address, if any.

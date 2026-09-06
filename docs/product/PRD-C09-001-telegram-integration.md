@@ -35,6 +35,7 @@ Telegram and the TUI are two interfaces over the same conversation and cycle ser
 - The first live instance of that project receives the base abbreviation. Concurrent instances receive `_2`, `_3`, and so on. Assignments remain stable while any instance for that project remains registered; after the last one closes, the next one may use the base abbreviation again.
 - Free Chat instances receive `free_1`, `free_2`, and so on, under the same allocation rule.
 - On registration, and after successful pairing/configuration, each instance sends an announcement to the authorized Telegram chat identifying its project/free-chat name and assigned abbreviation.
+- When a live instance disconnects cleanly or its IPC socket drops, the daemon sends a compact disconnection announcement to the authorized Telegram chat before scheduling any last-client shutdown.
 - All relevant outbound Telegram messages identify their source abbreviation.
 - The daemon lists live instances with `/list` and persists the authorized chat's one-based `/select n` choice without storing its chat id in SQLite. Subsequent ordinary text and slash commands route to that selected live instance without an address prefix; selection is invalid while its instance is disconnected and produces an actionable error rather than a queued turn. Explicit `<abbreviation>:` input remains supported for targeted delivery and pending-queue management.
 
