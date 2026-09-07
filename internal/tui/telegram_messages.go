@@ -131,7 +131,7 @@ func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 		if m.telegram.modelSelection != nil {
 			if strings.EqualFold(strings.TrimSpace(msg.text), slashModel) || strings.EqualFold(strings.TrimSpace(msg.text), "/hero-model") {
 				selection := m.telegram.modelSelection
-				next, cmd := m.startTelegramModelSelectionFor(msg.address, selection.configAgent)
+				next, cmd := m.startTelegramModelSelectionFor(msg.address, selection.configAgent, selection.configSubagent)
 				return next, combineTimerCmds(ack, cmd)
 			}
 			next, cmd := m.handleTelegramModelSelection(msg.address, msg.text)

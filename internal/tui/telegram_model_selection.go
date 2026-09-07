@@ -25,17 +25,18 @@ const (
 // telegramModelSelection holds non-secret, per-instance state for the remote
 // /model wizard. It uses the same persisted free-chat pair as the TUI picker.
 type telegramModelSelection struct {
-	address     string
-	configAgent string // empty for the free-chat /model picker
-	stage       telegramModelSelectionStage
-	harnesses   []string
-	models      []string
-	harnessID   string
-	modelSlug   string
-	snapshot    modelprops.Snapshot
-	keys        []string
-	keyIndex    int
-	properties  map[string]string
+	address        string
+	configAgent    string // empty for the free-chat /model picker
+	configSubagent bool
+	stage          telegramModelSelectionStage
+	harnesses      []string
+	models         []string
+	harnessID      string
+	modelSlug      string
+	snapshot       modelprops.Snapshot
+	keys           []string
+	keyIndex       int
+	properties     map[string]string
 }
 
 type telegramModelListMsg struct {
@@ -46,7 +47,7 @@ type telegramModelListMsg struct {
 }
 
 func (m model) startTelegramModelSelection(address string) (model, tea.Cmd) {
-	return m.startTelegramModelSelectionFor(address, "")
+	return m.startTelegramModelSelectionFor(address, "", false)
 }
 
 // startTelegramCycleModelSelection reuses the Telegram /model wizard for one
@@ -56,10 +57,17 @@ func (m model) startTelegramCycleModelSelection(address, agentName string) (mode
 	if m.telegram == nil || m.telegram.configWizard == nil {
 		return m, nil
 	}
-	return m.startTelegramModelSelectionFor(address, agentName)
+	return m.startTelegramModelSelectionFor(address, agentName, false)
 }
 
-func (m model) startTelegramModelSelectionFor(address, configAgent string) (model, tea.Cmd) {
+func (m model) startTelegramCycleSubagentModelSelection(address, agentName string) (model, tea.Cmd) {
+	if m.telegram == nil || m.telegram.configWizard == nil {
+		return m, nil
+	}
+	return m.startTelegramModelSelectionFor(address, agentName, true)
+}
+
+func (m model) startTelegramModelSelectionFor(address, configAgent string, configSubagent bool) (model, tea.Cmd) {
 	if m.telegram == nil {
 		return m, nil
 	}
@@ -68,15 +76,35 @@ func (m model) startTelegramModelSelectionFor(address, configAgent string) (mode
 		m.telegram.modelSelection = nil
 		return m, m.telegramOutboundCmd("No harness is enabled. Use /harness in the local TUI first.")
 	}
+	if configSubagent {
+		wizard := m.telegramConfigForAddress(address)
+		if wizard == nil {
+			return m, m.telegramOutboundCmd("A configuração remota expirou. Execute /hero-config novamente.")
+		}
+		agent, ok := telegramConfigAgent(wizard.draft, configAgent)
+		if !ok || strings.TrimSpace(agent.Harness) == "" {
+			return m, m.telegramOutboundCmd("O harness do agente principal precisa ser configurado antes do subagent.")
+		}
+		parentHarness := strings.TrimSpace(strings.ToLower(agent.Harness))
+		if !m.harnessEnabled(parentHarness) {
+			return m, m.telegramOutboundCmd("O harness do agente principal não está habilitado. Configure-o primeiro no /harness.")
+		}
+		harnesses = []string{parentHarness}
+	}
 	m.telegram.modelSelection = &telegramModelSelection{
-		address:     address,
-		configAgent: configAgent,
-		stage:       telegramModelSelectHarness,
-		harnesses:   append([]string(nil), harnesses...),
+		address:        address,
+		configAgent:    configAgent,
+		configSubagent: configSubagent,
+		stage:          telegramModelSelectHarness,
+		harnesses:      append([]string(nil), harnesses...),
 	}
 	title := "Escolha o Harness:"
 	if configAgent != "" {
-		title = "Escolha o Harness para " + configStageLabel(configAgent) + ":"
+		if configSubagent {
+			title = "Escolha o Harness do subagent de " + configStageLabel(configAgent) + ":"
+		} else {
+			title = "Escolha o Harness para " + configStageLabel(configAgent) + ":"
+		}
 	}
 	return m, m.telegramOutboundCmd(telegramNumberedOptions(title, displayHarnesses(harnesses)))
 }
@@ -195,7 +223,11 @@ func (m model) finishTelegramModelSelection() (model, tea.Cmd) {
 			m.telegram.modelSelection = nil
 			return m, m.telegramOutboundCmd("O agente selecionado não existe na configuração atual.")
 		}
-		saved = telegramConfigAgentProperties(agent)
+		if selection.configSubagent {
+			saved = telegramConfigSubagentProperties(agent)
+		} else {
+			saved = telegramConfigAgentProperties(agent)
+		}
 	} else {
 		hero, err := install.LoadHeroJSON(m.svc.ProjectDir)
 		if err != nil {
@@ -241,9 +273,19 @@ func (m model) commitTelegramModelSelection() (model, tea.Cmd) {
 			m.telegram.modelSelection = nil
 			return m, m.telegramOutboundCmd("O agente selecionado não existe na configuração atual.")
 		}
-		agent.Harness = selection.harnessID
-		agent.Model = selection.modelSlug
-		agent = telegramConfigApplyProperties(agent, selection.properties)
+		if selection.configSubagent {
+			if !strings.EqualFold(strings.TrimSpace(agent.Harness), strings.TrimSpace(selection.harnessID)) {
+				m.telegram.modelSelection = nil
+				return m, m.telegramOutboundCmd("O subagent deve usar o mesmo harness do agente principal.")
+			}
+			agent.Subagent.SameOfAgent = false
+			agent.Subagent.Model = selection.modelSlug
+			agent.Subagent = telegramConfigApplySubagentProperties(agent.Subagent, selection.properties)
+		} else {
+			agent.Harness = selection.harnessID
+			agent.Model = selection.modelSlug
+			agent = telegramConfigApplyProperties(agent, selection.properties)
+		}
 		if selection.configAgent == "fallback_model" {
 			wizard.draft.FallbackModel = agent
 		} else {
@@ -255,8 +297,12 @@ func (m model) commitTelegramModelSelection() (model, tea.Cmd) {
 		m.telegram.modelSelection = nil
 		wizard.modelIndex++
 		next, cmd := m.telegramConfigModelPrompt()
+		label := "Modelo de " + configStageLabel(selection.configAgent)
+		if selection.configSubagent {
+			label = "Modelo do subagent de " + configStageLabel(selection.configAgent)
+		}
 		return next, combineTimerCmds(
-			m.telegramOutboundCmd(fmt.Sprintf("Modelo de %s salvo.", configStageLabel(selection.configAgent))),
+			m.telegramOutboundCmd(label+" salvo."),
 			cmd,
 		)
 	}

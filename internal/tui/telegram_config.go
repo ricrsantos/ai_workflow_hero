@@ -21,6 +21,7 @@ const (
 	telegramConfigStages         telegramConfigWizardStep = "stages"
 	telegramConfigModelsQuestion telegramConfigWizardStep = "models-question"
 	telegramConfigModelChoice    telegramConfigWizardStep = "model-choice"
+	telegramConfigSubagentChoice telegramConfigWizardStep = "subagent-choice"
 	telegramConfigSummary        telegramConfigWizardStep = "summary"
 	telegramConfigSaving         telegramConfigWizardStep = "saving"
 )
@@ -43,6 +44,14 @@ var telegramConfigScopeOrder = []string{
 	"infrastructure",
 }
 
+// telegramConfigModelTarget identifies one reviewable part of an active cycle
+// agent. A subagent target never exists for fallback_model because fallback has
+// no nested Task fan-out configuration.
+type telegramConfigModelTarget struct {
+	agentName string
+	subagent  bool
+}
+
 // telegramConfigWizard owns one uncommitted cycle-configuration draft. It is
 // deliberately kept at the TUI edge: the daemon routes Telegram frames, while
 // this project-local process owns YAML, cycle synchronization, and validation.
@@ -55,7 +64,7 @@ type telegramConfigWizard struct {
 	baseline workflowconfig.ManagedConfig
 	draft    workflowconfig.ManagedConfig
 
-	modelTargets []string
+	modelTargets []telegramConfigModelTarget
 	modelIndex   int
 	saving       bool
 }
@@ -365,13 +374,20 @@ func (m model) handleTelegramConfigInput(address, text string) (model, tea.Cmd) 
 
 	case telegramConfigModelChoice:
 		if telegramConfigYes(trimmed) {
-			return m.startTelegramCycleModelSelection(address, w.modelTargets[w.modelIndex])
+			target, ok := w.currentModelTarget()
+			if !ok || target.subagent {
+				return m, m.telegramConfigInvalid("O alvo de modelo atual é inválido. Execute /hero-config novamente.")
+			}
+			return m.startTelegramCycleModelSelection(address, target.agentName)
 		}
 		if telegramConfigNo(trimmed) {
 			w.modelIndex++
 			return m.telegramConfigModelPrompt()
 		}
 		return m, m.telegramConfigInvalid("Responda 1 para escolher outro modelo ou 2 para manter o atual.")
+
+	case telegramConfigSubagentChoice:
+		return m.handleTelegramConfigSubagentChoice(trimmed)
 
 	case telegramConfigSummary:
 		switch trimmed {
@@ -413,6 +429,8 @@ func (m model) telegramConfigPrompt() string {
 		return "Deseja revisar os harnesses e modelos dos agentes do ciclo?\n\n1 - Escolher pelo wizard remoto\n2 - Manter os modelos atuais"
 	case telegramConfigModelChoice:
 		return m.telegramConfigModelText()
+	case telegramConfigSubagentChoice:
+		return m.telegramConfigSubagentPrompt()
 	case telegramConfigSummary:
 		return formatTelegramConfig(w.cycleNumber, w.draft, true) + "\n\n1 - Salvar configuração\n2 - Revisar modelos\n3 - Cancelar"
 	case telegramConfigSaving:
@@ -476,15 +494,20 @@ func (m model) telegramConfigModelPrompt() (model, tea.Cmd) {
 	}
 	for w.modelIndex < len(w.modelTargets) {
 		target := w.modelTargets[w.modelIndex]
-		agent, ok := telegramConfigReviewAgent(w, target)
+		agent, ok := telegramConfigReviewAgent(w, target.agentName)
 		if !ok {
 			w.modelIndex++
 			continue
 		}
-		if strings.TrimSpace(agent.Harness) == "" || strings.TrimSpace(agent.Model) == "" {
-			return m.startTelegramCycleModelSelection(w.address, target)
+		if target.subagent {
+			w.step = telegramConfigSubagentChoice
+			return m, m.telegramOutboundCmd(m.telegramConfigSubagentPrompt())
 		}
-		return m, m.telegramOutboundCmd(telegramConfigModelTextFor(target, agent))
+		w.step = telegramConfigModelChoice
+		if strings.TrimSpace(agent.Harness) == "" || strings.TrimSpace(agent.Model) == "" {
+			return m.startTelegramCycleModelSelection(w.address, target.agentName)
+		}
+		return m, m.telegramOutboundCmd(telegramConfigModelTextFor(target.agentName, agent))
 	}
 	w.step = telegramConfigSummary
 	return m, m.telegramOutboundCmd(m.telegramConfigPrompt())
@@ -495,11 +518,69 @@ func (m model) telegramConfigModelText() string {
 	if w == nil || w.modelIndex >= len(w.modelTargets) {
 		return ""
 	}
-	agent, ok := telegramConfigAgent(w.draft, w.modelTargets[w.modelIndex])
+	target := w.modelTargets[w.modelIndex]
+	if target.subagent {
+		return m.telegramConfigSubagentPrompt()
+	}
+	agent, ok := telegramConfigAgent(w.draft, target.agentName)
 	if !ok {
 		return ""
 	}
-	return telegramConfigModelTextFor(w.modelTargets[w.modelIndex], agent)
+	return telegramConfigModelTextFor(target.agentName, agent)
+}
+
+func (w *telegramConfigWizard) currentModelTarget() (telegramConfigModelTarget, bool) {
+	if w == nil || w.modelIndex < 0 || w.modelIndex >= len(w.modelTargets) {
+		return telegramConfigModelTarget{}, false
+	}
+	return w.modelTargets[w.modelIndex], true
+}
+
+func (m model) telegramConfigSubagentPrompt() string {
+	w := m.telegram.configWizard
+	target, ok := w.currentModelTarget()
+	if !ok || !target.subagent {
+		return ""
+	}
+	agent, ok := telegramConfigAgent(w.draft, target.agentName)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf(
+		"Subagent de %s\nAtual: %s\n\n1 - Manter a configuração atual\n2 - Usar o mesmo modelo do agente principal\n3 - Escolher um modelo próprio",
+		configStageLabel(target.agentName), telegramConfigSubagentPair(agent),
+	)
+}
+
+func (m model) handleTelegramConfigSubagentChoice(value string) (model, tea.Cmd) {
+	w := m.telegram.configWizard
+	target, ok := w.currentModelTarget()
+	if !ok || !target.subagent {
+		return m, m.telegramConfigInvalid("O alvo de subagent atual é inválido. Execute /hero-config novamente.")
+	}
+	agent, ok := telegramConfigAgent(w.draft, target.agentName)
+	if !ok {
+		return m, m.telegramConfigInvalid("O agente atual não existe na configuração do ciclo.")
+	}
+	switch strings.TrimSpace(value) {
+	case "1":
+		if !agent.Subagent.SameOfAgent && strings.TrimSpace(agent.Subagent.Model) == "" {
+			return m.startTelegramCycleSubagentModelSelection(w.address, target.agentName)
+		}
+		w.modelIndex++
+		return m.telegramConfigModelPrompt()
+	case "2":
+		agent.Subagent.SameOfAgent = true
+		telegramConfigSetAgent(w, target.agentName, agent)
+		w.modelIndex++
+		return m.telegramConfigModelPrompt()
+	case "3":
+		agent.Subagent.SameOfAgent = false
+		telegramConfigSetAgent(w, target.agentName, agent)
+		return m.startTelegramCycleSubagentModelSelection(w.address, target.agentName)
+	default:
+		return m, m.telegramConfigInvalid("Responda 1 para manter, 2 para usar o modelo do agente principal ou 3 para escolher um modelo próprio.")
+	}
 }
 
 func telegramConfigReviewAgent(w *telegramConfigWizard, target string) (workflowconfig.AgentModelConfig, bool) {
@@ -531,19 +612,20 @@ func telegramConfigModelTextFor(target string, agent workflowconfig.AgentModelCo
 	)
 }
 
-func telegramConfigModelTargets(cfg workflowconfig.ManagedConfig) []string {
-	targets := append([]string(nil), cfg.RequiredAgentNames()...)
-	targets = append(targets, "fallback_model")
-	seen := make(map[string]bool, len(targets))
-	out := make([]string, 0, len(targets))
-	for _, target := range targets {
-		if target == "" || seen[target] {
+func telegramConfigModelTargets(cfg workflowconfig.ManagedConfig) []telegramConfigModelTarget {
+	parents := cfg.RequiredAgentNames()
+	targets := make([]telegramConfigModelTarget, 0, len(parents)*2+1)
+	seen := make(map[string]bool, len(parents))
+	for _, name := range parents {
+		if name == "" || seen[name] {
 			continue
 		}
-		seen[target] = true
-		out = append(out, target)
+		seen[name] = true
+		targets = append(targets, telegramConfigModelTarget{agentName: name})
+		targets = append(targets, telegramConfigModelTarget{agentName: name, subagent: true})
 	}
-	return out
+	targets = append(targets, telegramConfigModelTarget{agentName: "fallback_model"})
+	return targets
 }
 
 func telegramConfigAgent(cfg workflowconfig.ManagedConfig, name string) (workflowconfig.AgentModelConfig, bool) {
@@ -683,22 +765,8 @@ func telegramConfigScopeSummary(scope workflowconfig.Scope) string {
 }
 
 func telegramConfigDisplayAgentNames(cfg workflowconfig.ManagedConfig) []string {
-	order := []string{
-		"orchestration_agent", "context_agent", "discover_agent", "planning_agent",
-		"backend_agent", "frontend_agent", "generic_agent", "qa_agent", "judge_agent",
-		"browser_ui_agent", "end2end_qa_agent", "fallback_model",
-	}
-	names := make([]string, 0, len(order))
-	for _, name := range order {
-		if name == "fallback_model" {
-			names = append(names, name)
-			continue
-		}
-		if _, ok := cfg.Agents[name]; ok {
-			names = append(names, name)
-		}
-	}
-	return names
+	names := append([]string(nil), cfg.RequiredAgentNames()...)
+	return append(names, "fallback_model")
 }
 
 func telegramConfigAgentPair(agent workflowconfig.AgentModelConfig) string {
@@ -724,8 +792,48 @@ func telegramConfigAgentPair(agent workflowconfig.AgentModelConfig) string {
 	return pair
 }
 
+func telegramConfigSubagentPair(agent workflowconfig.AgentModelConfig) string {
+	if agent.Subagent.SameOfAgent {
+		return "mesmo modelo do agente principal"
+	}
+	if strings.TrimSpace(agent.Subagent.Model) == "" {
+		return "modelo próprio não configurado"
+	}
+	return telegramConfigAgentPair(workflowconfig.AgentModelConfig{
+		Harness:         agent.Harness,
+		Model:           agent.Subagent.Model,
+		ReasoningEffort: agent.Subagent.ReasoningEffort,
+		EnableFastModel: agent.Subagent.EnableFastModel,
+		Thinking:        agent.Subagent.Thinking,
+	})
+}
+
+func telegramConfigSetAgent(w *telegramConfigWizard, name string, agent workflowconfig.AgentModelConfig) {
+	if w == nil {
+		return
+	}
+	if name == "fallback_model" {
+		w.draft.FallbackModel = agent
+		return
+	}
+	if w.draft.Agents == nil {
+		w.draft.Agents = make(map[string]workflowconfig.AgentModelConfig)
+	}
+	w.draft.Agents[name] = agent
+}
+
 func telegramConfigAgentProperties(agent workflowconfig.AgentModelConfig) map[string]string {
 	return workflowconfig.EffectiveProperties(agent)
+}
+
+func telegramConfigSubagentProperties(agent workflowconfig.AgentModelConfig) map[string]string {
+	return workflowconfig.EffectiveProperties(workflowconfig.AgentModelConfig{
+		Harness:         agent.Harness,
+		Model:           agent.Subagent.Model,
+		ReasoningEffort: agent.Subagent.ReasoningEffort,
+		EnableFastModel: agent.Subagent.EnableFastModel,
+		Thinking:        agent.Subagent.Thinking,
+	})
 }
 
 func telegramConfigApplyProperties(agent workflowconfig.AgentModelConfig, properties map[string]string) workflowconfig.AgentModelConfig {
@@ -743,6 +851,23 @@ func telegramConfigApplyProperties(agent workflowconfig.AgentModelConfig, proper
 		agent.ReasoningEffort = "na"
 	}
 	return agent
+}
+
+func telegramConfigApplySubagentProperties(subagent workflowconfig.SubagentConfig, properties map[string]string) workflowconfig.SubagentConfig {
+	if value, ok := properties[harness.PropertyFast]; ok {
+		subagent.EnableFastModel = strings.EqualFold(strings.TrimSpace(value), "true")
+	}
+	if value := strings.TrimSpace(properties[harness.PropertyThink]); value != "" {
+		subagent.Thinking = value
+	} else {
+		subagent.Thinking = "na"
+	}
+	if value := strings.TrimSpace(properties[harness.PropertyEffort]); value != "" {
+		subagent.ReasoningEffort = value
+	} else {
+		subagent.ReasoningEffort = "na"
+	}
+	return subagent
 }
 
 func (m model) beginTelegramConfigSave() (model, tea.Cmd) {

@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -152,7 +153,7 @@ func TestTelegramConfigModelSelectionUpdatesDraftOnly(t *testing.T) {
 			},
 		},
 	}
-	m.telegram.configWizard.modelTargets = []string{"fallback_model"}
+	m.telegram.configWizard.modelTargets = []telegramConfigModelTarget{{agentName: "fallback_model"}}
 	m.telegram.modelSelection = &telegramModelSelection{
 		address:     "proj",
 		configAgent: "orchestration_agent",
@@ -182,6 +183,185 @@ func TestTelegramConfigModelSelectionUpdatesDraftOnly(t *testing.T) {
 	}
 	if strings.Contains(string(hero), "full/model") {
 		t.Fatal("cycle-agent selection must not mutate free-chat hero.json")
+	}
+}
+
+func TestTelegramConfigModelTargetsFollowActiveStagesAndScope(t *testing.T) {
+	cfg := telegramConfigScopeRegressionConfig()
+	got := telegramConfigModelTargets(cfg)
+	want := []telegramConfigModelTarget{
+		{agentName: "orchestration_agent"},
+		{agentName: "orchestration_agent", subagent: true},
+		{agentName: "context_agent"},
+		{agentName: "context_agent", subagent: true},
+		{agentName: "discover_agent"},
+		{agentName: "discover_agent", subagent: true},
+		{agentName: "planning_agent"},
+		{agentName: "planning_agent", subagent: true},
+		{agentName: "frontend_agent"},
+		{agentName: "frontend_agent", subagent: true},
+		{agentName: "qa_agent"},
+		{agentName: "qa_agent", subagent: true},
+		{agentName: "judge_agent"},
+		{agentName: "judge_agent", subagent: true},
+		{agentName: "fallback_model"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("targets=%v, want %v", got, want)
+	}
+	for _, target := range got {
+		if target.agentName == "backend_agent" || target.agentName == "generic_agent" ||
+			target.agentName == "browser_ui_agent" || target.agentName == "end2end_qa_agent" {
+			t.Fatalf("out-of-scope agent was queued: %+v", target)
+		}
+	}
+}
+
+func TestTelegramConfigSummaryHidesOutOfScopeAgentBlocks(t *testing.T) {
+	summary := formatTelegramConfig(12, telegramConfigScopeRegressionConfig(), true)
+	if !strings.Contains(summary, "Frontend Agent") {
+		t.Fatalf("summary must include the selected frontend agent:\n%s", summary)
+	}
+	for _, name := range []string{"Backend Agent", "Generic Agent", "Browser Ui Agent", "End2end Qa Agent"} {
+		if strings.Contains(summary, name) {
+			t.Fatalf("summary must hide %q when it is outside the active scope/stages:\n%s", name, summary)
+		}
+	}
+}
+
+func TestTelegramConfigModelReviewAsksForEachActiveAgentSubagent(t *testing.T) {
+	var outbound []string
+	m := NewTestModel(nil)
+	m.telegram = &telegramState{
+		connected:      true,
+		recordOutbound: func(text string) { outbound = append(outbound, text) },
+		configWizard: &telegramConfigWizard{
+			address: "proj",
+			draft: workflowconfig.ManagedConfig{
+				Stages: map[string]workflowconfig.ManagedStage{
+					"research": {Enabled: true},
+				},
+				Agents: map[string]workflowconfig.AgentModelConfig{
+					"orchestration_agent": {Harness: "cursor", Model: "model-a", Subagent: workflowconfig.SubagentConfig{SameOfAgent: true}},
+					"context_agent":       {Harness: "cursor", Model: "model-a", Subagent: workflowconfig.SubagentConfig{SameOfAgent: true}},
+					"discover_agent":      {Harness: "cursor", Model: "model-a", Subagent: workflowconfig.SubagentConfig{SameOfAgent: true}},
+				},
+			},
+		},
+	}
+
+	next, _ := m.beginTelegramConfigModelReview()
+	if next.telegram.configWizard.step != telegramConfigModelChoice {
+		t.Fatalf("initial step=%q, want model choice", next.telegram.configWizard.step)
+	}
+	next, _ = next.handleTelegramConfigInput("proj", "2")
+	if next.telegram.configWizard.step != telegramConfigSubagentChoice {
+		t.Fatalf("after keeping parent model step=%q, want subagent choice", next.telegram.configWizard.step)
+	}
+	if !strings.Contains(outbound[len(outbound)-1], "Subagent de Orchestration Agent") {
+		t.Fatalf("subagent prompt=%q", outbound[len(outbound)-1])
+	}
+
+	next, _ = next.handleTelegramConfigInput("proj", "2")
+	if next.telegram.configWizard.step != telegramConfigModelChoice {
+		t.Fatalf("after keeping subagent step=%q, want next parent model choice", next.telegram.configWizard.step)
+	}
+	if !strings.Contains(outbound[len(outbound)-1], "Modelo de Context Agent") {
+		t.Fatalf("next parent prompt=%q", outbound[len(outbound)-1])
+	}
+}
+
+func TestTelegramConfigSubagentSelectionUsesParentHarnessAndDraft(t *testing.T) {
+	m, dir := newPickerTestModel(t)
+	var outbound []string
+	m.telegram = &telegramState{
+		connected:      true,
+		recordOutbound: func(text string) { outbound = append(outbound, text) },
+		configWizard: &telegramConfigWizard{
+			address: "proj",
+			draft: workflowconfig.ManagedConfig{
+				Agents: map[string]workflowconfig.AgentModelConfig{
+					"orchestration_agent": {
+						Harness: "cursor",
+						Model:   "parent/model",
+						Subagent: workflowconfig.SubagentConfig{
+							SameOfAgent: true,
+						},
+					},
+				},
+			},
+		},
+	}
+	m.telegram.configWizard.modelTargets = []telegramConfigModelTarget{{agentName: "orchestration_agent", subagent: true}}
+	m.telegram.configWizard.modelIndex = 0
+
+	next, _ := m.startTelegramCycleSubagentModelSelection("proj", "orchestration_agent")
+	selection := next.telegram.modelSelection
+	if selection == nil || !selection.configSubagent {
+		t.Fatal("selection must be marked as a subagent selection")
+	}
+	if !reflect.DeepEqual(selection.harnesses, []string{"cursor"}) {
+		t.Fatalf("subagent harnesses=%v, want only parent harness", selection.harnesses)
+	}
+	if len(outbound) == 0 || !strings.Contains(outbound[0], "subagent de Orchestration Agent") || strings.Contains(outbound[0], "OpenCode") {
+		t.Fatalf("harness prompt=%q", outbound)
+	}
+
+	next.telegram.modelSelection = &telegramModelSelection{
+		address:        "proj",
+		configAgent:    "orchestration_agent",
+		configSubagent: true,
+		harnessID:      "cursor",
+		modelSlug:      "full/model",
+		properties: map[string]string{
+			harness.PropertyFast:   "true",
+			harness.PropertyThink:  "max",
+			harness.PropertyEffort: "high",
+		},
+	}
+	next, _ = next.commitTelegramModelSelection()
+	agent := next.telegram.configWizard.draft.Agents["orchestration_agent"]
+	if agent.Subagent.SameOfAgent || agent.Subagent.Model != "full/model" || !agent.Subagent.EnableFastModel || agent.Subagent.Thinking != "max" || agent.Subagent.ReasoningEffort != "high" {
+		t.Fatalf("updated subagent=%+v", agent.Subagent)
+	}
+	if next.telegram.modelSelection != nil {
+		t.Fatal("subagent model selection must be cleared after updating the draft")
+	}
+	hero, err := os.ReadFile(filepath.Join(dir, ".workflow-hero", "config", "hero.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(hero), "full/model") {
+		t.Fatal("cycle subagent selection must not mutate free-chat hero.json")
+	}
+}
+
+func telegramConfigScopeRegressionConfig() workflowconfig.ManagedConfig {
+	return workflowconfig.ManagedConfig{
+		Scope: workflowconfig.Scope{Frontend: true},
+		Stages: map[string]workflowconfig.ManagedStage{
+			"research":              {Enabled: true},
+			"planning":              {Enabled: true},
+			"implementation":        {Enabled: true},
+			"qa":                    {Enabled: true},
+			"judge":                 {Enabled: true},
+			"browser_ui_validation": {Enabled: false},
+			"qa_end_to_end":         {Enabled: false},
+		},
+		Agents: map[string]workflowconfig.AgentModelConfig{
+			"orchestration_agent": {},
+			"context_agent":       {},
+			"discover_agent":      {},
+			"planning_agent":      {},
+			"frontend_agent":      {},
+			"qa_agent":            {},
+			"judge_agent":         {},
+			"backend_agent":       {},
+			"generic_agent":       {},
+			"browser_ui_agent":    {},
+			"end2end_qa_agent":    {},
+		},
+		FallbackModel: workflowconfig.AgentModelConfig{Harness: "cursor", Model: "fallback"},
 	}
 }
 

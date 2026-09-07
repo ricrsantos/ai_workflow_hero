@@ -4,6 +4,20 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-07 — Telegram cycle-config scope and subagent correction
+
+**Problem**: The Telegram cycle model review handled only top-level agent pairs, and its summary enumerated stale `agents.*` blocks even when their stage or implementation scope was disabled. This made nested subagent settings invisible and could show an out-of-scope `backend_agent`.
+
+**Change**: The review queue now comes from `ManagedConfig.RequiredAgentNames()`, followed by an explicit subagent question for every active named agent. The subagent flow supports keeping the current mode, reusing the parent model, or choosing a dedicated model; dedicated selection is constrained to the parent harness and writes only the cycle draft. The summary uses the same active-agent projection, so stale out-of-scope blocks are hidden. Added regression coverage for queue filtering, summary filtering, state transitions, parent-harness restriction, nested properties, and `hero.json` isolation.
+
+**Reset and validation**: Cancelled the active cycle with `hero cancel` so the user can retest from a new `/hero-new`; the current YAML and cycle artifacts were not deleted. `go test ./...`, `go vet ./...`, and focused Telegram tests pass.
+
+## 2026-09-07 — Release Hero v3.0.7
+
+**Change**: Incremented the patch version for the Telegram cycle-config subagent review and active-stage/scope filtering fix. Release artifacts include the regression coverage and updated product/architecture context.
+
+**Validation**: `go test ./...`, `go vet ./...`, and `git diff --check` pass before tagging.
+
 ## 2026-09-06 — Telegram status lists active agents and models
 
 **Change**: Extended TUI-owned Telegram `/status` and automatic reports to include an `Agents` block during active turns. Each row reports the operating agent name and model from the live execution state; the unnamed Free Chat parent is normalized to the stable name `harness`. Idle status remains the compact `idle` response.
