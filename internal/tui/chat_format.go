@@ -19,7 +19,8 @@ func tuiHeroNewPreamble() string {
 	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
 		"You are running /hero-new inside the Hero TUI. Follow the command instructions below with these overrides:\n\n" +
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
-		"- Prepare and write workflow-config.yml, then the TUI will call hero cycle new automatically (active cycle, empty title/objective in SQLite).\n" +
+		"- Prepare or update workflow-config.yml. If the current file is absent, create it using Previous Cycle Config Import; the TUI validates it before creating the cycle.\n" +
+		"- The TUI will call hero cycle new automatically (active cycle, empty title/objective in SQLite).\n" +
 		"- Do NOT ask the user to reply or confirm before the cycle is prepared. Do NOT run shell/CLI commands yourself.\n" +
 		"- Do not include \"Clean Session Handoff\" or Cursor-chat instructions (new empty chat, select orchestrator model).\n" +
 		"- Tell the user to prefer the Hero TUI Config screen (alt+7) for title, objective, scope, stages, and agents; editing workflow-config.yml directly is optional.\n" +

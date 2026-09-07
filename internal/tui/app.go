@@ -996,6 +996,14 @@ func (m model) beginHeroNew() (model, tea.Cmd) {
 	if !ok {
 		return m, cmd
 	}
+	if m.svc == nil {
+		m = m.setStatusResult(false, "/hero-new", "cycle service unavailable")
+		return m, nil
+	}
+	if _, err := m.svc.PrepareWorkflowConfig(); err != nil {
+		m = m.setStatusResult(false, "/hero-new", firstStatusLine(err.Error()))
+		return m, nil
+	}
 	return m.beginHeroRuntimeConversation("new", "", heroRuntimeOpts{})
 }
 

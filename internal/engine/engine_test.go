@@ -558,6 +558,48 @@ stages:
 	}
 }
 
+func TestSyncCycleConfigDoesNotFallbackToTemplate(t *testing.T) {
+	dir := t.TempDir()
+	cycleDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")
+	templateDir := filepath.Join(dir, ".workflow-hero", "templates")
+	if err := os.MkdirAll(cycleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(templateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `title: Current
+objective: Current objective
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    require_human_approval: false
+`
+	currentPath := filepath.Join(cycleDir, "workflow-config.yml")
+	if err := os.WriteFile(currentPath, []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(templateDir, "workflow-config.yml"), []byte("title: Template\nobjective: Template\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	e, _ := openTestEngine(t)
+	res, err := e.CreateCycleFromConfig(NewCycleOptions{ProjectDir: dir, ConfigPath: currentPath, DeferMeta: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(currentPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SyncCycleConfigFromWorkflow(dir); err == nil {
+		t.Fatal("expected sync to fail when current workflow-config.yml is missing")
+	}
+	if _, err := e.Store.GetCycle(res.Cycle.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSyncCycleConfigUpdatesStageBudgets(t *testing.T) {
 	dir := t.TempDir()
 	cycleDir := filepath.Join(dir, ".workflow-hero", "cycles", "current")

@@ -856,7 +856,7 @@ func (e *Engine) CreateCycleFromConfig(opts NewCycleOptions) (NewCycleResult, er
 // title, objective, config snapshot, and still-open stage budgets (used by /hero-start
 // before stage orchestration). Completed/failed stages are left unchanged.
 func (e *Engine) SyncCycleConfigFromWorkflow(projectDir string) error {
-	configPath := resolveWorkflowConfigPath(projectDir)
+	configPath := currentWorkflowConfigPath(projectDir)
 	cfg, raw, err := LoadWorkflowConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("workflow-config.yml: %w", err)
@@ -918,7 +918,7 @@ func (e *Engine) syncStagesFromWorkflow(cycleID int64, cfg WorkflowConfig) error
 }
 
 func resolveWorkflowConfigPath(projectDir string) string {
-	configPath := filepath.Join(projectDir, ".workflow-hero", "cycles", "current", "workflow-config.yml")
+	configPath := currentWorkflowConfigPath(projectDir)
 	if _, err := os.Stat(configPath); err != nil {
 		alt := filepath.Join(projectDir, ".workflow-hero", "templates", "workflow-config.yml")
 		if _, err2 := os.Stat(alt); err2 == nil {
@@ -926,6 +926,10 @@ func resolveWorkflowConfigPath(projectDir string) string {
 		}
 	}
 	return configPath
+}
+
+func currentWorkflowConfigPath(projectDir string) string {
+	return filepath.Join(projectDir, ".workflow-hero", "cycles", "current", "workflow-config.yml")
 }
 
 func buildStagesFromConfig(cycleID int64, cfg WorkflowConfig) []store.Stage {

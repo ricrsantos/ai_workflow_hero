@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **3.0.5** (Config model catalog picker, welcome dialog fill, Config property/catalog cascade). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs, remote cycle-config wizard, active-agent/model Telegram status reporting, and project-local Always send reply routing.
+> **Status:** reflects codebase at Hero **3.0.6** (deterministic `/hero-new` workflow-config preflight and fail-closed current-config synchronization). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs, remote cycle-config wizard, active-agent/model Telegram status reporting, and project-local Always send reply routing.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -228,7 +228,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 | `contextbar.go` | Session-accumulated per-turn token usage bar from `result.usage` vs `models/*.yml` |
 | `config_screen.go` | Active-cycle YAML-backed form, progressive disclosure, save states, and failed-stage retry |
 | `timers.go` | Shared one-second Session/AI wk/AI rp counters and cycle-duration persistence |
-| `internal/workflowconfig` document layer | Latest-file YAML node merge, managed projection/diff, validation, and atomic write |
+| `internal/workflowconfig` document layer | Latest-file YAML node merge, managed projection/diff, deterministic current-config seeding from template/archive, validation, and atomic write |
 | `output_view.go` | Shared scrollable output for Status/Costs/Events |
 
 **Design principles:**
@@ -240,6 +240,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 - **TUI-direct stage Execute (C8)**: after ORCH starts a stage and STOPs, the TUI Executes named stage agents on their YAML harness+model pair (`stage_handoff.go`). Nested Task fan-out stays inside the parent harness; generic Tasks chip `TASK`. Implementation may run BACK/FRNT/GEN concurrently. Cursor IDE Runtime still uses Task for every subagent (ADR-005 / ADR-054).
 - **Boot** validates harness availability (`IsAvailable`); may prompt for harness selection when `cli.tools` is empty (ADR-027).
 - **Default harness model** is stored in `hero.json` → `harnesses.<tool>` (ADR-030); per-cycle agent models live in `workflow-config.yml`. Freechat and `/hero-new` use the harness default; orchestrator slashes use YAML `orchestration_agent` (then `fallback_model`, then `/hero-model`).
+- **`/hero-new` config preflight**: the TUI asks `cycle.Service` to validate `.workflow-hero/cycles/current/workflow-config.yml` before the Runtime turn. If it is missing, `workflowconfig.EnsureCurrent` seeds it from the installed template and deep-merges the highest archived cycle's `workflow_config`, `fallback_model`, `stages`, and `agents`; existing files are never overwritten. `PrepareCycle` validates the result and passes the exact current path to the engine, while Cursor's shared Runtime command remains responsible for its own create/update path.
 - **Cycle Config (C7)**: the TUI edits only managed YAML nodes; the latest file supplies unmanaged comments/unknown keys during Save. Successful Save calls cycle sync; completed stages remain protected, and a changed failed stage can be explicitly requeued through `cycle.Service.RetryFailedStage`.
 - **Telegram Cycle Config**: Telegram `/hero-config` edits the same managed `workflow-config.yml` projection in an address-scoped in-memory draft. The shared Config persistence helper validates enabled harnesses, atomically writes the latest-file merge, and calls `cycle.Service.SyncCycleConfig`; `/hero-config-show` reads the canonical file or renders the active draft. Cycle-agent model review reuses the existing numbered Telegram `/model` state machine but never writes free-chat `hero.json`.
 - **Shared TUI timers**: one second tick drives the blue bottom-navbar `Session`, `AI wk`, and `AI rp` values. `Session` starts at zero on TUI boot, persists active cycle seconds in `cycles.session_duration_seconds` for explicit `/hero-start`/`/hero-resume` recovery, stops at a terminal cycle state, and resets on `/hero-new`, archive, or an ordinary first chat prompt before a cycle session is restored. `AI wk` measures a live Execute; process-local `AI rp` starts on the first harness response and restarts on every later response-content event, even when the active detail profile filters it from Chat, exposing the elapsed response gap.
@@ -528,8 +529,10 @@ flowchart TB
 
   subgraph CLI["HERO CLI (Go)"]
     CycleSvc["cycle.Service"]
+    Config["workflowconfig.EnsureCurrent"]
     Engine["engine.Engine"]
     Store["store.Store / hero.db"]
+    CycleSvc --> Config
     CycleSvc --> Engine --> Store
   end
 
@@ -541,6 +544,7 @@ flowchart TB
   end
 
   Orch -->|"hero CLI API"| CycleSvc
+  Config -->|"template + archived config"| Current["cycles/current/workflow-config.yml"]
   Harness --> CursorCLI["Cursor Agent CLI"]
   Sub --> CursorIDE["Cursor IDE Task"]
 ```

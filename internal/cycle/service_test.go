@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
@@ -162,6 +163,68 @@ stages:
 	c, err := svc2.Store.GetActiveCycle()
 	if err != nil || c.Number != 2 || c.Status != store.CycleStatusActive {
 		t.Fatalf("resume: %+v %v", c, err)
+	}
+}
+
+func TestPrepareCycleCreatesMissingCurrentConfigFromTemplateAndArchive(t *testing.T) {
+	dir := t.TempDir()
+	templatePath := filepath.Join(dir, ".workflow-hero", "templates", "workflow-config.yml")
+	archivePath := filepath.Join(dir, ".workflow-hero", "cycles", "archive", "C3-previous", "workflow-config.yml")
+	configDir := filepath.Join(dir, ".workflow-hero", "config")
+	for _, path := range []string{filepath.Dir(templatePath), filepath.Dir(archivePath), configDir} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "project.json"), []byte(`{"workflow": {"cycle": 0}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(templatePath, []byte(`title: Template
+objective: New cycle
+stages:
+  research:
+    enabled: true
+    max_iterations: 5
+    timeout_minutes: 15
+    require_human_approval: false
+  qa:
+    enabled: false
+    max_iterations: 2
+    timeout_minutes: 15
+    require_human_approval: true
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(archivePath, []byte(`title: Previous
+objective: Previous cycle
+stages:
+  research:
+    enabled: false
+  qa:
+    enabled: true
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	res, err := svc.PrepareCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Cycle.Number != 1 || len(res.Stages) != 2 {
+		t.Fatalf("result=%+v", res)
+	}
+	currentPath := filepath.Join(dir, ".workflow-hero", "cycles", "current", "workflow-config.yml")
+	data, err := os.ReadFile(currentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) == "" || !strings.Contains(string(data), "enabled: false") {
+		t.Fatalf("expected archived stage settings in current config:\n%s", data)
 	}
 }
 

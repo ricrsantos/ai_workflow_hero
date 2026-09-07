@@ -617,3 +617,48 @@ and `go vet ./...` pass.
 
 **Change**: Incremented the patch version for the Telegram `Always send`
 project setting and prepared the matching Hero and daemon release artifacts.
+
+## 2026-09-06 — Ideia ativa: Claude Code adapter
+
+**Decision**: A próxima proposta de harness Claude Code usará a CLI headless
+diretamente de Go (`claude -p` + NDJSON), em vez de uma bridge Node/TypeScript
+ou automação do TUI. Será TUI-only, como OpenCode/Codex. A projeção nativa será
+`assets/claude/` → `.claude/`, e o Hero passará a criar/gerir um bloco marcado
+em `CLAUDE.md` que importa `@AGENTS.md`, sem duplicar instruções. O perfil
+`ask` exige bridge MCP temporária; sua compatibilidade de protocolo é um spike
+obrigatório antes da implementação.
+
+**Artifact**: `docs/idea/v3.1_claude_adapter/claude_adapter.md` registra
+assets, catálogo/modelos/propriedades, permissões, health/watchdog,
+verbosidade, critérios de aceitação e referências oficiais em PT-BR.
+
+## 2026-09-06 — Preflight determinístico do `/hero-new`
+
+**Problema**: uma execução do `/hero-new` via Telegram terminou sem criar
+`.workflow-hero/cycles/current/workflow-config.yml`. O fallback do engine usou
+o template global, permitindo que o ciclo fosse criado com configurações
+incorretas e deixando `/hero-config` sem o arquivo canônico esperado.
+
+**Mudança**: o TUI agora prepara o arquivo antes do turno do Runtime. Quando
+ele não existe, `workflowconfig.EnsureCurrent` cria uma cópia atômica do
+template e importa, por deep merge, `workflow_config`, `fallback_model`,
+`stages` e `agents` do ciclo arquivado mais recente; título, objetivo, escopo e
+outras chaves do template permanecem resetados. Arquivos existentes são
+preservados e validados. `cycle.Service.PrepareCycle` valida novamente e
+passa o caminho explícito de `cycles/current` ao engine. O sincronismo de
+`/hero-start` também deixou de aceitar o template global como fallback.
+
+**Compatibilidade**: o prompt específico do TUI autoriza o agente a criar ou
+atualizar o YAML e mantém a proibição de executar Shell/CLI. Os comandos
+compartilhados do Cursor não foram alterados.
+
+**Validação**: novos testes cobrem primeiro ciclo, importação do maior ciclo
+arquivado, preservação do arquivo existente, preflight do TUI e falha fechada
+no sync. `go vet` dos pacotes afetados e `go test ./...` passaram.
+
+## 2026-09-06 — Release Hero v3.0.6
+
+**Change**: Incremented the patch version for deterministic `/hero-new`
+workflow-config preflight, archived-config import, and fail-closed current
+configuration synchronization. The release includes the TUI/engine regression
+coverage and the current project context.

@@ -15,6 +15,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
+	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
 // Service is the shared façade used by CLI commands and the TUI.
@@ -304,8 +305,16 @@ func (s *Service) NewCycle(title, objective string) (engine.NewCycleResult, erro
 // PrepareCycle creates an active cycle with empty title/objective; stages come from workflow-config.yml.
 // Called when /hero-new finishes preparing the config file.
 func (s *Service) PrepareCycle() (engine.NewCycleResult, error) {
+	prep, err := workflowconfig.EnsureCurrent(s.ProjectDir)
+	if err != nil {
+		return engine.NewCycleResult{}, fmt.Errorf("prepare current workflow-config.yml: %w", err)
+	}
+	if prep.Created {
+		slog.Info("workflow config prepared for cycle", "path", prep.Path, "source", prep.SourcePath)
+	}
 	res, err := s.Engine.CreateCycleFromConfig(engine.NewCycleOptions{
 		ProjectDir: s.ProjectDir,
+		ConfigPath: prep.Path,
 		DeferMeta:  true,
 	})
 	if err != nil {
@@ -315,6 +324,15 @@ func (s *Service) PrepareCycle() (engine.NewCycleResult, error) {
 		return res, err
 	}
 	return res, nil
+}
+
+// PrepareWorkflowConfig ensures the TUI has a valid current config before it
+// starts the /hero-new Runtime conversation. Existing files are not changed.
+func (s *Service) PrepareWorkflowConfig() (workflowconfig.PreparationResult, error) {
+	if s == nil {
+		return workflowconfig.PreparationResult{}, fmt.Errorf("cycle service is nil")
+	}
+	return workflowconfig.EnsureCurrent(s.ProjectDir)
 }
 
 // SyncCycleConfig updates the active cycle title/objective and still-open stage

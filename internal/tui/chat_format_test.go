@@ -63,6 +63,12 @@ func TestTUIRuntimeCommandPrompt_HeroNewOverrides(t *testing.T) {
 	if !strings.Contains(got, "TUI will call hero cycle new automatically") {
 		t.Fatalf("missing hero-new override: %q", got)
 	}
+	if !strings.Contains(got, "Prepare or update workflow-config.yml") {
+		t.Fatalf("missing config repair instruction: %q", got)
+	}
+	if !strings.Contains(got, "Do NOT run shell/CLI commands yourself") {
+		t.Fatalf("missing TUI shell/CLI boundary: %q", got)
+	}
 	if !strings.Contains(got, tuiHeroNewClosingLine) {
 		t.Fatalf("missing closing line in preamble: %q", got)
 	}

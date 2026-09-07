@@ -1425,6 +1425,70 @@ func TestHeroNewRuntimeConversation(t *testing.T) {
 	}
 }
 
+func TestHeroNewPreparesMissingConfigBeforeRuntimeConversation(t *testing.T) {
+	dir := t.TempDir()
+	commandPath := filepath.Join(dir, ".cursor", "commands", "hero-new.md")
+	if err := os.MkdirAll(filepath.Dir(commandPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(commandPath, []byte("# /hero-new\nPrepare the cycle."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	templatePath := filepath.Join(dir, ".workflow-hero", "templates", "workflow-config.yml")
+	archivePath := filepath.Join(dir, ".workflow-hero", "cycles", "archive", "C9-previous", "workflow-config.yml")
+	for _, path := range []string{filepath.Dir(templatePath), filepath.Dir(archivePath), filepath.Join(dir, ".workflow-hero", "config")} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".workflow-hero", "config", "project.json"), []byte(`{"workflow": {"cycle": 0}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(templatePath, []byte(`title: New
+objective: Objective
+stages:
+  research:
+    enabled: true
+    max_iterations: 1
+    timeout_minutes: 15
+    require_human_approval: false
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(archivePath, []byte(`title: Previous
+objective: Previous
+workflow_config:
+  user_preferred_language: PT-BR
+stages:
+  research:
+    enabled: false
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	h := &streamingHarness{deltas: []string{"prepared"}, sessionID: "new-cycle-sess"}
+	svc.Harness = h
+	m := NewTestModel(svc)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	next, cmd := RunPaletteItemForTest(m, "/hero-new")
+	if cmd == nil || !IsConversationStreaming(next) {
+		t.Fatalf("expected /hero-new stream, cmd=%v streaming=%v", cmd != nil, IsConversationStreaming(next))
+	}
+	currentPath := filepath.Join(dir, ".workflow-hero", "cycles", "current", "workflow-config.yml")
+	data, err := os.ReadFile(currentPath)
+	if err != nil {
+		t.Fatalf("preflight did not create current workflow-config.yml: %v", err)
+	}
+	if !strings.Contains(string(data), "user_preferred_language: PT-BR") {
+		t.Fatalf("preflight did not import archived settings:\n%s", data)
+	}
+}
+
 func newTestServiceInstalledNoCycle(t *testing.T, dir string) *cycle.Service {
 	t.Helper()
 	if err := os.MkdirAll(dir+"/.workflow-hero/cycles/current", 0o755); err != nil {

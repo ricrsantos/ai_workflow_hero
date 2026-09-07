@@ -562,8 +562,12 @@ func mappingValue(mapping *yaml.Node, key string) *yaml.Node {
 }
 
 func writeAtomic(path string, data []byte) error {
+	mode := os.FileMode(0o644)
 	info, err := os.Stat(path)
-	if err != nil {
+	switch {
+	case err == nil:
+		mode = info.Mode().Perm()
+	case !os.IsNotExist(err):
 		return fmt.Errorf("stat workflow-config.yml: %w", err)
 	}
 	dir := filepath.Dir(path)
@@ -573,7 +577,7 @@ func writeAtomic(path string, data []byte) error {
 	}
 	tmpPath := tmp.Name()
 	defer func() { _ = os.Remove(tmpPath) }()
-	if err := tmp.Chmod(info.Mode().Perm()); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("set temporary workflow-config.yml permissions: %w", err)
 	}
