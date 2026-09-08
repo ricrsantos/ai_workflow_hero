@@ -73,7 +73,7 @@ func (m model) clearHarnessHealthWarnings() model {
 }
 
 func (m model) harnessWaitingForResponse() bool {
-	return m.harnessPermissionPending || m.harnessQuestionPending
+	return len(m.harnessPermissionRequests) > 0 || m.harnessPermissionPending || m.harnessQuestionPending
 }
 
 func (m model) handleHarnessHealthProbe() (model, tea.Cmd) {

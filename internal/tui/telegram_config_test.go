@@ -72,7 +72,7 @@ func TestTelegramConfigWizardRoutesInputsAndKeepsDraft(t *testing.T) {
 		},
 	}
 
-	for _, input := range []string{"New title", "New objective", "PT-BR", "1,2", "3", "2"} {
+	for _, input := range []string{"New title", "New objective", "PT-BR", "1,2", "3", "1", "2"} {
 		next, cmd := m.handleTelegramInbound(telegramInboundMsg{text: input, address: "proj"})
 		m = next
 		if cmd != nil {
@@ -99,8 +99,60 @@ func TestTelegramConfigWizardRoutesInputsAndKeepsDraft(t *testing.T) {
 	if !wizard.draft.Stages["implementation"].Enabled {
 		t.Fatal("implementation stage should be enabled by the selected stage set")
 	}
+	if !wizard.draft.Stages["implementation"].RequireHumanApproval {
+		t.Fatal("implementation approval should be enabled by the approval answer")
+	}
 	if len(outbound) == 0 || !strings.Contains(outbound[len(outbound)-1], "Salvar configuração") {
 		t.Fatalf("summary was not sent: %q", outbound)
+	}
+}
+
+func TestTelegramConfigApprovalReviewAsksEveryEnabledStage(t *testing.T) {
+	var outbound []string
+	m := NewTestModel(nil)
+	m.telegram = &telegramState{
+		connected:      true,
+		recordOutbound: func(text string) { outbound = append(outbound, text) },
+		configWizard: &telegramConfigWizard{
+			address: "proj",
+			draft: workflowconfig.ManagedConfig{
+				Stages: map[string]workflowconfig.ManagedStage{
+					"research": {Enabled: true, RequireHumanApproval: false},
+					"planning": {Enabled: false, RequireHumanApproval: true},
+					"qa":       {Enabled: true, RequireHumanApproval: true},
+				},
+			},
+		},
+	}
+
+	next, _ := m.beginTelegramConfigStageApprovalReview()
+	if next.telegram.configWizard.step != telegramConfigStageApproval {
+		t.Fatalf("step=%q want stage approval", next.telegram.configWizard.step)
+	}
+	if !strings.Contains(outbound[len(outbound)-1], "Research") || !strings.Contains(outbound[len(outbound)-1], "1 - Sim") {
+		t.Fatalf("first approval prompt=%q", outbound[len(outbound)-1])
+	}
+
+	next, _ = next.handleTelegramConfigInput("proj", "1")
+	if next.telegram.configWizard.step != telegramConfigStageApproval {
+		t.Fatalf("after first answer step=%q want next stage approval", next.telegram.configWizard.step)
+	}
+	if !strings.Contains(outbound[len(outbound)-1], "Qa") {
+		t.Fatalf("second approval prompt=%q", outbound[len(outbound)-1])
+	}
+
+	next, _ = next.handleTelegramConfigInput("proj", "2")
+	if next.telegram.configWizard.step != telegramConfigModelsQuestion {
+		t.Fatalf("after all approval answers step=%q want models question", next.telegram.configWizard.step)
+	}
+	if !next.telegram.configWizard.draft.Stages["research"].RequireHumanApproval {
+		t.Fatal("research approval should be enabled")
+	}
+	if next.telegram.configWizard.draft.Stages["qa"].RequireHumanApproval {
+		t.Fatal("qa approval should be disabled")
+	}
+	if next.telegram.configWizard.draft.Stages["planning"].RequireHumanApproval != true {
+		t.Fatal("disabled planning approval must remain unchanged")
 	}
 }
 
@@ -147,6 +199,10 @@ func TestTelegramConfigModelSelectionUpdatesDraftOnly(t *testing.T) {
 						Model:           "old-model",
 						ReasoningEffort: "medium",
 						Thinking:        "off",
+						Subagent: workflowconfig.SubagentConfig{
+							SameOfAgent: false,
+							Model:       "old-subagent-model",
+						},
 					},
 				},
 				FallbackModel: workflowconfig.AgentModelConfig{Harness: "cursor", Model: "fallback"},
@@ -170,6 +226,9 @@ func TestTelegramConfigModelSelectionUpdatesDraftOnly(t *testing.T) {
 	agent := next.telegram.configWizard.draft.Agents["orchestration_agent"]
 	if agent.Harness != "cursor" || agent.Model != "full/model" || !agent.EnableFastModel || agent.Thinking != "max" || agent.ReasoningEffort != "high" {
 		t.Fatalf("updated agent=%+v", agent)
+	}
+	if !agent.Subagent.SameOfAgent {
+		t.Fatalf("changing the parent model must reset the subagent to the parent model: %+v", agent.Subagent)
 	}
 	if next.telegram.modelSelection != nil {
 		t.Fatal("model selection must be cleared after updating the draft")

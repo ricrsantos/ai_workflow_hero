@@ -19,6 +19,7 @@ const (
 	telegramConfigLanguage       telegramConfigWizardStep = "language"
 	telegramConfigScope          telegramConfigWizardStep = "scope"
 	telegramConfigStages         telegramConfigWizardStep = "stages"
+	telegramConfigStageApproval  telegramConfigWizardStep = "stage-approval"
 	telegramConfigModelsQuestion telegramConfigWizardStep = "models-question"
 	telegramConfigModelChoice    telegramConfigWizardStep = "model-choice"
 	telegramConfigSubagentChoice telegramConfigWizardStep = "subagent-choice"
@@ -66,7 +67,10 @@ type telegramConfigWizard struct {
 
 	modelTargets []telegramConfigModelTarget
 	modelIndex   int
-	saving       bool
+
+	approvalStages []string
+	approvalIndex  int
+	saving         bool
 }
 
 type telegramConfigLoadedMsg struct {
@@ -359,8 +363,27 @@ func (m model) handleTelegramConfigInput(address, text string) (model, tea.Cmd) 
 				w.draft.Stages[name] = stage
 			}
 		}
-		w.step = telegramConfigModelsQuestion
-		return m, m.telegramOutboundCmd(m.telegramConfigPrompt())
+		return m.beginTelegramConfigStageApprovalReview()
+
+	case telegramConfigStageApproval:
+		stageName, ok := w.currentApprovalStage()
+		if !ok {
+			return m.beginTelegramConfigStageApprovalReview()
+		}
+		stage := w.draft.Stages[stageName]
+		switch {
+		case telegramConfigYes(trimmed):
+			stage.RequireHumanApproval = true
+		case telegramConfigNo(trimmed):
+			stage.RequireHumanApproval = false
+		case telegramConfigKeep(trimmed):
+			// Keep the value already present in the draft.
+		default:
+			return m, m.telegramConfigInvalid("Responda 1 para exigir aprovação humana, 2 para não exigir ou 3 para manter a configuração atual.")
+		}
+		w.draft.Stages[stageName] = stage
+		w.approvalIndex++
+		return m.telegramConfigStageApprovalPrompt()
 
 	case telegramConfigModelsQuestion:
 		if telegramConfigYes(trimmed) {
@@ -425,6 +448,8 @@ func (m model) telegramConfigPrompt() string {
 		return telegramConfigScopePrompt(w.draft.Scope)
 	case telegramConfigStages:
 		return telegramConfigStagesPrompt(w.draft)
+	case telegramConfigStageApproval:
+		return m.telegramConfigStageApprovalText()
 	case telegramConfigModelsQuestion:
 		return "Deseja revisar os harnesses e modelos dos agentes do ciclo?\n\n1 - Escolher pelo wizard remoto\n2 - Manter os modelos atuais"
 	case telegramConfigModelChoice:
@@ -468,8 +493,75 @@ func telegramConfigStagesPrompt(cfg workflowconfig.ManagedConfig) string {
 		}
 		fmt.Fprintf(&b, "%d - [%s] %s\n", i+1, marker, configStageLabel(name))
 	}
-	b.WriteString("\nEnvie os números separados por vírgula ou responda 'manter'. Os budgets e aprovações atuais serão preservados.")
+	b.WriteString("\nEnvie os números separados por vírgula ou responda 'manter'. Depois, o wizard perguntará a aprovação humana de cada etapa habilitada.")
 	return b.String()
+}
+
+func (m model) beginTelegramConfigStageApprovalReview() (model, tea.Cmd) {
+	w := m.telegram.configWizard
+	if w == nil {
+		return m, nil
+	}
+	w.approvalStages = telegramConfigEnabledStageNames(w.draft)
+	w.approvalIndex = 0
+	if len(w.approvalStages) == 0 {
+		w.step = telegramConfigModelsQuestion
+		return m, m.telegramOutboundCmd(m.telegramConfigPrompt())
+	}
+	w.step = telegramConfigStageApproval
+	return m.telegramConfigStageApprovalPrompt()
+}
+
+func telegramConfigEnabledStageNames(cfg workflowconfig.ManagedConfig) []string {
+	names := make([]string, 0, len(telegramConfigStageOrder))
+	for _, name := range telegramConfigStageOrder {
+		if stage, ok := cfg.Stages[name]; ok && stage.Enabled {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func (w *telegramConfigWizard) currentApprovalStage() (string, bool) {
+	if w == nil || w.approvalIndex < 0 || w.approvalIndex >= len(w.approvalStages) {
+		return "", false
+	}
+	return w.approvalStages[w.approvalIndex], true
+}
+
+func (m model) telegramConfigStageApprovalPrompt() (model, tea.Cmd) {
+	w := m.telegram.configWizard
+	stageName, ok := w.currentApprovalStage()
+	if !ok {
+		w.step = telegramConfigModelsQuestion
+		return m, m.telegramOutboundCmd(m.telegramConfigPrompt())
+	}
+	return m, m.telegramOutboundCmd(m.telegramConfigStageApprovalTextFor(stageName))
+}
+
+func (m model) telegramConfigStageApprovalText() string {
+	w := m.telegram.configWizard
+	stageName, ok := w.currentApprovalStage()
+	if !ok {
+		return ""
+	}
+	return m.telegramConfigStageApprovalTextFor(stageName)
+}
+
+func (m model) telegramConfigStageApprovalTextFor(stageName string) string {
+	w := m.telegram.configWizard
+	stage, ok := w.draft.Stages[stageName]
+	if !ok {
+		return ""
+	}
+	current := "não"
+	if stage.RequireHumanApproval {
+		current = "sim"
+	}
+	return fmt.Sprintf(
+		"A etapa %s precisa de aprovação humana?\nConfiguração atual: %s\n\n1 - Sim\n2 - Não\n3 - Manter a configuração atual",
+		configStageLabel(stageName), current,
+	)
 }
 
 func (m model) beginTelegramConfigModelReview() (model, tea.Cmd) {

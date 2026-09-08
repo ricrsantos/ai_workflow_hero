@@ -8,7 +8,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/telegram/ipc"
+)
+
+const (
+	telegramInterruptCommand         = "/interrupt"
+	telegramHarnessPermissionCommand = "/hero-permission"
 )
 
 // telegramOriginLabel renders the directional transcript label for a
@@ -45,13 +51,15 @@ func (m model) handleTelegramMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.telegram.connected = true
 		m.telegram.retrying = false
 		m.telegram.daemonErr = ""
-		return m, m.ensureTimerLoop()
+		m, notificationCmd := m.flushPendingTelegramNotifications()
+		return m, combineTimerCmds(notificationCmd, m.ensureTimerLoop())
 
 	case telegramRegisteredMsg:
 		m.telegram.address = msg.address
 		m.telegram.paired = msg.paired
 		slog.Info("telegram client registered", "address", msg.address, "paired", msg.paired)
-		return m, m.ensureTimerLoop()
+		m, notificationCmd := m.flushPendingTelegramNotifications()
+		return m, combineTimerCmds(notificationCmd, m.ensureTimerLoop())
 
 	case telegramDisconnectedMsg:
 		wasConnected := m.telegram.connected
@@ -65,7 +73,9 @@ func (m model) handleTelegramMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case telegramEventMsg:
-		return m.handleTelegramEvent(msg), nil
+		m = m.handleTelegramEvent(msg)
+		m, notificationCmd := m.flushPendingTelegramNotifications()
+		return m, notificationCmd
 
 	case telegramInboundMsg:
 		return m.handleTelegramInbound(msg)
@@ -124,6 +134,17 @@ func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 	if strings.EqualFold(strings.TrimSpace(msg.text), telegramStatusCommand) {
 		return m, combineTimerCmds(ack, m.telegramOutboundCmd(m.telegramStatusText(time.Now())))
 	}
+	if strings.EqualFold(strings.TrimSpace(msg.text), telegramInterruptCommand) {
+		next, cmd := m.handleTelegramInterrupt()
+		return next, combineTimerCmds(ack, cmd)
+	}
+	if permissionID, approved, matched, valid := parseTelegramHarnessPermission(msg.text); matched {
+		if !valid {
+			return m, combineTimerCmds(ack, m.telegramOutboundCmd("Use /hero-permission <id> allow or /hero-permission <id> deny."))
+		}
+		next, cmd := m.handleTelegramHarnessPermission(msg, permissionID, approved)
+		return next, combineTimerCmds(ack, cmd)
+	}
 	if next, cmd, handled := m.handleTelegramConfigCommand(msg.text, msg.address); handled {
 		return next, combineTimerCmds(ack, cmd)
 	}
@@ -165,6 +186,132 @@ func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 		next, cmd = m.submitRemoteTurn(msg.text, origin)
 	}
 	return next, combineTimerCmds(ack, cmd)
+}
+
+// handleTelegramInterrupt mirrors the active-process branch of Chat's Esc
+// handling. It cancels every in-flight Execute, including concurrent stage
+// executions, without sending the command through a harness turn.
+func (m model) handleTelegramInterrupt() (model, tea.Cmd) {
+	if m.heroStartBootstrapping || m.heroStartPreparing {
+		next, cmd := m.cancelHeroStartPreparation()
+		return next, combineTimerCmds(cmd, next.telegramOutboundCmd("Interrupted."))
+	}
+	if m.streaming {
+		return m, combineTimerCmds(m.cancelStreamCmd(), m.telegramOutboundCmd("Interrupt requested."))
+	}
+	return m, m.telegramOutboundCmd("No process is running.")
+}
+
+func parseTelegramHarnessPermission(text string) (id string, approved, matched, valid bool) {
+	fields := strings.Fields(text)
+	if len(fields) == 0 || !strings.EqualFold(fields[0], telegramHarnessPermissionCommand) {
+		return "", false, false, false
+	}
+	if len(fields) != 3 {
+		return "", false, true, false
+	}
+	id = strings.TrimSpace(fields[1])
+	if id == "" {
+		return "", false, true, false
+	}
+	switch strings.ToLower(strings.TrimSpace(fields[2])) {
+	case "allow":
+		return id, true, true, true
+	case "deny":
+		return id, false, true, true
+	default:
+		return "", false, true, false
+	}
+}
+
+func (m model) handleTelegramHarnessPermission(msg telegramInboundMsg, id string, approved bool) (model, tea.Cmd) {
+	if m.telegram != nil && strings.TrimSpace(m.telegram.address) != "" &&
+		strings.TrimSpace(msg.address) != "" && !strings.EqualFold(m.telegram.address, msg.address) {
+		return m, m.telegramOutboundCmd("Permission response rejected: this Telegram instance is no longer the active target.")
+	}
+	if !m.hasHarnessPermission(id) {
+		return m, m.telegramOutboundCmd(fmt.Sprintf("No pending harness permission matches %q. It may have expired or been interrupted.", id))
+	}
+	reason := ""
+	if !approved {
+		reason = "telegram denied"
+	}
+	m = m.replyHarnessPermissionID(id, approved, reason)
+	decision := "denied"
+	if approved {
+		decision = "allowed"
+	}
+	return m, m.telegramOutboundCmd(fmt.Sprintf("Harness permission %s %s.", id, decision))
+}
+
+func telegramHarnessPermissionText(req harness.PermissionRequest) string {
+	id := strings.TrimSpace(req.ID)
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = "Harness permission"
+	}
+	description := strings.TrimSpace(req.Description)
+	if len([]rune(description)) > 1600 {
+		description = string([]rune(description)[:1600]) + "…"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Harness permission requested: %s", title)
+	if description != "" {
+		fmt.Fprintf(&b, "\n%s", description)
+	}
+	if id == "" {
+		b.WriteString("\nThis request has no remote id; answer it in the TUI with y/n.")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "\nID: %s\nReply /hero-permission %s allow or /hero-permission %s deny.", id, id, id)
+	return b.String()
+}
+
+func (m model) telegramHarnessPermissionCmd(req harness.PermissionRequest) (model, tea.Cmd) {
+	if m.telegram == nil {
+		return m, nil
+	}
+	if !m.telegram.connected || !m.telegram.paired {
+		id := harnessPermissionKey(req)
+		for _, pending := range m.pendingHarnessPermissionNotices {
+			if harnessPermissionKey(pending) == id {
+				return m, nil
+			}
+		}
+		m.pendingHarnessPermissionNotices = append(m.pendingHarnessPermissionNotices, req)
+		return m, nil
+	}
+	return m, m.telegramOutboundCmd(telegramHarnessPermissionText(req))
+}
+
+func (m model) removePendingHarnessPermissionNotice(id string) model {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return m
+	}
+	filtered := m.pendingHarnessPermissionNotices[:0]
+	for _, req := range m.pendingHarnessPermissionNotices {
+		if harnessPermissionKey(req) != id {
+			filtered = append(filtered, req)
+		}
+	}
+	m.pendingHarnessPermissionNotices = filtered
+	return m
+}
+
+func (m model) flushPendingHarnessPermissionNotices() (model, tea.Cmd) {
+	if m.telegram == nil || !m.telegram.connected || !m.telegram.paired || len(m.pendingHarnessPermissionNotices) == 0 {
+		return m, nil
+	}
+	notices := m.pendingHarnessPermissionNotices
+	m.pendingHarnessPermissionNotices = nil
+	cmds := make([]tea.Cmd, 0, len(notices))
+	for _, req := range notices {
+		if text := telegramHarnessPermissionText(req); text != "" {
+			cmds = append(cmds, m.telegramOutboundCmd(text))
+		}
+	}
+	return m, combineTimerCmds(cmds...)
 }
 
 func (m model) telegramAckCmd(inboundID string) tea.Cmd {

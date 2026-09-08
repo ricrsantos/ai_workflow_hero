@@ -138,12 +138,15 @@ const (
 // Event is a lifecycle notification payload. It carries only cycle/stage
 // identity and a message; it never carries stream, thinking, or tool content.
 type Event struct {
-	Kind       EventKind
-	CycleID    int64
-	CycleTitle string
-	StageName  string
-	Message    string
-	Timestamp  time.Time
+	// EventID is the append-only SQLite event id. It is used by local relays to
+	// de-duplicate a notification when a process reconnects or retries delivery.
+	EventID    int64     `json:"event_id,omitempty"`
+	Kind       EventKind `json:"kind"`
+	CycleID    int64     `json:"cycle_id"`
+	CycleTitle string    `json:"cycle_title,omitempty"`
+	StageName  string    `json:"stage_name,omitempty"`
+	Message    string    `json:"message,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 // Notifier receives lifecycle events. Subscribers (TUI transcript, Telegram

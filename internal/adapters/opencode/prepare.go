@@ -38,6 +38,7 @@ func PrepareHeroStartWithAdapter(ctx context.Context, projectDir string, st *sto
 	if !installHarnessEnabled(hero, adapterName) {
 		return nil
 	}
+	profile := install.HarnessPermissionProfile(hero, adapterName)
 
 	for _, name := range agents {
 		agentCfg, ok := cfg.Agents[name]
@@ -49,16 +50,17 @@ func PrepareHeroStartWithAdapter(ctx context.Context, projectDir string, st *sto
 		}
 	}
 
-	if err := adapter.ResetServe(ctx); err != nil {
+	if err := adapter.ResetServeWithProfile(ctx, profile); err != nil {
 		return fmt.Errorf("reset opencode serve: %w", err)
 	}
 
 	probeAgent := agents[0]
 	_, err = adapter.Execute(ctx, harness.ExecuteRequest{
-		ProjectDir: projectDir,
-		AgentName:  probeAgent,
-		Prompt:     heroStartProbePrompt,
-		Stream:     false,
+		ProjectDir:        projectDir,
+		AgentName:         probeAgent,
+		Prompt:            heroStartProbePrompt,
+		Stream:            false,
+		PermissionProfile: profile,
 	})
 	if err != nil {
 		return fmt.Errorf(

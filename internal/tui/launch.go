@@ -20,6 +20,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/logrotate"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
+	"github.com/ricrsantos/ai_workflow_hero/internal/lifecycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -75,6 +76,16 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 		slog.Info("starting hero tui")
 	}
 
+	// Create the child-process lifecycle endpoint before any managed process is
+	// stopped on exit, so teardown happens in the order: harnesses, Telegram,
+	// then relay socket.
+	eventRelay, relayErr := lifecycle.NewRelay(svc.ProjectDir)
+	if relayErr != nil {
+		slog.Warn("start lifecycle event relay failed", "error", relayErr)
+	} else {
+		defer eventRelay.Close()
+	}
+
 	var stopOnce sync.Once
 	stopManaged := func() {
 		stopOnce.Do(func() {
@@ -115,9 +126,23 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 	// Wire the optional Telegram plugin client (no-op without the plugin).
 	m = m.startTelegram("")
 	defer m.stopTelegram()
+	if eventRelay != nil {
+		if svc.Registry != nil {
+			if adapter, adapterErr := svc.Registry.Adapter("opencode"); adapterErr == nil {
+				if opencode, ok := adapter.(*opencodeadapter.Adapter); ok {
+					if socketErr := opencode.SetLifecycleEventSocket(context.Background(), eventRelay.Path()); socketErr != nil {
+						slog.Warn("configure opencode lifecycle event relay failed", "error", socketErr)
+					}
+				}
+			}
+		}
+	}
 	err := opencodeadapter.RunServeWatchdog(context.Background(), svc.ProjectDir, svc.Store, func() error {
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		relayTelegramMsgs(p, m.telegramMsgCh)
+		if eventRelay != nil {
+			relayLifecycleEvents(p, eventRelay.Events())
+		}
 		_, runErr := p.Run()
 		return runErr
 	})

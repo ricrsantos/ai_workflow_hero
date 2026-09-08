@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
@@ -192,6 +193,45 @@ func TestTransitionsApproveRejectCancelFinishContinue(t *testing.T) {
 			e, s := openTestEngine(t)
 			tt.run(t, e, s)
 		})
+	}
+}
+
+func TestLifecycleNotificationsCarryAppendOnlyEventIDs(t *testing.T) {
+	e, s := openTestEngine(t)
+	var notifications []conversation.Event
+	e.Notifier = conversation.NotifyFunc(func(event conversation.Event) {
+		notifications = append(notifications, event)
+	})
+	id := seedCycle(t, s, true)
+	if err := e.StartStage(id, "qa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.CloseStage(id, "qa", StageCloseInput{Summary: "ready"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(notifications) != 2 {
+		t.Fatalf("notifications=%+v", notifications)
+	}
+	for _, notification := range notifications {
+		if notification.EventID <= 0 {
+			t.Fatalf("notification missing event id: %+v", notification)
+		}
+	}
+	events, err := s.ListEvents(id, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, notification := range notifications {
+		found := false
+		for _, event := range events {
+			if event.ID == notification.EventID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("event id %d was not persisted", notification.EventID)
+		}
 	}
 }
 

@@ -10,6 +10,7 @@
 | ADR-062 | Pair one chat and isolate all Telegram credentials in the OS vault | Proposed |
 | ADR-063 | Addressed instances, durable queue, and remote queue cancellation | Proposed |
 | ADR-064 | Project and daemon rotating logs with managed ignore migration | Proposed |
+| ADR-065 | Relay child CLI lifecycle events and correlate native permissions | Proposed |
 
 ## ADR-059: Telegram ships as an optional official plugin with a local daemon
 
@@ -60,3 +61,32 @@
 **Decision:** Move project log output to `.workflow-hero/logs/tui.log`, rotating after 10 MB and retaining at most ten files. Maintain an independently rotating daemon log in `~/.workflow-hero/logs/` with the same policy. Install/upgrade safely migrate the old log path and maintain a Hero-owned `.gitignore` rule for `.workflow-hero/logs/`.
 
 **Consequences:** The project log path changes but user `.gitignore` content is preserved. Log serializers must redact tokens and chat ids before any write, including errors and debug diagnostics.
+
+## ADR-065: Relay child CLI lifecycle events and correlate native permissions
+
+**Context:** The TUI can install a `conversation.Notifier` on its own
+`cycle.Engine`, but Runtime prompts commonly execute `hero stage close` and
+other CLI-as-API commands in a child process. That child opens a new service,
+so its append-only SQLite event is persisted without reaching the parent TUI
+notifier. Separately, a harness-native permission prompt blocks an Execute
+callback; treating it as a cycle approval loses the request identity and gives
+Telegram no safe way to answer it.
+
+**Decision:** The owning TUI creates a private per-process Unix socket and
+passes its path to the long-lived OpenCode `serve` child through
+`HERO_LIFECYCLE_EVENT_SOCKET`. CLI services inherit the variable and install a
+best-effort notifier that sends the transport-neutral lifecycle event, including
+its SQLite event id, to the socket. The TUI de-duplicates by event id and
+forwards only the existing filtered lifecycle messages to Telegram. SQLite
+remains the audit source; the TUI does not poll it for live delivery. Native
+harness permissions remain a separate keyed gate: the TUI forwards the request
+id and accepts only `/hero-permission <id> allow|deny`, while local `y`/`n` and
+`Esc` cancellation continue to work.
+
+**Consequences:** Stage approvals emitted by a `hero` child reach the owning
+TUI without importing Telegram concerns into the engine or daemon. Delivery is
+best-effort during process shutdown or an unavailable Telegram connection, with
+short-lived TUI-side buffering until pairing returns. OpenCode serve is
+restarted when its lifecycle endpoint changes so descendants cannot retain an
+old endpoint. The relay is local-only and supported on the Linux/macOS target
+platforms; it is not a distributed event bus.

@@ -25,6 +25,25 @@ import (
 
 const adapterName = "opencode"
 
+// permissionProfileContextKey keeps the selected Hero profile attached to one
+// Execute call. Recovery helpers may restart serve or retry HTTP requests after
+// a disconnect; they must not fall back to the conservative default and
+// silently replace an active Yolo process with an ask process.
+type permissionProfileContextKey struct{}
+
+func withPermissionProfile(ctx context.Context, profile harness.PermissionProfile) context.Context {
+	return context.WithValue(ctx, permissionProfileContextKey{}, harness.NormalizePermissionProfile(profile))
+}
+
+func permissionProfileFromContext(ctx context.Context) harness.PermissionProfile {
+	if ctx != nil {
+		if profile, ok := ctx.Value(permissionProfileContextKey{}).(harness.PermissionProfile); ok {
+			return harness.NormalizePermissionProfile(profile)
+		}
+	}
+	return harness.PermissionProfileAsk
+}
+
 // ServeResetDelay is the pause between stopping and restarting opencode serve
 // so .opencode/agents definition changes are picked up.
 const ServeResetDelay = 2 * time.Second
@@ -148,16 +167,17 @@ type Adapter struct {
 	HTTP            HTTPDoer
 	ResolveServeURL ServeURLResolver
 
-	mu              sync.Mutex
-	serveStartMu    sync.Mutex
-	baseURL         string
-	servePID        int
-	servePort       int
-	serveHandle     ProcessHandle
-	serveProfile    harness.PermissionProfile
-	serveGeneration int
-	sessions        map[string]*sessionState
-	cancels         map[string]context.CancelFunc
+	mu                   sync.Mutex
+	serveStartMu         sync.Mutex
+	baseURL              string
+	servePID             int
+	servePort            int
+	serveHandle          ProcessHandle
+	serveProfile         harness.PermissionProfile
+	serveGeneration      int
+	lifecycleEventSocket string
+	sessions             map[string]*sessionState
+	cancels              map[string]context.CancelFunc
 }
 
 type sessionState struct {
@@ -205,6 +225,28 @@ func (a *Adapter) cliPath() (string, error) {
 	return look("opencode")
 }
 
+// SetLifecycleEventSocket configures the private TUI endpoint inherited by
+// OpenCode's child processes. A currently running serve is restarted so its
+// environment cannot keep using a stale or missing endpoint.
+func (a *Adapter) SetLifecycleEventSocket(ctx context.Context, path string) error {
+	path = strings.TrimSpace(path)
+	a.mu.Lock()
+	changed := a.lifecycleEventSocket != path
+	active := a.baseURL != "" || a.servePID > 0 || a.serveHandle != nil
+	a.lifecycleEventSocket = path
+	a.mu.Unlock()
+	if !changed {
+		return nil
+	}
+	if !active && path != "" {
+		active = a.HasManagedServe(ctx)
+	}
+	if active {
+		return a.StopServe(ctx)
+	}
+	return nil
+}
+
 // CreateSession implements harness.HarnessAdapter.
 func (a *Adapter) CreateSession(ctx context.Context, req harness.SessionRequest) (*harness.Session, error) {
 	if err := a.ensureServe(ctx); err != nil {
@@ -248,6 +290,7 @@ func (a *Adapter) ResumeSession(ctx context.Context, sessionID string) error {
 // Execute implements harness.HarnessAdapter.
 func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*harness.ExecutionResult, error) {
 	req = harness.NormalizeExecuteRequest(req)
+	ctx = withPermissionProfile(ctx, req.PermissionProfile)
 	if err := a.ensureServeWithProfile(ctx, req.PermissionProfile); err != nil {
 		return nil, err
 	}
@@ -403,7 +446,7 @@ func (a *Adapter) Cancel(ctx context.Context, sessionID string) error {
 }
 
 func (a *Adapter) abortSession(ctx context.Context, sessionID, projectDir string) error {
-	if err := a.ensureServe(ctx); err != nil {
+	if err := a.ensureServeWithProfile(ctx, permissionProfileFromContext(ctx)); err != nil {
 		return err
 	}
 	resp, err := a.postProject(ctx, projectDir, "/session/"+sessionID+"/abort", nil)
@@ -480,6 +523,12 @@ func (a *Adapter) ListModels(ctx context.Context) ([]string, error) {
 // ResetServe stops managed opencode serve, waits ServeResetDelay, and starts a
 // fresh serve so .opencode/agents definition changes are loaded.
 func (a *Adapter) ResetServe(ctx context.Context) error {
+	return a.ResetServeWithProfile(ctx, harness.PermissionProfileAsk)
+}
+
+// ResetServeWithProfile resets managed serve while retaining the requested
+// native permission profile for the process that follows.
+func (a *Adapter) ResetServeWithProfile(ctx context.Context, profile harness.PermissionProfile) error {
 	if err := a.StopServe(ctx); err != nil {
 		return err
 	}
@@ -494,7 +543,7 @@ func (a *Adapter) ResetServe(ctx context.Context) error {
 		return ctx.Err()
 	case <-timer.C:
 	}
-	return a.ensureServe(ctx)
+	return a.ensureServeWithProfile(ctx, profile)
 }
 
 // StopServe stops managed serve children and clears registry rows.
@@ -573,7 +622,16 @@ func (a *Adapter) clearStaleServeBinding(ctx context.Context) {
 }
 
 func (a *Adapter) ensureServe(ctx context.Context) error {
-	return a.ensureServeWithProfile(ctx, harness.PermissionProfileAsk)
+	// Public helpers historically default to ask, but an active Execute may
+	// call Cancel/abort through this path. Preserve the profile of that running
+	// serve instead of downgrading it just before the abort request.
+	a.mu.Lock()
+	profile := harness.PermissionProfileAsk
+	if a.baseURL != "" {
+		profile = harness.NormalizePermissionProfile(a.serveProfile)
+	}
+	a.mu.Unlock()
+	return a.ensureServeWithProfile(ctx, profile)
 }
 
 func (a *Adapter) ensureServeWithProfile(ctx context.Context, profile harness.PermissionProfile) error {
@@ -713,7 +771,7 @@ func (a *Adapter) resumeSession(ctx context.Context, sessionID, projectDir strin
 	if strings.TrimSpace(sessionID) == "" {
 		return fmt.Errorf("session id required")
 	}
-	if err := a.ensureServe(ctx); err != nil {
+	if err := a.ensureServeWithProfile(ctx, permissionProfileFromContext(ctx)); err != nil {
 		return err
 	}
 	dir := strings.TrimSpace(projectDir)
@@ -761,7 +819,7 @@ func (a *Adapter) do(ctx context.Context, method, path string, body []byte) (*ht
 	if err != nil && isServeConnectionError(err) {
 		a.log().Warn("opencode api connection failed; retrying after serve recovery", "path", path, "error", err)
 		a.clearStaleServeBinding(ctx)
-		if ensureErr := a.ensureServe(ctx); ensureErr != nil {
+		if ensureErr := a.ensureServeWithProfile(ctx, permissionProfileFromContext(ctx)); ensureErr != nil {
 			return nil, err
 		}
 		a.mu.Lock()
@@ -803,7 +861,7 @@ func (a *Adapter) subscribeEvents(ctx context.Context, projectDir string) (io.Re
 	if err != nil && isServeConnectionError(err) {
 		a.log().Warn("opencode event subscribe failed; retrying after serve recovery", "error", err)
 		a.clearStaleServeBinding(ctx)
-		if ensureErr := a.ensureServe(ctx); ensureErr != nil {
+		if ensureErr := a.ensureServeWithProfile(ctx, permissionProfileFromContext(ctx)); ensureErr != nil {
 			return nil, err
 		}
 		return a.subscribeEventsOnce(ctx, projectDir)

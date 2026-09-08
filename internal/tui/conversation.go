@@ -81,8 +81,15 @@ type conversationBatchMsg struct {
 }
 
 type harnessPermissionRequestMsg struct {
-	req    harness.PermissionRequest
-	respCh chan harness.PermissionResponse
+	executeID string
+	req       harness.PermissionRequest
+	respCh    chan harness.PermissionResponse
+}
+
+type pendingHarnessPermission struct {
+	executeID string
+	req       harness.PermissionRequest
+	respCh    chan harness.PermissionResponse
 }
 
 type executeDoneMsg struct {
@@ -1350,6 +1357,8 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 	if svc != nil {
 		if hero, err := install.LoadHeroJSON(projectDir); err == nil {
 			profile = install.HarnessPermissionProfile(hero, pair.HarnessID)
+		} else {
+			slog.Warn("could not load hero.json permission profile; using ask", "harness", pair.HarnessID, "error", err)
 		}
 	}
 	req := harness.ExecuteRequest{
@@ -1372,7 +1381,7 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 		OnPermissionRequest: func(ctx context.Context, perm harness.PermissionRequest) (harness.PermissionResponse, error) {
 			respCh := make(chan harness.PermissionResponse, 1)
 			select {
-			case relay.out <- harnessPermissionRequestMsg{req: perm, respCh: respCh}:
+			case relay.out <- harnessPermissionRequestMsg{executeID: executeID, req: perm, respCh: respCh}:
 			case <-ctx.Done():
 				return harness.PermissionResponse{}, ctx.Err()
 			case <-relay.ctx.Done():
@@ -1624,16 +1633,15 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case harnessPermissionRequestMsg:
 		m = m.clearHarnessHealthWarnings()
 		m.harnessWatchdog.Pause(time.Now())
-		m.harnessPermissionPending = true
-		m.harnessPermissionReq = msg.req
-		m.harnessPermissionRespCh = msg.respCh
-		m.harnessPermissionMsg = formatHarnessPermission(msg.req)
+		m = m.trackHarnessPermission(msg)
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessPermissionMsg})
 		m = m.restartAIResponseTimer(time.Now())
+		var permissionCmd tea.Cmd
+		m, permissionCmd = m.telegramHarnessPermissionCmd(msg.req)
 		if m.streaming && m.convStreamCh != nil {
-			return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
+			return m, combineTimerCmds(permissionCmd, waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
 		}
-		return m, m.ensureTimerLoop()
+		return m, combineTimerCmds(permissionCmd, m.ensureTimerLoop())
 
 	case harnessQuestionRequestMsg:
 		m = m.clearHarnessHealthWarnings()
@@ -1752,7 +1760,10 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			usage := harness.ResolveUsage(msg.result.Usage, promptForUsage, msg.result.Output)
 			if sessionUsageAllowed {
-				m.contextUsedTokens += usage.InputTokens + usage.OutputTokens
+				// A turn's input usage already represents the context sent for that
+				// request. Summing it across resumed turns counts prior history again
+				// and makes the context window appear to fill too quickly.
+				m.contextUsedTokens = usage.InputTokens + usage.OutputTokens
 			}
 			// Cycle metrics record tokens actually consumed by the stage even if
 			// a harness reset invalidated this completion for the new Chat-session
@@ -2089,23 +2100,129 @@ func formatHarnessPermission(req harness.PermissionRequest) string {
 	return fmt.Sprintf("Harness permission: %s. Allow? [y/N]", title)
 }
 
-func (m model) clearHarnessPermission() model {
-	if m.harnessPermissionPending && m.harnessPermissionRespCh != nil {
-		m.harnessPermissionRespCh <- harness.PermissionResponse{Approved: false, Reason: "cancelled"}
+func harnessPermissionKey(req harness.PermissionRequest) string {
+	return strings.TrimSpace(req.ID)
+}
+
+func sendHarnessPermissionResponse(ch chan harness.PermissionResponse, response harness.PermissionResponse) {
+	if ch == nil {
+		return
 	}
-	m.harnessPermissionPending = false
-	m.harnessPermissionMsg = ""
-	m.harnessPermissionRespCh = nil
-	m.harnessWatchdog.Resume(time.Now())
+	// Callback channels are buffered, but a stale/duplicate prompt must never
+	// make Bubble Tea's Update loop block behind a harness goroutine.
+	select {
+	case ch <- response:
+	default:
+	}
+}
+
+func (m model) trackHarnessPermission(msg harnessPermissionRequestMsg) model {
+	if m.harnessPermissionRequests == nil {
+		m.harnessPermissionRequests = make(map[string]pendingHarnessPermission)
+	}
+	key := harnessPermissionKey(msg.req)
+	if previous, exists := m.harnessPermissionRequests[key]; exists && previous.respCh != msg.respCh {
+		sendHarnessPermissionResponse(previous.respCh, harness.PermissionResponse{Approved: false, Reason: "superseded"})
+	}
+	if _, exists := m.harnessPermissionRequests[key]; !exists {
+		m.harnessPermissionOrder = append(m.harnessPermissionOrder, key)
+	}
+	m.harnessPermissionRequests[key] = pendingHarnessPermission{
+		executeID: msg.executeID,
+		req:       msg.req,
+		respCh:    msg.respCh,
+	}
+	m.harnessPermissionPending = true
+	m.harnessPermissionReq = msg.req
+	m.harnessPermissionRespCh = msg.respCh
+	m.harnessPermissionMsg = formatHarnessPermission(msg.req)
 	return m
 }
 
-func (m model) replyHarnessPermission(approved bool) model {
-	if m.harnessPermissionRespCh != nil {
-		m.harnessPermissionRespCh <- harness.PermissionResponse{Approved: approved}
+func (m model) activateHarnessPermission(key string) model {
+	pending, ok := m.harnessPermissionRequests[key]
+	if !ok {
+		return m
 	}
+	m.harnessPermissionPending = true
+	m.harnessPermissionReq = pending.req
+	m.harnessPermissionRespCh = pending.respCh
+	m.harnessPermissionMsg = formatHarnessPermission(pending.req)
+	return m
+}
+
+func (m model) removeHarnessPermissionKey(key string) model {
+	delete(m.harnessPermissionRequests, key)
+	for i, candidate := range m.harnessPermissionOrder {
+		if candidate == key {
+			m.harnessPermissionOrder = append(m.harnessPermissionOrder[:i], m.harnessPermissionOrder[i+1:]...)
+			break
+		}
+	}
+	return m
+}
+
+func (m model) hasHarnessPermission(key string) bool {
+	if len(m.harnessPermissionRequests) > 0 {
+		_, ok := m.harnessPermissionRequests[key]
+		return ok
+	}
+	return m.harnessPermissionPending && harnessPermissionKey(m.harnessPermissionReq) == key
+}
+
+func (m model) clearHarnessPermission() model {
+	if len(m.harnessPermissionRequests) > 0 {
+		for _, pending := range m.harnessPermissionRequests {
+			sendHarnessPermissionResponse(pending.respCh, harness.PermissionResponse{Approved: false, Reason: "cancelled"})
+		}
+	} else if m.harnessPermissionPending {
+		sendHarnessPermissionResponse(m.harnessPermissionRespCh, harness.PermissionResponse{Approved: false, Reason: "cancelled"})
+	}
+	m.harnessPermissionRequests = nil
+	m.harnessPermissionOrder = nil
+	m.pendingHarnessPermissionNotices = nil
+	return m.clearHarnessPermissionDisplay()
+}
+
+func (m model) replyHarnessPermission(approved bool) model {
+	if len(m.harnessPermissionRequests) > 0 {
+		return m.replyHarnessPermissionID(harnessPermissionKey(m.harnessPermissionReq), approved, "")
+	}
+	sendHarnessPermissionResponse(m.harnessPermissionRespCh, harness.PermissionResponse{Approved: approved})
+	return m.clearHarnessPermissionDisplay()
+}
+
+func (m model) replyHarnessPermissionID(id string, approved bool, reason string) model {
+	key := strings.TrimSpace(id)
+	pending, ok := m.harnessPermissionRequests[key]
+	if !ok {
+		// Preserve compatibility with prompts created before keyed tracking.
+		if m.harnessPermissionPending && harnessPermissionKey(m.harnessPermissionReq) == key {
+			sendHarnessPermissionResponse(m.harnessPermissionRespCh, harness.PermissionResponse{Approved: approved, Reason: reason})
+			return m.clearHarnessPermissionDisplay()
+		}
+		return m
+	}
+	sendHarnessPermissionResponse(pending.respCh, harness.PermissionResponse{Approved: approved, Reason: reason})
+	m = m.removePendingHarnessPermissionNotice(key)
+	m = m.removeHarnessPermissionKey(key)
+	if len(m.harnessPermissionRequests) == 0 {
+		return m.clearHarnessPermissionDisplay()
+	}
+	if harnessPermissionKey(m.harnessPermissionReq) == key {
+		for _, nextKey := range m.harnessPermissionOrder {
+			if _, exists := m.harnessPermissionRequests[nextKey]; exists {
+				return m.activateHarnessPermission(nextKey)
+			}
+		}
+	}
+	return m
+}
+
+func (m model) clearHarnessPermissionDisplay() model {
 	m.harnessPermissionPending = false
 	m.harnessPermissionMsg = ""
+	m.harnessPermissionReq = harness.PermissionRequest{}
 	m.harnessPermissionRespCh = nil
 	m.harnessWatchdog.Resume(time.Now())
 	return m

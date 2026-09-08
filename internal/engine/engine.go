@@ -38,11 +38,12 @@ func New(s *store.Store) *Engine {
 }
 
 // publish forwards a lifecycle event to the configured Notifier, if any.
-func (e *Engine) publish(kind conversation.EventKind, cycleID int64, title, stageName, message string) {
+func (e *Engine) publish(eventID int64, kind conversation.EventKind, cycleID int64, title, stageName, message string) {
 	if e == nil || e.Notifier == nil {
 		return
 	}
 	e.Notifier.Notify(conversation.Event{
+		EventID:    eventID,
 		Kind:       kind,
 		CycleID:    cycleID,
 		CycleTitle: title,
@@ -151,12 +152,14 @@ func (e *Engine) StartStage(cycleID int64, stageName string) error {
 	if err := e.Store.UpdateStage(st); err != nil {
 		return err
 	}
-	_, err = e.Store.AppendEvent(store.Event{
+	eventID, err := e.Store.AppendEvent(store.Event{
 		CycleID: cycleID, Type: store.EventStageStarted,
 		PayloadJSON: fmt.Sprintf(`{"stage":%q,"iteration":%d}`, stageName, st.Iteration),
 	})
 	e.Logger.Info("stage started", "cycle_id", cycleID, "stage", stageName, "iteration", st.Iteration)
-	e.publish(conversation.EventStageStarted, cycleID, "", stageName, fmt.Sprintf("stage %s started (iteration %d)", stageName, st.Iteration))
+	if err == nil {
+		e.publish(eventID, conversation.EventStageStarted, cycleID, "", stageName, fmt.Sprintf("stage %s started (iteration %d)", stageName, st.Iteration))
+	}
 	return err
 }
 
@@ -340,12 +343,12 @@ func (e *Engine) CloseStage(cycleID int64, stageName string, in StageCloseInput)
 		if err := e.Store.UpdateStage(st); err != nil {
 			return err
 		}
-		_, err = e.Store.AppendEvent(store.Event{
+		eventID, err := e.Store.AppendEvent(store.Event{
 			CycleID: cycleID, Type: store.EventStageCompleted,
 			PayloadJSON: fmt.Sprintf(`{"stage":%q,"status":"Failed"}`, stageName),
 		})
 		if err == nil {
-			e.publish(conversation.EventError, cycleID, "", stageName, in.Summary)
+			e.publish(eventID, conversation.EventError, cycleID, "", stageName, in.Summary)
 		}
 		return err
 	}
@@ -354,12 +357,12 @@ func (e *Engine) CloseStage(cycleID int64, stageName string, in StageCloseInput)
 		if err := e.Store.UpdateStage(st); err != nil {
 			return err
 		}
-		_, err = e.Store.AppendEvent(store.Event{
+		eventID, err := e.Store.AppendEvent(store.Event{
 			CycleID: cycleID, Type: store.EventPendingApproval,
 			PayloadJSON: fmt.Sprintf(`{"stage":%q}`, stageName),
 		})
 		if err == nil {
-			e.publish(conversation.EventApprovalRequired, cycleID, "", stageName, in.Summary)
+			e.publish(eventID, conversation.EventApprovalRequired, cycleID, "", stageName, in.Summary)
 		}
 		return err
 	}
@@ -443,11 +446,11 @@ func (e *Engine) Finish(holder string, metrics []MetricInput) error {
 		if err := e.Store.UpdateCycleStatus(c.ID, store.CycleStatusCompleted, e.now()); err != nil {
 			return err
 		}
-		_, err := e.Store.AppendEvent(store.Event{
+		eventID, err := e.Store.AppendEvent(store.Event{
 			CycleID: c.ID, Type: store.EventFinished, PayloadJSON: `{}`,
 		})
 		if err == nil {
-			e.publish(conversation.EventCycleFinished, c.ID, c.Title, "", "cycle finished")
+			e.publish(eventID, conversation.EventCycleFinished, c.ID, c.Title, "", "cycle finished")
 		}
 		return err
 	})
@@ -559,13 +562,14 @@ func (e *Engine) completeAndAdvance(cycleID int64, st store.Stage) error {
 	if err := e.Store.UpdateStage(st); err != nil {
 		return err
 	}
-	if _, err := e.Store.AppendEvent(store.Event{
+	eventID, err := e.Store.AppendEvent(store.Event{
 		CycleID: cycleID, Type: store.EventStageCompleted,
 		PayloadJSON: fmt.Sprintf(`{"stage":%q,"status":"Completed"}`, st.Name),
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
-	e.publish(conversation.EventStageFinished, cycleID, "", st.Name, st.Summary)
+	e.publish(eventID, conversation.EventStageFinished, cycleID, "", st.Name, st.Summary)
 	return e.advanceToNext(cycleID, st.SortOrder)
 }
 
@@ -832,10 +836,11 @@ func (e *Engine) CreateCycleFromConfig(opts NewCycleOptions) (NewCycleResult, er
 	if err := e.Store.CreateStages(stages); err != nil {
 		return NewCycleResult{}, err
 	}
-	if _, err := e.Store.AppendEvent(store.Event{
+	eventID, err := e.Store.AppendEvent(store.Event{
 		CycleID: id, Type: store.EventCycleCreated,
 		PayloadJSON: fmt.Sprintf(`{"number":%d,"title":%q}`, num, title),
-	}); err != nil {
+	})
+	if err != nil {
 		return NewCycleResult{}, err
 	}
 
@@ -848,7 +853,7 @@ func (e *Engine) CreateCycleFromConfig(opts NewCycleOptions) (NewCycleResult, er
 		return NewCycleResult{}, err
 	}
 	e.Logger.Info("cycle created", "cycle_id", id, "number", num, "stages", len(listed))
-	e.publish(conversation.EventCycleStarted, id, title, "", "cycle started")
+	e.publish(eventID, conversation.EventCycleStarted, id, title, "", "cycle started")
 	return NewCycleResult{Cycle: c, Stages: listed}, nil
 }
 

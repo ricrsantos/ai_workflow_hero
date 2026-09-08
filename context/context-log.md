@@ -4,6 +4,58 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-07 — Context window usage correction
+
+**Problem**: The context bar and Telegram `Context` accumulated normalized
+`input+output` from every completed Execute. When a turn's input already
+included prior conversation history, that history was counted again and the
+window appeared to fill too quickly. Telegram idle status also ignored the
+selected-model window passed to its formatter.
+
+**Change**: The TUI now keeps the latest completed Execute's normalized
+`input+output` as the current-context approximation; cycle metrics remain
+cumulative independently. Telegram status now uses the explicit model window
+provided by each status path, including the selected free-chat model for idle.
+
+**Validation**: Context/Telegram regression tests, full `go test ./...`,
+`go vet ./...`, and `git diff --check` pass.
+
+## 2026-09-07 — Telegram remote interruption
+
+**Requirement**: Add `/interrupt` as the Telegram equivalent of pressing `Esc`
+in Chat, cancelling the process currently running in the TUI.
+
+**Change**: `/interrupt` is intercepted before Telegram wizards and shared
+slash dispatch. It reuses the TUI cancellation command for active Executes,
+including concurrent executions, and cancels `/hero-start` preflight without
+creating a harness turn. Idle requests receive a concise no-process response.
+
+**Validation**: Focused Telegram interruption and existing stream-cancellation
+tests, `go test ./...`, `go vet ./...`, and `git diff --check` pass.
+
+## 2026-09-07 — Telegram status payload refinements
+
+**Requirement**: A manual Telegram idle status must include the selected Chat
+model, current context usage/window size, and the Session/AI wk/AI rp counters.
+Cycle status must identify the cycle by title without sending its objective
+summary.
+
+**Change**: Idle status now renders `Model`, `Session`, `AI wk`, `AI rp`, and
+`Context: used/max`; the context usage remains visible even when the catalog
+does not know the maximum. Cycle status no longer emits `Objective`, while its
+title, state, current stage, active agents, and counters remain available.
+
+**Validation**: Focused Telegram status tests, `go test ./...`, `go vet ./...`,
+and `git diff --check` pass.
+
+## 2026-09-07 — Telegram cycle-config approval and subagent defaults
+
+**Problem**: `/hero-config` skipped the `require_human_approval` choices for stages. A new parent agent/model selection could also leave a previously dedicated subagent mode active, and the remote selector needed to preserve the parent harness invariant.
+
+**Change**: Added a sequential yes/no/keep prompt for every enabled stage; disabled stages retain their approval value. A parent model selection now sets `same_of_agent: true`, so the subagent inherits the selected parent model until the user explicitly chooses a dedicated model. Dedicated subagent model selection remains restricted and validated against the parent harness.
+
+**Validation**: Telegram config regression tests cover approval prompts, disabled-stage preservation, parent-model reset, nested property selection, and same-harness enforcement. Focused tests pass; full `go test ./...` is the remaining release check.
+
 ## 2026-09-07 — Telegram cycle-config scope and subagent correction
 
 **Problem**: The Telegram cycle model review handled only top-level agent pairs, and its summary enumerated stale `agents.*` blocks even when their stage or implementation scope was disabled. This made nested subagent settings invisible and could show an out-of-scope `backend_agent`.
@@ -676,3 +728,47 @@ no sync. `go vet` dos pacotes afetados e `go test ./...` passaram.
 workflow-config preflight, archived-config import, and fail-closed current
 configuration synchronization. The release includes the TUI/engine regression
 coverage and the current project context.
+
+## 2026-09-07 — C12 cancelled before Telegram-driven restart
+
+**Decision**: At the user's request, cancelled the active Claude Code adapter
+cycle during Research so the Telegram execution flow can be improved before a
+new cycle starts from zero.
+
+**Rollback**: Ran `hero cancel` with the cancellation reason, restored the
+tracked C12 changes, removed the untracked C12 documents and current
+`workflow-config.yml`, and kept `.workflow-hero/hero.db` changed so the
+cancelled event remains persisted. `hero status --json` now reports no active
+cycle.
+
+**Next**: Improve and validate `/hero-new`, `/hero-config`, and `/hero-start`
+through Telegram, then create a fresh Claude Code adapter cycle from Research.
+
+## 2026-09-07 — Telegram native permissions and child lifecycle relay
+
+**Problem**: OpenCode native `permission.asked` callbacks were rendered only
+in the local TUI, so a Telegram-driven execution could not answer them. A
+separate `hero stage close` child process persisted pending cycle approval in
+SQLite but had no parent TUI `Engine.Notifier`. OpenCode resume/recovery paths
+also called the default `ask` serve setup and could downgrade a configured
+`auto-all` process.
+
+**Change**: Added keyed TUI permission tracking and the correlated
+`/hero-permission <id> allow|deny` Telegram command, with local `y`/`n` and
+`/interrupt` cancellation preserved. OpenCode carries the normalized
+permission profile in the Execute context through resume, SSE reconnect, and
+HTTP recovery; Prepare uses the configured profile and long-lived serve
+processes receive the private lifecycle socket environment. Added
+`internal/lifecycle`, a per-TUI private Unix relay; CLI services inherit its
+endpoint and publish append-only event IDs, allowing the TUI to forward child
+cycle approvals without SQLite polling or Telegram-specific engine code.
+
+**Validation**: Added tests for permission correlation/cancellation, lifecycle
+socket delivery and buffering, cycle service notifier wiring, event-ID
+correlation, OpenCode profile/environment propagation, and resumed execution.
+
+## 2026-09-07 — Release Hero v3.0.8
+
+**Change**: Incremented the patch version for Telegram native-permission
+forwarding, child CLI lifecycle-event relay, cycle approval delivery, and
+OpenCode Yolo-profile preservation across resume/recovery.

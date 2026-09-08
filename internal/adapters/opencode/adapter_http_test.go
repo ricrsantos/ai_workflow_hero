@@ -30,6 +30,21 @@ func (h stubHandle) PID() int    { return h.pid }
 func (h stubHandle) Wait() error { return nil }
 func (h stubHandle) Kill() error { return nil }
 
+type envStubRunner struct {
+	started int32
+	env     []string
+}
+
+func (s *envStubRunner) Start(ctx context.Context, dir, name string, args ...string) (ProcessHandle, error) {
+	return s.StartWithEnv(ctx, dir, name, nil, args...)
+}
+
+func (s *envStubRunner) StartWithEnv(_ context.Context, _ string, _ string, env []string, _ ...string) (ProcessHandle, error) {
+	atomic.AddInt32(&s.started, 1)
+	s.env = append([]string(nil), env...)
+	return stubHandle{pid: 4242}, nil
+}
+
 func TestPermissionConfigContent(t *testing.T) {
 	if got := permissionConfigContent(harness.PermissionProfileAsk); got != `{"permission":"ask"}` {
 		t.Fatalf("ask config=%s", got)
@@ -42,6 +57,34 @@ func TestPermissionConfigContent(t *testing.T) {
 	}
 	if got := permissionConfigContent(harness.PermissionProfileAutoAll); got != `{"permission":"allow"}` {
 		t.Fatalf("auto-all config=%s", got)
+	}
+}
+
+func TestStartServePassesProfileAndLifecycleEnvironment(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	runner := &envStubRunner{}
+	a := NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "opencode", nil }
+	a.Runner = runner
+	a.HTTP = srv.Client()
+	a.ResolveServeURL = func(ProcessHandle) (string, int, error) { return srv.URL, 1, nil }
+	if err := a.SetLifecycleEventSocket(context.Background(), "/tmp/hero-test-events.sock"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.ensureServeWithProfile(context.Background(), harness.PermissionProfileAutoAll); err != nil {
+		t.Fatal(err)
+	}
+
+	joined := strings.Join(runner.env, "\n")
+	if !strings.Contains(joined, `OPENCODE_CONFIG_CONTENT={"permission":"allow"}`) {
+		t.Fatalf("missing auto-all environment: %q", joined)
+	}
+	if !strings.Contains(joined, "HERO_LIFECYCLE_EVENT_SOCKET=/tmp/hero-test-events.sock") {
+		t.Fatalf("missing lifecycle environment: %q", joined)
 	}
 }
 
@@ -120,6 +163,43 @@ func TestCreateSessionAndExecuteHTTP(t *testing.T) {
 	}
 	if res.Output != "hello" {
 		t.Fatalf("output=%q", res.Output)
+	}
+}
+
+func TestExecuteResumeKeepsSelectedPermissionProfile(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/config/providers", "/session/sess-profile":
+			w.WriteHeader(http.StatusOK)
+		case "/session/sess-profile/message":
+			_ = json.NewEncoder(w).Encode(messageResponse{Parts: []part{{Type: "text", Text: "resumed"}}})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	runner := &stubRunner{}
+	a := NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "opencode", nil }
+	a.Runner = runner
+	a.HTTP = srv.Client()
+	a.ResolveServeURL = func(ProcessHandle) (string, int, error) { return srv.URL, 1, nil }
+
+	result, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		ProjectDir:        a.ProjectDir,
+		SessionID:         "sess-profile",
+		Prompt:            "continue",
+		PermissionProfile: harness.PermissionProfileAutoAll,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Output != "resumed" {
+		t.Fatalf("output=%q", result.Output)
+	}
+	if got := atomic.LoadInt32(&runner.started); got != 1 {
+		t.Fatalf("serve started %d times; profile was likely downgraded during resume", got)
 	}
 }
 

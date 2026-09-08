@@ -62,7 +62,30 @@ func (m model) telegramStatusTextAt(at time.Time, includeIdle bool) string {
 	if !includeIdle {
 		return ""
 	}
-	return "idle"
+	return m.telegramIdleStatusText(at)
+}
+
+// telegramIdleStatusText keeps the manual idle response useful without
+// exposing workflow-cycle details. The model is the free-chat selection, not
+// the last workflow agent that happened to run.
+func (m model) telegramIdleStatusText(at time.Time) string {
+	modelSlug := strings.TrimSpace(m.chatModelSlug)
+	if modelSlug == "" {
+		modelSlug = "not set"
+	}
+	timing := m.telegramTimerAndContextTextForMax(at, m.contextWindows.lookup(m.chatModelSlug))
+	return telegramStatusWithModel("idle", modelSlug, timing)
+}
+
+func telegramStatusWithModel(state, modelSlug, timing string) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(state))
+	fmt.Fprintf(&b, "\nModel: %s", strings.TrimSpace(modelSlug))
+	if timing != "" {
+		b.WriteByte('\n')
+		b.WriteString(timing)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func telegramCycleStatusText(status cycle.StatusView, agents, timing string) string {
@@ -72,11 +95,6 @@ func telegramCycleStatusText(status cycle.StatusView, agents, timing string) str
 		title = fmt.Sprintf("C%d", status.CycleNumber)
 	}
 	fmt.Fprintf(&b, "Cycle C%d: %s\n", status.CycleNumber, title)
-	if objective := strings.TrimSpace(status.Objective); objective != "" {
-		b.WriteString("Objective: ")
-		b.WriteString(objective)
-		b.WriteByte('\n')
-	}
 	if state := strings.TrimSpace(status.Status); state != "" {
 		b.WriteString("Status: ")
 		b.WriteString(state)
@@ -152,6 +170,10 @@ func telegramCurrentStage(stages []cycle.StatusStage) (cycle.StatusStage, bool) 
 }
 
 func (m model) telegramTimerAndContextText(at time.Time) string {
+	return m.telegramTimerAndContextTextForMax(at, m.contextWindowMax())
+}
+
+func (m model) telegramTimerAndContextTextForMax(at time.Time, contextMax int64) string {
 	session := m.sessionTimer.elapsedAt(at)
 	aiWork := m.aiTimer.elapsedAt(at)
 	aiResponse := m.aiResponseTimer.elapsedAt(at)
@@ -160,13 +182,16 @@ func (m model) telegramTimerAndContextText(at time.Time) string {
 		formatElapsed(session),
 		formatElapsed(aiWork),
 		formatElapsed(aiResponse),
-		telegramContextWindowText(m.contextUsedTokens, m.contextWindowMax()),
+		telegramContextWindowText(m.contextUsedTokens, contextMax),
 	)
 }
 
 func telegramContextWindowText(used, max int64) string {
+	if used < 0 {
+		used = 0
+	}
 	if max <= 0 {
-		return "n/a"
+		return telegramTokenCount(used) + "/n/a"
 	}
 	return telegramTokenCount(used) + "/" + telegramTokenCount(max)
 }

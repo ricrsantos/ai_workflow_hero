@@ -180,6 +180,9 @@ func TestTelegramStatusText(t *testing.T) {
 			t.Fatalf("status missing %q: %q", want, got)
 		}
 	}
+	if strings.Contains(got, "Objective:") {
+		t.Fatalf("cycle status must not include the objective summary: %q", got)
+	}
 
 	m.status = cycle.StatusView{}
 	m.streaming = true
@@ -195,8 +198,43 @@ func TestTelegramStatusText(t *testing.T) {
 		t.Fatalf("free-chat fallback status=%q", got)
 	}
 	m.streaming = false
-	if got := m.telegramStatusText(now); got != "idle" {
-		t.Fatalf("idle status=%q", got)
+	m.chatModelSlug = "test-model"
+	got = m.telegramStatusText(now)
+	for _, want := range []string{
+		"idle",
+		"Model: test-model",
+		"Session: 00:02:00",
+		"AI wk: 00:01:00",
+		"AI rp: 00:00:30",
+		"Context: 100k/250k",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("idle status missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestTelegramIdleStatusUsesSelectedModelContextWindow(t *testing.T) {
+	now := time.Now()
+	m := NewTestModel(nil)
+	m.chatModelSlug = "selected-model"
+	m.contextUsedTokens = 100000
+	m.contextWindows = contextWindowCatalog{
+		"selected-model":       250000,
+		"previous-agent-model": 500000,
+	}
+	m.transcript = []convMessage{{
+		role:      convRoleAgent,
+		content:   "previous response",
+		modelSlug: "previous-agent-model",
+	}}
+
+	got := m.telegramStatusText(now)
+	if !strings.Contains(got, "Model: selected-model") {
+		t.Fatalf("idle status model=%q", got)
+	}
+	if !strings.Contains(got, "Context: 100k/250k") {
+		t.Fatalf("idle status must use selected model window=%q", got)
 	}
 }
 
@@ -219,7 +257,7 @@ func TestTelegramStatusCommandAllowsIdleButAutoReportSkipsIt(t *testing.T) {
 	if cmd != nil {
 		_ = cmd()
 	}
-	if len(outbound) != 1 || outbound[0] != "idle" {
+	if len(outbound) != 1 || !strings.Contains(outbound[0], "idle\nModel: not set") {
 		t.Fatalf("/status outbound=%v", outbound)
 	}
 
@@ -232,6 +270,81 @@ func TestTelegramStatusCommandAllowsIdleButAutoReportSkipsIt(t *testing.T) {
 	}
 	if !next.telegram.nextAutoReportAt.After(now) {
 		t.Fatal("auto report schedule was not advanced")
+	}
+}
+
+func TestTelegramInterruptCancelsActiveConversation(t *testing.T) {
+	m, h, _ := newConversationTestModel(t)
+	outbound := []string{}
+	streamOut := make(chan tea.Msg, 1)
+	relay := newConversationStreamRelay("ex-1", streamOut)
+	m.streaming = true
+	m.harnessSessionID = "telegram-session"
+	m.agentMsgIndex = 0
+	m.transcript = []convMessage{{role: convRoleAgent, content: "partial"}}
+	m.executes = map[string]convExecute{
+		"ex-1": {
+			ID:            "ex-1",
+			HarnessID:     "cursor",
+			SessionID:     "telegram-session",
+			AgentMsgIndex: 0,
+			relay:         relay,
+		},
+	}
+	m.telegram = &telegramState{
+		connected: true,
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	next, cmd := m.handleTelegramInbound(telegramInboundMsg{
+		text:    telegramInterruptCommand,
+		address: "proj",
+	})
+	if !next.streaming {
+		t.Fatal("interrupt request must leave cancellation in flight until the command completes")
+	}
+	if len(outbound) != 1 || outbound[0] != "Interrupt requested." {
+		t.Fatalf("interrupt outbound=%v", outbound)
+	}
+	if cmd == nil {
+		t.Fatal("interrupt must schedule harness cancellation")
+	}
+
+	msg := cmd()
+	updated, _ := next.Update(msg)
+	final := updated.(model)
+	if final.streaming {
+		t.Fatal("interrupt must stop the active conversation")
+	}
+	if !h.CancelCalled() {
+		t.Fatal("interrupt must call the active harness Cancel")
+	}
+	if !final.transcript[0].interrupted {
+		t.Fatal("interrupt must mark the active response as interrupted")
+	}
+}
+
+func TestTelegramInterruptWithoutActiveProcessDoesNotStartHarnessTurn(t *testing.T) {
+	outbound := []string{}
+	m := NewTestModel(nil)
+	m.telegram = &telegramState{
+		connected: true,
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	next, cmd := m.handleTelegramInbound(telegramInboundMsg{text: telegramInterruptCommand, address: "proj"})
+	if cmd != nil {
+		_ = cmd()
+	}
+	if next.streaming {
+		t.Fatal("interrupt without an active process must not start streaming")
+	}
+	if len(outbound) != 1 || outbound[0] != "No process is running." {
+		t.Fatalf("idle interrupt outbound=%v", outbound)
 	}
 }
 

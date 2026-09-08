@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/lifecycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -324,6 +325,12 @@ func (a *Adapter) startServeProcessWithProfile(ctx context.Context, profile harn
 	}
 	args := []string{"serve", "--port", "0", "--hostname", "127.0.0.1"}
 	env := []string{"OPENCODE_CONFIG_CONTENT=" + permissionConfigContent(profile)}
+	a.mu.Lock()
+	lifecycleSocket := strings.TrimSpace(a.lifecycleEventSocket)
+	a.mu.Unlock()
+	if lifecycleSocket != "" {
+		env = append(env, lifecycle.SocketEnv(lifecycleSocket))
+	}
 	var handle ProcessHandle
 	if runner, ok := a.Runner.(EnvironmentProcessRunner); ok {
 		handle, err = runner.StartWithEnv(ctx, a.ProjectDir, cli, env, args...)

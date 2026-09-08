@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **3.0.7** (Telegram cycle-config subagent review and active-scope filtering). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs, remote cycle-config wizard, active-agent/model Telegram status reporting, and project-local Always send reply routing.
+> **Status:** reflects codebase at Hero **3.0.8** (Telegram native-permission forwarding and child lifecycle relay). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs, remote cycle-config wizard, active-agent/model Telegram status reporting, and project-local Always send reply routing.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -225,7 +225,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 | `harness_boot.go` / `model_gate.go` | Harness availability, model picker at boot |
 | `telegram_config.go` / `telegram_model_selection.go` | Address-scoped Telegram cycle-config draft, `/hero-config` commands, and numbered remote model/property selection |
 | `agentlabels.go` / `chat_format.go` | Live agents box and `[LABEL - model]` transcript |
-| `contextbar.go` | Session-accumulated per-turn token usage bar from `result.usage` vs `models/*.yml` |
+| `contextbar.go` | Latest completed per-turn token usage bar from `result.usage` vs `models/*.yml` |
 | `config_screen.go` | Active-cycle YAML-backed form, progressive disclosure, save states, and failed-stage retry |
 | `timers.go` | Shared one-second Session/AI wk/AI rp counters and cycle-duration persistence |
 | `internal/workflowconfig` document layer | Latest-file YAML node merge, managed projection/diff, deterministic current-config seeding from template/archive, validation, and atomic write |
@@ -332,15 +332,19 @@ TUI A TUI A_2      Free Chat free_1
   └─────┴──────────────┘
         │
  shared conversation.Service → HarnessAdapter → selected harness
+                                      │
+                         OpenCode serve → hero CLI child
+                                      │
+                     private TUI lifecycle Unix socket
 ```
 
-The daemon owns Telegram credentials and Bot API transport. TUI clients own rendering and use the shared, transport-neutral `internal/conversation` service; they do not poll SQLite for live Telegram events. Credentials belong in the OS vault, while the daemon's global store retains non-sensitive queue/de-duplication/audit state. See ADR-059–064.
+The daemon owns Telegram credentials and Bot API transport. TUI clients own rendering and use the shared, transport-neutral `internal/conversation` service; they do not poll SQLite for live Telegram events. Credentials belong in the OS vault, while the daemon's global store retains non-sensitive queue/de-duplication/audit state. See ADR-059–065.
 
 **Landed wiring (C09 Implementation):**
 
 - `hero plugin install|uninstall|list telegram` downloads a platform-matched `hero-telegram-daemon` binary from the matching Hero GitHub Release and records `manifest.json` under `~/.workflow-hero/plugins/telegram/` (`internal/plugin`). `hero install`/`hero upgrade` never enable it.
 - The daemon (`cmd/hero-telegram-daemon`, `internal/telegram/daemon`) owns the Bot API, registers TUIs over a `0600` UDS (`internal/telegram/ipc`), allocates `base`/`_2`/`free_N` suffixes atomically, lists live instances with `/list`, persists `/select n` for the sole authorized chat, routes unprefixed input to that selection, and errors when it disconnects. Explicit addressed input keeps durable offline-target queueing (24h); live deliveries reply `OK, Received.`. Only one daemon may listen; `getUpdates` runs while a TUI is registered.
-- The TUI (`internal/tui/telegram*.go`) runs an IPC client goroutine with bounded backoff reconnect, relays daemon frames with `tea.Program.Send`, renders Settings Telegram section + pairing modal, and labels remote turns `← [Telegram · addr]` / `→ [Telegram · addr]`. Telegram `/status` is answered from the TUI's cycle/execution/timer/context state without a harness turn; active turns include live agent/model rows (the ordinary Free Chat parent is named `harness`); `telegram.auto_report_minutes` persists a project-local `0` (off) or `1–300` minute interval and reuses the non-blocking timer tick for periodic non-idle sends, while an explicit `/status` may return `idle`. `telegram.always_send` persists a project-local boolean (default `false`) that, when enabled, forwards completed local TUI harness-turn responses through the same IPC `outbound` path as Telegram-originated replies. `/hero-new` success points the remote user to `/hero-config`; `/hero-config` and `/hero-config-show` stay in the TUI edge and follow this flow: `Telegram inbound → configWizard draft → workflowconfig.Document → atomic workflow-config.yml → cycle.Service.SyncCycleConfig`. The engine publishes `conversation.Event`s through a `Notifier`; the TUI adapter forwards only cycle/stage/approval/error/final events to the daemon outbound path. Settings Project ID is persisted as `hero.json` → `telegram.project_abbrev` (directory basename when omitted).
+- The TUI (`internal/tui/telegram*.go`) runs an IPC client goroutine with bounded backoff reconnect, relays daemon frames with `tea.Program.Send`, renders Settings Telegram section + pairing modal, and labels remote turns `← [Telegram · addr]` / `→ [Telegram · addr]`. Telegram `/status` is answered from the TUI's cycle/execution/timer/context state without a harness turn; active turns include live agent/model rows (the ordinary Free Chat parent is named `harness`); `telegram.auto_report_minutes` persists a project-local `0` (off) or `1–300` minute interval and reuses the non-blocking timer tick for periodic non-idle sends, while an explicit `/status` may return `idle`. `telegram.always_send` persists a project-local boolean (default `false`) that, when enabled, forwards completed local TUI harness-turn responses through the same IPC `outbound` path as Telegram-originated replies. `/hero-new` success points the remote user to `/hero-config`; `/hero-config` and `/hero-config-show` stay in the TUI edge and follow this flow: `Telegram inbound → configWizard draft → workflowconfig.Document → atomic workflow-config.yml → cycle.Service.SyncCycleConfig`. The engine publishes `conversation.Event`s through a `Notifier`; direct TUI transitions and child CLI transitions (via `internal/lifecycle` and `HERO_LIFECYCLE_EVENT_SOCKET`) converge on the same filtered Telegram outbound path. Native harness permissions remain separate and accept correlated `/hero-permission <id> allow|deny` responses. Settings Project ID is persisted as `hero.json` → `telegram.project_abbrev` (directory basename when omitted).
 - Project TUI logs rotate under `.workflow-hero/logs/tui.log` (10 MB × 10) with a one-time legacy migration; the daemon logs under `~/.workflow-hero/logs/telegram-daemon.log`. All writes pass shared `internal/common/redact` token/chat-id redaction. `.workflow-hero/logs/` is added to the managed `.gitignore` block.
 - `doctor`/`status` report plugin installed / daemon binary / version compatibility.
 
@@ -405,7 +409,7 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
 **Rules:**
 
 - Adapters SHALL NOT silently drop parseable events; unknown types emit `StreamKindWarning`.
-- OpenCode `permission.asked` blocks until TUI responds; reply via `POST /permission/{requestID}/reply`.
+- OpenCode `permission.asked` blocks until TUI responds; reply via `POST /permission/{requestID}/reply`. A selected permission profile remains attached through resume/recovery, and a paired Telegram TUI may answer the correlated request with `/hero-permission <id> allow|deny`.
 - Cursor without terminal `result` + non-zero exit code fails with stderr detail.
 - Cursor `stream-json` success with no substantive output fails with an explicit empty-response error.
 
@@ -511,7 +515,7 @@ Parity between TUI and chat is **intentional but not identical** — see [idea n
 | Generic **Conversation Layer** service | `internal/conversation` (turn routing + per-turn dispatcher + Notifier); Bubble Tea owns rendering only |
 | **Multi-harness** adapters | Cursor + OpenCode with normalized stream events; further harnesses post-2.x |
 | **Daemon / RPC** | Optional Telegram plugin daemon over local IPC (ADR-059); generic `hero serve` still deferred |
-| **Distributed event bus** | Events in SQLite + engine `Notifier` for the Telegram outbound path |
+| **Distributed event bus** | Not implemented; live child-CLI delivery uses the private per-TUI relay (ADR-065), with SQLite retained as audit storage |
 | **LLM inside CLI** | Forbidden (ADR-003) |
 
 ---
@@ -582,6 +586,7 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/telegram/ipc` | Versioned newline-delimited JSON IPC frames + `0600` UDS (`ipc.go`, `socket.go`) |
 | `internal/telegram/vault` | OS credential vault abstraction (token + authorized chat id) with in-memory fake |
 | `internal/telegram/daemon` | Bot API ownership, pairing, addressed routing, durable queue, suffix allocator, SQLite store |
+| `internal/lifecycle` | Private per-TUI Unix relay for lifecycle events emitted by CLI-as-API child processes |
 | `internal/harness` | `HarnessAdapter` interface, `StreamDelta` normalization, marker detection |
 | `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import, NDJSON parse |
 | `internal/adapters/opencode` | OpenCode serve adapter: HTTP+SSE, ResumeSession, idle/gone SSE probe, serve lifecycle (PID registry, `exec.Command` not Execute-scoped), orphan reap, C5 properties |

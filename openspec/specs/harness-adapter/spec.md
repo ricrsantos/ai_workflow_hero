@@ -66,7 +66,7 @@ During `Execute` with `Stream: true`, adapters SHALL map harness-native events t
 
 ### Requirement: OpenCode adapter SHALL handle documented SSE event families
 
-The OpenCode adapter SHALL consume `/event` SSE and handle message, tool, permission, session, file, LSP, todo, shell, TUI, and server connection events documented for OpenCode serve. Tool events SHALL map to `StreamKindTool` with `started`/`completed` phases. Message reasoning parts SHALL map to `StreamKindThinking`.
+The OpenCode adapter SHALL consume `/event` SSE and handle message, tool, permission, session, file, LSP, todo, shell, TUI, and server connection events documented for OpenCode serve. Tool events SHALL map to `StreamKindTool` with `started`/`completed` phases. Message reasoning parts SHALL map to `StreamKindThinking`. Its long-lived `serve` child SHALL inherit the owning TUI's private lifecycle-event endpoint when one is configured, so CLI-as-API commands launched by the harness can publish cycle transitions back to that TUI.
 
 #### Scenario: Tool before and after
 - **WHEN** `tool.execute.before` and `tool.execute.after` arrive for a session
@@ -78,7 +78,7 @@ The OpenCode adapter SHALL consume `/event` SSE and handle message, tool, permis
 
 ### Requirement: Harness permission prompts SHALL block until user response
 
-When a harness emits a permission request (e.g. OpenCode `permission.asked`), the adapter SHALL invoke `ExecuteRequest.OnPermissionRequest` and block until the callback returns. When the callback is nil, the adapter SHALL emit a warning and fail explicitly rather than hang silently. The TUI SHALL prompt with `Harness permission: … Allow? [y/N]` distinct from Hero stage approval.
+When a harness emits a permission request (e.g. OpenCode `permission.asked`), the adapter SHALL invoke `ExecuteRequest.OnPermissionRequest` and block until the callback returns. When the callback is nil, the adapter SHALL emit a warning and fail explicitly rather than hang silently. The TUI SHALL prompt with `Harness permission: … Allow? [y/N]` distinct from Hero stage approval and, when Telegram is paired, SHALL forward the request ID and accept only a correlated `/hero-permission <id> allow|deny` response.
 
 #### Scenario: OpenCode permission approved
 - **WHEN** the user approves a harness permission in Chat
@@ -87,6 +87,10 @@ When a harness emits a permission request (e.g. OpenCode `permission.asked`), th
 #### Scenario: Permission without handler
 - **WHEN** `permission.asked` arrives and `OnPermissionRequest` is nil
 - **THEN** Execute fails with an explicit permission error after emitting a warning
+
+#### Scenario: Telegram answers a native permission
+- **WHEN** OpenCode emits a permission request while a paired Telegram TUI is executing
+- **THEN** the TUI forwards the request ID, and `/hero-permission <id> allow` or `/hero-permission <id> deny` releases only that blocked callback
 
 ### Requirement: Harness question prompts SHALL block until user response
 

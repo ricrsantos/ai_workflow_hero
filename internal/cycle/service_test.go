@@ -9,8 +9,23 @@ import (
 
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/lifecycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
+
+func TestOpenServiceUsesInheritedLifecycleNotifier(t *testing.T) {
+	dir := setupProject(t)
+	t.Setenv(lifecycle.EventSocketEnv, filepath.Join(dir, "lifecycle.sock"))
+
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if svc.Engine == nil || svc.Engine.Notifier == nil {
+		t.Fatal("CLI service did not install the inherited lifecycle notifier")
+	}
+}
 
 func setupProject(t *testing.T) string {
 	t.Helper()

@@ -14,6 +14,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/engine"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
+	"github.com/ricrsantos/ai_workflow_hero/internal/lifecycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
@@ -66,10 +67,14 @@ func OpenService(projectDir string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	eng := engine.New(st)
+	if notifier := lifecycle.NewEnvNotifier(); notifier != nil {
+		eng.Notifier = notifier
+	}
 	return &Service{
 		ProjectDir: root,
 		Store:      st,
-		Engine:     engine.New(st),
+		Engine:     eng,
 		Registry:   harnessmgr.NewRegistry(root, st),
 	}, nil
 }

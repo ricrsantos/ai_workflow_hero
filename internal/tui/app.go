@@ -165,6 +165,9 @@ type model struct {
 
 	liveAgents []liveAgent // currently executing parent + Task subagents (Chat box)
 
+	// contextUsedTokens is the latest completed Execute's input+output usage,
+	// which approximates the current context sent to the harness. It is not a
+	// cumulative session/cycle metric.
 	contextUsedTokens      int64
 	contextUsageGeneration int64
 	contextWindows         contextWindowCatalog
@@ -181,10 +184,13 @@ type model struct {
 	cycleWelcomeFocus  int // 0 = Go to Config, 1 = Close
 
 	// Harness-native permission prompt (OpenCode permission.asked, etc.).
-	harnessPermissionPending bool
-	harnessPermissionMsg     string
-	harnessPermissionReq     harness.PermissionRequest
-	harnessPermissionRespCh  chan harness.PermissionResponse
+	harnessPermissionPending        bool
+	harnessPermissionMsg            string
+	harnessPermissionReq            harness.PermissionRequest
+	harnessPermissionRespCh         chan harness.PermissionResponse
+	harnessPermissionRequests       map[string]pendingHarnessPermission
+	harnessPermissionOrder          []string
+	pendingHarnessPermissionNotices []harness.PermissionRequest
 
 	// Harness-native question prompt (OpenCode question.asked).
 	harnessQuestionPending bool
@@ -207,6 +213,12 @@ type model struct {
 	// connection changes; telegramMsgCh relays daemon frames into Update.
 	telegram      *telegramState
 	telegramMsgCh chan tea.Msg
+
+	// Child CLI lifecycle events arrive through the owning TUI's private relay.
+	// Keep events that arrive while the Telegram connection is reconnecting so
+	// cycle approvals are not lost at the transport boundary.
+	lifecycleEventIDs      map[int64]struct{}
+	pendingLifecycleEvents []conversation.Event
 
 	// convService is the transport-neutral conversation service shared with the
 	// Telegram ingress (ADR-061). The TUI classifies every turn through it so
@@ -237,15 +249,17 @@ type heroResumeDoneMsg struct{ err error }
 
 func newModel(svc *cycle.Service) model {
 	m := model{
-		svc:                    svc,
-		screen:                 screenConversation,
-		prevScreen:             screenConversation,
-		chatMode:               harness.ModeBuild,
-		agentMsgIndex:          -1,
-		thinkingMsgIndex:       -1,
-		transcriptFollowBottom: true,
-		chatInputFocused:       true,
-		sessionTimer:           sessionTimerState{suppressed: true},
+		svc:                       svc,
+		screen:                    screenConversation,
+		prevScreen:                screenConversation,
+		chatMode:                  harness.ModeBuild,
+		agentMsgIndex:             -1,
+		thinkingMsgIndex:          -1,
+		transcriptFollowBottom:    true,
+		chatInputFocused:          true,
+		sessionTimer:              sessionTimerState{suppressed: true},
+		harnessPermissionRequests: make(map[string]pendingHarnessPermission),
+		lifecycleEventIDs:         make(map[int64]struct{}),
 	}
 	projectDir := ""
 	if svc != nil {
@@ -489,6 +503,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)
+
+	case lifecycleEventMsg:
+		return m.handleLifecycleEvent(msg.event)
 
 	case telegramModelListMsg:
 		return m.handleTelegramModelList(msg)

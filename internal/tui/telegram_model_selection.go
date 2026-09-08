@@ -285,6 +285,14 @@ func (m model) commitTelegramModelSelection() (model, tea.Cmd) {
 			agent.Harness = selection.harnessID
 			agent.Model = selection.modelSlug
 			agent = telegramConfigApplyProperties(agent, selection.properties)
+			// Selecting a new parent agent/model invalidates the previous
+			// dedicated subagent choice as a default. The subagent inherits the
+			// newly selected parent model until the user explicitly chooses a
+			// dedicated model in the next subagent step. Its harness is implicit
+			// and therefore always remains the parent's harness.
+			if selection.configAgent != "fallback_model" {
+				agent.Subagent.SameOfAgent = true
+			}
 		}
 		if selection.configAgent == "fallback_model" {
 			wizard.draft.FallbackModel = agent

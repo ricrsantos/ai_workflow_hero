@@ -192,6 +192,8 @@ Each model review uses the same numbered Telegram flow as `/model`: choose the h
 
 Telegram `/status` and automatic reports keep the `idle` response compact. During an active turn, they also include an `Agents` block with each operating agent and its model; the ordinary Free Chat parent is reported as `harness`.
 
+If a harness asks for native access (for example, OpenCode tool permission), the TUI keeps the local `y`/`n` prompt and forwards the request to paired Telegram as a separate approval. Reply with `/hero-permission <id> allow` or `/hero-permission <id> deny`; the ID prevents an old response from releasing a different request. Cycle approval notifications created by `hero` commands running inside OpenCode are also relayed by the owning TUI; SQLite remains the audit log and is not polled for live delivery.
+
 ### 8.1 Key fields in `workflow-config.yml`
 
 | Section | Purpose |
@@ -292,7 +294,7 @@ hero update-models
 | `/hero-model` | Select TUI default model **pair and properties** (model · harness · `fs`/`th`/`ef`; atomically persists `hero.json` `freechat_default` + `model_properties`) |
 | `/hero-help` | List Runtime commands |
 
-**TUI Chat** (`hero tui`): the line under the green response pane shows `[fs-<value>] [th-<value>] [ef-<value>]` beside the scroll hint and context bar, including an empty Chat after model selection. Validated freechat values are green; `false`, `na`, unavailable, and workflow YAML values are gray. Missing catalog, stale cache, and invalidated choices use yellow warnings. The context bar (sum of completed per-turn `usage` input+output in the current Chat session vs the model's `context_window` in `.workflow-hero/models/*.yml`) remains hidden when the model has no window; `/new-chat` and a successful `/harness-reset` clear it. `/hero-model` never edits `agents.*` or `fallback_model` in `workflow-config.yml`.
+**TUI Chat** (`hero tui`): the line under the green response pane shows `[fs-<value>] [th-<value>] [ef-<value>]` beside the scroll hint and context bar, including an empty Chat after model selection. Validated freechat values are green; `false`, `na`, unavailable, and workflow YAML values are gray. Missing catalog, stale cache, and invalidated choices use yellow warnings. The context bar uses the latest completed per-turn `usage` input+output as an approximation of the current context sent to the harness, without repeatedly summing prior history across turns, versus the model's `context_window` in `.workflow-hero/models/*.yml`. It remains hidden when the model has no window; `/new-chat` and a successful `/harness-reset` clear it. `/hero-model` never edits `agents.*` or `fallback_model` in `workflow-config.yml`.
 
 ---
 
@@ -528,6 +530,8 @@ Cada revisão de modelo usa o mesmo fluxo numerado do `/model` pelo Telegram: es
 
 O `/status` do Telegram e os relatórios automáticos mantêm a resposta `idle` compacta. Durante uma execução, eles também incluem um bloco `Agents` com cada agente em operação e seu modelo; o processo pai do Free Chat aparece como `harness`.
 
+Se o harness pedir acesso nativo (por exemplo, uma permissão de ferramenta do OpenCode), a TUI mantém o prompt local `y`/`n` e encaminha uma aprovação separada para o Telegram pareado. Responda com `/hero-permission <id> allow` ou `/hero-permission <id> deny`; o ID impede que uma resposta antiga libere outra solicitação. Notificações de aprovação do ciclo geradas por comandos `hero` executados dentro do OpenCode também chegam pela TUI proprietária; o SQLite continua sendo o log de auditoria e não é consultado por polling para entrega ao vivo.
+
 Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`, `fallback_model`, `stages.browser_ui_validation` e `stages.qa_end_to_end.use_playwright` conforme a seção em inglês (§8) — os campos são os mesmos. Browser UI Validation exige Playwright no projeto consumidor; artefatos em `.workflow-hero/cycles/current/browser-ui/`.
 
 ---
@@ -542,7 +546,7 @@ Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`
 
 `/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-continue`, `/hero-back`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-cycles`, `/hero-todos`, `/hero-model`, `/hero-help` — ver tabela da §10 (inglês).
 
-**TUI Chat** (`hero tui`): a linha sob o painel verde mostra `[fs-<valor>] [th-<valor>] [ef-<valor>]` junto do scroll e da barra de contexto, inclusive no Chat vazio após selecionar o modelo. Valores freechat validados ficam verdes; `false`, `na`, indisponíveis e valores vindos do YAML do workflow ficam cinza. Catálogo ausente, cache antigo e escolhas invalidadas usam aviso amarelo. `/hero-model` não altera `agents.*` nem `fallback_model` em `workflow-config.yml`.
+**TUI Chat** (`hero tui`): a linha sob o painel verde mostra `[fs-<valor>] [th-<valor>] [ef-<valor>]` junto do scroll e da barra de contexto, inclusive no Chat vazio após selecionar o modelo. Valores freechat validados ficam verdes; `false`, `na`, indisponíveis e valores vindos do YAML do workflow ficam cinza. Catálogo ausente, cache antigo e escolhas invalidadas usam aviso amarelo. A barra de contexto usa o `input+output` do último Execute concluído como aproximação do contexto atual enviado ao harness, sem somar novamente o histórico a cada turno; `/new-chat` e um `/harness-reset` bem-sucedido limpam o valor. `/hero-model` não altera `agents.*` nem `fallback_model` em `workflow-config.yml`.
 
 ---
 

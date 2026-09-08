@@ -33,6 +33,7 @@ go.work.sum
 credentials.json
 secrets.json
 .workflow-hero/logs/
+.workflow-hero/run/
 # END Hero secrets hygiene
 
 # Editor/IDE

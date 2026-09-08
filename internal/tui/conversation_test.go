@@ -3688,7 +3688,7 @@ func TestConversationContextBarHiddenWithoutWindow(t *testing.T) {
 	}
 }
 
-func TestExecuteDoneAccumulatesContextUsedTokens(t *testing.T) {
+func TestExecuteDoneUsesLatestContextUsage(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	m = SetChatModelSlugForTest(m, "composer-2.5")
@@ -3709,11 +3709,11 @@ func TestExecuteDoneAccumulatesContextUsedTokens(t *testing.T) {
 		Usage:     harness.Usage{InputTokens: 12000, OutputTokens: 3000},
 	}, nil))
 	got = next.(model)
-	if got.contextUsedTokens != 195000 {
-		t.Fatalf("used=%d want 195000 after second turn", got.contextUsedTokens)
+	if got.contextUsedTokens != 15000 {
+		t.Fatalf("used=%d want 15000 for latest turn", got.contextUsedTokens)
 	}
 	view := stripANSI(ViewForTest(got))
-	if !strings.Contains(view, "195k/200k") {
+	if !strings.Contains(view, "15k/200k") {
 		t.Fatalf("view missing updated bar: %q", view)
 	}
 }
@@ -3848,8 +3848,8 @@ func TestExecuteDoneAccumulatesStageMetricsWhenCycleActive(t *testing.T) {
 		Duration:  time.Second,
 	}})
 	got = next.(model)
-	if got.contextUsedTokens != 170 {
-		t.Fatalf("used=%d want 170 after second turn", got.contextUsedTokens)
+	if got.contextUsedTokens != 70 {
+		t.Fatalf("used=%d want 70 for latest turn", got.contextUsedTokens)
 	}
 	view, err := svc.Metrics()
 	if err != nil {
