@@ -888,6 +888,16 @@ cycle approvals without SQLite polling or Telegram-specific engine code.
 socket delivery and buffering, cycle service notifier wiring, event-ID
 correlation, OpenCode profile/environment propagation, and resumed execution.
 
+## 2026-09-08 — Release Hero v3.1.0
+
+**Change**: Incremented the minor version for the C13 Claude Code adapter: opt-in
+fourth TUI harness with supervised `claude -p` NDJSON turns, native session
+resume, constrained ask permission bridge, native model catalog, `.claude/`
+projection, marked `CLAUDE.md` ownership, install/upgrade/uninstall lifecycle,
+Doctor/Status diagnostics, and cycle-manager execution fixes.
+
+**Validation**: `go test ./...`
+
 ## 2026-09-07 — Release Hero v3.0.8
 
 **Change**: Incremented the patch version for Telegram native-permission

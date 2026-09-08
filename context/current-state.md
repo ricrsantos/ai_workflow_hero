@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **3.0.8** release prepared (tag `v3.0.8`). C13 implementation loop-back now has a live execution-scoped Claude ask bridge, native turn identity, and deterministic permission-pause diagnostics; remaining Judge verification focus is four-harness and Telegram acceptance coverage. |
+| **Phase** | Hero **3.1.0** released (tag `v3.1.0`). C13 Claude Code adapter is the opt-in fourth TUI harness with supervised turn-scoped CLI execution, constrained ask permission bridge, native model catalog, `.claude/` projection, and marked `CLAUDE.md` ownership. |
 
 ## Technology Stack
 
@@ -80,7 +80,7 @@ The project-local `hero.json` Telegram configuration supports `auto_report_minut
 - **`/hero-harness`** / **`/hero-model`**: Codex enable→`.codex/` projection; model step lists native ids (Codex may start app-server); C5 property submenu; Chat `[LABEL - model · harness]` / `Build · model · harness` follow the **active execute pair** (`runtimeHarnessID` + `runtimeModelSlug` from agent YAML / `ResolveExecutePair`), not a cross-mix with freechat; UI-C06-001 §6 goldens.
 - Embedded Runtime: Cursor + `assets/opencode/` + `assets/codex/` (no AGENTS.md / no Codex config template).
 - C5 model properties: `internal/harness` + `internal/modelprops`; catalogs carry `properties` for Cursor base + OpenCode 27 + Codex ids.
-- `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **3.0.8** (ships `hero-telegram-daemon` per platform; plugin install downloads from GitHub Releases); integration tests include C6 Codex path and C9 Telegram lock.
+- `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **3.1.0** (ships `hero-telegram-daemon` per platform; plugin install downloads from GitHub Releases); integration tests include C6 Codex path, C9 Telegram lock, and C13 Claude adapter.
 - Test strategy in [docs/testing/TESTING.md](docs/testing/TESTING.md); bilingual README.
 
 ## Pending Features
