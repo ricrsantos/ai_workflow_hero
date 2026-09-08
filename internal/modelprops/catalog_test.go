@@ -23,6 +23,33 @@ func TestLoadCatalogFromEmbeddedAssetsPreservesPricingOnlyEntries(t *testing.T) 
 	}
 }
 
+func TestClaudeCatalogUsesNativeSelectorsAndKeepsPricingUnknown(t *testing.T) {
+	cat := LoadCatalogFromFS(assets.FS, "models")
+	want := []string{
+		"claude-fable-5",
+		"claude-haiku-4-5-20251001",
+		"claude-opus-4-7",
+		"claude-opus-4-7[1m]",
+		"claude-sonnet-4-6",
+		"claude-sonnet-4-6[1m]",
+		"fable",
+		"haiku",
+		"opus",
+		"opus[1m]",
+		"sonnet",
+		"sonnet[1m]",
+	}
+	if got := cat.ModelsForHarness("claude"); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("Claude catalog rows=%v want %v", got, want)
+	}
+	for _, model := range want {
+		ef, ok := cat.CatalogValuesForHarness("claude", model, "ef")
+		if !ok || !ef.Available || ef.Default != "medium" {
+			t.Fatalf("%s effort metadata=%+v", model, ef)
+		}
+	}
+}
+
 const completeCatalogYAML = `models:
   acme/complete:
     properties:
@@ -142,6 +169,37 @@ func TestCatalogValuesVariantSlugFallback(t *testing.T) {
 	}
 	if _, ok := cat.CatalogValues("cursor-grok-4.6-low", "th"); ok {
 		t.Fatal("absent property must not be invented")
+	}
+}
+
+func TestCatalogValuesForHarnessKeepsClaudeAliasesProviderScoped(t *testing.T) {
+	cat := testCatalogFromFS(t, map[string]string{
+		"models/anthropic.yml": `provider: anthropic
+models:
+  sonnet:
+    properties:
+      ef:
+        available: true
+        values: ["xhigh"]
+        default: "xhigh"
+`,
+		"models/claude.yml": `provider: claude
+models:
+  sonnet:
+    properties:
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "medium"
+`,
+	})
+	claude, ok := cat.CatalogValuesForHarness("claude", "sonnet", "ef")
+	if !ok || strings.Join(claude.Values, ",") != "low,medium,high" || claude.Default != "medium" {
+		t.Fatalf("Claude selector borrowed a different provider row: %+v", claude)
+	}
+	opencode, ok := cat.CatalogValuesForHarness("opencode", "sonnet", "ef")
+	if !ok || strings.Join(opencode.Values, ",") != "xhigh" || opencode.Default != "xhigh" {
+		t.Fatalf("OpenCode selector did not retain Anthropic row: %+v", opencode)
 	}
 }
 

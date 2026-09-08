@@ -30,7 +30,7 @@ type Options struct {
 	Name string
 	// Summary is the project summary.
 	Summary string
-	// Tools is the list of IDE tools (only "cursor" is supported in V1).
+	// Tools is the list of explicitly enabled harnesses. Claude remains opt-in.
 	Tools []string
 	// Version is the Hero CLI version (injected at build time).
 	Version string
@@ -173,6 +173,11 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 	if containsTool(enabled, "codex") {
 		if err := ProvisionCodex(opts.ProjectDir, opts.AssetsFS, checksums); err != nil {
 			return fmt.Errorf("provision codex: %w", err)
+		}
+	}
+	if containsTool(enabled, "claude") {
+		if err := ProvisionClaude(opts.ProjectDir, opts.AssetsFS, checksums); err != nil {
+			return fmt.Errorf("provision Claude: %w", err)
 		}
 	}
 

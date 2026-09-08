@@ -207,11 +207,11 @@ func TestDoctor_UnsupportedHarnessMarker_Warns(t *testing.T) {
 	for _, c := range report.Checks {
 		if c.Name == "harness-marker:claude" && c.Status == "warn" {
 			found = true
-			if !strings.Contains(c.Message, "⚠ Detected .claude/ but cli.tools does not include it") {
+			if !strings.Contains(c.Message, "⚠ Detected .claude/ but Claude is not enabled") {
 				t.Errorf("unexpected message: %q", c.Message)
 			}
-			if !strings.Contains(c.Message, "unsupported in this Hero version") {
-				t.Errorf("expected unsupported wording in: %q", c.Message)
+			if strings.Contains(c.Message, "unsupported in this Hero version") {
+				t.Errorf("unconfigured Claude must not be reported as unsupported: %q", c.Message)
 			}
 			break
 		}
@@ -303,8 +303,8 @@ func TestDoctor_CursorCLIOk(t *testing.T) {
 	dir := makeInstalledDir(t, "1.0.0")
 
 	report := doctor.Run(doctor.Options{
-		ProjectDir:    dir,
-		BinaryVersion: "1.0.0",
+		ProjectDir:     dir,
+		BinaryVersion:  "1.0.0",
 		CursorCLIProbe: func(context.Context, string) error { return nil },
 	})
 
@@ -328,8 +328,8 @@ func TestDoctor_CodexCLIMissing_WarnsWhenEnabled(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // no codex binary
 
 	report := doctor.Run(doctor.Options{
-		ProjectDir:    dir,
-		BinaryVersion: "1.0.0",
+		ProjectDir:     dir,
+		BinaryVersion:  "1.0.0",
 		CursorCLIProbe: func(context.Context, string) error { return nil },
 	})
 
@@ -371,8 +371,8 @@ func TestDoctor_CodexCLI_NoCheckWhenDisabled(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
 	report := doctor.Run(doctor.Options{
-		ProjectDir:    dir,
-		BinaryVersion: "1.0.0",
+		ProjectDir:     dir,
+		BinaryVersion:  "1.0.0",
 		CursorCLIProbe: func(context.Context, string) error { return nil },
 	})
 
@@ -411,8 +411,8 @@ func TestDoctor_CodexCLIOk_WhenOnPATH(t *testing.T) {
 	t.Setenv("PATH", binDir)
 
 	report := doctor.Run(doctor.Options{
-		ProjectDir:    dir,
-		BinaryVersion: "1.0.0",
+		ProjectDir:     dir,
+		BinaryVersion:  "1.0.0",
 		CursorCLIProbe: func(context.Context, string) error { return nil },
 	})
 
@@ -439,8 +439,8 @@ func TestDoctor_OpenCodeCLI_UnchangedWithCodexDisabled(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // no opencode/codex binaries
 
 	report := doctor.Run(doctor.Options{
-		ProjectDir:    dir,
-		BinaryVersion: "1.0.0",
+		ProjectDir:     dir,
+		BinaryVersion:  "1.0.0",
 		CursorCLIProbe: func(context.Context, string) error { return nil },
 	})
 

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/ricrsantos/ai_workflow_hero/assets"
+	claudeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/claude"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
 	herodebug "github.com/ricrsantos/ai_workflow_hero/internal/common/debug"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
@@ -81,12 +83,35 @@ Stages: Configuration → Research → Planning → Implementation → QA → Ju
 		tui.NewCommand(),
 		tui.NewChatCommand(),
 		newVersionCommand(),
+		newInternalCommand(),
 	)
 	for _, c := range cycle.NewCommands() {
 		root.AddCommand(c)
 	}
 
 	return root
+}
+
+// newClaudePermissionBridgeCommand is the private, per-turn stdio MCP helper
+// started by Claude through a strict temporary --mcp-config. It is hidden so
+// it cannot be mistaken for a user-facing workflow command.
+func newInternalCommand() *cobra.Command {
+	internal := &cobra.Command{Use: "internal", Hidden: true}
+	internal.AddCommand(&cobra.Command{
+		Use:    "claude-permission-bridge",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return claudeadapter.RunPermissionMCPHelper(
+				context.Background(),
+				cmd.InOrStdin(),
+				cmd.OutOrStdout(),
+				os.Getenv(claudeadapter.PermissionBridgeAddressEnv),
+				os.Getenv(claudeadapter.PermissionTokenEnv),
+			)
+		},
+	})
+	return internal
 }
 
 func newVersionCommand() *cobra.Command {

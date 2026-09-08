@@ -23,6 +23,7 @@ Windows is **out of scope for V1** (see [PRD.md §2.3](../product/PRD.md#23-v2-s
 - **Hero 1.0.0** is a **breaking major** relative to 0.9.x: SQLite becomes the sole Hero operational store; cycle markdown (`workflow.md` / `metrics.md`) ceases to be canonical; Runtime assets must call the CLI API for state transitions ([PRD-C01-001](../product/PRD-C01-001-hero-1-0.md), ADR-013/014/018).
 - **Hero 2.0.0** is a **breaking major** relative to 1.x: `hero install --tools` is removed; agents require `harness` in `workflow-config.yml`; OpenCode is an opt-in TUI harness ([PRD-C04-001](../product/PRD-C04-001-multi-harness.md), ADR-034).
 - **Hero 2.5.0** is a **minor** relative to 2.4.x: Codex is an additional opt-in TUI harness (`CodexAdapter`, `.codex/` projection). Cursor and OpenCode stay intact; upgrade does not auto-enable Codex ([PRD-C06-001](../product/PRD-C06-001-codex-adapter.md), ADR-048).
+- The Claude Code adapter is an additional opt-in minor harness: upgrade leaves `harnesses.claude.enabled=false` and does not create `.claude/` or modify `CLAUDE.md` until explicit enable. It requires Claude Code 2.1.261+ on supported Linux/macOS platforms ([PRD-C13-001](../product/PRD-C13-001-claude-code-adapter.md)).
 
 ### 3.1 Upgrade from 0.9.x (1.0)
 
@@ -105,12 +106,12 @@ sha256sum -c checksums.txt --ignore-missing
 1. Download the binary matching the user's OS/architecture from the repository's GitHub Releases page.
 2. (Optional but recommended) Verify its checksum against `checksums.txt`.
 3. Place the binary in a directory on the system `PATH`.
-4. Run `hero install` inside the target project and select at least one harness (Cursor, OpenCode, and/or Codex). `--tools` is not supported in 2.0.
+4. Run `hero install` inside the target project and select at least one harness (Cursor, OpenCode, Codex, and/or Claude). `--tools` is not supported in 2.0.
 
 `hero install` performs these deterministic checks before writing any files:
 
 - Confirms the target directory is a git repository; if not, interactively offers to run `git init` (declining aborts installation — see [ADR-004](../architecture/ADR.md#adr-004-git-as-a-mandatory-prerequisite)).
-- Copies commands, agents, skills, and templates from the embedded assets into harness projections (`.cursor/`, `.opencode/`, and/or `.codex/`) and `.workflow-hero/`.
+- Copies commands, agents, skills, and templates from the embedded assets into harness projections (`.cursor/`, `.opencode/`, `.codex/`, and/or `.claude/`) and `.workflow-hero/`. Claude's root memory block requires an explicit `CLAUDE.md` choice and preserves user content.
 
 ## 7. Update & Removal
 

@@ -1,0 +1,58 @@
+# Claude Code-native local catalog (C13 / ADR-074).
+# These are CLI selectors, not Anthropic API provider aliases. Pricing is
+# deliberately omitted: Claude Code subscription/account billing must never be
+# inferred as token pricing by Hero. The aliases and pinned IDs below follow
+# Claude Code's native model configuration documentation; `[1m]` is exposed
+# only for the Sonnet and Opus selectors that Claude Code documents as
+# extended-context variants.
+provider: claude
+version: 1
+last_updated: 2026-09-07
+currency: usd
+unit: per_1m_tokens
+
+models:
+  sonnet: &standard
+    context_window: 200000
+    properties: &standard_properties
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high"]
+        default: "medium"
+  sonnet[1m]:
+    <<: *standard
+    context_window: 1000000
+  claude-sonnet-4-6:
+    <<: *standard
+  claude-sonnet-4-6[1m]:
+    <<: *standard
+    context_window: 1000000
+
+  opus:
+    <<: *standard
+  opus[1m]:
+    <<: *standard
+    context_window: 1000000
+  claude-opus-4-7:
+    <<: *standard
+  claude-opus-4-7[1m]:
+    <<: *standard
+    context_window: 1000000
+
+  haiku:
+    <<: *standard
+  claude-haiku-4-5-20251001:
+    <<: *standard
+
+  fable:
+    <<: *standard
+  claude-fable-5:
+    <<: *standard

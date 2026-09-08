@@ -16,7 +16,11 @@ var KnownMarkers = []MarkerDir{
 	{Dir: ".cursor", ToolID: "cursor", Supported: true},
 	{Dir: ".opencode", ToolID: "opencode", Supported: true},
 	{Dir: ".codex", ToolID: "codex", Supported: true},
-	{Dir: ".claude", ToolID: "claude", Supported: false},
+	// Claude is a supported adapter, but its marker is considered configured
+	// only when the caller includes claude in the explicit Hero harness state.
+	// detectMarkers retains that distinction for upgrades/projects that merely
+	// happen to contain a user-created .claude directory.
+	{Dir: ".claude", ToolID: "claude", Supported: true},
 	{Dir: ".windsurf", ToolID: "windsurf", Supported: false},
 }
 
@@ -24,7 +28,9 @@ var KnownMarkers = []MarkerDir{
 type DetectionResult struct {
 	// Present lists markers whose directories exist under the project root.
 	Present []MarkerDir
-	// UnsupportedPresent are Present markers that are not Supported.
+	// UnsupportedPresent are Present markers without a Hero projection. This
+	// includes the supported Claude marker when Claude is not explicitly
+	// configured by the caller, preserving warn-only marker detection.
 	UnsupportedPresent []MarkerDir
 	// MissingConfigured are Supported tools listed in cli.tools whose marker dir is absent.
 	MissingConfigured []string

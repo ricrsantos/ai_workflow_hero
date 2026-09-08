@@ -1,9 +1,11 @@
 package cycle_test
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -294,6 +296,213 @@ func TestServiceRunRecordsHarnessInvokedFallback(t *testing.T) {
 	}
 	if ev.Events[0].Type != store.EventHarnessInvoked {
 		t.Fatalf("event type=%q", ev.Events[0].Type)
+	}
+}
+
+func TestStageAgentAuditRoundTrip(t *testing.T) {
+	dir := setupProject(t)
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	assignmentBody := "  {\n    \"tasks\": [\"01\", \"02\"],\n    \"mode\": \"parallel\"\n  }  "
+	resultBody := "{\"status\":\"partial\",\"tasks_remaining\":[\"03\"]}"
+	if err := svc.RecordStageAgentAssignment(" implementation ", " generic_agent ", 2, assignmentBody); err != nil {
+		t.Fatalf("record assignment: %v", err)
+	}
+	if err := svc.RecordStageAgentResult("implementation", "generic_agent", 2, resultBody); err != nil {
+		t.Fatalf("record result: %v", err)
+	}
+
+	c, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := svc.Store.ListConversation(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("conversation entries=%d want 2: %+v", len(entries), entries)
+	}
+
+	want := []struct {
+		role string
+		kind string
+		body string
+	}{
+		{cycle.ConversationRoleSystem, cycle.ConversationKindStageAgentAssignment, assignmentBody},
+		{cycle.ConversationRoleAgent, cycle.ConversationKindStageAgentResult, resultBody},
+	}
+	for i, want := range want {
+		got := entries[i]
+		if got.Role != want.role || got.Kind != want.kind {
+			t.Fatalf("entry[%d]=%+v want role=%q kind=%q", i, got, want.role, want.kind)
+		}
+		var audit cycle.StageAgentAuditBody
+		if err := json.Unmarshal([]byte(got.Body), &audit); err != nil {
+			t.Fatalf("entry[%d] body is not audit JSON: %v; body=%q", i, err, got.Body)
+		}
+		if audit.Stage != "implementation" || audit.Agent != "generic_agent" || audit.Wave != 2 || audit.Body != want.body {
+			t.Fatalf("entry[%d] audit=%+v want stage/agent/wave/body preserved", i, audit)
+		}
+		if len(audit.TaskIDs) != 0 {
+			t.Fatalf("entry[%d] legacy audit task IDs=%v want empty", i, audit.TaskIDs)
+		}
+	}
+}
+
+func TestStageAgentAuditAssignmentTaskIDsRoundTrip(t *testing.T) {
+	dir := setupProject(t)
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	wantTaskIDs := []string{"task-02", "task-01", "task-03"}
+	if err := svc.RecordStageAgentAssignmentWithTasks(
+		" implementation ",
+		" generic_agent ",
+		3,
+		[]string{" task-02 ", "task-01", "\ttask-03\n"},
+		"assignment",
+	); err != nil {
+		t.Fatalf("record assignment with task IDs: %v", err)
+	}
+
+	c, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := svc.Store.ListConversation(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("conversation entries=%d want 1", len(entries))
+	}
+
+	var audit cycle.StageAgentAuditBody
+	if err := json.Unmarshal([]byte(entries[0].Body), &audit); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(audit.TaskIDs, wantTaskIDs) {
+		t.Fatalf("task IDs=%v want %v", audit.TaskIDs, wantTaskIDs)
+	}
+	if audit.Stage != "implementation" || audit.Agent != "generic_agent" || audit.Wave != 3 || audit.Body != "assignment" {
+		t.Fatalf("audit=%+v want normalized assignment envelope", audit)
+	}
+}
+
+func TestStageAgentAuditValidationAndActiveCycleErrors(t *testing.T) {
+	dir := setupProject(t)
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	tests := []struct {
+		name string
+		call func() error
+		want string
+	}{
+		{
+			name: "missing stage",
+			call: func() error {
+				return svc.RecordStageAgentAssignment(" ", "agent", 1, "body")
+			},
+			want: "stage is required",
+		},
+		{
+			name: "missing agent",
+			call: func() error {
+				return svc.RecordStageAgentResult("stage", " ", 1, "body")
+			},
+			want: "agent is required",
+		},
+		{
+			name: "invalid wave",
+			call: func() error {
+				return svc.RecordStageAgentAssignment("stage", "agent", 0, "body")
+			},
+			want: "wave must be at least 1",
+		},
+		{
+			name: "missing assignment body",
+			call: func() error {
+				return svc.RecordStageAgentAssignment("stage", "agent", 1, " \t")
+			},
+			want: "body is required",
+		},
+		{
+			name: "empty task ID",
+			call: func() error {
+				return svc.RecordStageAgentAssignmentWithTasks("stage", "agent", 1, []string{"task-01", " \t"}, "body")
+			},
+			want: "task id at index 1 is required",
+		},
+		{
+			name: "duplicate task ID after normalization",
+			call: func() error {
+				return svc.RecordStageAgentAssignmentWithTasks("stage", "agent", 1, []string{"task-01", " task-01 "}, "body")
+			},
+			want: "duplicate task id",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error=%v want containing %q", err, tt.want)
+			}
+		})
+	}
+
+	if err := svc.RecordStageAgentAssignment("stage", "agent", 1, "body"); err == nil || !strings.Contains(err.Error(), "get active cycle") {
+		t.Fatalf("no active cycle error=%v", err)
+	}
+}
+
+func TestStageAgentAuditPreservesEmptyResult(t *testing.T) {
+	dir := setupProject(t)
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RecordStageAgentResult("implementation", "generic_agent", 1, ""); err != nil {
+		t.Fatalf("record empty result: %v", err)
+	}
+	c, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := svc.Store.ListConversation(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("conversation entries=%d want 1", len(entries))
+	}
+	var audit cycle.StageAgentAuditBody
+	if err := json.Unmarshal([]byte(entries[0].Body), &audit); err != nil {
+		t.Fatal(err)
+	}
+	if audit.Body != "" {
+		t.Fatalf("empty result body=%q want empty", audit.Body)
 	}
 }
 

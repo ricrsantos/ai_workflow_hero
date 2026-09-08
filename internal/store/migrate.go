@@ -6,7 +6,7 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 8
+const currentSchemaVersion = 9
 
 func (s *Store) migrate() error {
 	return s.migrateTo(currentSchemaVersion)
@@ -193,6 +193,12 @@ func (s *Store) applyMigration(version int) error {
 		// TUI session timer: retain active seconds across TUI restarts while
 		// keeping archive/resume boundaries independent of wall-clock time.
 		if _, err := tx.Exec(`ALTER TABLE cycles ADD COLUMN session_duration_seconds INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+	case 9:
+		// C13: deterministic Status can report the TUI's live permission pause
+		// without starting a harness or inspecting credentials.
+		if _, err := tx.Exec(`ALTER TABLE stages ADD COLUMN harness_permission_paused INTEGER NOT NULL DEFAULT 0`); err != nil {
 			return fmt.Errorf("migration %d: %w", version, err)
 		}
 	default:

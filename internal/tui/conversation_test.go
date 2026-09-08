@@ -450,6 +450,68 @@ func TestConversationCancelDuringStreamWithoutSessionID(t *testing.T) {
 	}
 }
 
+func TestCancelInvalidatesStageExecuteBeforeCancelDone(t *testing.T) {
+	m := NewTestModel(nil)
+	m.streaming = true
+	m.stageHandoffLive = true
+	m.stageHandoffStage = stageImplementation
+	m.stageHandoffOutputs = []string{"backend_agent:\nold report"}
+	m.stageHandoffAssignments = map[int]map[string][]implementationTaskBlock{
+		1: {agentBackend: {{ID: "task-back", Owner: agentBackend}}},
+	}
+	m.stageHandoffExpectedAgents = []string{agentBackend}
+	m.stageHandoffWave = 1
+	m.executes = map[string]convExecute{
+		"cancelled-execute": {ID: "cancelled-execute", AgentName: agentBackend},
+	}
+
+	next, cancelCmd := CancelConversationStreamForTest(m)
+	if cancelCmd == nil {
+		t.Fatal("expected cancellation command")
+	}
+	if len(next.executes) != 0 {
+		t.Fatalf("cancel must invalidate executes immediately: %+v", next.executes)
+	}
+
+	// This completion races with the asynchronous Cancel command. It must be
+	// ignored before streamCancelDoneMsg performs the full state cleanup.
+	late, _ := next.Update(executeDoneMsg{
+		executeID: "cancelled-execute",
+		result:    &harness.ExecutionResult{Output: "late result"},
+	})
+	between := late.(model)
+	if len(between.stageHandoffOutputs) != 1 || strings.Contains(strings.Join(between.stageHandoffOutputs, "\n"), "late result") {
+		t.Fatalf("late completion changed handoff outputs: %+v", between.stageHandoffOutputs)
+	}
+	if !between.streaming {
+		t.Fatal("late completion must not stop the stream before cancellation completes")
+	}
+
+	finished, _ := between.Update(cancelCmd())
+	assertStageHandoffStateCleared(t, finished.(model))
+}
+
+func TestStageHandoffIgnoresExecuteDoneWithoutID(t *testing.T) {
+	m := NewTestModel(nil)
+	m.streaming = true
+	m.stageHandoffLive = true
+	m.stageHandoffStage = stageImplementation
+	m.runtimeAgentName = agentBackend
+	m.stageHandoffExpectedAgents = []string{agentBackend}
+	m.stageHandoffOutputs = []string{"backend_agent:\nexisting report"}
+
+	updated, _ := m.Update(executeDoneMsg{
+		result: &harness.ExecutionResult{Output: "untagged result"},
+	})
+	got := updated.(model)
+	if len(got.stageHandoffOutputs) != 1 || strings.Contains(strings.Join(got.stageHandoffOutputs, "\n"), "untagged result") {
+		t.Fatalf("untagged completion changed handoff outputs: %+v", got.stageHandoffOutputs)
+	}
+	if !got.streaming {
+		t.Fatal("untagged completion must not stop an active handoff")
+	}
+}
+
 func TestConversationPersistsSessionFromBoundDeltaBeforeExecuteDone(t *testing.T) {
 	m, h, svc := newConversationTestModel(t)
 	h.deltas = nil
@@ -3018,6 +3080,31 @@ func TestConversationSiblingExecuteDoneKeepsOtherStream(t *testing.T) {
 	}
 }
 
+func TestConversationUsesRuntimeNativeModelForCompletedTurnIdentity(t *testing.T) {
+	m := NewTestModel(nil)
+	m.streaming = true
+	m.executes = map[string]convExecute{
+		"ex-1": {ID: "ex-1", AgentName: "generic_agent", HarnessID: "claude", Model: "sonnet", AgentMsgIndex: 1},
+	}
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "implement"},
+		{role: convRoleAgent, content: "done", agentName: "generic_agent", modelSlug: "sonnet", harnessID: "claude"},
+	}
+	next, _ := m.Update(executeDoneMsg{
+		executeID: "ex-1",
+		harnessID: "claude",
+		result: &harness.ExecutionResult{
+			Output:      "done",
+			StreamDone:  true,
+			NativeModel: "claude-sonnet-4-20250514",
+		},
+	})
+	got := next.(model)
+	if got.transcript[1].modelSlug != "claude-sonnet-4-20250514" {
+		t.Fatalf("turn model=%q", got.transcript[1].modelSlug)
+	}
+}
+
 func TestConversationFreechatParentShowsHARN(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 80)
@@ -3283,6 +3370,94 @@ func TestNewChatClearsSession(t *testing.T) {
 	}
 	if StatusTextForTest(next) != "New chat started with default model." {
 		t.Fatalf("status=%q", StatusTextForTest(next))
+	}
+}
+
+func TestResetChatSessionClearsStageHandoffState(t *testing.T) {
+	m := NewTestModel(nil)
+	m.stageHandoffLive = true
+	m.stageHandoffStage = "implementation"
+	m.stageHandoffOutputs = []string{"backend_agent:\nold report"}
+	m.stageHandoffPendingBefore = []string{"task-01"}
+	m.stageHandoffWave = 3
+	m.stageHandoffAssignments = map[int]map[string][]implementationTaskBlock{
+		3: {agentBackend: {{ID: "task-01", Owner: agentBackend}}},
+	}
+	m.stageHandoffExpectedAgents = []string{agentBackend}
+	m.stageHandoffPreparationError = "stale preparation error"
+	m.stageHandoffInterventionRequired = true
+	m.stageHandoffDoneKey = "implementation:4"
+
+	got := m.resetChatSession()
+	assertStageHandoffStateCleared(t, got)
+}
+
+func TestCancelClearsStageHandoffStateAndIgnoresLateExecute(t *testing.T) {
+	m := NewTestModel(nil)
+	m.streaming = true
+	m.stageHandoffLive = true
+	m.stageHandoffStage = "implementation"
+	m.stageHandoffOutputs = []string{"frontend_agent:\nold report"}
+	m.stageHandoffPendingBefore = []string{"task-02"}
+	m.stageHandoffWave = 2
+	m.stageHandoffInterventionRequired = true
+	m.stageHandoffDoneKey = "implementation:7"
+	m.executes = map[string]convExecute{
+		"cancelled-execute": {ID: "cancelled-execute", AgentName: "frontend_agent"},
+	}
+
+	// streamCancelDoneMsg represents the completion of the cancellation
+	// command. The execution map has already been invalidated by cancellation,
+	// so a completion delivered afterwards must be ignored.
+	next, _ := m.Update(streamCancelDoneMsg{})
+	got := next.(model)
+	assertStageHandoffStateCleared(t, got)
+	if got.streaming {
+		t.Fatal("streaming must stop after cancellation")
+	}
+
+	late, _ := got.Update(executeDoneMsg{
+		executeID: "cancelled-execute",
+		result:    &harness.ExecutionResult{Output: "late result"},
+	})
+	after := late.(model)
+	assertStageHandoffStateCleared(t, after)
+	if strings.Contains(ConversationTranscriptForTest(after), "late result") {
+		t.Fatal("late cancelled Execute completion must not alter transcript")
+	}
+}
+
+func assertStageHandoffStateCleared(t *testing.T, m model) {
+	t.Helper()
+	if m.stageHandoffLive {
+		t.Fatal("stageHandoffLive must be false")
+	}
+	if m.stageHandoffStage != "" {
+		t.Fatalf("stageHandoffStage=%q want empty", m.stageHandoffStage)
+	}
+	if len(m.stageHandoffOutputs) != 0 {
+		t.Fatalf("stageHandoffOutputs=%v want empty", m.stageHandoffOutputs)
+	}
+	if len(m.stageHandoffPendingBefore) != 0 {
+		t.Fatalf("stageHandoffPendingBefore=%v want empty", m.stageHandoffPendingBefore)
+	}
+	if m.stageHandoffWave != 0 {
+		t.Fatalf("stageHandoffWave=%d want 0", m.stageHandoffWave)
+	}
+	if len(m.stageHandoffAssignments) != 0 {
+		t.Fatalf("stageHandoffAssignments=%v want empty", m.stageHandoffAssignments)
+	}
+	if len(m.stageHandoffExpectedAgents) != 0 {
+		t.Fatalf("stageHandoffExpectedAgents=%v want empty", m.stageHandoffExpectedAgents)
+	}
+	if m.stageHandoffPreparationError != "" {
+		t.Fatalf("stageHandoffPreparationError=%q want empty", m.stageHandoffPreparationError)
+	}
+	if m.stageHandoffInterventionRequired {
+		t.Fatal("stageHandoffInterventionRequired must be false")
+	}
+	if m.stageHandoffDoneKey != "" {
+		t.Fatalf("stageHandoffDoneKey=%q want empty", m.stageHandoffDoneKey)
 	}
 }
 

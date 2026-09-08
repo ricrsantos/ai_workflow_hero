@@ -225,8 +225,25 @@ func mergeCatalogYAML(cat Catalog, data []byte) {
 				model.Provider = previous.Provider
 			}
 		}
+		// Keep a provider-scoped copy as well as the legacy unqualified key.
+		// The latter preserves callers that predate multi-native catalogs;
+		// scoped lookups prevent equal selectors (for example, a Claude alias
+		// and an Anthropic/OpenCode row) from borrowing each other's C5 data.
+		if model.Provider != "" {
+			cat[catalogScopedKey(model.Provider, id)] = model
+		}
 		cat[id] = model
 	}
+}
+
+const catalogScopeSeparator = "\x00"
+
+func catalogScopedKey(provider, modelID string) string {
+	return catalogScopeSeparator + strings.ToLower(strings.TrimSpace(provider)) + catalogScopeSeparator + strings.TrimSpace(modelID)
+}
+
+func catalogKeyIsScoped(key string) bool {
+	return strings.HasPrefix(key, catalogScopeSeparator)
 }
 
 func catalogPropertyForModel(cat Catalog, modelID, key string) (CatalogProperty, bool) {
@@ -241,6 +258,55 @@ func catalogPropertyForModel(cat Catalog, modelID, key string) (CatalogProperty,
 	return p, true
 }
 
+func catalogPropertyForHarness(cat Catalog, harnessID, modelID, key string) (CatalogProperty, bool) {
+	for _, provider := range catalogProvidersForHarness(harnessID) {
+		if m, ok := cat[catalogScopedKey(provider, modelID)]; ok {
+			if p, ok := m.Properties[key]; ok && p.HasProperty {
+				return p, true
+			}
+		}
+	}
+	// Backward compatibility for tests and local overlays written before the
+	// provider marker existed. An explicitly mismatched provider never leaks.
+	m, ok := cat[strings.TrimSpace(modelID)]
+	if !ok || !catalogProviderMatchesHarness(m.Provider, harnessID) {
+		return CatalogProperty{}, false
+	}
+	p, ok := m.Properties[key]
+	if !ok || !p.HasProperty {
+		return CatalogProperty{}, false
+	}
+	return p, true
+}
+
+func catalogProvidersForHarness(harnessID string) []string {
+	switch strings.ToLower(strings.TrimSpace(harnessID)) {
+	case "cursor":
+		return []string{"cursor"}
+	case "opencode":
+		return []string{"opencode", "opencode-go", "openai", "anthropic"}
+	case "codex":
+		return []string{"codex"}
+	case "claude":
+		return []string{"claude"}
+	default:
+		return []string{strings.ToLower(strings.TrimSpace(harnessID))}
+	}
+}
+
+func catalogProviderMatchesHarness(provider, harnessID string) bool {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "" {
+		return true
+	}
+	for _, allowed := range catalogProvidersForHarness(harnessID) {
+		if provider == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 // catalogBaseModelCandidates returns modelID followed by progressively shorter
 // base slugs after stripping known variant suffixes (UI context bar parity).
 func catalogBaseModelCandidates(modelID string) []string {
@@ -253,6 +319,18 @@ func catalogBaseModelCandidates(modelID string) []string {
 func (c Catalog) CatalogValues(modelID, key string) (CatalogProperty, bool) {
 	for _, candidate := range catalogBaseModelCandidates(modelID) {
 		if p, ok := catalogPropertyForModel(c, candidate, key); ok {
+			return p, true
+		}
+	}
+	return CatalogProperty{}, false
+}
+
+// CatalogValuesForHarness returns metadata only from the selected native
+// provider. It prevents a Claude selector from resolving an Anthropic/OpenCode
+// property row with the same model ID.
+func (c Catalog) CatalogValuesForHarness(harnessID, modelID, key string) (CatalogProperty, bool) {
+	for _, candidate := range catalogBaseModelCandidates(modelID) {
+		if p, ok := catalogPropertyForHarness(c, harnessID, candidate, key); ok {
 			return p, true
 		}
 	}
@@ -276,6 +354,9 @@ func (c Catalog) ModelsForHarness(harnessID string) []string {
 	}
 	ids := make([]string, 0, len(c))
 	for id, model := range c {
+		if catalogKeyIsScoped(id) {
+			continue
+		}
 		provider := strings.TrimSpace(strings.ToLower(model.Provider))
 		matches := false
 		switch harnessID {

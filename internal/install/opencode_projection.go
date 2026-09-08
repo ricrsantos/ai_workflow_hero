@@ -150,6 +150,8 @@ func EnabledHarnessSummary(selected []string) string {
 			names = append(names, "OpenCode")
 		case "codex":
 			names = append(names, "Codex")
+		case "claude":
+			names = append(names, "Claude")
 		default:
 			names = append(names, id)
 		}

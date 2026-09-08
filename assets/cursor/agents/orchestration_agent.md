@@ -56,7 +56,7 @@ Read `require_human_approval` for the stage that **just finished** — never for
 2. Implementation, QA, Judge, Browser UI Validation, and QA End-to-End **always** run via the Task tool in a fresh session.
 3. Research grilling runs in **this** orchestrator session (follow `discover_agent.md`). When research deliverables are done, stop acting as discover: close Research as orchestrator. Then dispatch `planning_agent` via Task unless planning still needs in-session user iteration.
 4. After every Task call: set `run_in_background` to **false**. **Wait until the Task returns** before any other action. Do not end your turn after launching Task. Do not use AwaitShell to wait for Task.
-5. Nested Task work often does **not** stream to the user. After the Task returns, post the agent's structured Output Format + a short summary in chat yourself, then apply Stage Close Sequence.
+5. Nested Task work often does **not** stream to the user. After the Task returns, post the agent's structured Output Format + a short summary in chat yourself. For Implementation, apply the Implementation Assignment and Completion Gate below before applying the Stage Close Sequence.
 6. Never dispatch the next stage's agent until the current Task has returned and the current stage has been closed (or is waiting on `/hero-approve`).
 
 ## Iteration and Timeout Handling
@@ -74,6 +74,12 @@ Read `workflow-config.yml → workflow_config.user_preferred_language` (default 
 ## Scope Routing
 
 `workflow-config.yml → scope` maps backend/frontend to backend_agent/frontend_agent; native/script/infrastructure map to generic_agent.
+
+## Implementation task ownership
+
+Implementation task lines must use exactly one canonical owner marker: `[agent:backend_agent]`, `[agent:frontend_agent]`, or `[agent:generic_agent]`. Before dispatching, parse and validate every unchecked task. Partition assignments by matching owner and pass only those task IDs to each agent. A task with an invalid marker, multiple owner markers, or an owner that is not active is a hard failure; do not dispatch it. Cross-cutting work must have been decomposed by `planning_agent` into dependent single-owner tasks.
+
+For compatibility with older `tasks.md` files, an ownerless task may be routed only when exactly one implementation agent is active and the assignment explicitly records `ownership_validated: true`. If two or more implementation agents are active, any ownerless or invalid task fails closed and must return to Planning/orchestration for correction. Never infer an owner from file paths or task prose.
 
 ## Browser UI Validation Gates
 
@@ -97,12 +103,45 @@ Before dispatching `end2end_qa_agent`, validate `stages.qa_end_to_end.use_playwr
 During the Implementation stage:
 
 1. Read parallel vs series markings from the SDD / `tasks.md` (and any `parallel_groups` from planning).
-2. When two or more of backend_agent, frontend_agent, or generic_agent can run without blocking each other, launch **multiple Task tool invocations in the same turn** (parallel).
-3. Serialize only when the SDD marks a dependency (e.g. frontend waits on API contract task).
-4. Always pass file pointers only (ADR-005); absorb only each agent's structured Output Format.
-5. Encourage implementation agents to fan out further nested Task subagents for independent tasks within their scope. Prefer fan-out when `agents.<name>.subagent` configures a cheaper model (`same_of_agent: false`) so nested work stays affordable.
-6. Every Task call (including nested fan-out) must apply **Model Resolution** — never omit the `model` parameter.
+2. Validate the owner marker and build a separate explicit assignment for each active agent. Include only task IDs owned by that agent (or the explicitly validated single-agent legacy assignment); do not send the global checklist to every agent.
+3. When two or more of backend_agent, frontend_agent, or generic_agent can run without blocking each other, launch **multiple Task tool invocations in the same turn** (parallel).
+4. Serialize only when the SDD marks a dependency (e.g. frontend waits on API contract task).
+5. Always pass file pointers only (ADR-005); absorb only each agent's structured Output Format.
+6. Encourage implementation agents to fan out further nested Task subagents for independent tasks within their scope. Prefer fan-out when `agents.<name>.subagent` configures a cheaper model (`same_of_agent: false`) so nested work stays affordable.
+7. Every Task call (including nested fan-out) must apply **Model Resolution** — never omit the `model` parameter.
 
+## Implementation Assignment and Completion Gate
+
+Before every Implementation Task dispatch, read the linked OpenSpec `tasks.md` and build an explicit assignment. The Task prompt MUST include:
+
+- the task-file path;
+- the exact task IDs being assigned (not only a broad scope such as `native`);
+- each task's dependency or parallel group;
+- each task's acceptance criteria;
+- the applicable verification commands.
+
+A file pointer without those task IDs is insufficient. Do not dispatch a stage agent with an implicit “implement the whole change” assignment.
+
+After every Implementation report, validate the report and the task file on disk. A report is eligible for stage completion only when all of these are true:
+
+- every report has `status: "complete"`;
+- every report has an empty `tasks_remaining` array;
+- every report has `tests_passed: true`;
+- every value in every report's `acceptance_gates` object is `true`;
+- every report has `completed_tasks_verified: true`, `task_ownership_respected: true`, and `required_tests_passed: true` in its `acceptance_gates` object;
+- every `tasks_completed` and `tasks_remaining` ID belongs to that report's explicit assignment;
+- every assigned ID is implemented and verified according to the report; the
+  checkbox state is informational while the report is being validated and may
+  still be `[ ]`;
+- after validating the reports and evidence, the TUI/runtime scheduler alone
+  marks the reported completed IDs and rereads `tasks.md`; only then is the
+  global no-pending-checklist condition evaluated: the linked OpenSpec checklist has no pending `[ ]` tasks.
+  This condition is evaluated after the scheduler
+  reread, not as a prerequisite for validating an otherwise eligible report.
+
+Never close Implementation because one agent returned, because a selected subset of tests is green, or because the iteration budget was consumed. If Implementation starts or restarts already without pending tasks, the TUI may run exactly one verification wave with the active agents to collect reports and gates. Once a wave has cleared all pending tasks, close directly after the scheduler marks and rereads the checklist; never redispatch an empty wave. If a report is `partial`, redispatch only its remaining task IDs, routed to their canonical owners, with the prior report as context; do not re-run agents that have no remaining assigned tasks. If it is `blocked`, preserve the non-empty `blocker` and `next_action`, resolve or escalate that blocker, and do not mark the stage complete. Multiple agent reports must be aggregated before evaluating the gate. Agents never edit task checkboxes: the TUI/runtime scheduler is the sole writer and may update `[ ]` to `[x]` only after validating the corresponding report, ownership, acceptance gates, and verification evidence.
+
+Only after this gate passes may the orchestrator execute the normal Stage Close Sequence and advance to QA.
 ## Model Resolution
 
 **Mandatory on every Task tool invocation.** Agent `.md` frontmatter uses `model: inherit` by design; the effective model comes from `workflow-config.yml` via the Task `model` parameter. Omitting `model` makes the subagent inherit the orchestrator session model — that is incorrect.

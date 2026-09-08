@@ -23,6 +23,15 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 	_ = stdout
 	_ = stderr
 
+	// Claude projection ownership is file-granular so user files under .claude/
+	// survive uninstall. Its marked root context is managed independently.
+	if err := install.RemoveClaudeProjection(opts.ProjectDir); err != nil {
+		return err
+	}
+	if _, err := install.RemoveClaudeManagedContext(opts.ProjectDir); err != nil {
+		return err
+	}
+
 	// Hero-owned directories to remove entirely.
 	dirsToRemove := []string{
 		filepath.Join(opts.ProjectDir, cursoradapter.AgentsDir),

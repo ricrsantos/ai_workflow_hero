@@ -78,6 +78,11 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 			assetGroups = append(assetGroups, struct{ src, dst string }{g.Src, g.Dst})
 		}
 	}
+	if install.IsHarnessEnabled(heroForGroups, "claude") {
+		for _, g := range install.ClaudeAssetGroups(opts.ProjectDir) {
+			assetGroups = append(assetGroups, struct{ src, dst string }{g.Src, g.Dst})
+		}
+	}
 
 	for _, group := range assetGroups {
 		if err := fs.WalkDir(opts.AssetsFS, group.src, func(path string, d fs.DirEntry, err error) error {
@@ -142,6 +147,15 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 	if install.IsHarnessEnabled(heroForGroups, "opencode") {
 		if err := refreshMinimalOpenCodeJSON(opts.ProjectDir, originalChecksums, newChecksums, &result, stderr); err != nil {
 			return result, err
+		}
+	}
+	if install.IsHarnessEnabled(heroForGroups, "claude") {
+		contextResult, err := install.UpdateClaudeContext(opts.ProjectDir)
+		if err != nil {
+			return result, fmt.Errorf("refresh Claude context: %w", err)
+		}
+		if contextResult.Changed {
+			result.Updated = append(result.Updated, "CLAUDE.md")
 		}
 	}
 

@@ -37,6 +37,8 @@ type Options struct {
 	BinaryVersion string
 	// CursorCLIProbe overrides the default Cursor Agent CLI availability check (tests).
 	CursorCLIProbe CursorCLIProbe
+	// ClaudeCLIProbe overrides the default Claude Code compatibility check (tests).
+	ClaudeCLIProbe ClaudeCLIProbe
 }
 
 // Run performs all doctor checks and returns a report.
@@ -136,14 +138,14 @@ func Run(opts Options) Report {
 
 	// 7. hero.json version vs binary version.
 	var configuredTools []string
+	var heroJSON install.HeroJSON
 	heroPath := filepath.Join(opts.ProjectDir, cursoradapter.HeroJSONPath)
 	heroData, err := os.ReadFile(heroPath)
 	if err == nil {
-		var heroJSON install.HeroJSON
 		if jsonErr := json.Unmarshal(heroData, &heroJSON); jsonErr != nil {
 			addCheck("hero-json-parse", "fail", "hero.json is not valid JSON: "+jsonErr.Error())
 		} else {
-			configuredTools = heroJSON.CLI.Tools
+			configuredTools = claudeMarkerTools(heroJSON)
 			if heroJSON.CLI.Version != opts.BinaryVersion {
 				addCheck("version-match", "warn", fmt.Sprintf(
 					"installed version %q differs from binary version %q — run `hero upgrade`",
@@ -199,7 +201,7 @@ func Run(opts Options) Report {
 	}
 
 	// 10. Harness marker detection (warn-only; ADR-022; UI-C02-001 §5).
-	if len(configuredTools) > 0 {
+	if heroInstalled {
 		addHarnessMarkerChecks(opts.ProjectDir, configuredTools, addCheck)
 	}
 
@@ -208,6 +210,9 @@ func Run(opts Options) Report {
 		addCursorCLIChecks(context.Background(), opts.ProjectDir, opts.CursorCLIProbe, addCheck)
 		addOpenCodeCLIChecks(opts.ProjectDir, addCheck)
 		addCodexCLIChecks(opts.ProjectDir, addCheck)
+		addClaudeCLIChecks(context.Background(), opts.ProjectDir, opts.ClaudeCLIProbe, addCheck)
+		addClaudeProjectionChecks(opts.ProjectDir, addCheck)
+		addClaudeRuntimeChecks(opts.ProjectDir, addCheck)
 	}
 
 	// 12. Optional Telegram plugin health (ADR-059; telegram-plugin R2).
@@ -263,6 +268,16 @@ func addHarnessMarkerChecks(projectDir string, configuredTools []string, addChec
 	}
 
 	for _, m := range res.UnsupportedPresent {
+		if m.ToolID == "claude" && !configured[m.ToolID] {
+			// Keep this warn-only and explicit: Claude is supported, but a
+			// user-created marker is not managed until /harness enables it.
+			addCheck(
+				"harness-marker:"+m.ToolID,
+				"warn",
+				"⚠ Detected .claude/ but Claude is not enabled in this Hero project; the marker is user-managed.\n→ Enable Claude with /harness to let Hero manage only its projection.",
+			)
+			continue
+		}
 		addCheck(
 			"harness-marker:"+m.ToolID,
 			"warn",

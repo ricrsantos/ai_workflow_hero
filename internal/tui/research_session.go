@@ -18,25 +18,6 @@ const (
 	stageResearch      = "research"
 )
 
-func (m model) researchStageInteractive() bool {
-	if m.svc == nil {
-		return false
-	}
-	st, err := m.svc.ActiveStage()
-	if err != nil {
-		return false
-	}
-	if st.Name != stageResearch {
-		return false
-	}
-	switch st.Status {
-	case store.StageRunning, store.StageEscalated:
-		return true
-	default:
-		return false
-	}
-}
-
 func (m model) researchStageClosedOrMovedOn() bool {
 	if m.svc == nil {
 		return true

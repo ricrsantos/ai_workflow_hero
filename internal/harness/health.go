@@ -37,7 +37,11 @@ const (
 	CursorStallTimeout   = 5 * time.Minute
 	OpenCodeStallTimeout = 3 * time.Minute
 	CodexStallTimeout    = 3 * time.Minute
-	HealthProbeInterval  = 30 * time.Second
+	// Claude is a turn-scoped supervised CLI process. Its protocol emits
+	// meaningful activity for tools, retries, hooks, and subagents, so it gets
+	// the same conservative five-minute allowance as Cursor.
+	ClaudeStallTimeout  = 5 * time.Minute
+	HealthProbeInterval = 30 * time.Second
 )
 
 // StallTimeoutForHarness returns the inactivity threshold before suspected_hang.
@@ -47,6 +51,8 @@ func StallTimeoutForHarness(harnessID string) time.Duration {
 		return OpenCodeStallTimeout
 	case "codex":
 		return CodexStallTimeout
+	case "claude":
+		return ClaudeStallTimeout
 	default:
 		return CursorStallTimeout
 	}

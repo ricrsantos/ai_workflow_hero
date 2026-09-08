@@ -136,10 +136,17 @@ type model struct {
 	awaitingRejectReason     bool   // Chat is collecting rejection feedback before Runtime Execute
 	executeSeq               int    // monotonic id for tagged concurrent Executes
 	executes                 map[string]convExecute
-	stageHandoffLive         bool
-	stageHandoffStage        string
-	stageHandoffOutputs      []string
-	stageHandoffDoneKey      string // "stage:iteration" already TUI-executed this session
+
+	stageHandoffLive                 bool
+	stageHandoffStage                string
+	stageHandoffOutputs              []string
+	stageHandoffPendingBefore        []string
+	stageHandoffWave                 int
+	stageHandoffAssignments          map[int]map[string][]implementationTaskBlock
+	stageHandoffExpectedAgents       []string
+	stageHandoffPreparationError     string
+	stageHandoffInterventionRequired bool
+	stageHandoffDoneKey              string // "stage:iteration" already TUI-executed this session
 
 	// C5 model properties (ADR-042).
 	propsSvc             *modelprops.Service

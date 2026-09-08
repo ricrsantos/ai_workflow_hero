@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **3.0.8** (Telegram native-permission forwarding and child lifecycle relay). Cursor + OpenCode + Codex TUI harnesses; Execute/Prepare/orphan/health wired. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs, remote cycle-config wizard, active-agent/model Telegram status reporting, and project-local Always send reply routing.
+> **Status:** reflects codebase at Hero **3.0.8**. Cursor, OpenCode, Codex, and the opt-in Claude TUI harness are wired. Claude uses a supervised, turn-scoped CLI process, constrained permission bridge, native model catalog, `.claude/` projection, and marked `CLAUDE.md` ownership; no Claude daemon or Cursor Runtime dispatch exists. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs, remote cycle-config wizard, active-agent/model Telegram status reporting, and project-local Always send reply routing.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -17,7 +17,7 @@ Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning
 | CLI | Cobra + `internal/common/clierr` |
 | TUI | Bubble Tea + lipgloss + huh (install prompts) |
 | Assets | `assets.FS` (`embed.FS`) |
-| Operational store | SQLite at `.workflow-hero/hero.db` (schema v8) |
+| Operational store | SQLite at `.workflow-hero/hero.db` (schema v9; session and active permission-pause state) |
 | SDD | OpenSpec (external CLI; coupled at archive) |
 | V1 harness | Cursor Agent CLI (`cursor-agent` / `cursor agent`) |
 | Platforms | Linux/macOS `amd64` / `arm64` |
@@ -37,6 +37,7 @@ ai_workflow_hero/
 │   ├── adapters/cursor/   # Cursor Agent CLI adapter (NDJSON stream-json)
 │   ├── adapters/opencode/ # OpenCode serve HTTP + SSE /event
 │   ├── adapters/codex/    # Codex app-server stdio JSON-RPC + PrepareHeroStart (C6 §4–§7; Hero 2.5.0)
+│   ├── adapters/claude/   # Claude CLI NDJSON + turn-scoped permission bridge (C13)
 │   ├── common/            # template, clierr, output, envhygiene, userpath
 │   └── integration/       # install/upgrade/doctor integration tests
 ├── scripts/               # release.sh, build_dev.sh (+ contract tests)
@@ -142,6 +143,9 @@ Repository layout: **feature-based vertical slices** under `internal/<feature>/`
               │                               │               │
     internal/adapters/codex.Adapter (C6)      │               │
     app-server · stdio JSON-RPC · events      │               │
+              │                               │               │
+    internal/adapters/claude.Adapter (C13)    │               │
+    `claude -p` · NDJSON · scoped bridge      │               │
                               │                               │
                     internal/common/                          │
                     template · clierr · output · envhygiene   │
@@ -219,7 +223,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 | `app.go` / `screens.go` | Bubble Tea model, screen routing, keybindings |
 | `conversation.go` | Chat transcript, multiplexed harness Executes, Execute lifecycle |
 | `research_session.go` | Dedicated `discover_agent` session during Research; injects active `docs/idea` paths via `ideadocs` |
-| `stage_handoff.go` | TUI-direct Execute of named stage agents after ORCH `hero stage start` then STOP |
+| `stage_handoff.go` | TUI-direct Execute of named stage agents; Implementation checklist/report gate and bounded progress waves |
 | `herocmd.go` | `/hero-*` slash dispatch and orchestrator prompt assembly |
 | `palette.go` / `slash_overlay.go` | Command palette and Chat `/` autocomplete |
 | `harness_boot.go` / `model_gate.go` | Harness availability, model picker at boot |
@@ -237,7 +241,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 - **Harness conversations** use `HarnessAdapter.Execute` with streaming (`stream-json`), not IDE chat injection (ADR-026).
 - **Dual OpenCode-style panes** on Chat: composer + response area; session IDs for harness runs are held in TUI memory and/or SQLite `stages.harness_session_id` (schema v3).
 - **Orchestrator vs Research**: TUI Execute for control slashes uses `agents.orchestration_agent` from `workflow-config.yml`; Research uses a separate `discover_agent` session (`research_session.go`); Cursor IDE chat keeps grilling in the orchestrator session.
-- **TUI-direct stage Execute (C8)**: after ORCH starts a stage and STOPs, the TUI Executes named stage agents on their YAML harness+model pair (`stage_handoff.go`). Nested Task fan-out stays inside the parent harness; generic Tasks chip `TASK`. Implementation may run BACK/FRNT/GEN concurrently. Cursor IDE Runtime still uses Task for every subagent (ADR-005 / ADR-054).
+- **TUI-direct stage Execute (C8 + ADR-075)**: after ORCH starts a stage and STOPs, the TUI Executes named stage agents on their YAML harness+model pair (`stage_handoff.go`). Nested Task fan-out stays inside the parent harness; generic Tasks chip `TASK`. Implementation may run BACK/FRNT/GEN concurrently. For a linked OpenSpec change, the TUI validates canonical ownership, injects only each agent's ordered unchecked task blocks, and persists assignment audits with ordered `task_ids` per agent/wave plus raw result audits. It permits close only after valid complete reports, passing gates, and a scheduler reread with an empty checklist; progress may start a bounded fresh wave without advancing the stage iteration. If Implementation starts/restarts already empty, one verification wave may collect reports/gates; after a wave clears all pending tasks, no empty wave is redispatched. `Escalated` never executes before `/hero-continue`. Cursor IDE Runtime still uses Task for every subagent (ADR-005 / ADR-054 / ADR-075).
 - **Boot** validates harness availability (`IsAvailable`); may prompt for harness selection when `cli.tools` is empty (ADR-027).
 - **Default harness model** is stored in `hero.json` → `harnesses.<tool>` (ADR-030); per-cycle agent models live in `workflow-config.yml`. Freechat and `/hero-new` use the harness default; orchestrator slashes use YAML `orchestration_agent` (then `fallback_model`, then `/hero-model`).
 - **`/hero-new` config preflight**: the TUI asks `cycle.Service` to validate `.workflow-hero/cycles/current/workflow-config.yml` before the Runtime turn. If it is missing, `workflowconfig.EnsureCurrent` seeds it from the installed template and deep-merges the highest archived cycle's `workflow_config`, `fallback_model`, `stages`, and `agents`; existing files are never overwritten. `PrepareCycle` validates the result and passes the exact current path to the engine, while Cursor's shared Runtime command remains responsible for its own create/update path.
@@ -460,7 +464,7 @@ Conversation now has a shared core (`internal/conversation`) plus three surfaces
 | Layer | Where | Lifetime |
 |---|---|---|
 | **Conversation service** | `internal/conversation` — transport-neutral `Service`, `Input`/`Dispatch` routing, per-turn dispatcher boundary, and `Notifier` lifecycle events (ADR-061). The TUI and Telegram ingress both route turns through it; Bubble Tea renders the results | Process lifetime |
-| **TUI Chat UI** | `internal/tui/conversation.go` + `stage_handoff.go` — transcript in memory; one or more tagged Executes multiplexed on one channel | Process lifetime; optional resume via harness session id |
+| **TUI Chat UI** | `internal/tui/conversation.go` + `stage_handoff.go` — transcript in memory; one or more tagged Executes multiplexed on one channel; stage assignments/results audited in SQLite | Process lifetime for display; audit records follow cycle lifetime; optional resume via harness session id |
 | **IDE Runtime** | Cursor chat + Task sessions | IDE session / Task isolation (ADR-005) |
 | **SQLite `conversation` table** | `internal/store` | Persisted messages; **not** wired as the TUI chat transcript SoT in V1 |
 

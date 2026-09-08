@@ -465,10 +465,7 @@ func (m model) resetChatSession() model {
 	m.runtimeAgentName = ""
 	m.liveAgents = nil
 	m.executes = nil
-	m.stageHandoffLive = false
-	m.stageHandoffStage = ""
-	m.stageHandoffOutputs = nil
-	m.stageHandoffDoneKey = ""
+	m = m.clearStageHandoffState()
 	m.convError = ""
 	m.streamInterrupted = false
 	m.agentMsgIndex = -1
@@ -487,6 +484,24 @@ func (m model) resetChatSession() model {
 		}
 	}
 	m = m.syncConversationContext()
+	return m
+}
+
+// clearStageHandoffState invalidates all in-memory state for a stage-agent
+// dispatch. It is used by full conversation resets and cancellation cleanup so
+// a later Execute completion cannot be interpreted as part of a new wave.
+// Keep any future assignment/ownership fields in this helper as well.
+func (m model) clearStageHandoffState() model {
+	m.stageHandoffLive = false
+	m.stageHandoffStage = ""
+	m.stageHandoffOutputs = nil
+	m.stageHandoffPendingBefore = nil
+	m.stageHandoffWave = 0
+	m.stageHandoffAssignments = nil
+	m.stageHandoffExpectedAgents = nil
+	m.stageHandoffPreparationError = ""
+	m.stageHandoffInterventionRequired = false
+	m.stageHandoffDoneKey = ""
 	return m
 }
 
@@ -571,6 +586,10 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 		m.researchLive = false
 		m.orchestrationSessionID = ""
 		m.researchSessionID = ""
+		// /hero-start is the explicit retry after a completion gate leaves a
+		// stage Running for intervention.
+		m.stageHandoffInterventionRequired = false
+		m.stageHandoffDoneKey = ""
 	}
 
 	var executePrompt string
@@ -676,6 +695,10 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 	parentModel := m.conversationModelSlug()
 	parentHarness := m.conversationHarnessTool()
 	stageName := strings.TrimSpace(m.conversationStage)
+	wave := 0
+	if m.stageHandoffLive {
+		wave = m.stageHandoffWave
+	}
 	m, executeID := m.nextExecuteID()
 	if reset || m.executes == nil {
 		m.executes = make(map[string]convExecute)
@@ -713,6 +736,7 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 		Model:           parentModel,
 		Prompt:          executePrompt,
 		StageName:       stageName,
+		Wave:            wave,
 		UsageGeneration: m.contextUsageGeneration,
 		AgentMsgIndex:   m.agentMsgIndex,
 		Origin:          origin,
@@ -1526,6 +1550,14 @@ func (m model) cancelStreamCmd() tea.Cmd {
 	for _, ex := range m.executes {
 		executes = append(executes, ex)
 	}
+	// Invalidate the model's acceptance set synchronously while retaining the
+	// copied executions for the asynchronous Cancel calls below. ExecuteDone
+	// messages can race with streamCancelDoneMsg; an execution removed here is
+	// ignored immediately instead of being able to append a stage report or
+	// trigger a handoff gate during that window.
+	for executeID := range m.executes {
+		delete(m.executes, executeID)
+	}
 	fallbackAdapter := m.harnessAdapter()
 	fallbackSession := m.harnessSessionID
 	svc := m.svc
@@ -1634,6 +1666,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.clearHarnessHealthWarnings()
 		m.harnessWatchdog.Pause(time.Now())
 		m = m.trackHarnessPermission(msg)
+		m = m.persistHarnessPermissionPause(true)
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessPermissionMsg})
 		m = m.restartAIResponseTimer(time.Now())
 		var permissionCmd tea.Cmd
@@ -1663,6 +1696,12 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case executeDoneMsg:
 		var executeMeta convExecute
 		trackedExecute := false
+		if msg.executeID == "" && m.stageHandoffLive {
+			// Stage reports must be associated with the exact Execute that was
+			// prepared for a named agent. Never infer an owner from the mutable
+			// runtimeAgentName when a harness returns an untagged completion.
+			return m, nil
+		}
 		if msg.executeID != "" {
 			var ok bool
 			executeMeta, ok = m.executes[msg.executeID]
@@ -1691,13 +1730,29 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				modelForMetrics = executeMeta.Model
 			}
 		}
-		if m.stageHandoffLive && msg.result != nil {
-			if out := strings.TrimSpace(msg.result.Output); out != "" {
-				label := agentForMetrics
-				if label == "" {
-					label = "agent"
+		if m.stageHandoffLive {
+			label := agentForMetrics
+			if label == "" {
+				label = "agent"
+			}
+			resultBody := ""
+			if msg.result != nil {
+				resultBody = msg.result.Output
+			}
+			if resultBody == "" && msg.err != nil {
+				resultBody = "execution error: " + msg.err.Error()
+			}
+			// Keep one entry per stage agent, including an empty/error result. An
+			// absent report is a gate failure, never permission to close a stage.
+			m.stageHandoffOutputs = append(m.stageHandoffOutputs, label+":\n"+resultBody)
+			wave := executeMeta.Wave
+			if wave < 1 {
+				wave = m.stageHandoffWave
+			}
+			if m.svc != nil && strings.TrimSpace(stageForMetrics) != "" && strings.TrimSpace(label) != "" && wave > 0 {
+				if err := m.svc.RecordStageAgentResult(stageForMetrics, label, wave, resultBody); err != nil {
+					slog.Warn("tui persist stage agent result failed", "stage", stageForMetrics, "agent", label, "wave", wave, "error", err)
 				}
-				m.stageHandoffOutputs = append(m.stageHandoffOutputs, label+":\n"+out)
 			}
 		}
 		if msg.executeID != "" {
@@ -1751,9 +1806,28 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if siblingsRemain && m.convStreamCh != nil {
 				return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), replyCmd)
 			}
+			if !siblingsRemain && m.stageHandoffLive {
+				next, handoffCmd := m.maybeHandoffAfterExecute()
+				if handoffCmd != nil {
+					return next, combineTimerCmds(next.refreshCmd(), handoffCmd, replyCmd, next.ensureTimerLoop())
+				}
+			}
 			return m, replyCmd
 		}
 		if msg.result != nil {
+			if nativeModel := strings.TrimSpace(msg.result.NativeModel); nativeModel != "" {
+				// system/init is authoritative for Claude's effective native model.
+				// Replace the configured alias in this completed turn's identity so
+				// transcript headers, Telegram labels, and metrics agree on what ran.
+				modelForMetrics = nativeModel
+				if trackedExecute {
+					executeMeta.Model = nativeModel
+				}
+				if executeMeta.AgentMsgIndex >= 0 && executeMeta.AgentMsgIndex < len(m.transcript) {
+					m.transcript[executeMeta.AgentMsgIndex].modelSlug = nativeModel
+					m.invalidateResponseCache(executeMeta.AgentMsgIndex)
+				}
+			}
 			promptForUsage := m.lastExecutePrompt
 			if trackedExecute && executeMeta.Prompt != "" {
 				promptForUsage = executeMeta.Prompt
@@ -1872,8 +1946,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chatInputFocused = true
 		m.liveAgents = nil
 		m.executes = nil
-		m.stageHandoffLive = false
-		m.stageHandoffDoneKey = ""
+		m = m.clearStageHandoffState()
 		m.confirmPending = false
 		m.confirmMsg = ""
 		m = m.clearHarnessPermission()
@@ -1977,7 +2050,12 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 		slog.Warn("harness stream warning", "harness_type", d.HarnessType, "text", d.Text)
 		// UI-C06-001 §5 / D11: yellow status-area warning (not raw JSON in assistant text).
 		m = m.setStatusWarning("harness", firstStatusLine(d.Text))
-		if !m.chatVerbosityShows(d) {
+		// Claude warnings can describe project instructions, hooks, plugins, or
+		// MCP loading. Keep those security-relevant diagnostics visible even in
+		// Compact mode; ordinary activity filtering remains unchanged.
+		claudeWarning := strings.EqualFold(strings.TrimSpace(m.conversationHarnessTool()), "claude") ||
+			strings.HasPrefix(strings.ToLower(strings.TrimSpace(d.HarnessType)), "claude")
+		if !claudeWarning && !m.chatVerbosityShows(d) {
 			return m
 		}
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: d.Text})
@@ -2181,6 +2259,7 @@ func (m model) clearHarnessPermission() model {
 	m.harnessPermissionRequests = nil
 	m.harnessPermissionOrder = nil
 	m.pendingHarnessPermissionNotices = nil
+	m = m.persistHarnessPermissionPause(false)
 	return m.clearHarnessPermissionDisplay()
 }
 
@@ -2189,6 +2268,7 @@ func (m model) replyHarnessPermission(approved bool) model {
 		return m.replyHarnessPermissionID(harnessPermissionKey(m.harnessPermissionReq), approved, "")
 	}
 	sendHarnessPermissionResponse(m.harnessPermissionRespCh, harness.PermissionResponse{Approved: approved})
+	m = m.persistHarnessPermissionPause(false)
 	return m.clearHarnessPermissionDisplay()
 }
 
@@ -2199,6 +2279,7 @@ func (m model) replyHarnessPermissionID(id string, approved bool, reason string)
 		// Preserve compatibility with prompts created before keyed tracking.
 		if m.harnessPermissionPending && harnessPermissionKey(m.harnessPermissionReq) == key {
 			sendHarnessPermissionResponse(m.harnessPermissionRespCh, harness.PermissionResponse{Approved: approved, Reason: reason})
+			m = m.persistHarnessPermissionPause(false)
 			return m.clearHarnessPermissionDisplay()
 		}
 		return m
@@ -2207,6 +2288,7 @@ func (m model) replyHarnessPermissionID(id string, approved bool, reason string)
 	m = m.removePendingHarnessPermissionNotice(key)
 	m = m.removeHarnessPermissionKey(key)
 	if len(m.harnessPermissionRequests) == 0 {
+		m = m.persistHarnessPermissionPause(false)
 		return m.clearHarnessPermissionDisplay()
 	}
 	if harnessPermissionKey(m.harnessPermissionReq) == key {
@@ -2225,6 +2307,20 @@ func (m model) clearHarnessPermissionDisplay() model {
 	m.harnessPermissionReq = harness.PermissionRequest{}
 	m.harnessPermissionRespCh = nil
 	m.harnessWatchdog.Resume(time.Now())
+	return m
+}
+
+func (m model) persistHarnessPermissionPause(paused bool) model {
+	if m.svc == nil || !strings.EqualFold(strings.TrimSpace(m.conversationHarnessTool()), "claude") {
+		return m
+	}
+	stage := strings.TrimSpace(m.conversationStage)
+	if stage == "" {
+		return m
+	}
+	if err := m.svc.SetStageHarnessPermissionPaused(stage, paused); err != nil {
+		slog.Debug("tui persist harness permission pause failed", "error", err)
+	}
 	return m
 }
 

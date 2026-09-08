@@ -111,7 +111,11 @@ func bootHarness(ctx context.Context, stdout, stderr io.Writer, projectDir strin
 			continue
 		}
 		if err := adapter.IsAvailable(ctx); err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s harness unavailable: %s", harnessDisplayName(id), harnessUnavailableReason(err)))
+			warning := fmt.Sprintf("%s harness unavailable: %s", harnessDisplayName(id), harnessUnavailableReason(err))
+			if strings.EqualFold(strings.TrimSpace(id), "claude") {
+				warning += "; fix Claude Code, then run /hero-continue"
+			}
+			warnings = append(warnings, warning)
 			slog.Warn("harness boot unavailable", "harness", id, "error", err)
 		}
 	}
@@ -175,6 +179,7 @@ func promptInstallLikeHarnesses(_ io.Writer) ([]string, error) {
 					huh.NewOption("Cursor", "cursor"),
 					huh.NewOption("OpenCode", "opencode"),
 					huh.NewOption("Codex", "codex"),
+					huh.NewOption("Claude", "claude"),
 				).
 				Value(&selected).
 				Validate(func(v []string) error {
@@ -252,18 +257,21 @@ func isAuthHarnessError(err error) bool {
 }
 
 func harnessDisplayName(toolID string) string {
-	switch toolID {
+	trimmed := strings.TrimSpace(toolID)
+	switch strings.ToLower(trimmed) {
 	case "cursor":
 		return "Cursor"
 	case "opencode":
 		return "OpenCode"
 	case "codex":
 		return "Codex"
+	case "claude":
+		return "Claude"
 	default:
-		if toolID == "" {
+		if trimmed == "" {
 			return "Harness"
 		}
-		return toolID
+		return trimmed
 	}
 }
 

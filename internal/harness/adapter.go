@@ -99,6 +99,13 @@ type ExecutionResult struct {
 	Usage      Usage
 	Duration   time.Duration
 	StreamDone bool
+	// NativeModel is the harness-reported model that actually served this
+	// execution. It remains distinct from ExecuteRequest.Model because account
+	// policy may resolve an alias differently at runtime.
+	NativeModel string
+	// EffectiveProperties contains optional runtime-authoritative native
+	// properties. Not every harness reports these in its stream.
+	EffectiveProperties map[string]string
 }
 
 // ExecutionStatus reports session/execution state.

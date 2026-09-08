@@ -82,7 +82,7 @@ func (s *Service) SnapshotCacheOnly(harnessID, modelID string) Snapshot {
 	return applyCursorSlugLocks(snap)
 }
 
-func enrichCapabilitiesFromCatalog(cat Catalog, modelID string, caps harness.ModelCapabilities) harness.ModelCapabilities {
+func enrichCapabilitiesFromCatalog(cat Catalog, harnessID, modelID string, caps harness.ModelCapabilities) harness.ModelCapabilities {
 	if cat == nil {
 		return caps
 	}
@@ -91,7 +91,7 @@ func enrichCapabilitiesFromCatalog(cat Catalog, modelID string, caps harness.Mod
 		byKey[p.Key] = p
 	}
 	for _, key := range harness.PropertyKeys() {
-		catProp, ok := cat.CatalogValues(modelID, key)
+		catProp, ok := cat.CatalogValuesForHarness(harnessID, modelID, key)
 		if !ok || !catProp.HasProperty {
 			continue
 		}
@@ -341,7 +341,7 @@ func firstRefreshError(current, next error) error {
 }
 
 func (s *Service) persistCapabilities(harnessID, model string, caps harness.ModelCapabilities) error {
-	caps = enrichCapabilitiesFromCatalog(s.Catalog, model, caps)
+	caps = enrichCapabilitiesFromCatalog(s.Catalog, harnessID, model, caps)
 	if s.Store == nil {
 		return nil
 	}

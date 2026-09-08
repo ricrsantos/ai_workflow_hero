@@ -266,8 +266,8 @@ func TestCommitModelSelection_CodexPersistsPairAndProperties(t *testing.T) {
 	if _, hasNA := got["ef"]; hasNA {
 		t.Fatalf("'na' sentinel must not be persisted: %v", got)
 	}
-	// Reject a harness outside the supported set, codex included.
-	if err := install.CommitModelSelection(dir, "claude", "m", nil); err == nil {
+	// Reject a harness outside the supported set, Claude included.
+	if err := install.CommitModelSelection(dir, "windsurf", "m", nil); err == nil {
 		t.Fatal("unsupported harness must be rejected")
 	}
 	// Persisted JSON round-trips through the schema.

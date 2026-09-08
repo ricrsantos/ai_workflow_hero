@@ -74,6 +74,9 @@ type Stage struct {
 	HarnessSessionID string
 	// HarnessID is the harness adapter id for this stage (schema v4; cursor/opencode).
 	HarnessID string
+	// HarnessPermissionPaused is true only while an active TUI turn is awaiting
+	// an explicit harness permission decision (schema v9).
+	HarnessPermissionPaused bool
 }
 
 // Event is an append-only operational event.

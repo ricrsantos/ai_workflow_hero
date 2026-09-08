@@ -102,6 +102,7 @@ func TestTUIRuntimeCommandPrompt_HeroStartOverrides(t *testing.T) {
 	}
 	for _, kw := range []string{
 		"hero stage start",
+		"active stage as Running",
 		"require_human_approval",
 		"/hero-approve",
 		"Do NOT grill",
@@ -152,6 +153,27 @@ func TestTUIHeroStartContinueAfterStagePreamble(t *testing.T) {
 		if !strings.Contains(got, kw) {
 			t.Fatalf("continue-after-stage preamble missing %q: %q", kw, got)
 		}
+	}
+}
+
+func TestTUIIncompleteStagePreambleExplainsExplicitRetry(t *testing.T) {
+	got := tuiHeroStartContinueAfterIncompleteStagePreamble("implementation", "report invalid")
+	for _, want := range []string{"Keep the stage Running", "Do NOT close", "/hero-start", "report invalid"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("incomplete preamble missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestTUIHeroContinueStartsStageBeforeHandoff(t *testing.T) {
+	got := tuiHeroContinuePreamble(2)
+	for _, want := range []string{"hero continue --extra 2", "hero stage start", "recorded Running", "Do NOT dispatch Task"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("continue preamble missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "resume execution of the escalated stage via Task") {
+		t.Fatalf("continue preamble retains direct Task dispatch: %q", got)
 	}
 }
 

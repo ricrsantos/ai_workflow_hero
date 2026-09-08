@@ -65,3 +65,27 @@ Two or three in-scope implementation agents appear as separate green agent block
 - Parallel Implementation: two headers + navbar count.
 - `TASK` vs `CTX` chips.
 - Sibling `executeDone` does not clear the other speaker or spinner.
+
+## 9. Implementation completion gate
+
+Productive partial waves continue in Chat under the same Implementation stage
+and stage iteration. If output is empty, malformed, blocked, or makes no
+checklist progress, Chat shows `→ implementation gate pending`; the
+orchestrator explains the exact gate reason and tells the user to correct the
+blocker and run `/hero-start` to request a fresh wave. This state must never be
+rendered as `closed`, and it must not advance to QA.
+
+Before a wave starts, the TUI partitions the checklist by the canonical owner
+markers `[agent:backend_agent]`, `[agent:frontend_agent]`, and
+`[agent:generic_agent]`. A backend, frontend, or generic block displays only
+its assigned task IDs. Missing or invalid ownership with multiple active
+agents is shown as a gate-pending error and no agent is launched. A legacy
+ownerless task is allowed only for a single active implementation agent after
+the assignment records `ownership_validated: true`.
+
+Implementation agents report completion but never edit task checkboxes. The TUI
+updates checkboxes only after validating the report's
+`completed_tasks_verified`, `task_ownership_respected`, and
+`required_tests_passed` gates. A subsequent wave launches only agents that
+still have assigned task IDs; completed agents remain out of the sidebar until
+another assignment exists.

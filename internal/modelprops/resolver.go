@@ -95,7 +95,7 @@ func Resolve(harnessID, modelID string, api *harness.ModelCapabilities, apiErr e
 	for _, key := range harness.PropertyKeys() {
 		if cap, ok := apiProps[key]; ok {
 			if cat != nil {
-				if p, ok := cat.CatalogValues(modelID, key); ok && p.HasProperty {
+				if p, ok := cat.CatalogValuesForHarness(harnessID, modelID, key); ok && p.HasProperty {
 					cap = mergePropertyCapability(cap, p)
 				}
 			}
@@ -105,7 +105,7 @@ func Resolve(harnessID, modelID string, api *harness.ModelCapabilities, apiErr e
 		}
 		if cap, ok := cacheProps[key]; ok {
 			if cat != nil {
-				if p, ok := cat.CatalogValues(modelID, key); ok && p.HasProperty {
+				if p, ok := cat.CatalogValuesForHarness(harnessID, modelID, key); ok && p.HasProperty {
 					cap = mergePropertyCapability(cap, p)
 				}
 			}
@@ -115,7 +115,7 @@ func Resolve(harnessID, modelID string, api *harness.ModelCapabilities, apiErr e
 			continue
 		}
 		if cat != nil {
-			if p, ok := cat.CatalogValues(modelID, key); ok && p.HasProperty {
+			if p, ok := cat.CatalogValuesForHarness(harnessID, modelID, key); ok && p.HasProperty {
 				snap.Properties[key] = harness.PropertyCapability{
 					Key:            key,
 					AcceptedValues: append([]string(nil), p.Values...),

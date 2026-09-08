@@ -1,6 +1,7 @@
 package status
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -42,17 +43,20 @@ Outputs a table by default, or JSON with --json.`,
 				clierr.Format(stderr, e)
 				return e
 			}
+			claude := ClaudeStatusFor(Options{ProjectDir: projectDir})
 
 			if asJSON {
 				out := map[string]interface{}{
 					"workflow": ws,
 					"telegram": pluginStatus(version),
+					"claude":   claude,
 				}
 				enc := json.NewEncoder(stdout)
 				enc.SetIndent("", "  ")
 				_ = enc.Encode(out)
 			} else {
 				PrintTable(stdout, ws)
+				PrintClaudeStatus(stdout, claude)
 				PrintTelegramStatus(stdout, version)
 			}
 
@@ -66,8 +70,13 @@ Outputs a table by default, or JSON with --json.`,
 
 // Options holds status command options.
 type Options struct {
-	ProjectDir string
+	ProjectDir    string
+	ClaudeCLIProbe ClaudeCLIProbe
 }
+
+// Keep context available to callers that construct Options with a Claude
+// compatibility probe without changing the legacy Run signature.
+var _ context.Context
 
 // WorkflowStatus is kept for JSON compatibility with prior status output.
 type WorkflowStatus = cycle.StatusView

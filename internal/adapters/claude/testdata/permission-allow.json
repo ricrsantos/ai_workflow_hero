@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"permission-1","result":{"content":[{"type":"text","text":"{\"behavior\":\"allow\",\"updatedInput\":{\"command\":\"go test ./...\"}}"}]}}

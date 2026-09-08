@@ -16,7 +16,7 @@ var ErrNotFound = errors.New("not found")
 var ErrBusy = errors.New("cycle is locked by another session")
 
 const stageSelectCols = `id, cycle_id, name, status, iteration, max_iterations, extra_iterations,
-  require_human_approval, timeout_minutes, started_at, completed_at, summary, sort_order, harness_session_id, harness_id`
+  require_human_approval, timeout_minutes, started_at, completed_at, summary, sort_order, harness_session_id, harness_id, harness_permission_paused`
 
 // CreateStages inserts stage rows for a cycle.
 func (s *Store) CreateStages(stages []Stage) error {
@@ -93,11 +93,11 @@ func (s *Store) UpdateStage(st Stage) error {
 	res, err := s.db.Exec(`
 UPDATE stages SET status = ?, iteration = ?, max_iterations = ?, extra_iterations = ?,
   require_human_approval = ?, timeout_minutes = ?, started_at = ?, completed_at = ?, summary = ?,
-  harness_session_id = ?, harness_id = ?
+	 harness_session_id = ?, harness_id = ?, harness_permission_paused = ?
 WHERE id = ?`,
 		st.Status, st.Iteration, st.MaxIterations, st.ExtraIterations,
 		approval, st.TimeoutMinutes, nullStr(st.StartedAt), nullStr(st.CompletedAt),
-		nullStr(st.Summary), st.HarnessSessionID, st.HarnessID, st.ID,
+		nullStr(st.Summary), st.HarnessSessionID, st.HarnessID, boolToInt(st.HarnessPermissionPaused), st.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update stage: %w", err)
@@ -130,17 +130,30 @@ func (s *Store) ClearStageHarnessSessionID(cycleID int64, stageName string) erro
 	return s.SetStageHarnessSessionID(cycleID, stageName, "")
 }
 
+// SetStageHarnessPermissionPaused records whether the active TUI harness turn
+// is blocked on a user decision. It contains no request body or credentials.
+func (s *Store) SetStageHarnessPermissionPaused(cycleID int64, stageName string, paused bool) error {
+	res, err := s.db.Exec(`UPDATE stages SET harness_permission_paused = ? WHERE cycle_id = ? AND name = ?`, boolToInt(paused), cycleID, stageName)
+	if err != nil {
+		return fmt.Errorf("set harness permission pause: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 type scannable interface {
 	Scan(dest ...any) error
 }
 
 func scanStage(row scannable) (Stage, error) {
 	var st Stage
-	var approval int
+	var approval, permissionPaused int
 	var started, completed, summary sql.NullString
 	err := row.Scan(
 		&st.ID, &st.CycleID, &st.Name, &st.Status, &st.Iteration, &st.MaxIterations, &st.ExtraIterations,
-		&approval, &st.TimeoutMinutes, &started, &completed, &summary, &st.SortOrder, &st.HarnessSessionID, &st.HarnessID,
+		&approval, &st.TimeoutMinutes, &started, &completed, &summary, &st.SortOrder, &st.HarnessSessionID, &st.HarnessID, &permissionPaused,
 	)
 	if err != nil {
 		return Stage{}, err
@@ -149,5 +162,13 @@ func scanStage(row scannable) (Stage, error) {
 	st.StartedAt = started.String
 	st.CompletedAt = completed.String
 	st.Summary = summary.String
+	st.HarnessPermissionPaused = permissionPaused != 0
 	return st, nil
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }

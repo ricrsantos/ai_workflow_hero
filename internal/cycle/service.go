@@ -2,6 +2,7 @@ package cycle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -35,6 +36,31 @@ type Service struct {
 	OpenspecRunner OpenspecRunner
 	// OpenspecExec configures LookPath/exec for the default OpenspecRunner when OpenspecRunner is nil.
 	OpenspecExec OpenspecExec
+}
+
+// Stable conversation roles and kinds used to audit stage-agent handoffs.
+// These records intentionally use the existing conversation table so that
+// assignments and results remain append-only and survive stage transitions.
+const (
+	ConversationRoleSystem = "system"
+	ConversationRoleAgent  = "agent"
+
+	ConversationKindStageAgentAssignment = "stage_agent_assignment"
+	ConversationKindStageAgentResult     = "stage_agent_result"
+)
+
+// StageAgentAuditBody is the JSON envelope stored in a conversation body for
+// a stage-agent assignment or result. Body is kept as the exact string passed
+// by the caller (including whitespace), while stage, agent, and wave make the
+// handoff auditable without requiring a schema migration.
+type StageAgentAuditBody struct {
+	Stage string `json:"stage"`
+	Agent string `json:"agent"`
+	Wave  int    `json:"wave"`
+	// TaskIDs is populated for assignment records. The order is the dispatch
+	// order, which makes the exact assignment auditable without parsing Body.
+	TaskIDs []string `json:"task_ids,omitempty"`
+	Body    string   `json:"body"`
 }
 
 // ExecuteDir returns the workspace directory for harness Execute calls.
@@ -720,6 +746,17 @@ func (s *Service) SetStageHarnessID(stageName, harnessID string) error {
 	return s.Store.SetStageHarnessID(c.ID, stageName, harnessID)
 }
 
+// SetStageHarnessPermissionPaused persists the active TUI permission gate for
+// deterministic Status. Callers clear it on every answer, cancellation, and
+// turn completion.
+func (s *Service) SetStageHarnessPermissionPaused(stageName string, paused bool) error {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	return s.Store.SetStageHarnessPermissionPaused(c.ID, stageName, paused)
+}
+
 // StageHarnessID returns the harness id bound to a stage, or empty when unset.
 func (s *Service) StageHarnessID(stageName string) (string, error) {
 	c, err := s.Store.GetActiveCycle()
@@ -740,6 +777,105 @@ func (s *Service) ConversationContext() (stageName, sessionID string, err error)
 		return "", "", err
 	}
 	return stageName, sessionID, nil
+}
+
+// RecordStageAgentAssignment appends an audit record for work assigned to a
+// stage agent in the active cycle. The body is retained exactly inside a JSON
+// envelope together with the normalized stage/agent names and wave number.
+func (s *Service) RecordStageAgentAssignment(stage, agent string, wave int, body string) error {
+	return s.RecordStageAgentAssignmentWithTasks(stage, agent, wave, nil, body)
+}
+
+// RecordStageAgentAssignmentWithTasks appends an audit record for a stage-agent
+// assignment and persists the normalized task IDs in dispatch order. Empty
+// taskIDs preserves the legacy assignment shape; non-empty IDs must be unique
+// after whitespace normalization.
+func (s *Service) RecordStageAgentAssignmentWithTasks(stage, agent string, wave int, taskIDs []string, body string) error {
+	return s.recordStageAgentConversation(
+		ConversationRoleSystem,
+		ConversationKindStageAgentAssignment,
+		stage, agent, wave, taskIDs, body, false,
+	)
+}
+
+// RecordStageAgentResult appends an audit record for a stage agent's result in
+// the active cycle. The body is retained exactly inside a JSON envelope
+// together with the normalized stage/agent names and wave number.
+func (s *Service) RecordStageAgentResult(stage, agent string, wave int, body string) error {
+	return s.recordStageAgentConversation(
+		ConversationRoleAgent,
+		ConversationKindStageAgentResult,
+		stage, agent, wave, nil, body, true,
+	)
+}
+
+func (s *Service) recordStageAgentConversation(role, kind, stage, agent string, wave int, taskIDs []string, body string, allowEmptyBody bool) error {
+	if s == nil || s.Store == nil {
+		return fmt.Errorf("record %s: cycle service unavailable", kind)
+	}
+	stage = strings.TrimSpace(stage)
+	if stage == "" {
+		return fmt.Errorf("record %s: stage is required", kind)
+	}
+	agent = strings.TrimSpace(agent)
+	if agent == "" {
+		return fmt.Errorf("record %s: agent is required", kind)
+	}
+	if wave < 1 {
+		return fmt.Errorf("record %s: wave must be at least 1", kind)
+	}
+	normalizedTaskIDs, err := normalizeStageAgentTaskIDs(kind, taskIDs)
+	if err != nil {
+		return err
+	}
+	if !allowEmptyBody && strings.TrimSpace(body) == "" {
+		return fmt.Errorf("record %s: body is required", kind)
+	}
+
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return fmt.Errorf("record %s: get active cycle: %w", kind, err)
+	}
+	payload, err := json.Marshal(StageAgentAuditBody{
+		Stage:   stage,
+		Agent:   agent,
+		Wave:    wave,
+		TaskIDs: normalizedTaskIDs,
+		Body:    body,
+	})
+	if err != nil {
+		return fmt.Errorf("record %s: encode audit body: %w", kind, err)
+	}
+	if _, err := s.Store.AddConversation(store.ConversationEntry{
+		CycleID: c.ID,
+		Role:    role,
+		Kind:    kind,
+		Body:    string(payload),
+	}); err != nil {
+		return fmt.Errorf("record %s: persist conversation: %w", kind, err)
+	}
+	return nil
+}
+
+func normalizeStageAgentTaskIDs(kind string, taskIDs []string) ([]string, error) {
+	if len(taskIDs) == 0 {
+		return nil, nil
+	}
+
+	normalized := make([]string, 0, len(taskIDs))
+	seen := make(map[string]struct{}, len(taskIDs))
+	for i, taskID := range taskIDs {
+		taskID = strings.TrimSpace(taskID)
+		if taskID == "" {
+			return nil, fmt.Errorf("record %s: task id at index %d is required", kind, i)
+		}
+		if _, exists := seen[taskID]; exists {
+			return nil, fmt.Errorf("record %s: duplicate task id %q", kind, taskID)
+		}
+		seen[taskID] = struct{}{}
+		normalized = append(normalized, taskID)
+	}
+	return normalized, nil
 }
 
 // RecordHarnessInvoked appends a harness_invoked event.

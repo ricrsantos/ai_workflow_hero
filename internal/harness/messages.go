@@ -6,9 +6,9 @@ import (
 )
 
 // SupportedToolIDs returns harness identifiers Hero supports in this version
-// (ADR-034; Codex added in C6 / ADR-043).
+// (ADR-034; Codex added in C6 / ADR-043; Claude added in C13 / ADR-071).
 func SupportedToolIDs() []string {
-	return []string{"cursor", "opencode", "codex"}
+	return []string{"cursor", "opencode", "codex", "claude"}
 }
 
 // UnsupportedMarkerWarningLine formats the primary doctor/install warning line (UI-C02-001 §5).

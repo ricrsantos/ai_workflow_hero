@@ -147,7 +147,7 @@ func TestCommitModelSelectionValidation(t *testing.T) {
 	if err := CommitModelSelection(dir, "cursor", "", nil); err == nil {
 		t.Fatal("empty model must fail")
 	}
-	if err := CommitModelSelection(dir, "claude", "m", nil); err == nil {
+	if err := CommitModelSelection(dir, "windsurf", "m", nil); err == nil {
 		t.Fatal("unsupported harness must fail")
 	}
 }

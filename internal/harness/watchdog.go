@@ -1,6 +1,9 @@
 package harness
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Watchdog tracks stream activity during a single TUI Execute and evaluates
 // hang suspicion by combining adapter probes with last-activity timestamps.
@@ -137,6 +140,12 @@ func isActivityDelta(d StreamDelta) bool {
 	switch d.Kind {
 	case StreamKindText, StreamKindThinking, StreamKindTool, StreamKindQuestion, StreamKindPermission:
 		return true
+	case StreamKindActivity:
+		// Filesystem watcher and synthetic session pulses can occur indefinitely
+		// while an adapter has made no progress. Protocol-level activity (Claude
+		// tools, hooks, retries, and subagents) is substantive, including when a
+		// compact transcript intentionally hides it.
+		return !strings.HasPrefix(d.HarnessType, "file.watcher") && d.HarnessType != "session.status"
 	default:
 		return false
 	}

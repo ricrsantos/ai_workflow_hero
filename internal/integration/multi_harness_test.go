@@ -421,15 +421,16 @@ func (h integrationPrepareHandle) PID() int    { return h.pid }
 func (h integrationPrepareHandle) Wait() error { return nil }
 func (h integrationPrepareHandle) Kill() error { return nil }
 
-// TestIntegration_DefaultRegistryWiresThreeAdapters (C6 §8H.1–8H.2): registry
-// resolves cursor/opencode/codex without changing adapter Execute contracts.
-func TestIntegration_DefaultRegistryWiresThreeAdapters(t *testing.T) {
+// TestIntegration_DefaultRegistryWiresFourAdapters verifies that adding the
+// turn-scoped Claude adapter keeps every explicit harness independently
+// resolvable without changing existing adapter Execute contracts.
+func TestIntegration_DefaultRegistryWiresFourAdapters(t *testing.T) {
 	reg := harnessmgr.NewRegistry(t.TempDir(), nil)
 	ids := reg.SupportedIDs()
-	if len(ids) != 3 {
+	if len(ids) != 4 {
 		t.Fatalf("SupportedIDs=%v", ids)
 	}
-	for _, id := range []string{"cursor", "opencode", "codex"} {
+	for _, id := range []string{"cursor", "opencode", "codex", "claude"} {
 		a, err := reg.Adapter(id)
 		if err != nil {
 			t.Fatalf("Adapter(%s): %v", id, err)

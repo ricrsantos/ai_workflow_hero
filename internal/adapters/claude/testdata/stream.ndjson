@@ -1,0 +1,16 @@
+{"type":"system","subtype":"init","session_id":"session-001","model":"claude-sonnet-4-20250514","cwd":"/project"}
+{"type":"system","subtype":"resume","session_id":"session-001"}
+{"type":"assistant","partial":true,"message":{"content":[{"type":"text","text":"Hello "}]}}
+{"type":"assistant","partial":true,"message":{"content":[{"type":"thinking","thinking":"I should inspect the project."}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-1","name":"Read","input":{"file_path":"AGENTS.md"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":"# instructions"}]}}
+{"type":"system","subtype":"subagent_started","agent_id":"agent-1","agent_type":"Explore"}
+{"type":"system","subtype":"subagent_completed","agent_id":"agent-1"}
+{"type":"system","subtype":"retry","attempt":2,"reason":"temporary upstream error"}
+{"type":"system","subtype":"hook_started","hook":"pre_tool_use"}
+{"type":"system","subtype":"plugin_loaded","plugin":"example-plugin"}
+{"type":"system","subtype":"usage","input_tokens":12,"output_tokens":8}
+{"type":"result","subtype":"success","session_id":"session-001","result":"Hello world","usage":{"input_tokens":12,"output_tokens":8}}
+{"type":"result","subtype":"error","error":"authentication required"}
+{"type":"system","subtype":"stderr","message":"redacted CLI diagnostic"}
+{"type":"mystery","payload":{"sensitive":"redacted-by-normalizer"}}

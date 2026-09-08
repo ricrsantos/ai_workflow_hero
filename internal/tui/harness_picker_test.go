@@ -82,7 +82,7 @@ func TestHarnessPickerPersistsAutoProjectPermissionProfileInline(t *testing.T) {
 
 	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
 	view := tui.ViewForTest(next)
-	if !strings.Contains(view, "[x] Cursor") || strings.Count(view, "Permissions:") != 3 || !strings.Contains(view, "Ask every time") || !strings.Contains(view, "Auto approve in project") || !strings.Contains(view, "Auto approve every time (Yolo)") {
+	if !strings.Contains(view, "[x] Cursor") || strings.Count(view, "Permissions:") != len(install.SupportedHarnessIDs) || !strings.Contains(view, "Ask every time") || !strings.Contains(view, "Auto approve in project") || !strings.Contains(view, "Auto approve every time (Yolo)") {
 		t.Fatalf("expected inline permission controls: %q", view)
 	}
 

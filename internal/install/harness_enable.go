@@ -7,8 +7,7 @@ import (
 )
 
 // EnableHarnessWithProjection enables a harness in hero.json and provisions
-// projection assets when harnessID is opencode or codex (UI-C04-001 §3;
-// UI-C06-001 §3; ADR-046).
+// projection assets for harnesses that have a native project layout.
 func EnableHarnessWithProjection(projectDir, harnessID string, assetsFS fs.FS) error {
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
 	if harnessID == "" {
@@ -28,7 +27,7 @@ func EnableHarnessWithProjection(projectDir, harnessID string, assetsFS fs.FS) e
 	cfg.Enabled = true
 	hero.Harnesses[harnessID] = cfg
 
-	if assetsFS != nil && (harnessID == "opencode" || harnessID == "codex") {
+	if assetsFS != nil && (harnessID == "opencode" || harnessID == "codex" || harnessID == "claude") {
 		checksums, err := LoadChecksums(projectDir)
 		if err != nil {
 			return fmt.Errorf("load checksums: %w", err)
@@ -41,6 +40,10 @@ func EnableHarnessWithProjection(projectDir, harnessID string, assetsFS fs.FS) e
 		case "codex":
 			if err := ProvisionCodex(projectDir, assetsFS, checksums); err != nil {
 				return fmt.Errorf("provision codex: %w", err)
+			}
+		case "claude":
+			if err := ProvisionClaude(projectDir, assetsFS, checksums); err != nil {
+				return fmt.Errorf("provision Claude: %w", err)
 			}
 		}
 		if err := WriteChecksums(projectDir, checksums); err != nil {

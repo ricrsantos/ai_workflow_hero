@@ -16,7 +16,9 @@ A mixed-harness cycle (for example Codex Implementation and OpenCode Judge) curr
 - Stream that agent’s live thinking, tools, and text in Chat.
 - Keep ADR-005 nested Task fan-out (including Implementation parallelism inside an agent).
 - Show launch lines and navbar chips for named agents and generic nested Tasks.
-- Run in-scope Implementation agents in parallel as separate TUI Executes.
+- Run in-scope Implementation agents in parallel as separate TUI Executes, with each task dispatched only to its canonical owner.
+- Keep Implementation running until structured reports and the linked OpenSpec
+  checklist prove that the assigned scope is complete.
 
 ## 4. Scope
 
@@ -36,7 +38,10 @@ The TUI then Executes:
 | Browser UI Validation | `browser_ui_agent` |
 | QA End-to-End | `end2end_qa_agent` |
 
-Each Execute uses that agent’s YAML pair (then `fallback_model`). After non-research agents finish, the TUI resumes the orchestrator with their Output Format so it can close the stage and start the next one.
+Each Execute uses that agent’s YAML pair (then `fallback_model`). After
+non-research agents finish, the TUI resumes the orchestrator with their Output
+Format. For Implementation, resumption authorizes stage close only after the
+completion gate in §4.7 passes.
 
 ### 4.2 Nested Task
 
@@ -44,7 +49,7 @@ Named stage agents still launch nested Task children (generic fan-out and named 
 
 ### 4.3 Implementation parallelism (v1)
 
-The TUI starts one Execute per **in-scope** implementation agent in a single wave (`scope.backend` → BACK, `scope.frontend` → FRNT, native/script/infrastructure → GEN). Cross-agent SDD series ordering is out of scope. Each agent still serializes or fans out its own nested Tasks.
+The TUI starts one Execute per **in-scope implementation agent with assigned tasks** in a single wave (`scope.backend` → BACK, `scope.frontend` → FRNT, native/script/infrastructure → GEN). The scheduler partitions tasks by the canonical owner marker on each task line (`[agent:backend_agent]`, `[agent:frontend_agent]`, or `[agent:generic_agent]`); an agent receives no other agent's IDs. Cross-agent SDD series ordering is out of scope. Each agent still serializes or fans out its own nested Tasks.
 
 ### 4.4 Navbar and Chat
 
@@ -62,8 +67,48 @@ Chat may run several adapter Executes at once. Streaming stays true until the la
 
 - Cursor IDE Runtime still uses Task from the orchestrator (ADR-031).
 - TUI-direct Execute of nested generic Tasks.
-- Parsing `tasks.md` for cross-agent series.
+- Semantically interpreting free-form dependency prose in `tasks.md`; the TUI
+  extracts deterministic checklist state and canonical ownership, while agents
+  reason about dependencies declared by the SDD.
 - Changing harness adapter transport contracts beyond Task attribution fields.
+
+### 4.7 Implementation completion gate
+
+- Resolve `openspec/changes/<linked-change>/tasks.md` from the active cycle and
+  inject only the ordered unchecked tasks owned by each implementation agent
+  into that agent's assignment.
+- Planning must emit exactly one canonical owner marker on every implementation
+  task: `[agent:backend_agent]`, `[agent:frontend_agent]`, or
+  `[agent:generic_agent]`. Cross-cutting work is decomposed into dependent
+  single-owner tasks; multiple owner markers and invalid owners fail closed.
+- For compatibility with legacy task files, an ownerless task is routable only
+  when exactly one implementation agent is active and the assignment records
+  that ownership was validated. With multiple active agents, an ownerless or
+  invalid task blocks the wave.
+- Implementation agents report `status` (`complete`, `partial`, or `blocked`),
+  `tasks_completed`, `tasks_remaining`, `tests_passed`, and
+  an `acceptance_gates` boolean map containing
+  `completed_tasks_verified`, `task_ownership_respected`, and
+  `required_tests_passed`. Agents never edit `tasks.md` or its checkboxes;
+  they report verified completion and only their assigned IDs.
+- The TUI/runtime scheduler is the sole writer of task checkboxes. It may mark
+  a task complete only after validating the corresponding report, ownership,
+  acceptance gates, and verification evidence.
+- Close is allowed only when every report is valid and complete, all three
+  completion gates are true, and no unchecked OpenSpec task remains.
+- A partial wave may be followed by a fresh wave in the same stage iteration
+  only after observable checklist progress. Empty, invalid, blocked, or
+  no-progress output must not close the stage or loop indefinitely.
+- If Implementation starts or restarts with no pending tasks, the TUI may run
+  exactly one verification wave with the active agents to collect reports and
+  gates. After a wave clears all pending tasks, the scheduler closes directly
+  after rereading the checklist and never redispatches an empty wave.
+- A fresh wave contains only agents with remaining assigned tasks; agents whose
+  assignment is complete are not re-executed.
+- Persist exact assignments, including the ordered `task_ids` array for each
+  agent and wave, and raw results in SQLite for auditability.
+- `Escalated` stages cannot execute until `/hero-continue` transitions them back
+  to a runnable state.
 
 ## 5. Acceptance criteria
 
@@ -75,3 +120,11 @@ Chat may run several adapter Executes at once. Streaming stays true until the la
 6. Codex and OpenCode Task start events carry `CallID` plus agent or generic name.
 7. Cursor IDE workflow is unchanged.
 8. `go test ./...` remains green.
+9. Partial or malformed Implementation output never closes the stage.
+10. Checklist progress can trigger a bounded fresh wave without consuming a
+    new stage iteration; no progress returns control without closing.
+11. Stage-agent assignments and results are queryable from SQLite conversation
+    records.
+12. A mixed backend+frontend wave dispatches disjoint task IDs, rejects missing
+    or invalid ownership when multiple agents are active, and reruns only the
+    agent(s) with remaining IDs.

@@ -90,8 +90,11 @@ func SetTelegramAlwaysSend(projectDir string, enabled bool) error {
 }
 
 // SupportedHarnessIDs lists harness identifiers Hero supports in the TUI
-// (ADR-034; Cursor + OpenCode from C4; Codex added in C6 / Hero 2.5.0 per ADR-043/048).
-var SupportedHarnessIDs = []string{"cursor", "opencode", "codex"}
+// (ADR-034; Cursor + OpenCode from C4; Codex added in C6 / Hero 2.5.0 per
+// ADR-043/048; Claude added in C13 / ADR-071). New harnesses are always added
+// disabled by MigrateHarnessState, so upgrading an existing project never
+// changes its selected execution pair.
+var SupportedHarnessIDs = []string{"cursor", "opencode", "codex", "claude"}
 
 // FreechatDefault is the persisted freechat /hero-new default pair (ADR-037).
 type FreechatDefault struct {

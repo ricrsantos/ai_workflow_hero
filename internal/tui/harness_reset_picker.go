@@ -60,12 +60,20 @@ func (m model) loadHarnessResetPickerCmd(projectDir string) tea.Cmd {
 		}
 		items := make([]paletteItem, 0, len(enabled))
 		for _, id := range enabled {
+			// Claude owns only a turn-scoped child. It has no persistent
+			// server/process to reset or reap, so keep it out of this picker.
+			if strings.EqualFold(strings.TrimSpace(id), "claude") {
+				continue
+			}
 			items = append(items, paletteItem{
 				label:     harnessDisplayName(id),
 				hint:      "(" + harnessAvailabilityLabel(registry, id) + ")",
 				action:    actionSelectHarnessReset,
 				harnessID: id,
 			})
+		}
+		if len(items) == 0 {
+			return harnessResetOpenMsg{err: "No persistent harnesses are enabled in this project."}
 		}
 		return harnessResetOpenMsg{items: items}
 	}

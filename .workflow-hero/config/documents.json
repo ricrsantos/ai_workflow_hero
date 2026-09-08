@@ -2,6 +2,30 @@
   "documents": [
     {
       "category": "PRD",
+      "cycle": "C13",
+      "seq": 1,
+      "slug": "claude-code-adapter",
+      "path": "docs/product/PRD-C13-001-claude-code-adapter.md",
+      "title": "Claude Code Adapter for Hero TUI"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C13",
+      "seq": 1,
+      "slug": "claude-code-adapter",
+      "path": "docs/architecture/ADR-C13-001-claude-code-adapter.md",
+      "title": "Claude Code Adapter (ADR-070–074)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C13",
+      "seq": 1,
+      "slug": "tui-claude-code-adapter",
+      "path": "docs/product/UI-C13-001-tui-claude-code-adapter.md",
+      "title": "TUI Claude Code Adapter"
+    },
+    {
+      "category": "PRD",
       "cycle": "C01",
       "seq": 1,
       "slug": "hero-1-0",

@@ -208,6 +208,8 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 					msg = "OpenCode enabled (projected .opencode/)"
 				case "Codex":
 					msg = "Codex enabled (projected .codex/)"
+				case "Claude":
+					msg = "Claude enabled (projected .claude/)"
 				}
 			}
 			parts = append(parts, msg)

@@ -74,6 +74,143 @@ func TestRuntimeAssets_ScopeRouting(t *testing.T) {
 	}
 }
 
+func TestRuntimeAssets_ImplementationCompletionContractParity(t *testing.T) {
+	harnesses := []string{"cursor", "codex", "opencode", "claude"}
+	implementationAgents := []string{"backend_agent", "frontend_agent", "generic_agent"}
+	for _, harnessID := range harnesses {
+		for _, agent := range implementationAgents {
+			path := harnessID + "/agents/" + agent + ".md"
+			data, err := fs.ReadFile(assets.FS, path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+			body := string(data)
+			for _, required := range []string{
+				`"status": "complete"`,
+				`"tasks_remaining": []`,
+				`"acceptance_gates": {`,
+				`"tests_passed": true`,
+				`status: "blocked"`,
+			} {
+				if !strings.Contains(body, required) {
+					t.Errorf("%s missing completion contract %q", path, required)
+				}
+			}
+		}
+
+		path := harnessID + "/agents/orchestration_agent.md"
+		data, err := fs.ReadFile(assets.FS, path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		body := string(data)
+		for _, required := range []string{
+			"Implementation Assignment and Completion Gate",
+			"TUI/runtime scheduler alone",
+			"marks the reported completed IDs",
+			"rereads `tasks.md`",
+			"global no-pending-checklist condition",
+			"not as a prerequisite for validating an otherwise eligible report",
+			"Only after this gate passes",
+		} {
+			if !strings.Contains(body, required) {
+				t.Errorf("%s missing orchestrator gate %q", path, required)
+			}
+		}
+
+		// The no-pending condition is a post-scheduler gate. Keep these checks
+		// semantic and ordered so harmless prose reflow does not weaken the
+		// contract or accidentally make the pre-validation checklist state a
+		// prerequisite for accepting an otherwise valid report.
+		schedulerMark := strings.Index(body, "marks the reported completed IDs")
+		schedulerReread := strings.Index(body, "rereads `tasks.md`")
+		noPendingGate := strings.Index(body, "global no-pending-checklist condition")
+		if schedulerMark < 0 || schedulerReread < 0 || noPendingGate < 0 ||
+			!(schedulerMark < schedulerReread && schedulerReread < noPendingGate) {
+			t.Errorf("%s must evaluate the no-pending gate only after scheduler mark and reread", path)
+		}
+	}
+}
+
+func TestRuntimeAssets_ImplementationOwnershipContractParity(t *testing.T) {
+	harnesses := []string{"cursor", "codex", "opencode", "claude"}
+	implementationAgents := []string{"backend_agent", "frontend_agent", "generic_agent"}
+	ownerTags := []string{
+		"[agent:backend_agent]",
+		"[agent:frontend_agent]",
+		"[agent:generic_agent]",
+	}
+	canonicalGates := []string{
+		`"completed_tasks_verified": true`,
+		`"task_ownership_respected": true`,
+		`"required_tests_passed": true`,
+	}
+
+	// The same agent contract must be projected identically into every
+	// harness. Keep the comparison keyed by agent so agent-specific names and
+	// ownership markers are not compared with one another.
+	baseline := make(map[string]string, len(implementationAgents)+1)
+	for _, harnessID := range harnesses {
+		planningPath := harnessID + "/agents/planning_agent.md"
+		planningData, err := fs.ReadFile(assets.FS, planningPath)
+		if err != nil {
+			t.Errorf("read %s: %v", planningPath, err)
+		} else {
+			planning := string(planningData)
+			if previous, ok := baseline["planning_agent"]; ok && planning != previous {
+				t.Errorf("%s differs from the canonical planning_agent ownership contract", planningPath)
+			} else {
+				baseline["planning_agent"] = planning
+			}
+			for _, tag := range ownerTags {
+				if count := strings.Count(planning, tag); count != 1 {
+					t.Errorf("%s must contain exactly one %s, found %d", planningPath, tag, count)
+				}
+			}
+			for _, required := range []string{
+				"exactly one canonical owner marker",
+				"never emit multiple owners",
+				"Never represent cross-cutting work with a multi-owner task",
+			} {
+				if !strings.Contains(planning, required) {
+					t.Errorf("%s missing single-owner prohibition %q", planningPath, required)
+				}
+			}
+		}
+
+		for _, agent := range implementationAgents {
+			path := harnessID + "/agents/" + agent + ".md"
+			data, err := fs.ReadFile(assets.FS, path)
+			if err != nil {
+				t.Errorf("read %s: %v", path, err)
+				continue
+			}
+			body := string(data)
+			if previous, ok := baseline[agent]; ok && body != previous {
+				t.Errorf("%s differs from the canonical %s ownership/completion contract", path, agent)
+			} else {
+				baseline[agent] = body
+			}
+			for _, gate := range canonicalGates {
+				if !strings.Contains(body, gate) {
+					t.Errorf("%s missing canonical acceptance gate %q", path, gate)
+				}
+			}
+			for _, required := range []string{
+				"The TUI/runtime scheduler is the sole writer of checkboxes",
+				"Never update a task checkbox",
+			} {
+				if !strings.Contains(body, required) {
+					t.Errorf("%s missing scheduler-only checkbox rule %q", path, required)
+				}
+			}
+			if strings.Contains(body, "[x]") {
+				t.Errorf("%s must not instruct the implementation agent to mark a task [x]", path)
+			}
+		}
+	}
+}
+
 // TestRuntimeAssets_Fallback verifies model fallback semantics appear in assets.
 func TestRuntimeAssets_Fallback(t *testing.T) {
 	// The word "fallback" or "fallback_model" must appear.

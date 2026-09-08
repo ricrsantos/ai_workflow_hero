@@ -37,7 +37,7 @@ func NewCommand(version string, assetsFS fs.FS) *cobra.Command {
 Hero requires the project to be a git repository. If it is not, Hero will
 offer to run 'git init' on your behalf (or you can pass --git-init).
 
-Select at least one harness (Cursor, OpenCode, and/or Codex) during the interactive install.`,
+Select at least one harness (Cursor, OpenCode, Codex, and/or Claude) during the interactive install.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -199,6 +199,7 @@ func promptHarnessMultiSelect(stdout interface{ Write([]byte) (int, error) }) ([
 		huh.NewOption("Cursor", "cursor"),
 		huh.NewOption("OpenCode", "opencode"),
 		huh.NewOption("Codex", "codex"),
+		huh.NewOption("Claude", "claude"),
 	}
 	form := huh.NewForm(
 		huh.NewGroup(

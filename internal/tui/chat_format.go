@@ -46,6 +46,7 @@ func tuiHeroStartPreamble() string {
 		"- Do NOT depend on prior chat history from /hero-new — bootstrap from disk and CLI state.\n" +
 		"- Do NOT run `hero cycle new` — the cycle was prepared during /hero-new.\n" +
 		"- The TUI runs hero cycle sync-config before this session; do not ask the user to run it manually.\n" +
+		"- If hero status already shows the active stage as Running after a completion-gate intervention, do not call hero stage start again; report that the existing stage will be retried and STOP so the TUI can launch its next explicit wave.\n" +
 		"- Run full orchestration: validate workflow-config, start stages, persist via hero CLI with metrics.\n" +
 		"- Stay inside this project root (the directory that contains .workflow-hero/). Do not read, grep, glob, or search parent directories, sibling folders, or any Hero framework/source tree.\n" +
 		"- Invoke `hero` from PATH via the Shell tool (e.g. `hero status`). Do not hunt the filesystem for the binary. If Shell fails, stop and tell the user — do not reverse-engineer Hero internals.\n" +
@@ -84,6 +85,26 @@ func tuiHeroStartContinueAfterStagePreamble(stageName string) string {
 		tuiOrchStageHandoffRules() +
 		"- Tell the user to use /hero-approve, /hero-reject, /hero-cancel, or /hero-finish in the Hero TUI (not Cursor chat handoff).\n\n" +
 		"---\n\n"
+}
+
+func tuiHeroStartContinueAfterIncompleteStagePreamble(stageName, reason string) string {
+	stageName = strings.TrimSpace(stageName)
+	reason = strings.TrimSpace(reason)
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are the orchestration agent resuming after the TUI stage-agent gate refused to close " + stageName + ". Follow these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ⚠).\n" +
+		"- Do NOT close, approve, advance, or mark this stage complete. Keep the stage Running for intervention.\n" +
+		"- This report is not permission to close. Keep the stage Running and do not issue any stage transition command.\n" +
+		"- Inspect the stage-agent reports and artifacts, explain the missing work or blocker, and wait for the next explicit implementation wave or human intervention.\n" +
+		"- Tell the user to correct the reported blocker and run /hero-start in the TUI to request the next implementation wave.\n" +
+		"- Do NOT start another workflow stage.\n" +
+		func() string {
+			if reason == "" {
+				return ""
+			}
+			return "\nGate reason: " + reason + "\n"
+		}() +
+		"\n---\n\n"
 }
 
 func tuiDiscoverResearchPreamble() string {
@@ -168,7 +189,7 @@ func tuiHeroContinuePreamble(extra int) string {
 		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n"+
 		"- The user requested **+%d** extra iteration(s). Run `hero status` and confirm the current stage is Escalated.\n"+
 		"- Grant iterations via `hero continue --extra %d`. Do NOT edit workflow-config.yml max_iterations.\n"+
-		"- After granting, resume execution of the escalated stage via Task subagents.\n"+
+		"- After granting, call `hero stage start --name <continued stage>` and STOP. Do NOT dispatch Task or Execute stage agents yourself; the TUI starts them only after the stage is recorded Running.\n"+
 		"- Apply Metrics Procedure on subsequent stage closes.\n\n"+
 		"---\n\n", extra, extra)
 }

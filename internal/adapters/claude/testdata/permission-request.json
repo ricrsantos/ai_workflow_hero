@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"permission-1","method":"tools/call","params":{"name":"approval_prompt","arguments":{"token":"fixture-one-time-token","tool_name":"Bash","input":{"command":"go test ./..."}}}}
