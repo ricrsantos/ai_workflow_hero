@@ -4,6 +4,44 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-09 — C13 finished via /hero-finish
+
+**Problem**: Implementation 9/9 was still Running after the TUI completion gate refused the `generic_agent` report (unassigned `task-06.3-projection-lifecycle` on a fully checked `tasks.md`). QA and Judge were Waiting after the last Judge loop-back. The user issued `/hero-finish`.
+
+**Change**: `hero finish` with implementation-wave metrics (`gpt-5.6-terra`, 19500 in / 4500 out tokens, ~$0.093, 900000 ms). Did not close Implementation/QA/Judge as completed stages. Recorded cycle `completed_at` for archive dating. Updated `current-state.md` and `metrics-summary.md`. OpenSpec change `claude-code-adapter` remains linked until `/hero-archive`.
+
+**Validation**: `hero status` — no active cycle. Adapter work including `PrepareHeroStart` / `SyncAgentDefinition` remains on disk.
+
+## 2026-09-09 — C13 Implementation gate refused: unassigned task ID
+
+**Problem**: Implementation 9/9 stayed Running. TUI gate: reports invalid or missing required gate fields. `generic_agent` returned `status: complete` with gates true, but `tasks_completed: ["task-06.3-projection-lifecycle"]`. All OpenSpec checkboxes are already `[x]`, so the wave assignment was empty (verification-only). Claiming an unassigned ID fails closed.
+
+**Change**: Did not close or start another stage. PrepareHeroStart / SyncAgentDefinition and TUI Claude prepare wiring are on disk. Next `/hero-start` wave must report empty `tasks_completed` / `tasks_remaining` to match the empty assignment, or reopen an unchecked task if more coding remains.
+
+**Validation**: `hero status` — Implementation Running 9/9; QA Waiting 7/7; Judge Waiting 5/5.
+
+## 2026-09-09 — C13 Implementation /hero-continue: extra iteration granted, stage started
+
+**Change**: `/hero-continue` defaulted to `--extra 1` while Implementation was Escalated 8/8 (`iteration_budget`). `hero continue --extra 1` then `hero stage start --name implementation` (iteration 9/9 Running). Did not dispatch `generic_agent` (TUI handoff). Remaining gap: Claude `/hero-start` Prepare (see judge-gaps.md).
+
+**Validation**: `hero status` — Implementation Running 9/9; QA Waiting 7/7; Judge Waiting 5/5.
+
+## 2026-09-09 — C13 Judge failed; Implementation escalated (iteration_budget)
+
+**Problem**: Judge iter 5/5 found 1 remaining SDD gap: Claude `/hero-start` Prepare does not sync managed model/effort/skill fields in `.claude/agents/<agent>.md` and does not fail closed on invalid CLI or marked-agent preparation. OpenCode/Codex Prepare is wired; Claude is not. Prior iteration-4 remainders are landed. `sdd_ambiguity: false`.
+
+**Change**: Closed Judge `--failed` with metrics. `hero stage loop-back --from judge`. `hero stage start --name implementation` escalated (`iteration_budget` 8/8). Did not dispatch stage agents. Waiting for `/hero-continue` in the Hero TUI.
+
+**Validation**: `hero status` — Implementation Escalated 8/8; QA Waiting 7/7; Judge Waiting 5/5. Artifact: `.workflow-hero/cycles/current/judge-gaps.md`. Metrics: `cursor-grok-4.6-high`, 31250 in / 1550 out tokens, ~$0.0718, 426000 ms.
+
+## 2026-09-09 — C13 QA 7/7 closed without JSON; Judge started
+
+**Problem**: TUI `qa_agent` (`opencode-go/deepseek-v4-pro`) returned preamble only (TESTING.md / parallel build+lint / cached `go test ./...` green / intended fresh+logging review) with no JSON Output Format (`tests_passed` unset). QA was Running 7/7 so close was allowed.
+
+**Change**: Closed QA as pass from the explicit cached-pass signal (picker 4-harness gap already fixed). Did not re-dispatch agents. `hero stage start --name judge` for the next TUI wave (Waiting 4/5). Metrics estimate: model `opencode-go/deepseek-v4-pro`, 6250 in / 106 out tokens, ~$0.004335, 90000 ms.
+
+**Validation**: `hero status` after close+start — QA Completed Auto; Judge Running.
+
 ## 2026-09-09 — Harness session isolation (schema v10)
 
 **Problem**: During a mixed-harness cycle, QA on OpenCode emitted `ses_f810…`.
@@ -1217,3 +1255,64 @@ focuses the navbar (overlay dismiss unchanged). Footer hints and Telegram
 `/interrupt` parity docs updated.
 
 **Validation**: `go test ./internal/tui/...`
+
+## 2026-09-09 — C13 deterministic bridge and event-fixture completion
+
+**Change**: Expanded the frozen Claude NDJSON stream fixture with explicit
+permission and question frames. The result-assembler golden test now verifies
+their normalized metadata plus text/thinking/tool, retry, subagent, hook,
+plugin, usage, final-result repair, and bounded redacted unknown-event warning
+behavior. Added a fake-child `ask` test that inspects the temporary strict MCP
+configuration while the turn is starting: it contains only the private Hero
+stdio helper, has mode `0600`, and keeps the one-time token out of Claude's
+environment. Adapter callback coverage confirms permission and question
+frames reach the existing shared contracts, and boundary tests reject Cursor,
+OpenCode, and Codex resume IDs before a Claude process starts.
+
+**Validation**: `go test ./internal/adapters/claude ./internal/tui
+./internal/status ./internal/doctor ./internal/integration ./internal/harnessmgr
+./internal/install ./internal/modelprops` passed.
+
+## 2026-09-09 — TUI Execute map race corrected
+
+**Problem**: `startConversationExecute` captured a value-copy of the Bubble
+Tea model, but its background worker still read the shared `executes` map while
+`Update` handled `executePairMsg`. The required race check consistently caught
+the concurrent map read/write.
+
+**Change**: Snapshot the current turn's `Freechat` flag before launching the
+worker and pass that scalar into `executeConversationTurn`; the worker no
+longer touches `executes`. This preserves the TUI-only ownership of mutable
+model state while retaining the same routing behavior.
+
+**Validation**: Targeted approve/reject race reproductions and
+`go test -race ./internal/tui ./internal/cycle` passed.
+
+## 2026-09-09 — C13 Judge-gap recovery verification
+
+**Outcome**: Revalidated the live strict MCP permission bridge, normalized
+permission/question event fixtures, foreign-session guard, runtime native-model
+identity, permission-pause Status reporting, Telegram permission denial path,
+and deterministic four-harness execution/cancel/fallback acceptance coverage.
+The bridge remains execution-scoped and exposes only its temporary
+`approval_prompt` helper; no credential, plugin, or general MCP transport is
+introduced.
+
+**Validation**: `openspec validate claude-code-adapter --strict`, `go test
+./...`, `go vet ./...`, `go build ./cmd/hero`, `git diff --check`, targeted
+C13 package tests, and `go test -race ./internal/tui ./internal/cycle` passed.
+
+## 2026-09-09 — C13 Claude `/hero-start` preparation recovery
+
+**Change**: Added the Claude Prepare-on-start path. It performs only a
+PATH/version/required-flag compatibility probe, then preflights every projected
+Claude agent before atomically updating marker-delimited `model`, supported
+`effort`, and embedded skill fields. User body text and unmarked frontmatter
+remain untouched. A failed probe or invalid/missing marker produces actionable
+`/hero-start` copy and completes no agent-file writes. The asynchronous TUI
+prepare command now invokes this path after OpenCode/Codex and only when an
+enabled workflow agent uses Claude.
+
+**Validation**: Added Claude preparation and TUI scheduling tests; `go test
+./...`, `openspec validate claude-code-adapter --strict`, and `git diff --check`
+passed.

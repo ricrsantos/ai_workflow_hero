@@ -2,9 +2,12 @@ package claude
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -19,29 +22,78 @@ type fakeTurnLauncher struct {
 	invocation Invocation
 	process    *fakeProcess
 	starts     int
+	onStart    func(Invocation) error
 }
 
 func (l *fakeTurnLauncher) Start(_ context.Context, path string, invocation Invocation) (Process, error) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	l.path, l.invocation, l.starts = path, invocation.Clone(), l.starts+1
+	onStart := l.onStart
+	l.mu.Unlock()
+	if onStart != nil {
+		if err := onStart(invocation.Clone()); err != nil {
+			return nil, err
+		}
+	}
 	return l.process, nil
 }
 
 type fakeProcess struct {
-	stdout     io.Reader
-	stderr     io.Reader
-	waitErr    error
-	interrupts int
-	kills      int
+	mu          sync.Mutex
+	stdout      io.Reader
+	stderr      io.Reader
+	waitErr     error
+	interrupts  int
+	kills       int
+	waitGate    chan struct{}
+	waitStarted chan struct{}
+	releaseOnce sync.Once
 }
 
 func (p *fakeProcess) Stdout() io.Reader { return p.stdout }
 func (p *fakeProcess) Stderr() io.Reader { return p.stderr }
-func (p *fakeProcess) Wait() error       { return p.waitErr }
-func (p *fakeProcess) PID() int          { return 4242 }
-func (p *fakeProcess) Interrupt() error  { p.interrupts++; return nil }
-func (p *fakeProcess) Kill() error       { p.kills++; return nil }
+func (p *fakeProcess) Wait() error {
+	if p.waitStarted != nil {
+		close(p.waitStarted)
+	}
+	if p.waitGate != nil {
+		<-p.waitGate
+	}
+	return p.waitErr
+}
+func (p *fakeProcess) PID() int { return 4242 }
+func (p *fakeProcess) Interrupt() error {
+	p.mu.Lock()
+	p.interrupts++
+	p.mu.Unlock()
+	p.releaseWait()
+	return nil
+}
+func (p *fakeProcess) Kill() error {
+	p.mu.Lock()
+	p.kills++
+	p.mu.Unlock()
+	p.releaseWait()
+	return nil
+}
+
+func (p *fakeProcess) releaseWait() {
+	if p.waitGate != nil {
+		p.releaseOnce.Do(func() { close(p.waitGate) })
+	}
+}
+
+func (p *fakeProcess) interruptCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.interrupts
+}
+
+func (p *fakeProcess) killCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.kills
+}
 
 type fakeBridgeHandle struct {
 	mu         sync.Mutex
@@ -150,18 +202,28 @@ func TestAdapterExecuteResumeAddsOnlyBoundNativeIDAndDoesNotRetryPrompt(t *testi
 }
 
 func TestAdapterRejectsForeignHarnessSessionBeforeLaunchingClaude(t *testing.T) {
-	a, launcher := newTestAdapter(&fakeProcess{})
-	_, err := a.Execute(context.Background(), harness.ExecuteRequest{
-		Prompt:            "do not send",
-		SessionID:         "thr_codex_1",
-		Model:             "sonnet",
-		PermissionProfile: harness.PermissionProfileAutoAll,
-	})
-	if err == nil || !strings.Contains(err.Error(), "Codex session") {
-		t.Fatalf("err=%v", err)
-	}
-	if launcher.starts != 0 {
-		t.Fatalf("foreign session must not launch Claude: %d", launcher.starts)
+	for _, tc := range []struct {
+		name, sessionID, harness string
+	}{
+		{name: "codex", sessionID: "thr_codex_1", harness: "Codex"},
+		{name: "opencode", sessionID: "opencode:ses_1", harness: "OpenCode"},
+		{name: "cursor", sessionID: "cursor:agent_1", harness: "Cursor"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, launcher := newTestAdapter(&fakeProcess{})
+			_, err := a.Execute(context.Background(), harness.ExecuteRequest{
+				Prompt:            "do not send",
+				SessionID:         tc.sessionID,
+				Model:             "sonnet",
+				PermissionProfile: harness.PermissionProfileAutoAll,
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.harness+" session") {
+				t.Fatalf("err=%v", err)
+			}
+			if launcher.starts != 0 {
+				t.Fatalf("foreign session must not launch Claude: %d", launcher.starts)
+			}
+		})
 	}
 }
 
@@ -232,6 +294,98 @@ func TestAdapterAskStartsExecutionScopedBridgeAndInjectsToken(t *testing.T) {
 	handle.mu.Unlock()
 	if closes != 1 {
 		t.Fatalf("bridge cleanup calls=%d want 1", closes)
+	}
+}
+
+func TestAdapterAskGivesTheClaudeChildOnlyThePrivateLiveMCPBridge(t *testing.T) {
+	process := &fakeProcess{stdout: strings.NewReader(`{"type":"system","subtype":"init","session_id":"claude-s1"}
+{"type":"result","subtype":"success","session_id":"claude-s1","result":"done"}` + "\n"), stderr: strings.NewReader("")}
+	a, launcher := newTestAdapter(process)
+	handle := &fakeLiveBridgeHandle{config: permissionMCPConfig{Address: "127.0.0.1:43123", Token: "token"}}
+	a.PermissionBridgeStarter = PermissionBridgeStarterFunc(func(_ context.Context, got PermissionBridgeConfig) (PermissionBridgeHandle, error) {
+		if got.Token != "token" || got.Request == nil {
+			t.Fatalf("bridge config=%+v", got)
+		}
+		return handle, nil
+	})
+	launcher.onStart = func(invocation Invocation) error {
+		configPath := argumentValue(invocation.Args, "--mcp-config")
+		if configPath == "" || !containsString(invocation.Args, "--strict-mcp-config") {
+			t.Fatalf("Claude did not receive the strict private MCP config: %q", invocation.Args)
+		}
+		if containsString(invocation.Environment, PermissionTokenEnv+"=token") {
+			t.Fatalf("Claude inherited permission token: %q", invocation.Environment)
+		}
+		info, err := os.Stat(configPath)
+		if err != nil {
+			return err
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("MCP config mode=%#o", info.Mode().Perm())
+		}
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			return err
+		}
+		var config struct {
+			MCPServers map[string]struct {
+				Type string            `json:"type"`
+				Args []string          `json:"args"`
+				Env  map[string]string `json:"env"`
+			} `json:"mcpServers"`
+		}
+		if err := json.Unmarshal(data, &config); err != nil {
+			return err
+		}
+		server, ok := config.MCPServers["hero_permissions"]
+		if !ok || len(config.MCPServers) != 1 || server.Type != "stdio" || !reflect.DeepEqual(server.Args, []string{"internal", "claude-permission-bridge"}) || server.Env[PermissionTokenEnv] != "token" || server.Env[PermissionBridgeAddressEnv] != "127.0.0.1:43123" {
+			t.Fatalf("private MCP config=%s", data)
+		}
+		return nil
+	}
+
+	if _, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt:            "needs approval",
+		Model:             "sonnet",
+		PermissionProfile: harness.PermissionProfileAsk,
+		OnPermissionRequest: func(context.Context, harness.PermissionRequest) (harness.PermissionResponse, error) {
+			return harness.PermissionResponse{Approved: true}, nil
+		},
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if handle.closeCalls != 1 {
+		t.Fatalf("bridge close calls=%d", handle.closeCalls)
+	}
+}
+
+func TestAdapterNormalizesPermissionAndQuestionFramesThroughCallbacks(t *testing.T) {
+	process := &fakeProcess{stdout: strings.NewReader(`{"type":"system","subtype":"init","session_id":"claude-s1"}
+{"type":"permission","subtype":"request","request_id":"permission-1","tool_name":"Bash"}
+{"type":"question","subtype":"request","request_id":"question-1","question":"Proceed?"}
+{"type":"result","subtype":"success","session_id":"claude-s1","result":"done"}` + "\n"), stderr: strings.NewReader("")}
+	a, _ := newTestAdapter(process)
+	var permissions []harness.PermissionRequest
+	var questions []harness.QuestionRequest
+	result, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt:            "needs answers",
+		Model:             "sonnet",
+		Stream:            true,
+		PermissionProfile: harness.PermissionProfileAutoAll,
+		OnPermissionRequest: func(_ context.Context, request harness.PermissionRequest) (harness.PermissionResponse, error) {
+			permissions = append(permissions, request)
+			return harness.PermissionResponse{Approved: false, Reason: "no"}, nil
+		},
+		OnQuestionRequest: func(_ context.Context, request harness.QuestionRequest) (harness.QuestionResponse, error) {
+			questions = append(questions, request)
+			return harness.QuestionResponse{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.SessionID != "claude-s1" || len(permissions) != 1 || permissions[0].ID != "permission-1" || permissions[0].SessionID != "claude-s1" || len(questions) != 1 || questions[0].ID != "question-1" || questions[0].SessionID != "claude-s1" {
+		t.Fatalf("result=%+v permissions=%+v questions=%+v", result, permissions, questions)
 	}
 }
 
@@ -309,6 +463,76 @@ func TestAdapterCancelIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestAdapterCancelEscalatesOnlyTheActiveClaudeProcessGroup(t *testing.T) {
+	process := &fakeProcess{}
+	a, _ := newTestAdapter(process)
+	a.CancelGrace = time.Millisecond
+	a.setRunning("claude-s1", process)
+
+	if err := a.Cancel(context.Background(), "claude-s1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Cancel(context.Background(), "claude-s1"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for process.killCount() != 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if process.interruptCount() != 1 || process.killCount() != 1 {
+		t.Fatalf("interrupts=%d kills=%d", process.interruptCount(), process.killCount())
+	}
+}
+
+func TestAdapterCancelClosesAskBridgeAfterInterruptedTurn(t *testing.T) {
+	process := &fakeProcess{
+		stdout:      strings.NewReader(`{"type":"system","subtype":"init","session_id":"claude-s1"}` + "\n" + `{"type":"result","subtype":"success","session_id":"claude-s1","result":"done"}` + "\n"),
+		stderr:      strings.NewReader(""),
+		waitGate:    make(chan struct{}),
+		waitStarted: make(chan struct{}),
+	}
+	a, _ := newTestAdapter(process)
+	bridge := &fakeBridgeHandle{}
+	a.PermissionBridgeStarter = PermissionBridgeStarterFunc(func(context.Context, PermissionBridgeConfig) (PermissionBridgeHandle, error) {
+		return bridge, nil
+	})
+	done := make(chan error, 1)
+	go func() {
+		_, err := a.Execute(context.Background(), harness.ExecuteRequest{
+			Prompt:            "wait for permission bridge cleanup",
+			SessionID:         "claude-s1",
+			Model:             "sonnet",
+			PermissionProfile: harness.PermissionProfileAsk,
+			OnPermissionRequest: func(context.Context, harness.PermissionRequest) (harness.PermissionResponse, error) {
+				return harness.PermissionResponse{Approved: false}, nil
+			},
+		})
+		done <- err
+	}()
+	select {
+	case <-process.waitStarted:
+	case <-time.After(time.Second):
+		t.Fatal("Claude process did not reach Wait")
+	}
+	if err := a.Cancel(context.Background(), "claude-s1"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("interrupted Claude turn did not return")
+	}
+	bridge.mu.Lock()
+	closes := bridge.closeCalls
+	bridge.mu.Unlock()
+	if closes != 1 {
+		t.Fatalf("bridge close calls=%d want 1", closes)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
@@ -317,3 +541,24 @@ func containsString(values []string, want string) bool {
 	}
 	return false
 }
+
+func argumentValue(arguments []string, flag string) string {
+	for i, argument := range arguments {
+		if argument == flag && i+1 < len(arguments) {
+			return arguments[i+1]
+		}
+	}
+	return ""
+}
+
+type fakeLiveBridgeHandle struct {
+	config     permissionMCPConfig
+	closeCalls int
+}
+
+func (b *fakeLiveBridgeHandle) Run(context.Context) error { return nil }
+func (b *fakeLiveBridgeHandle) Close() error {
+	b.closeCalls++
+	return nil
+}
+func (b *fakeLiveBridgeHandle) permissionMCPConfig() permissionMCPConfig { return b.config }

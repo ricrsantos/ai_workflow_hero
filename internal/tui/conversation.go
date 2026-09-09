@@ -1399,6 +1399,13 @@ func parseHeroResumeInline(text string) (int, bool) {
 }
 
 func (m model) startConversationExecute(executeID, userText, prompt, origin string, relay *conversationStreamRelay) {
+	// The Execute worker outlives this Bubble Tea Update. Capture the only
+	// per-execute field it needs while the model still owns its map; a value-copy
+	// of model otherwise shares the executes map with later Update messages.
+	freechat := m.isFreechatTurn()
+	if ex, ok := m.executes[executeID]; ok {
+		freechat = ex.Freechat
+	}
 	input := conversation.Input{
 		Text:       userText,
 		Origin:     conversation.OriginLocal,
@@ -1418,7 +1425,7 @@ func (m model) startConversationExecute(executeID, userText, prompt, origin stri
 		var harnessID string
 		dispatcher := conversation.DispatcherFunc(func(ctx context.Context, _ conversation.Input) (conversation.Result, error) {
 			var err error
-			execution, harnessID, err = m.executeConversationTurn(ctx, executeID, prompt, relay)
+			execution, harnessID, err = m.executeConversationTurn(ctx, executeID, prompt, freechat, relay)
 			return conversation.Result{}, err
 		})
 		if m.convService == nil {
@@ -1435,7 +1442,7 @@ func (m model) startConversationExecute(executeID, userText, prompt, origin stri
 // executeConversationTurn is the TUI edge adapter for one Service-dispatched
 // turn. It resolves a harness and relays its stream; routing into the adapter
 // itself is owned by conversation.Service.
-func (m model) executeConversationTurn(ctx context.Context, executeID, prompt string, relay *conversationStreamRelay) (*harness.ExecutionResult, string, error) {
+func (m model) executeConversationTurn(ctx context.Context, executeID, prompt string, freechat bool, relay *conversationStreamRelay) (*harness.ExecutionResult, string, error) {
 	svc := m.svc
 	stageName := m.conversationStage
 	agentName := m.runtimeAgentName
@@ -1454,10 +1461,6 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 	}
 	if !relay.SendControl(executePairMsg{executeID: executeID, harnessID: pair.HarnessID, model: pair.Model}) {
 		return nil, pair.HarnessID, context.Canceled
-	}
-	freechat := m.isFreechatTurn()
-	if ex, ok := m.executes[executeID]; ok {
-		freechat = ex.Freechat
 	}
 	sessionID := m.harnessSessionIDForPair(stageName, pair.HarnessID)
 	if freechat {

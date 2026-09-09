@@ -1,7 +1,12 @@
 ---
 name: qa_agent
 description: Validates technical quality during the QA stage — tests, coverage, lint, build.
+# BEGIN AI WORKFLOW HERO MANAGED FIELDS
 model: inherit
+skills:
+  - workflow-hero
+  - grilling
+# END AI WORKFLOW HERO MANAGED FIELDS
 ---
 
 # qa_agent — Quality Assurance Agent

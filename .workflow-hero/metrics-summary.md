@@ -7,5 +7,6 @@
 | C4 | V2 do Hero - Implementação de multi-harness | 224200 | 0.4058 | 2026-08-15 |
 | C5 | Implementação da seleção das propriedades dos modelos na TUI (fast, thinking, reasoning, etc.) | 363625 | 0.0000 | 2026-08-18 |
 | C7 | Criação de uma tela de configuração na TUI do Hero para configrar o workflow-config.yml | 460058 | 0.4335 | 2026-08-29 |
+| C13 | Implementação do adapter para o Claude Code | 5006554 | 0.7840 | 2026-09-09 |
 
-**Project Grand Total**: 1589227 tokens, ~$3.9604 USD
+**Project Grand Total**: 6595781 tokens, ~$4.7444 USD

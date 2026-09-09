@@ -1,7 +1,9 @@
 ---
-name: planning_agent
 description: Converts approved specifications into a complete OpenSpec SDD during the Planning stage.
-model: inherit
+model: gpt-5.6-luna
+name: planning_agent
+reasoningEffort: max
+thinking: "off"
 ---
 
 # planning_agent — OpenSpec Planning Agent

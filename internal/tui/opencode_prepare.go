@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	tea "github.com/charmbracelet/bubbletea"
+	claudeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/claude"
 	codexadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
@@ -37,13 +38,17 @@ func (m model) heroStartPrepareCmd(ctx context.Context, requestID uint64, slug, 
 		reg = m.svc.Registry
 	}
 	return func() tea.Msg {
-		// OpenCode first (existing path), then Codex — each no-ops when unused.
+		// OpenCode, Codex, then Claude — each no-ops when unused.
 		if err := prepareOpenCodeOnStart(ctx, projectDir, st, reg); err != nil {
 			slog.Error("hero-start prepare failed", "harness", "opencode", "error", err)
 			return heroStartPrepareDoneMsg{requestID: requestID, slug: slug, commandBody: commandBody, agentBody: agentBody, err: err.Error()}
 		}
 		if err := prepareCodexOnStart(ctx, projectDir, st, reg); err != nil {
 			slog.Error("hero-start prepare failed", "harness", "codex", "error", err)
+			return heroStartPrepareDoneMsg{requestID: requestID, slug: slug, commandBody: commandBody, agentBody: agentBody, err: err.Error()}
+		}
+		if err := prepareClaudeOnStart(ctx, projectDir, reg); err != nil {
+			slog.Error("hero-start prepare failed", "harness", "claude", "error", err)
 			return heroStartPrepareDoneMsg{requestID: requestID, slug: slug, commandBody: commandBody, agentBody: agentBody, err: err.Error()}
 		}
 		return heroStartPrepareDoneMsg{requestID: requestID, slug: slug, commandBody: commandBody, agentBody: agentBody}
@@ -80,6 +85,22 @@ func prepareCodexOnStart(ctx context.Context, projectDir string, st *store.Store
 		}
 	}
 	return codexadapter.PrepareHeroStart(ctx, projectDir, st)
+}
+
+// prepareClaudeOnStart uses the registry adapter when present so tests can
+// inject a compatibility probe. Claude owns no persistent process to reset.
+func prepareClaudeOnStart(ctx context.Context, projectDir string, reg harnessmgr.Registry) error {
+	if reg != nil {
+		a, err := reg.Adapter("claude")
+		if err == nil {
+			if ca, ok := a.(*claudeadapter.Adapter); ok {
+				return claudeadapter.PrepareHeroStartWithAdapter(ctx, projectDir, ca)
+			}
+			// Test/mock adapters have no CLI protocol to prepare.
+			return nil
+		}
+	}
+	return claudeadapter.PrepareHeroStart(ctx, projectDir)
 }
 
 func (m model) handleHeroStartPrepareDone(msg heroStartPrepareDoneMsg) (model, tea.Cmd) {

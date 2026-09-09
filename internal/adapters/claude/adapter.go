@@ -69,7 +69,10 @@ type Adapter struct {
 	ProbeLauncher   Launcher
 	ProcessLauncher ProcessLauncher
 	Clock           Clock
-	TokenSource     func() (string, error)
+	// CancelGrace bounds the SIGINT-to-kill escalation. Zero uses the production
+	// default; tests inject a short duration without changing process behavior.
+	CancelGrace time.Duration
+	TokenSource func() (string, error)
 	// PermissionBridgeStarter creates the constrained, execution-scoped ask
 	// bridge. It is injected by tests; production uses the local stdio bridge.
 	PermissionBridgeStarter PermissionBridgeStarter
@@ -519,7 +522,7 @@ func (a *Adapter) Cancel(_ context.Context, sessionID string) error {
 	}
 	a.log().Info("claude cancellation requested", "pid", process.PID())
 	go func() {
-		time.Sleep(cancelGrace)
+		time.Sleep(a.cancelGrace())
 		a.mu.Lock()
 		stillActive := false
 		for _, active := range a.active {
@@ -535,6 +538,13 @@ func (a *Adapter) Cancel(_ context.Context, sessionID string) error {
 		}
 	}()
 	return nil
+}
+
+func (a *Adapter) cancelGrace() time.Duration {
+	if a != nil && a.CancelGrace > 0 {
+		return a.CancelGrace
+	}
+	return cancelGrace
 }
 
 // Status implements harness.HarnessAdapter without probing or starting Claude.
@@ -680,7 +690,7 @@ func (a *Adapter) bindNativeSession(trackID, nativeID string, req harness.Execut
 	}
 	st.status = harness.ExecutionStatus{SessionID: nativeID, State: harness.StatusRunning, Message: "Claude native session bound"}
 	st.updated = a.now()
-	if turn, ok := a.active[trackID]; ok {
+	if turn, ok := a.active[trackID]; ok && trackID != nativeID {
 		a.active[nativeID] = turn
 		delete(a.active, trackID)
 	}

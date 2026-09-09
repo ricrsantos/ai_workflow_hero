@@ -111,7 +111,7 @@ func TestDecodeNDJSONFixtureLineByLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeNDJSON() error = %v", err)
 	}
-	wantTypes := []string{"system", "system", "assistant", "assistant", "assistant", "user", "system", "system", "system", "system", "system", "system", "result", "result", "system", "mystery"}
+	wantTypes := []string{"system", "system", "assistant", "assistant", "assistant", "user", "system", "system", "system", "system", "system", "system", "permission", "question", "result", "result", "system", "mystery"}
 	if len(events) != len(wantTypes) {
 		t.Fatalf("events = %d, want %d", len(events), len(wantTypes))
 	}

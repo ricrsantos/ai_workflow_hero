@@ -1,7 +1,12 @@
 ---
 name: context_agent
 description: Read-only context retrieval — scans codebase and docs on demand. Never implements code.
+# BEGIN AI WORKFLOW HERO MANAGED FIELDS
 model: inherit
+skills:
+  - workflow-hero
+  - grilling
+# END AI WORKFLOW HERO MANAGED FIELDS
 ---
 
 # context_agent — Project Context Retrieval Agent

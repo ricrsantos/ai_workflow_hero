@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	claudeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/claude"
 	codexadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
@@ -1161,9 +1162,9 @@ func (m model) handleHeroStartBootstrapDone(msg heroStartBootstrapDoneMsg) (mode
 	})
 }
 
-// heroStartNeedsPrepare is true when OpenCode and/or Codex Prepare-on-start must run.
+// heroStartNeedsPrepare is true when OpenCode, Codex, and/or Claude Prepare-on-start must run.
 func (m model) heroStartNeedsPrepare() bool {
-	return m.heroStartNeedsOpenCodePrepare() || m.heroStartNeedsCodexPrepare()
+	return m.heroStartNeedsOpenCodePrepare() || m.heroStartNeedsCodexPrepare() || m.heroStartNeedsClaudePrepare()
 }
 
 func (m model) heroStartNeedsOpenCodePrepare() bool {
@@ -1208,6 +1209,27 @@ func (m model) heroStartNeedsCodexPrepare() bool {
 	}
 	for _, id := range install.ListEnabledHarnesses(hero) {
 		if strings.EqualFold(id, "codex") {
+			return true
+		}
+	}
+	return false
+}
+
+func (m model) heroStartNeedsClaudePrepare() bool {
+	if m.svc == nil {
+		return false
+	}
+	projectDir := m.svc.ProjectDir
+	cfg, _, err := workflowconfig.LoadCurrent(projectDir)
+	if err != nil || len(claudeadapter.AgentsUsingHarness(cfg, "claude")) == 0 {
+		return false
+	}
+	hero, err := install.LoadHeroJSON(projectDir)
+	if err != nil {
+		return false
+	}
+	for _, id := range install.ListEnabledHarnesses(hero) {
+		if strings.EqualFold(id, "claude") {
 			return true
 		}
 	}

@@ -1,7 +1,12 @@
 ---
 name: judge_agent
 description: Validates SDD requirement coverage during the Judge stage. Does not assess code style.
+# BEGIN AI WORKFLOW HERO MANAGED FIELDS
 model: inherit
+skills:
+  - workflow-hero
+  - grilling
+# END AI WORKFLOW HERO MANAGED FIELDS
 ---
 
 # judge_agent — SDD Coverage Judge Agent

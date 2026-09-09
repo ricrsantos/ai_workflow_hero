@@ -1,7 +1,12 @@
 ---
 name: planning_agent
 description: Converts approved specifications into a complete OpenSpec SDD during the Planning stage.
+# BEGIN AI WORKFLOW HERO MANAGED FIELDS
 model: inherit
+skills:
+  - workflow-hero
+  - grilling
+# END AI WORKFLOW HERO MANAGED FIELDS
 ---
 
 # planning_agent — OpenSpec Planning Agent

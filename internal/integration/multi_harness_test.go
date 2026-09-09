@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -439,4 +440,104 @@ func TestIntegration_DefaultRegistryWiresFourAdapters(t *testing.T) {
 			t.Fatalf("Name()=%q want %q", a.Name(), id)
 		}
 	}
+}
+
+// TestIntegration_FourHarnessExecutionCancelAndFallbackAcceptance exercises
+// C13's deterministic acceptance boundary without starting any vendor CLI. It
+// verifies that every selected adapter sees only its own native session and
+// cancellation signal, then proves an unavailable Claude pair falls back once.
+func TestIntegration_FourHarnessExecutionCancelAndFallbackAcceptance(t *testing.T) {
+	adapters := map[string]*trackingAdapter{}
+	for _, id := range []string{"cursor", "opencode", "codex", "claude"} {
+		adapters[id] = &trackingAdapter{id: id, available: true}
+	}
+	reg := fourHarnessRegistry{adapters: adapters}
+	hero := install.HeroJSON{Harnesses: install.HarnessesFromSelection([]string{"cursor", "opencode", "codex", "claude"})}
+
+	for _, id := range []string{"cursor", "opencode", "codex", "claude"} {
+		pair, attempts, err := harnessmgr.ResolveExecutePair(context.Background(), reg, hero, id, id+"-model", "cursor", "cursor-model")
+		if err != nil || len(attempts) != 0 || pair.HarnessID != id {
+			t.Fatalf("resolve %s pair=%+v attempts=%+v err=%v", id, pair, attempts, err)
+		}
+		sessionID := id + "-session"
+		if _, err := pair.Adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "acceptance", SessionID: sessionID, Model: pair.Model}); err != nil {
+			t.Fatalf("execute %s: %v", id, err)
+		}
+		if err := pair.Adapter.Cancel(context.Background(), sessionID); err != nil {
+			t.Fatalf("cancel %s: %v", id, err)
+		}
+	}
+
+	adapters["claude"].available = false
+	pair, attempts, err := harnessmgr.ResolveExecutePair(context.Background(), reg, hero, "claude", "sonnet", "cursor", "composer-2.5")
+	if err != nil || pair.HarnessID != "cursor" || len(attempts) != 1 || attempts[0].HarnessID != "claude" {
+		t.Fatalf("Claude fallback pair=%+v attempts=%+v err=%v", pair, attempts, err)
+	}
+	if _, err := pair.Adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "fallback", SessionID: "cursor-fallback", Model: pair.Model}); err != nil {
+		t.Fatal(err)
+	}
+	for id, adapter := range adapters {
+		if err := adapter.assertOwned(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+type fourHarnessRegistry struct{ adapters map[string]*trackingAdapter }
+
+func (r fourHarnessRegistry) Adapter(id string) (harness.HarnessAdapter, error) {
+	adapter, ok := r.adapters[id]
+	if !ok {
+		return nil, harnessmgrErr("unknown harness")
+	}
+	return adapter, nil
+}
+
+func (r fourHarnessRegistry) SupportedIDs() []string { return install.SupportedHarnessIDs }
+func (r fourHarnessRegistry) EnabledIDs(hero install.HeroJSON) []string {
+	return install.ListEnabledHarnesses(hero)
+}
+
+type trackingAdapter struct {
+	id        string
+	available bool
+	executed  []string
+	cancelled []string
+}
+
+func (a *trackingAdapter) Name() string { return a.id }
+func (a *trackingAdapter) IsAvailable(context.Context) error {
+	if !a.available {
+		return errors.New("unavailable")
+	}
+	return nil
+}
+func (a *trackingAdapter) CreateSession(context.Context, harness.SessionRequest) (*harness.Session, error) {
+	return &harness.Session{}, nil
+}
+func (a *trackingAdapter) ResumeSession(context.Context, string) error { return nil }
+func (a *trackingAdapter) Execute(_ context.Context, req harness.ExecuteRequest) (*harness.ExecutionResult, error) {
+	a.executed = append(a.executed, req.SessionID)
+	return &harness.ExecutionResult{SessionID: req.SessionID, Output: "ok"}, nil
+}
+func (a *trackingAdapter) Cancel(_ context.Context, sessionID string) error {
+	a.cancelled = append(a.cancelled, sessionID)
+	return nil
+}
+func (a *trackingAdapter) Status(context.Context, string) (*harness.ExecutionStatus, error) {
+	return &harness.ExecutionStatus{}, nil
+}
+func (a *trackingAdapter) Dispatch(context.Context, harness.DispatchRequest) (harness.DispatchResult, error) {
+	return harness.DispatchResult{}, nil
+}
+func (a *trackingAdapter) assertOwned(id string) error {
+	for _, sessionID := range append(append([]string(nil), a.executed...), a.cancelled...) {
+		if !strings.HasPrefix(sessionID, id+"-") {
+			return errors.New("foreign session dispatched to " + id)
+		}
+	}
+	if id == "claude" && len(a.executed) != 1 {
+		return errors.New("unavailable Claude fallback started another Claude execution")
+	}
+	return nil
 }

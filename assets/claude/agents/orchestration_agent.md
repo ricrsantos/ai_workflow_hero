@@ -1,7 +1,12 @@
 ---
 name: orchestration_agent
 description: Hero workflow orchestrator — coordinates stages, dispatches subagents via Task, maintains cycle state.
+# BEGIN AI WORKFLOW HERO MANAGED FIELDS
 model: inherit
+skills:
+  - workflow-hero
+  - grilling
+# END AI WORKFLOW HERO MANAGED FIELDS
 ---
 
 # orchestration_agent — Hero Workflow Orchestrator

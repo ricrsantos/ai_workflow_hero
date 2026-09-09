@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
@@ -24,8 +25,9 @@ func TestTelegramHarnessPermissionRoundTripByID(t *testing.T) {
 		executeID: "exec-1",
 		req: harness.PermissionRequest{
 			ID:          "perm-1",
-			Title:       "Run command",
+			Title:       "Claude permission: Bash",
 			Description: "The agent wants to run a project command.",
+			HarnessType: "claude.permission_prompt",
 		},
 		respCh: respCh,
 	})
@@ -54,6 +56,34 @@ func TestTelegramHarnessPermissionRoundTripByID(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(outbound, "\n"), "Harness permission perm-1 allowed.") {
 		t.Fatalf("missing confirmation: %q", outbound)
+	}
+}
+
+func TestTelegramClaudePermissionDenialDoesNotBypassAskProfile(t *testing.T) {
+	m := NewTestModel(nil)
+	m.telegram = &telegramState{connected: true, paired: true, address: "hero_1"}
+	respCh := make(chan harness.PermissionResponse, 1)
+	updated, _ := m.handleConversationMsg(harnessPermissionRequestMsg{
+		executeID: "claude-exec",
+		req: harness.PermissionRequest{
+			ID:          "claude-perm-deny",
+			Title:       "Claude permission: Write",
+			HarnessType: "claude.permission_prompt",
+		},
+		respCh: respCh,
+	})
+	m = updated.(model)
+	m, _ = m.handleTelegramInbound(telegramInboundMsg{text: "/hero-permission claude-perm-deny deny", address: "hero_1"})
+	select {
+	case response := <-respCh:
+		if response.Approved {
+			t.Fatalf("Claude deny response=%+v", response)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Telegram denial was not returned to the Claude permission callback")
+	}
+	if m.harnessPermissionPending {
+		t.Fatal("Claude permission remained pending after Telegram denial")
 	}
 }
 

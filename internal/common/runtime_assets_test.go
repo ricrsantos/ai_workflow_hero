@@ -156,7 +156,7 @@ func TestRuntimeAssets_ImplementationOwnershipContractParity(t *testing.T) {
 		if err != nil {
 			t.Errorf("read %s: %v", planningPath, err)
 		} else {
-			planning := string(planningData)
+			planning := runtimeAgentBody(string(planningData))
 			if previous, ok := baseline["planning_agent"]; ok && planning != previous {
 				t.Errorf("%s differs from the canonical planning_agent ownership contract", planningPath)
 			} else {
@@ -185,7 +185,7 @@ func TestRuntimeAssets_ImplementationOwnershipContractParity(t *testing.T) {
 				t.Errorf("read %s: %v", path, err)
 				continue
 			}
-			body := string(data)
+			body := runtimeAgentBody(string(data))
 			if previous, ok := baseline[agent]; ok && body != previous {
 				t.Errorf("%s differs from the canonical %s ownership/completion contract", path, agent)
 			} else {
@@ -209,6 +209,19 @@ func TestRuntimeAssets_ImplementationOwnershipContractParity(t *testing.T) {
 			}
 		}
 	}
+}
+
+// runtimeAgentBody excludes harness-native YAML frontmatter. Ownership and
+// completion instructions are the Markdown body contract; adapters may carry
+// different, marker-delimited native metadata without weakening that contract.
+func runtimeAgentBody(content string) string {
+	if !strings.HasPrefix(content, "---\n") {
+		return content
+	}
+	if end := strings.Index(content[4:], "\n---\n"); end >= 0 {
+		return content[end+9:]
+	}
+	return content
 }
 
 // TestRuntimeAssets_Fallback verifies model fallback semantics appear in assets.

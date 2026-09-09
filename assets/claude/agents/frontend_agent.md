@@ -1,7 +1,12 @@
 ---
 name: frontend_agent
 description: Implements frontend code per the approved SDD during Implementation. Use for UI/frontend tasks.
+# BEGIN AI WORKFLOW HERO MANAGED FIELDS
 model: inherit
+skills:
+  - workflow-hero
+  - grilling
+# END AI WORKFLOW HERO MANAGED FIELDS
 ---
 
 # frontend_agent — Frontend Implementation Agent

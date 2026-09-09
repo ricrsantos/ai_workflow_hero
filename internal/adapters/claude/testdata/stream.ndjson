@@ -10,6 +10,8 @@
 {"type":"system","subtype":"hook_started","hook":"pre_tool_use"}
 {"type":"system","subtype":"plugin_loaded","plugin":"example-plugin"}
 {"type":"system","subtype":"usage","input_tokens":12,"output_tokens":8}
+{"type":"permission","subtype":"request","session_id":"session-001","request_id":"permission-001","tool_name":"Bash"}
+{"type":"question","subtype":"request","session_id":"session-001","request_id":"question-001","question":"Continue with the migration?"}
 {"type":"result","subtype":"success","session_id":"session-001","result":"Hello world","usage":{"input_tokens":12,"output_tokens":8}}
 {"type":"result","subtype":"error","error":"authentication required"}
 {"type":"system","subtype":"stderr","message":"redacted CLI diagnostic"}

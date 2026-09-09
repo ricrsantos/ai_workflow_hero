@@ -1,7 +1,10 @@
 ---
-name: qa_agent
 description: Validates technical quality during the QA stage — tests, coverage, lint, build.
-model: inherit
+model: opencode-go/deepseek-v4-pro
+name: qa_agent
+reasoningEffort: high
+thinking:
+  type: disabled
 ---
 
 # qa_agent — Quality Assurance Agent

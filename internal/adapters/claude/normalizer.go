@@ -9,6 +9,10 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
+// maxUnknownEventWarnings keeps a malformed or future CLI stream from flooding
+// the TUI/log while still making the first occurrences actionable.
+const maxUnknownEventWarnings = 3
+
 // resultAssembler keeps only the observable state needed to repair a final
 // result after a partial stream. Raw payloads are never retained or emitted.
 type resultAssembler struct {
@@ -19,6 +23,7 @@ type resultAssembler struct {
 	final      string
 	usage      harness.Usage
 	completed  bool
+	unknowns   int
 }
 
 func newResultAssembler() *resultAssembler {
@@ -68,7 +73,7 @@ func (a *resultAssembler) consume(event RawEvent) ([]harness.StreamDelta, error)
 	case "result":
 		return a.consumeResult(event, payload)
 	default:
-		return []harness.StreamDelta{harness.WarningDelta(adapterName, event.Type, a.sessionID, "redacted unknown event")}, nil
+		return a.unknownWarning(event.Type, "redacted unknown event"), nil
 	}
 }
 
@@ -96,7 +101,7 @@ func (a *resultAssembler) system(event RawEvent, p map[string]any) ([]harness.St
 	case "stderr":
 		return []harness.StreamDelta{{Kind: harness.StreamKindWarning, Text: "Claude CLI emitted a diagnostic (details redacted)", HarnessType: "system.stderr", SessionID: a.sessionID}}, nil
 	default:
-		return []harness.StreamDelta{harness.WarningDelta(adapterName, "system."+event.Subtype, a.sessionID, "redacted unknown system event")}, nil
+		return a.unknownWarning("system."+event.Subtype, "redacted unknown system event"), nil
 	}
 }
 
@@ -121,10 +126,26 @@ func (a *resultAssembler) assistant(event RawEvent, p map[string]any) []harness.
 			name := firstNonEmpty(stringAt(item, "name"), "tool")
 			out = append(out, harness.StreamDelta{Kind: harness.StreamKindTool, Text: "Claude tool " + name, CallID: stringAt(item, "id"), HarnessType: "assistant.tool_use", SessionID: a.sessionID})
 		default:
-			out = append(out, harness.WarningDelta(adapterName, "assistant."+typ, a.sessionID, "redacted unknown content block"))
+			out = append(out, a.unknownWarning("assistant."+typ, "redacted unknown content block")...)
 		}
 	}
 	return out
+}
+
+func (a *resultAssembler) unknownWarning(eventType, detail string) []harness.StreamDelta {
+	a.unknowns++
+	if a.unknowns <= maxUnknownEventWarnings {
+		return []harness.StreamDelta{harness.WarningDelta(adapterName, eventType, a.sessionID, detail)}
+	}
+	if a.unknowns == maxUnknownEventWarnings+1 {
+		return []harness.StreamDelta{{
+			Kind:        harness.StreamKindWarning,
+			Text:        "Claude emitted additional unknown events; further warnings suppressed",
+			HarnessType: "claude.unknown.suppressed",
+			SessionID:   a.sessionID,
+		}}
+	}
+	return nil
 }
 
 func (a *resultAssembler) user(_ RawEvent, p map[string]any) []harness.StreamDelta {

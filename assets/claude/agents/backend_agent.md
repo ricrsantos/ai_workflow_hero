@@ -1,7 +1,12 @@
 ---
 name: backend_agent
 description: Implements backend code per the approved SDD during Implementation. Use for API/server/backend tasks.
+# BEGIN AI WORKFLOW HERO MANAGED FIELDS
 model: inherit
+skills:
+  - workflow-hero
+  - grilling
+# END AI WORKFLOW HERO MANAGED FIELDS
 ---
 
 # backend_agent — Backend Implementation Agent

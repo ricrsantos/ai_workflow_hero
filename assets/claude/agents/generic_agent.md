@@ -1,7 +1,12 @@
 ---
 name: generic_agent
 description: Implements native apps, scripts, and infrastructure for native/script/infrastructure scopes.
+# BEGIN AI WORKFLOW HERO MANAGED FIELDS
 model: inherit
+skills:
+  - workflow-hero
+  - grilling
+# END AI WORKFLOW HERO MANAGED FIELDS
 ---
 
 # generic_agent — Native / Script / Infrastructure Agent
