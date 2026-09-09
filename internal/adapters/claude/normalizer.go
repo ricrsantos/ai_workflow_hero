@@ -24,10 +24,11 @@ type resultAssembler struct {
 	usage      harness.Usage
 	completed  bool
 	unknowns   int
+	debug      bool
 }
 
-func newResultAssembler() *resultAssembler {
-	return &resultAssembler{properties: make(map[string]string)}
+func newResultAssembler(debug bool) *resultAssembler {
+	return &resultAssembler{properties: make(map[string]string), debug: debug}
 }
 
 func decodeRawEvent(line int, raw []byte) (RawEvent, error) {
@@ -72,6 +73,8 @@ func (a *resultAssembler) consume(event RawEvent) ([]harness.StreamDelta, error)
 		return []harness.StreamDelta{harness.WarningDelta(adapterName, event.Type, a.sessionID, "redacted malformed question event")}, nil
 	case "result":
 		return a.consumeResult(event, payload)
+	case "stream_event":
+		return a.streamEvent(payload), nil
 	default:
 		return a.unknownWarning(event.Type, "redacted unknown event"), nil
 	}
@@ -98,6 +101,8 @@ func (a *resultAssembler) system(event RawEvent, p map[string]any) ([]harness.St
 		return []harness.StreamDelta{{Kind: harness.StreamKindTool, Text: "Claude subagent completed", AgentName: stringAt(p, "agent_id"), CallID: stringAt(p, "agent_id"), Phase: harness.StreamPhaseCompleted, HarnessType: "system.subagent_completed", SessionID: a.sessionID}}, nil
 	case "retry", "hook_started", "hook_completed", "plugin_loaded":
 		return []harness.StreamDelta{harness.ActivityDelta("system."+event.Subtype, systemActivity(event.Subtype, p), a.sessionID)}, nil
+	case "status":
+		return a.debugOnlyActivity("system.status", systemStatusActivity(p)), nil
 	case "stderr":
 		return []harness.StreamDelta{{Kind: harness.StreamKindWarning, Text: "Claude CLI emitted a diagnostic (details redacted)", HarnessType: "system.stderr", SessionID: a.sessionID}}, nil
 	default:
@@ -132,7 +137,41 @@ func (a *resultAssembler) assistant(event RawEvent, p map[string]any) []harness.
 	return out
 }
 
+func (a *resultAssembler) streamEvent(p map[string]any) []harness.StreamDelta {
+	if !a.debug {
+		return nil
+	}
+	event, _ := p["event"].(map[string]any)
+	if event == nil {
+		return a.debugOnlyActivity("stream_event", "Claude stream event")
+	}
+	harnessType := "stream_event"
+	if eventType := stringAt(event, "type"); eventType != "" {
+		harnessType = "stream_event." + eventType
+	}
+	if delta, ok := event["delta"].(map[string]any); ok {
+		if deltaType := stringAt(delta, "type"); deltaType != "" {
+			harnessType = "stream_event." + deltaType
+		}
+	}
+	label := strings.TrimPrefix(harnessType, "stream_event.")
+	if label == "" {
+		label = "event"
+	}
+	return a.debugOnlyActivity(harnessType, "Claude stream "+label)
+}
+
+func (a *resultAssembler) debugOnlyActivity(harnessType, summary string) []harness.StreamDelta {
+	if !a.debug {
+		return nil
+	}
+	return []harness.StreamDelta{harness.ActivityDelta(harnessType, summary, a.sessionID)}
+}
+
 func (a *resultAssembler) unknownWarning(eventType, detail string) []harness.StreamDelta {
+	if !a.debug {
+		return nil
+	}
 	a.unknowns++
 	if a.unknowns <= maxUnknownEventWarnings {
 		return []harness.StreamDelta{harness.WarningDelta(adapterName, eventType, a.sessionID, detail)}
@@ -311,6 +350,13 @@ func systemActivity(subtype string, p map[string]any) string {
 	default:
 		return "Claude activity"
 	}
+}
+
+func systemStatusActivity(p map[string]any) string {
+	if status := firstNonEmpty(stringAt(p, "status"), stringAt(p, "message")); status != "" {
+		return "Claude status: " + status
+	}
+	return "Claude status update"
 }
 
 func stringAt(p map[string]any, key string) string {

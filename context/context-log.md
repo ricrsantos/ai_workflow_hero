@@ -4,6 +4,12 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-09 — C13 archived via /hero-archive
+
+**Change**: `hero cycle archive` archived completed C13. OpenSpec change `claude-code-adapter` was already archived (`openspec/changes/archive/2026-09-09-claude-code-adapter`); CLI skipped `openspec archive`. Hero path: `.workflow-hero/cycles/archive/C13-2026-09-09-implementa-o-do-adapter-para-o-claude-co` (date from store `completed_at`). `metrics-summary.md` already had C13 totals (5006554 tokens, ~$0.7840). No active cycle remains.
+
+**Validation**: `hero status --json` before archive showed C13 `completed` with `openspec_change: claude-code-adapter`. After archive, `hero metrics` reports no active cycle. Resume with `/hero-resume` C13.
+
 ## 2026-09-09 — Completed cycles remain archiveable
 
 **Problem**: `/hero-finish` correctly changed C13 to `completed`, but `cycle.Service.Status()` and the TUI archive precondition only looked for `active`, so `/hero-status` appeared empty and `/hero-archive` was rejected before reaching `hero cycle archive`.
@@ -1333,3 +1339,15 @@ enabled workflow agent uses Claude.
 **Validation**: Added Claude preparation and TUI scheduling tests; `go test
 ./...`, `openspec validate claude-code-adapter --strict`, and `git diff --check`
 passed.
+
+## 2026-09-09 — Claude adapter debug-only stream events
+
+**Change**: Classified Claude `system.status` and `stream_event` as known
+observability frames instead of unrecognized warnings. They now emit debug-only
+`StreamKindActivity` deltas when `ExecuteRequest.Debug` is set from global
+`hero --debug`. Unknown Claude events and the bounded suppression notice follow
+the same rule, matching Codex/OpenCode behavior and keeping normal Chat output
+free of harness protocol noise.
+
+**Validation**: Extended `internal/adapters/claude/normalizer_test.go`; `go test
+./...` passed.

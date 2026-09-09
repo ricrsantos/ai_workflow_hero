@@ -307,7 +307,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		go func() { done <- bridge.Run(ctx) }()
 	}
 
-	assembler := newResultAssembler()
+	assembler := newResultAssembler(req.Debug)
 	stderrDone := make(chan string, 1)
 	go func() { stderrDone <- readRedacted(process.Stderr()) }()
 	streamErr := a.consume(ctx, process.Stdout(), req, trackID, assembler)

@@ -13,7 +13,7 @@
   "harnesses": {
     "claude": {
       "enabled": true,
-      "model": "claude-sonnet-4-6",
+      "model": "sonnet",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     },
@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "codex",
-    "model": "gpt-5.6-luna"
+    "harness": "claude",
+    "model": "sonnet"
   },
   "chat_verbosity": "debug",
   "telegram": {
@@ -49,6 +49,9 @@
   "model_properties": {
     "claude": {
       "claude-sonnet-4-6": {
+        "ef": "medium"
+      },
+      "sonnet": {
         "ef": "medium"
       }
     },
