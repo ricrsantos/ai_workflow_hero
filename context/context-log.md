@@ -1040,6 +1040,15 @@ cycle approvals without SQLite polling or Telegram-specific engine code.
 socket delivery and buffering, cycle service notifier wiring, event-ID
 correlation, OpenCode profile/environment propagation, and resumed execution.
 
+## 2026-09-09 — Release Hero v3.1.1
+
+**Change**: Incremented the patch version for Telegram `/interrupt` and `/kill`
+commands, Telegram status-loop and project-prefix fixes, TUI models/wizard/token
+fixes, harness session-id isolation, Claude adapter dogfooding on this repo, and
+`release.sh` local binary install parity with `build_dev.sh`.
+
+**Validation**: `go test ./...`
+
 ## 2026-09-08 — Release Hero v3.1.0
 
 **Change**: Incremented the minor version for the C13 Claude Code adapter: opt-in

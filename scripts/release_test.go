@@ -54,6 +54,9 @@ func TestReleaseScript_ArtifactNamingContract(t *testing.T) {
 		`-X main.version=`,
 		"./cmd/hero",
 		"./cmd/hero-telegram-daemon",
+		"/home/ricardo/installable/hero/hero",
+		"/home/ricardo/.workflow-hero/plugins/telegram/hero-telegram-daemon",
+		"/home/ricardo/.workflow-hero/plugins/telegram/manifest.json",
 	}
 	for _, want := range required {
 		if !strings.Contains(src, want) {

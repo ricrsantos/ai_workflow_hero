@@ -20,7 +20,7 @@ func TestRun_ClaudeOnlyInstallProjectsAssetsAndState(t *testing.T) {
 		Name:       "Claude project",
 		Summary:    "projection test",
 		Tools:      []string{"claude"},
-		Version:    "3.1.0",
+		Version:    "3.1.1",
 		AssetsFS:   assets.FS,
 	}, &out, &out); err != nil {
 		t.Fatalf("install: %v", err)
@@ -62,7 +62,7 @@ func TestEnableClaudeProjectsAndDisableKeepsFiles(t *testing.T) {
 		ProjectDir: dir,
 		Name:       "Enable Claude",
 		Tools:      []string{"cursor"},
-		Version:    "3.1.0",
+		Version:    "3.1.1",
 		AssetsFS:   assets.FS,
 	}, &out, &out); err != nil {
 		t.Fatal(err)
