@@ -8,14 +8,14 @@ func EstimateUsage(prompt, output string) Usage {
 	return Usage{
 		InputTokens:  roundCharsToTokens(prompt),
 		OutputTokens: roundCharsToTokens(output),
-	}
+	}.WithContextTokens()
 }
 
-// ResolveUsage prefers harness-reported counts when either side is non-zero;
-// otherwise falls back to EstimateUsage(prompt, output).
+// ResolveUsage prefers harness-reported counts when any usage field is
+// non-zero; otherwise falls back to EstimateUsage(prompt, output).
 func ResolveUsage(reported Usage, prompt, output string) Usage {
-	if reported.InputTokens > 0 || reported.OutputTokens > 0 {
-		return reported
+	if reported.HasCounts() {
+		return reported.WithContextTokens()
 	}
 	return EstimateUsage(prompt, output)
 }

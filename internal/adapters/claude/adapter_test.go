@@ -109,7 +109,7 @@ func TestAdapterExecuteSupervisesAndNormalizesClaudeTurn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if result.SessionID != "claude-s1" || result.Output != "final answer" || result.Usage != (harness.Usage{InputTokens: 12, OutputTokens: 8}) || !result.StreamDone {
+	if result.SessionID != "claude-s1" || result.Output != "final answer" || result.Usage.InputTokens != 12 || result.Usage.OutputTokens != 8 || result.Usage.ContextTokens != 20 || !result.StreamDone {
 		t.Fatalf("result=%+v", result)
 	}
 	wantArgs := []string{"-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--model", "sonnet", "--permission-mode", "acceptEdits", "--effort", "high", "implement this once"}
@@ -265,6 +265,32 @@ func TestAdapterListModelsUsesLocalCatalogWithoutLaunchingClaude(t *testing.T) {
 	}
 	if turns.starts != 0 {
 		t.Fatalf("catalog discovery must not launch Claude: %d", turns.starts)
+	}
+}
+
+func TestAdapterExecuteIncludesCacheInOccupancy(t *testing.T) {
+	process := &fakeProcess{
+		stdout: strings.NewReader(`{"type":"system","subtype":"init","session_id":"claude-s1","model":"sonnet"}
+{"type":"result","subtype":"success","session_id":"claude-s1","result":"ok","usage":{"input_tokens":200,"output_tokens":50,"cache_read_input_tokens":5000,"cache_creation_input_tokens":100}}
+`),
+		stderr: strings.NewReader(""),
+	}
+	a, _ := newTestAdapter(process)
+	result, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		ProjectDir:        "/work",
+		Prompt:            "continue",
+		Model:             "sonnet",
+		Stream:            true,
+		PermissionProfile: harness.PermissionProfileAutoAll,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Usage.InputTokens != 200 || result.Usage.OutputTokens != 50 || result.Usage.CacheReadTokens != 5000 || result.Usage.CacheWriteTokens != 100 {
+		t.Fatalf("usage=%+v", result.Usage)
+	}
+	if result.Usage.Occupancy() != 5350 {
+		t.Fatalf("occupancy=%d want 5350", result.Usage.Occupancy())
 	}
 }
 

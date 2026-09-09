@@ -573,6 +573,12 @@ func (a *Adapter) mapTokenUsage(params map[string]any, sessionID string, debug b
 		if out := int64Field(m, "outputTokens", "output_tokens", "completionTokens"); out > 0 {
 			usage.OutputTokens = out
 		}
+		if cached := int64Field(m, "cachedInputTokens", "cacheReadTokens", "cache_read_tokens", "cached_input_tokens"); cached > 0 {
+			usage.CacheReadTokens = cached
+		}
+		if write := int64Field(m, "cacheWriteTokens", "cache_write_tokens", "cacheCreationTokens", "cache_creation_tokens"); write > 0 {
+			usage.CacheWriteTokens = write
+		}
 		if total := int64Field(m, "totalTokens", "tokensUsed", "total"); total > 0 && usage.InputTokens == 0 && usage.OutputTokens == 0 {
 			usage.InputTokens = total
 		}
@@ -612,8 +618,10 @@ func (a *Adapter) mapTokenUsage(params map[string]any, sessionID string, debug b
 		}
 	}
 
+	usage = usage.WithContextTokens()
+
 	a.mu.Lock()
-	if usage.InputTokens > 0 || usage.OutputTokens > 0 {
+	if usage.HasCounts() {
 		if a.usageBySession == nil {
 			a.usageBySession = make(map[string]harness.Usage)
 		}

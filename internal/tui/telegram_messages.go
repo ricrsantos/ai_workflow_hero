@@ -349,13 +349,17 @@ func (m model) submitRemoteCommand(text, origin string) (model, tea.Cmd) {
 	return next, cmd
 }
 
+type telegramPendingTurn struct {
+	text   string
+	origin string
+}
+
 // submitRemoteTurn starts a harness turn for a Telegram-originated plain-text
 // message. It mirrors the composer follow-up path without touching the composer.
 func (m model) submitRemoteTurn(text, origin string) (model, tea.Cmd) {
 	m.nextUserOrigin = origin
 	if m.streaming {
-		// Queue the turn behind the active one rather than interrupting it.
-		return m, combineTimerCmds(m.appendTelegramPendingTurnCmd(text, origin), m.telegramOutboundCmd(m.telegramAutoReportText(time.Now())))
+		return m.enqueueTelegramPendingTurn(text, origin)
 	}
 
 	if m.researchLive {
@@ -383,12 +387,41 @@ func (m model) submitRemoteTurn(text, origin string) (model, tea.Cmd) {
 	return m, combineTimerCmds(m.conversationExecuteCmds(), m.telegramOutboundCmd(m.telegramAutoReportText(time.Now())))
 }
 
-// appendTelegramPendingTurnCmd defers a Telegram turn until the active harness
-// turn finishes (best-effort; not persisted beyond this TUI session).
-func (m model) appendTelegramPendingTurnCmd(text, origin string) tea.Cmd {
-	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
-		return telegramInboundMsg{text: text, isCommand: false, address: strings.TrimPrefix(origin, "telegram:")}
-	})
+// enqueueTelegramPendingTurn defers one remote turn until the active Execute
+// finishes. The PRD asks for an immediate status when the turn is queued, not
+// a retry loop that re-sends that status while the harness is still running.
+func (m model) enqueueTelegramPendingTurn(text, origin string) (model, tea.Cmd) {
+	text = strings.TrimSpace(text)
+	origin = strings.TrimSpace(origin)
+	if text == "" {
+		return m, nil
+	}
+	for _, pending := range m.telegramPendingTurns {
+		if pending.text == text && pending.origin == origin {
+			return m, nil
+		}
+	}
+	m.telegramPendingTurns = append(m.telegramPendingTurns, telegramPendingTurn{text: text, origin: origin})
+	return m, m.telegramOutboundCmd(m.telegramAutoReportText(time.Now()))
+}
+
+// drainTelegramPendingTurn starts the oldest queued remote turn after the TUI
+// is no longer streaming. It does not re-inject a synthetic inbound frame.
+func (m model) drainTelegramPendingTurn() (model, tea.Cmd) {
+	if m.streaming || len(m.telegramPendingTurns) == 0 {
+		return m, nil
+	}
+	next := m.telegramPendingTurns[0]
+	m.telegramPendingTurns = append([]telegramPendingTurn(nil), m.telegramPendingTurns[1:]...)
+	return m.submitRemoteTurn(next.text, next.origin)
+}
+
+func (m model) afterExecuteTelegramDrain(cmd tea.Cmd) (model, tea.Cmd) {
+	if m.streaming {
+		return m, cmd
+	}
+	next, drainCmd := m.drainTelegramPendingTurn()
+	return next, combineTimerCmds(cmd, drainCmd)
 }
 
 // setRemoteOrigin re-applies the Telegram origin to the next turn.

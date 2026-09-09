@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -226,6 +227,49 @@ func (m model) modelsForHarness(harnessID string) []string {
 		return append([]string(nil), m.availableModels...)
 	}
 	return nil
+}
+
+// modelChoicesForHarness returns the union of live API rows, persisted cache,
+// boot-time options, embedded catalog, and an optional configured model slug.
+// Lists are deduplicated case-insensitively and sorted alphabetically.
+func (m model) modelChoicesForHarness(harnessID, current string, live []string) []string {
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	seen := make(map[string]bool)
+	filtered := make([]string, 0, len(live)+16)
+	add := func(slug string) {
+		slug = strings.TrimSpace(slug)
+		if slug == "" || seen[strings.ToLower(slug)] {
+			return
+		}
+		seen[strings.ToLower(slug)] = true
+		filtered = append(filtered, slug)
+	}
+	for _, slug := range live {
+		add(slug)
+	}
+	for _, slug := range m.modelsForHarness(harnessID) {
+		add(slug)
+	}
+	if m.propsSvc != nil {
+		for _, slug := range m.propsSvc.Models(harnessID) {
+			add(slug)
+		}
+		if m.propsSvc.Catalog != nil {
+			for _, slug := range m.propsSvc.Catalog.ModelsForHarness(harnessID) {
+				add(slug)
+			}
+		}
+	}
+	for _, opt := range m.modelOptions {
+		if strings.EqualFold(strings.TrimSpace(opt.Harness), harnessID) {
+			add(opt.Model)
+		}
+	}
+	add(current)
+	slices.SortFunc(filtered, func(a, b string) int {
+		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+	})
+	return filtered
 }
 
 func (m model) selectChatModel(slug string) (model, tea.Cmd) {

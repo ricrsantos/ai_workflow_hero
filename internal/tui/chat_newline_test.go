@@ -85,8 +85,11 @@ func TestConversationNewlineHint(t *testing.T) {
 	if !strings.Contains(view, "alt+enter send") {
 		t.Fatalf("missing send hint: %q", view)
 	}
-	if !strings.Contains(view, "esc interrupt chat") {
+	if !strings.Contains(view, "ctrl+c interrupt") {
 		t.Fatalf("missing interrupt hint: %q", view)
+	}
+	if !strings.Contains(view, "esc navbar") {
+		t.Fatalf("missing navbar hint: %q", view)
 	}
 }
 

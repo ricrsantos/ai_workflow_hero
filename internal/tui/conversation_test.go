@@ -383,15 +383,18 @@ func TestConversationStreamingSubmit(t *testing.T) {
 	if got := ConversationTranscriptForTest(next); got != "Hello world" {
 		t.Fatalf("transcript = %q", got)
 	}
-	if HarnessSessionIDForTest(next) != "sess-abc123" {
-		t.Fatalf("session = %q", HarnessSessionIDForTest(next))
+	if next.freechatSessionID != "sess-abc123" {
+		t.Fatalf("freechat session = %q", next.freechatSessionID)
+	}
+	if HarnessSessionIDForTest(next) != "" {
+		t.Fatalf("cycle session = %q want empty", HarnessSessionIDForTest(next))
 	}
 	stored, err := svc.StageHarnessSessionID("research")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored != "sess-abc123" {
-		t.Fatalf("stored session = %q", stored)
+	if stored != "" {
+		t.Fatalf("freechat must not store stage session, got %q", stored)
 	}
 	view := ViewForTest(next)
 	if !contains(view, "Hello world") {
@@ -405,7 +408,7 @@ func TestConversationResumeSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.deltas = []string{"resume"}
-	h.sessionID = "existing-session"
+	h.sessionID = "free-sess-1"
 
 	m = EnterConversationForTest(m)
 	if HarnessSessionIDForTest(m) != "existing-session" {
@@ -414,8 +417,18 @@ func TestConversationResumeSession(t *testing.T) {
 	m = SetConversationInput(m, "continue")
 	next, cmd := SubmitConversationForTest(m)
 	next = drainConversationStream(t, next, cmd)
-	if h.lastSessionID != "existing-session" {
-		t.Fatalf("resume session = %q", h.lastSessionID)
+	if h.lastSessionID != "" {
+		t.Fatalf("ordinary freechat resumed stage session %q", h.lastSessionID)
+	}
+	if next.freechatSessionID != "free-sess-1" {
+		t.Fatalf("freechat session = %q", next.freechatSessionID)
+	}
+	stored, err := svc.StageHarnessSessionID("research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != "existing-session" {
+		t.Fatalf("stage session mutated = %q", stored)
 	}
 }
 
@@ -528,7 +541,7 @@ func TestConversationPersistsSessionFromBoundDeltaBeforeExecuteDone(t *testing.T
 		t.Fatal("expected streaming")
 	}
 	next, cmd = pumpConversationUntil(t, next, cmd, 2*time.Second, func(m model) bool {
-		return HarnessSessionIDForTest(m) == "sess-early"
+		return m.freechatSessionID == "sess-early"
 	})
 	if !IsConversationStreaming(next) {
 		t.Fatal("session must persist while Execute is still in flight")
@@ -537,8 +550,8 @@ func TestConversationPersistsSessionFromBoundDeltaBeforeExecuteDone(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored != "sess-early" {
-		t.Fatalf("stored session = %q", stored)
+	if stored != "" {
+		t.Fatalf("freechat must not store stage session, got %q", stored)
 	}
 
 	close(h.release)
@@ -1382,8 +1395,8 @@ func TestConversationSubmitWithoutStage(t *testing.T) {
 	if h.lastModel != "composer-2.5" {
 		t.Fatalf("model=%q", h.lastModel)
 	}
-	if HarnessSessionIDForTest(next) != "free-sess" {
-		t.Fatalf("session=%q", HarnessSessionIDForTest(next))
+	if next.freechatSessionID != "free-sess" {
+		t.Fatalf("session=%q", next.freechatSessionID)
 	}
 	view := ViewForTest(next)
 	if !strings.Contains(view, "Chat") || !strings.Contains(view, "pong") {
@@ -3469,7 +3482,7 @@ func TestNewChatBlockedWhileStreaming(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("blocked new-chat should not spawn cmd")
 	}
-	if !strings.Contains(StatusTextForTest(next), "esc") {
+	if !strings.Contains(StatusTextForTest(next), "Ctrl+C") {
 		t.Fatalf("status=%q", StatusTextForTest(next))
 	}
 }
@@ -3890,6 +3903,127 @@ func TestExecuteDoneUsesLatestContextUsage(t *testing.T) {
 	view := stripANSI(ViewForTest(got))
 	if !strings.Contains(view, "15k/200k") {
 		t.Fatalf("view missing updated bar: %q", view)
+	}
+}
+
+func TestExecuteDoneUsesCacheOccupancy(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m.streaming = true
+	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
+		SessionID: "sess-1",
+		Output:    "done",
+		Usage:     harness.Usage{InputTokens: 200, OutputTokens: 100, CacheReadTokens: 5000},
+	}, nil))
+	got := next.(model)
+	if got.contextUsedTokens != 5300 {
+		t.Fatalf("used=%d want 5300", got.contextUsedTokens)
+	}
+}
+
+func TestExecuteDoneEstimatesOccupancyFromTranscript(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "abcdefghijkl", occupancyKey: occupancyKeyFreechat},      // 12 runes → 3
+		{role: convRoleAgent, content: "abcdefghijklmnop", occupancyKey: occupancyKeyFreechat}, // 16 runes → 4
+	}
+	m.streaming = true
+	m.lastExecutePrompt = "abcd" // would be 1 token if last-prompt estimate were used
+	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
+		SessionID: "sess-1",
+		Output:    "xy",
+	}, nil))
+	got := next.(model)
+	if got.contextUsedTokens != 7 {
+		t.Fatalf("used=%d want 7 from transcript, not last prompt", got.contextUsedTokens)
+	}
+}
+
+func TestCycleThenFreechatKeepsSeparateOccupancyAndMetrics(t *testing.T) {
+	svc := newTestServiceWithRunningResearch(t)
+	m := NewTestModel(svc)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m.conversationStage = "research"
+	m.streaming = true
+	m.executes = map[string]convExecute{
+		"ex-cycle": {
+			ID:           "ex-cycle",
+			AgentName:    "discover_agent",
+			Model:        "composer-2.5",
+			Prompt:       "research",
+			StageName:    "research",
+			OccupancyKey: cycleOccupancyKey("research", "discover_agent"),
+		},
+	}
+	next, _ := m.Update(executeDoneMsg{executeID: "ex-cycle", result: &harness.ExecutionResult{
+		SessionID: "stage-sess",
+		Output:    "grill",
+		Usage:     harness.Usage{InputTokens: 80000, OutputTokens: 0},
+		Duration:  time.Second,
+	}})
+	got := next.(model)
+	if got.contextUsedTokens != 80000 {
+		t.Fatalf("cycle used=%d want 80000", got.contextUsedTokens)
+	}
+
+	got.streaming = true
+	got.runtimeAgentName = ""
+	got.executes = map[string]convExecute{
+		"ex-free": {
+			ID:           "ex-free",
+			Freechat:     true,
+			OccupancyKey: occupancyKeyFreechat,
+			Prompt:       "hello",
+		},
+	}
+	next, _ = got.Update(executeDoneMsg{executeID: "ex-free", result: &harness.ExecutionResult{
+		SessionID: "free-sess",
+		Output:    "hi",
+		Usage:     harness.Usage{InputTokens: 20000, OutputTokens: 1000},
+		Duration:  time.Second,
+	}})
+	got = next.(model)
+	if got.contextUsedTokens != 21000 {
+		t.Fatalf("freechat used=%d want 21000, not cycle occupancy", got.contextUsedTokens)
+	}
+	if got.contextOccupancy[cycleOccupancyKey("research", "discover_agent")] != 80000 {
+		t.Fatalf("cycle occupancy lost: %+v", got.contextOccupancy)
+	}
+	view, err := svc.Metrics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range view.Rows {
+		if row.Stage == "research" && row.Agent == "discover_agent" {
+			if row.InputTokens != 80000 || row.OutputTokens != 0 {
+				t.Fatalf("freechat leaked into cycle metrics: %+v", row)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing research metric: %+v", view.Rows)
+}
+
+func TestFreechatOccupancyGrowsWithoutSummingTurns(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetChatModelSlugForTest(m, "composer-2.5")
+	m.streaming = true
+	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
+		Usage: harness.Usage{InputTokens: 5000, OutputTokens: 0},
+	}, nil))
+	got := next.(model)
+	got.streaming = true
+	next, _ = got.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
+		Usage: harness.Usage{InputTokens: 9000, OutputTokens: 0},
+	}, nil))
+	got = next.(model)
+	if got.contextUsedTokens != 9000 {
+		t.Fatalf("used=%d want 9000 (latest occupancy, not 14000)", got.contextUsedTokens)
 	}
 }
 

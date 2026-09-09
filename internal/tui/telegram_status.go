@@ -17,21 +17,43 @@ func (m model) telegramAutoReportEnabled() bool {
 	return m.telegram != nil && m.telegram.autoReportMinutes > 0
 }
 
+// telegramAutoReportClock prefers wall-clock now so a stale Bubble Tea tick
+// cannot keep nextAutoReportAt in the past and flood outbound status.
+func telegramAutoReportClock(at time.Time) time.Time {
+	now := time.Now()
+	if at.IsZero() {
+		return now
+	}
+	if at.After(now) {
+		return at
+	}
+	return now
+}
+
 // maybeTelegramAutoReport sends one report per configured interval. It runs
 // from the existing Bubble Tea timer tick, so it never blocks Update.
 func (m model) maybeTelegramAutoReport(at time.Time) tea.Cmd {
 	if !m.telegramAutoReportEnabled() || m.telegram == nil || !m.telegram.connected || !m.telegram.paired {
 		return nil
 	}
-	if at.IsZero() {
-		at = time.Now()
-	}
-	if at.Before(m.telegram.nextAutoReportAt) {
+	now := telegramAutoReportClock(at)
+	if now.Before(m.telegram.nextAutoReportAt) {
 		return nil
 	}
 	interval := time.Duration(m.telegram.autoReportMinutes) * time.Minute
-	m.telegram.nextAutoReportAt = at.Add(interval)
-	return m.telegramOutboundCmd(m.telegramAutoReportText(at))
+	if interval <= 0 {
+		return nil
+	}
+	if !m.telegram.lastAutoReportAt.IsZero() && now.Sub(m.telegram.lastAutoReportAt) < interval {
+		m.telegram.nextAutoReportAt = m.telegram.lastAutoReportAt.Add(interval)
+		return nil
+	}
+	m.telegram.nextAutoReportAt = now.Add(interval)
+	text := m.telegramAutoReportText(now)
+	if text != "" {
+		m.telegram.lastAutoReportAt = now
+	}
+	return m.telegramOutboundCmd(text)
 }
 
 // telegramStatusText returns the compact response for the Telegram /status

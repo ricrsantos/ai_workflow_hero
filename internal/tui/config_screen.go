@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -837,27 +836,7 @@ func (m model) cycleConfigChoice(field configField) model {
 // persisted capability cache and embedded catalog, which keeps Config usable
 // immediately and lets the asynchronous refresh replace that local view later.
 func (m model) configModelChoices(harnessID, current string) []string {
-	choices := m.modelsForHarness(harnessID)
-	seen := make(map[string]bool, len(choices)+1)
-	filtered := make([]string, 0, len(choices)+1)
-	for _, choice := range choices {
-		choice = strings.TrimSpace(choice)
-		if choice == "" || seen[strings.ToLower(choice)] {
-			continue
-		}
-		seen[strings.ToLower(choice)] = true
-		filtered = append(filtered, choice)
-	}
-	// A configured model that is absent from metadata must remain visible and
-	// selectable; catalog gaps are warnings, never silent substitutions.
-	current = strings.TrimSpace(current)
-	if current != "" && !seen[strings.ToLower(current)] {
-		filtered = append(filtered, current)
-	}
-	slices.SortFunc(filtered, func(a, b string) int {
-		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
-	})
-	return filtered
+	return m.modelChoicesForHarness(harnessID, current, nil)
 }
 
 // configPropertyChoices returns the workflow values the focused thinking/effort

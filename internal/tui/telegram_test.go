@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
 )
 
 func TestTelegramOriginLabel(t *testing.T) {
@@ -377,6 +380,123 @@ func TestTelegramAutoReportSendsNonIdleStatusOncePerInterval(t *testing.T) {
 	}
 }
 
+func TestTelegramQueuedTurnSendsStatusOnceWhileStreaming(t *testing.T) {
+	var outbound []string
+	m := NewTestModel(nil)
+	m.status = cycle.StatusView{CycleNumber: 3, Title: "Active cycle", Status: "active"}
+	m.streaming = true
+	m.telegram = &telegramState{
+		connected: true,
+		paired:    true,
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	inbound := telegramInboundMsg{text: "follow up", address: "proj"}
+	next, _ := m.handleTelegramInbound(inbound)
+	if len(outbound) != 1 || !strings.HasPrefix(outbound[0], "Cycle C3:") {
+		t.Fatalf("queued status=%v", outbound)
+	}
+	if len(next.telegramPendingTurns) != 1 {
+		t.Fatalf("queue=%d want 1", len(next.telegramPendingTurns))
+	}
+
+	for i := 0; i < 10; i++ {
+		next, _ = next.handleTelegramInbound(inbound)
+	}
+	if len(outbound) != 1 {
+		t.Fatalf("retry flood outbound=%d want 1", len(outbound))
+	}
+	if len(next.telegramPendingTurns) != 1 {
+		t.Fatalf("dedup queue=%d want 1", len(next.telegramPendingTurns))
+	}
+
+	next, _ = next.handleTelegramInbound(telegramInboundMsg{text: "another", address: "proj"})
+	if len(outbound) != 2 {
+		t.Fatalf("second unique queued status=%d want 2", len(outbound))
+	}
+	if len(next.telegramPendingTurns) != 2 {
+		t.Fatalf("queue=%d want 2", len(next.telegramPendingTurns))
+	}
+}
+
+func TestTelegramQueuedTurnStartsAfterExecuteCompletes(t *testing.T) {
+	m := withDefaultChatModel(NewTestModel(nil))
+	m.status = cycle.StatusView{CycleNumber: 3, Title: "Active cycle", Status: "active"}
+	m.streaming = true
+	m.executes = map[string]convExecute{"ex-1": {ID: "ex-1"}}
+	m.telegram = &telegramState{connected: true, paired: true}
+
+	next, _ := m.handleTelegramInbound(telegramInboundMsg{text: "follow up", address: "proj"})
+	if len(next.telegramPendingTurns) != 1 {
+		t.Fatal("expected queued turn")
+	}
+
+	updated, _ := next.Update(executeDoneMsg{
+		executeID: "ex-1",
+		result:    &harness.ExecutionResult{Output: "done"},
+	})
+	final := updated.(model)
+	if len(final.telegramPendingTurns) != 0 {
+		t.Fatalf("queue not drained: %d", len(final.telegramPendingTurns))
+	}
+	if !final.streaming {
+		t.Fatal("drained turn must start a harness execute")
+	}
+	found := false
+	for _, msg := range final.transcript {
+		if msg.role == convRoleUser && strings.Contains(msg.content, "follow up") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("drained turn missing from transcript: %+v", final.transcript)
+	}
+}
+
+func TestTelegramAutoReportStaleTickDoesNotFlood(t *testing.T) {
+	now := time.Now()
+	var outbound []string
+	m := NewTestModel(nil)
+	m.status = cycle.StatusView{CycleNumber: 3, Title: "Active cycle", Status: "active"}
+	m.timerGeneration = 1
+	m.timerLoopStarted = true
+	m.telegram = &telegramState{
+		connected:         true,
+		paired:            true,
+		autoReportMinutes: 1,
+		nextAutoReportAt:  now.Add(-2 * time.Minute),
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	stale := now.Add(-2 * time.Minute)
+	m, _ = m.handleTimerTick(timerTickMsg{at: stale, generation: 1})
+	if len(outbound) != 1 {
+		t.Fatalf("stale tick outbound=%d want 1", len(outbound))
+	}
+
+	m, _ = m.handleTimerTick(timerTickMsg{at: stale.Add(time.Second), generation: 1})
+	if len(outbound) != 1 {
+		t.Fatalf("second stale tick flooded outbound=%d", len(outbound))
+	}
+
+	for i := 0; i < 20; i++ {
+		m, _ = m.handleTimerTick(timerTickMsg{at: now, generation: 1})
+	}
+	if len(outbound) != 1 {
+		t.Fatalf("same-generation burst flooded outbound=%d", len(outbound))
+	}
+
+	m, _ = m.handleTimerTick(timerTickMsg{at: now, generation: 0})
+	if len(outbound) != 1 {
+		t.Fatalf("generation 0 tick sent status outbound=%d", len(outbound))
+	}
+}
+
 func TestSettingsRows_NotInstalledShowsGuidance(t *testing.T) {
 	m := SetWidth(NewTestModel(nil), 100)
 	m = SetHeight(m, 40)
@@ -688,8 +808,14 @@ func TestTelegramModelSelectionUsesNumberedRemoteWizard(t *testing.T) {
 	}
 
 	// Cursor, full/model, then fs=true, th=max, ef=high.
-	next, _ = m.Update(telegramInboundMsg{text: "1", address: "proj"})
-	m = next.(model)
+	prev := listModelsForHarnessFn
+	listModelsForHarnessFn = func(_ context.Context, _ model, harnessID string) ([]string, error) {
+		return []string{"full/model", "partial/model", "pricing-only"}, nil
+	}
+	t.Cleanup(func() { listModelsForHarnessFn = prev })
+
+	next, cmd := m.Update(telegramInboundMsg{text: "1", address: "proj"})
+	m = flushTeaCmds(next.(model), cmd)
 	if !strings.Contains(outbound[len(outbound)-1], "Escolha o modelo:") {
 		t.Fatalf("model prompt=%q", outbound[len(outbound)-1])
 	}
@@ -822,4 +948,148 @@ func settingsFocusedOnRetry(t *testing.T) model {
 		t.Fatalf("cursor=%+v want Retry", got)
 	}
 	return m
+}
+
+func flushTeaCmds(m model, cmd tea.Cmd) model {
+	for cmd != nil {
+		msg := cmd()
+		if msg == nil {
+			break
+		}
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, sub := range batch {
+				m = flushTeaCmds(m, sub)
+			}
+			cmd = nil
+			continue
+		}
+		var nextCmd tea.Cmd
+		m, nextCmd = HandleTestMsg(m, msg)
+		cmd = nextCmd
+	}
+	return m
+}
+
+func TestTelegramModelSelectionMergesCatalogAndLiveGrok(t *testing.T) {
+	m, _ := newPickerTestModel(t)
+	var outbound []string
+	m.telegram = &telegramState{
+		installed: true,
+		connected: true,
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+	m.propsSvc.Catalog = propsCatalog(map[string]map[string]modelprops.CatalogProperty{
+		"cursor-grok-4.5": {
+			"fs": {Available: true, Values: []string{"true", "false"}, Default: "false"},
+		},
+	})
+	if m.svc != nil && m.svc.Store != nil {
+		_ = m.svc.Store.UpsertModelList("cursor", []string{
+			"composer-2.5",
+			"cursor-grok-4.5-high",
+			"cursor-grok-4.5-low",
+		}, "2026-09-08T00:00:00Z")
+	}
+
+	prev := listModelsForHarnessFn
+	listModelsForHarnessFn = func(_ context.Context, _ model, harnessID string) ([]string, error) {
+		return []string{
+			"composer-2.5",
+			"cursor-grok-4.5-high",
+			"cursor-grok-4.5-medium",
+		}, nil
+	}
+	t.Cleanup(func() { listModelsForHarnessFn = prev })
+
+	next, _ := m.Update(telegramInboundMsg{text: "/model", isCommand: true, address: "proj"})
+	next, cmd := next.(model).Update(telegramInboundMsg{text: "1", address: "proj"})
+	m = flushTeaCmds(next.(model), cmd)
+
+	prompt := outbound[len(outbound)-1]
+	for _, want := range []string{"cursor-grok-4.5", "cursor-grok-4.5-high", "cursor-grok-4.5-low", "cursor-grok-4.5-medium"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("merged model prompt missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestTelegramModelSelectionAlwaysUsesLiveList(t *testing.T) {
+	m, _ := newPickerTestModel(t)
+	m.telegram = &telegramState{installed: true, connected: true}
+	if m.svc != nil && m.svc.Store != nil {
+		_ = m.svc.Store.UpsertModelList("cursor", []string{"stale-only/model"}, "2026-09-08T00:00:00Z")
+	}
+
+	var listed bool
+	prev := listModelsForHarnessFn
+	listModelsForHarnessFn = func(_ context.Context, _ model, harnessID string) ([]string, error) {
+		listed = true
+		return []string{"live/model"}, nil
+	}
+	t.Cleanup(func() { listModelsForHarnessFn = prev })
+
+	next, _ := m.Update(telegramInboundMsg{text: "/model", isCommand: true, address: "proj"})
+	next, cmd := next.(model).Update(telegramInboundMsg{text: "1", address: "proj"})
+	_ = flushTeaCmds(next.(model), cmd)
+	if !listed {
+		t.Fatal("Telegram model selection must call live ListModels even when cache is populated")
+	}
+}
+
+func TestTelegramModelSelectionPaginatesLongLists(t *testing.T) {
+	m, _ := newPickerTestModel(t)
+	var outbound []string
+	m.telegram = &telegramState{
+		installed: true,
+		connected: true,
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	models := make([]string, 0, 40)
+	for i := 0; i < 40; i++ {
+		models = append(models, fmt.Sprintf("zz-model-%02d", i))
+	}
+	models[10] = "cursor-grok-4.5-high"
+
+	prev := listModelsForHarnessFn
+	listModelsForHarnessFn = func(_ context.Context, _ model, harnessID string) ([]string, error) {
+		return models, nil
+	}
+	t.Cleanup(func() { listModelsForHarnessFn = prev })
+
+	m.modelOptions = nil
+	m.availableModels = nil
+
+	next, _ := m.Update(telegramInboundMsg{text: "/model", isCommand: true, address: "proj"})
+	next, cmd := next.(model).Update(telegramInboundMsg{text: "1", address: "proj"})
+	m = flushTeaCmds(next.(model), cmd)
+
+	prompt := outbound[len(outbound)-1]
+	if !strings.Contains(prompt, "página 1/") {
+		t.Fatalf("expected paginated header, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "Próxima página") {
+		t.Fatalf("expected next-page option, got %q", prompt)
+	}
+
+	next, _ = m.Update(telegramInboundMsg{text: "0", address: "proj"})
+	m = next.(model)
+	if m.telegram.modelSelection == nil || m.telegram.modelSelection.modelPage != 1 {
+		t.Fatalf("page=%d want 1 after next navigation", m.telegram.modelSelection.modelPage)
+	}
+}
+
+func TestTelegramModelSelectionStartsPropsRefresh(t *testing.T) {
+	m, _ := newPickerTestModel(t)
+	m.telegram = &telegramState{installed: true, connected: true}
+	m.propsRefreshBusy = false
+
+	next, _ := m.Update(telegramInboundMsg{text: "/model", isCommand: true, address: "proj"})
+	if !next.(model).propsRefreshBusy {
+		t.Fatal("Telegram /model must start background model props refresh")
+	}
 }

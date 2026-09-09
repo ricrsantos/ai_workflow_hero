@@ -255,13 +255,28 @@ func contentFrom(p map[string]any) []map[string]any {
 }
 
 func usageFrom(p map[string]any, prior harness.Usage) harness.Usage {
-	if n, ok := int64At(p, "input_tokens"); ok {
+	if n, ok := firstInt64At(p, "input_tokens", "inputTokens"); ok {
 		prior.InputTokens = n
 	}
-	if n, ok := int64At(p, "output_tokens"); ok {
+	if n, ok := firstInt64At(p, "output_tokens", "outputTokens"); ok {
 		prior.OutputTokens = n
 	}
-	return prior
+	if n, ok := firstInt64At(p, "cache_read_input_tokens", "cacheReadTokens", "cache_read_tokens"); ok {
+		prior.CacheReadTokens = n
+	}
+	if n, ok := firstInt64At(p, "cache_creation_input_tokens", "cacheWriteTokens", "cache_write_tokens", "cacheCreationTokens"); ok {
+		prior.CacheWriteTokens = n
+	}
+	return prior.WithContextTokens()
+}
+
+func firstInt64At(p map[string]any, keys ...string) (int64, bool) {
+	for _, key := range keys {
+		if n, ok := int64At(p, key); ok {
+			return n, true
+		}
+	}
+	return 0, false
 }
 
 func systemActivity(subtype string, p map[string]any) string {

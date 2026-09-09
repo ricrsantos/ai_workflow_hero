@@ -153,6 +153,7 @@ func (m model) handleSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.telegram != nil {
 			m.telegram.autoReportMinutes = saved.minutes
+			m.telegram.lastAutoReportAt = time.Time{}
 			if saved.minutes > 0 {
 				m.telegram.nextAutoReportAt = time.Now().Add(time.Duration(saved.minutes) * time.Minute)
 			} else {

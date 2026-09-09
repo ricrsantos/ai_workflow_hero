@@ -108,11 +108,17 @@ func TestBuildDevScript_ArtifactNamingContract(t *testing.T) {
 		`VERSION="${LAST_TAG#v}_${COMMIT}"`,
 		`VERSION="dev_${COMMIT}"`,
 		"hero_${VERSION}_${OS}_${ARCH}",
+		"hero-telegram-daemon_${VERSION}_${OS}_${ARCH}",
 		`rm -rf "${DIST}"`,
 		`chmod +x "${OUTPUT}"`,
+		`chmod +x "${DAEMON_OUTPUT}"`,
 		"checksums.txt",
 		`-X main.version=`,
 		"./cmd/hero",
+		"./cmd/hero-telegram-daemon",
+		"/home/ricardo/installable/hero/hero",
+		"/home/ricardo/.workflow-hero/plugins/telegram/hero-telegram-daemon",
+		"/home/ricardo/.workflow-hero/plugins/telegram/manifest.json",
 	}
 	for _, want := range required {
 		if !strings.Contains(src, want) {

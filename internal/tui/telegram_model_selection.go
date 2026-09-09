@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -22,6 +23,8 @@ const (
 	telegramModelSelectProperty telegramModelSelectionStage = "property"
 )
 
+const telegramModelsPerPage = 35
+
 // telegramModelSelection holds non-secret, per-instance state for the remote
 // /model wizard. It uses the same persisted free-chat pair as the TUI picker.
 type telegramModelSelection struct {
@@ -31,6 +34,7 @@ type telegramModelSelection struct {
 	stage          telegramModelSelectionStage
 	harnesses      []string
 	models         []string
+	modelPage      int
 	harnessID      string
 	modelSlug      string
 	snapshot       modelprops.Snapshot
@@ -91,6 +95,7 @@ func (m model) startTelegramModelSelectionFor(address, configAgent string, confi
 		}
 		harnesses = []string{parentHarness}
 	}
+	m = m.ensurePropsSvcForTelegram()
 	m.telegram.modelSelection = &telegramModelSelection{
 		address:        address,
 		configAgent:    configAgent,
@@ -106,7 +111,27 @@ func (m model) startTelegramModelSelectionFor(address, configAgent string, confi
 			title = "Escolha o Harness para " + configStageLabel(configAgent) + ":"
 		}
 	}
-	return m, m.telegramOutboundCmd(telegramNumberedOptions(title, displayHarnesses(harnesses)))
+	var refresh tea.Cmd
+	if m.propsSvc != nil && !m.propsRefreshBusy {
+		m.propsRefreshBusy = true
+		refresh = m.startModelPropsRefresh(harnesses)
+	}
+	outbound := m.telegramOutboundCmd(telegramNumberedOptions(title, displayHarnesses(harnesses)))
+	if refresh != nil {
+		return m, tea.Batch(refresh, outbound)
+	}
+	return m, outbound
+}
+
+func (m model) ensurePropsSvcForTelegram() model {
+	if m.propsSvc == nil && m.svc != nil {
+		m.propsSvc = modelprops.NewService(m.svc.ProjectDir, m.svc.Store, m.svc.Registry, assets.FS)
+	}
+	if m.propsSvc != nil && m.svc != nil {
+		m.propsSvc.Store = m.svc.Store
+		m.propsSvc.Registry = m.svc.Registry
+	}
+	return m
 }
 
 func displayHarnesses(ids []string) []string {
@@ -135,33 +160,52 @@ func (m model) handleTelegramModelSelection(address, text string) (model, tea.Cm
 	if selection.stage == telegramModelLoadingModels {
 		return m, m.telegramOutboundCmd("Estou carregando os modelos. Aguarde a lista de opções.")
 	}
-	choice, err := strconv.Atoi(strings.TrimSpace(text))
-	if err != nil || choice < 1 {
+	trimmed := strings.TrimSpace(text)
+	choice, err := strconv.Atoi(trimmed)
+	if err != nil {
 		return m, m.telegramOutboundCmd("Opção inválida. Responda somente com um dos números exibidos.")
 	}
 
 	switch selection.stage {
 	case telegramModelSelectHarness:
-		if choice > len(selection.harnesses) {
+		if choice < 1 || choice > len(selection.harnesses) {
 			return m, m.telegramOutboundCmd("Opção inválida. Responda somente com um dos números exibidos.")
 		}
 		selection.harnessID = selection.harnesses[choice-1]
-		if models := m.modelsForHarness(selection.harnessID); len(models) > 0 {
-			selection.models = append([]string(nil), models...)
-			selection.stage = telegramModelSelectModel
-			return m, m.telegramOutboundCmd(telegramNumberedOptions("Escolha o modelo:", selection.models))
-		}
+		selection.modelPage = 0
 		selection.stage = telegramModelLoadingModels
-		return m, m.telegramModelListCmd(selection.address, selection.harnessID)
+		return m, tea.Batch(
+			m.telegramOutboundCmd("Carregando modelos de "+harnessDisplayName(selection.harnessID)+"…"),
+			m.telegramModelListCmd(selection.address, selection.harnessID),
+		)
 
 	case telegramModelSelectModel:
-		if choice > len(selection.models) {
+		pageModels, _, hasNext := telegramModelPageSlice(selection)
+		if choice == 0 {
+			if selection.modelPage > 0 {
+				selection.modelPage--
+				return m, m.telegramModelPromptCmd()
+			}
+			if hasNext {
+				selection.modelPage++
+				return m, m.telegramModelPromptCmd()
+			}
 			return m, m.telegramOutboundCmd("Opção inválida. Responda somente com um dos números exibidos.")
 		}
-		selection.modelSlug = selection.models[choice-1]
+		if hasNext && selection.modelPage > 0 && choice == len(pageModels)+1 {
+			selection.modelPage++
+			return m, m.telegramModelPromptCmd()
+		}
+		if choice < 1 || choice > len(pageModels) {
+			return m, m.telegramOutboundCmd("Opção inválida. Responda somente com um dos números exibidos.")
+		}
+		selection.modelSlug = pageModels[choice-1]
 		return m.finishTelegramModelSelection()
 
 	case telegramModelSelectProperty:
+		if choice < 1 {
+			return m, m.telegramOutboundCmd("Opção inválida. Responda somente com um dos números exibidos.")
+		}
 		key := selection.keys[selection.keyIndex]
 		cap := selection.snapshot.Property(key)
 		if choice > len(cap.AcceptedValues) {
@@ -181,6 +225,23 @@ func (m model) telegramModelListCmd(address, harnessID string) tea.Cmd {
 	}
 }
 
+func (m model) telegramModelPromptCmd() tea.Cmd {
+	return func() tea.Msg { return telegramModelPromptMsg{} }
+}
+
+type telegramModelPromptMsg struct{}
+
+func (m model) handleTelegramModelPrompt() (model, tea.Cmd) {
+	if m.telegram == nil || m.telegram.modelSelection == nil {
+		return m, nil
+	}
+	selection := m.telegram.modelSelection
+	if selection.stage != telegramModelSelectModel || len(selection.models) == 0 {
+		return m, nil
+	}
+	return m, m.telegramOutboundCmd(telegramModelPageText(selection))
+}
+
 func (m model) handleTelegramModelList(msg telegramModelListMsg) (model, tea.Cmd) {
 	if m.telegram == nil || m.telegram.modelSelection == nil {
 		return m, nil
@@ -189,23 +250,107 @@ func (m model) handleTelegramModelList(msg telegramModelListMsg) (model, tea.Cmd
 	if selection.address != msg.address || selection.stage != telegramModelLoadingModels || selection.harnessID != msg.harnessID {
 		return m, nil
 	}
-	if msg.err != nil || len(msg.models) == 0 {
+	m = m.ensurePropsSvcForTelegram()
+	current := m.telegramModelCurrentSlug(selection)
+	var warning string
+	if msg.err != nil {
+		warning = "Não foi possível atualizar a lista live; usando modelos locais conhecidos.\n\n"
+	}
+	selection.models = m.modelChoicesForHarness(selection.harnessID, current, msg.models)
+	if len(selection.models) == 0 {
 		selection.stage = telegramModelSelectHarness
 		if msg.err != nil {
 			return m, m.telegramOutboundCmd("Não foi possível listar os modelos de " + harnessDisplayName(msg.harnessID) + ". Escolha outro harness ou tente /model novamente.")
 		}
 		return m, m.telegramOutboundCmd("Nenhum modelo disponível para " + harnessDisplayName(msg.harnessID) + ". Escolha outro harness ou tente /model novamente.")
 	}
-	selection.models = append([]string(nil), msg.models...)
+	selection.modelPage = 0
 	selection.stage = telegramModelSelectModel
-	return m, m.telegramOutboundCmd(telegramNumberedOptions("Escolha o modelo:", selection.models))
+	return m, m.telegramOutboundCmd(warning + telegramModelPageText(selection))
+}
+
+func (m model) telegramModelCurrentSlug(selection *telegramModelSelection) string {
+	if selection == nil {
+		return ""
+	}
+	if selection.configAgent == "" {
+		return ""
+	}
+	wizard := m.telegramConfigForAddress(selection.address)
+	if wizard == nil {
+		return ""
+	}
+	agent, ok := telegramConfigReviewAgent(wizard, selection.configAgent)
+	if !ok {
+		return ""
+	}
+	if selection.configSubagent {
+		if agent.Subagent.SameOfAgent {
+			return strings.TrimSpace(agent.Model)
+		}
+		return strings.TrimSpace(agent.Subagent.Model)
+	}
+	return strings.TrimSpace(agent.Model)
+}
+
+func telegramModelPageSlice(selection *telegramModelSelection) (pageModels []string, hasPrev, hasNext bool) {
+	if selection == nil || len(selection.models) == 0 {
+		return nil, false, false
+	}
+	totalPages := telegramModelTotalPages(len(selection.models))
+	if selection.modelPage < 0 {
+		selection.modelPage = 0
+	}
+	if selection.modelPage >= totalPages {
+		selection.modelPage = totalPages - 1
+	}
+	start := selection.modelPage * telegramModelsPerPage
+	end := start + telegramModelsPerPage
+	if end > len(selection.models) {
+		end = len(selection.models)
+	}
+	pageModels = append([]string(nil), selection.models[start:end]...)
+	hasPrev = selection.modelPage > 0
+	hasNext = selection.modelPage < totalPages-1
+	return pageModels, hasPrev, hasNext
+}
+
+func telegramModelTotalPages(modelCount int) int {
+	if modelCount <= 0 {
+		return 0
+	}
+	return int(math.Ceil(float64(modelCount) / float64(telegramModelsPerPage)))
+}
+
+func telegramModelPageText(selection *telegramModelSelection) string {
+	pageModels, hasPrev, hasNext := telegramModelPageSlice(selection)
+	totalPages := telegramModelTotalPages(len(selection.models))
+	title := "Escolha o modelo:"
+	if totalPages > 1 {
+		title = fmt.Sprintf("Escolha o modelo (página %d/%d):", selection.modelPage+1, totalPages)
+	}
+	var b strings.Builder
+	b.WriteString(title)
+	if hasPrev {
+		b.WriteString("\n0 - Página anterior")
+	}
+	for i, slug := range pageModels {
+		fmt.Fprintf(&b, "\n%d - %s", i+1, slug)
+	}
+	if hasNext {
+		if hasPrev {
+			fmt.Fprintf(&b, "\n%d - Próxima página", len(pageModels)+1)
+		} else {
+			b.WriteString("\n0 - Próxima página")
+		}
+	}
+	b.WriteString("\n\nResponda somente com o número desejado.")
+	return b.String()
 }
 
 func (m model) finishTelegramModelSelection() (model, tea.Cmd) {
 	selection := m.telegram.modelSelection
-	if m.propsSvc == nil && m.svc != nil {
-		m.propsSvc = modelprops.NewService(m.svc.ProjectDir, m.svc.Store, m.svc.Registry, assets.FS)
-	}
+	m = m.ensurePropsSvcForTelegram()
 	if m.propsSvc == nil || m.svc == nil {
 		m.telegram.modelSelection = nil
 		return m, m.telegramOutboundCmd("Não foi possível carregar as propriedades do modelo.")

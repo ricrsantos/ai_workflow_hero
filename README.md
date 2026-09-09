@@ -270,7 +270,8 @@ Refresh the TUI with `F5` (or `Alt+R` outside Chat) after the cycle is created t
 | `f` | Finish cycle (on Approvals screen) |
 | `c` | Cancel cycle (on Approvals screen) |
 | `d` | Dispatch harness (`hero run` / Cursor adapter, best-effort) |
-| `Esc` | In Chat, interrupt the active Harness execution; otherwise close Commands or clear Chat input |
+| `Esc` | Focus the navbar; in Chat with a slash overlay open, dismiss the overlay first |
+| `Ctrl+C` | In Chat, interrupt the active Harness execution |
 | `Alt+Q` | Quit (with confirmation while Harness is running) |
 
 ### Commands menu (`/`)

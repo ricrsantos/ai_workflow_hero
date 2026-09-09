@@ -1110,6 +1110,9 @@ func TestExtractOpenCodeUsageFromMessageUpdated(t *testing.T) {
 	if state.usage.InputTokens != 120 || state.usage.OutputTokens != 45 {
 		t.Fatalf("usage=%+v", state.usage)
 	}
+	if state.usage.ContextTokens != 165 {
+		t.Fatalf("context=%d want 165", state.usage.ContextTokens)
+	}
 }
 
 func TestExtractOpenCodeUsageFromStepFinish(t *testing.T) {
@@ -1133,6 +1136,35 @@ func TestExtractOpenCodeUsageFromStepFinish(t *testing.T) {
 	parseEventDelta(evt, "sess-1", state)
 	if state.usage.InputTokens != 10 || state.usage.OutputTokens != 3 {
 		t.Fatalf("usage=%+v", state.usage)
+	}
+}
+
+func TestExtractOpenCodeUsageIncludesCacheInOccupancy(t *testing.T) {
+	state := newStreamState()
+	evt := map[string]any{
+		"type": "message.updated",
+		"properties": map[string]any{
+			"sessionID": "sess-1",
+			"info": map[string]any{
+				"id":   "msg-asst",
+				"role": "assistant",
+				"tokens": map[string]any{
+					"input":  200.0,
+					"output": 50.0,
+					"cache": map[string]any{
+						"read":  4000.0,
+						"write": 100.0,
+					},
+				},
+			},
+		},
+	}
+	parseEventDelta(evt, "sess-1", state)
+	if state.usage.CacheReadTokens != 4000 || state.usage.CacheWriteTokens != 100 {
+		t.Fatalf("cache usage=%+v", state.usage)
+	}
+	if state.usage.Occupancy() != 4350 {
+		t.Fatalf("occupancy=%d want 4350", state.usage.Occupancy())
 	}
 }
 
@@ -1177,5 +1209,8 @@ func TestExtractOpenCodeUsageAccumulatesStepFinishes(t *testing.T) {
 	}, "sess-1", state)
 	if state.usage.InputTokens != 30 || state.usage.OutputTokens != 7 {
 		t.Fatalf("usage=%+v want accumulated step usage", state.usage)
+	}
+	if state.usage.ContextTokens != 24 {
+		t.Fatalf("context=%d want last-step occupancy 20+4", state.usage.ContextTokens)
 	}
 }

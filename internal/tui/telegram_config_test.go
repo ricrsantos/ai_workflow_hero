@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
@@ -72,7 +74,7 @@ func TestTelegramConfigWizardRoutesInputsAndKeepsDraft(t *testing.T) {
 		},
 	}
 
-	for _, input := range []string{"New title", "New objective", "PT-BR", "1,2", "3", "1", "2"} {
+	for _, input := range []string{"New title", "New objective", "PT-BR", "2,3", "3", "2", "1"} {
 		next, cmd := m.handleTelegramInbound(telegramInboundMsg{text: input, address: "proj"})
 		m = next
 		if cmd != nil {
@@ -129,11 +131,11 @@ func TestTelegramConfigApprovalReviewAsksEveryEnabledStage(t *testing.T) {
 	if next.telegram.configWizard.step != telegramConfigStageApproval {
 		t.Fatalf("step=%q want stage approval", next.telegram.configWizard.step)
 	}
-	if !strings.Contains(outbound[len(outbound)-1], "Research") || !strings.Contains(outbound[len(outbound)-1], "1 - Sim") {
+	if !strings.Contains(outbound[len(outbound)-1], "Research") || !strings.Contains(outbound[len(outbound)-1], "1 - Manter a configuração atual") {
 		t.Fatalf("first approval prompt=%q", outbound[len(outbound)-1])
 	}
 
-	next, _ = next.handleTelegramConfigInput("proj", "1")
+	next, _ = next.handleTelegramConfigInput("proj", "2")
 	if next.telegram.configWizard.step != telegramConfigStageApproval {
 		t.Fatalf("after first answer step=%q want next stage approval", next.telegram.configWizard.step)
 	}
@@ -141,7 +143,7 @@ func TestTelegramConfigApprovalReviewAsksEveryEnabledStage(t *testing.T) {
 		t.Fatalf("second approval prompt=%q", outbound[len(outbound)-1])
 	}
 
-	next, _ = next.handleTelegramConfigInput("proj", "2")
+	next, _ = next.handleTelegramConfigInput("proj", "3")
 	if next.telegram.configWizard.step != telegramConfigModelsQuestion {
 		t.Fatalf("after all approval answers step=%q want models question", next.telegram.configWizard.step)
 	}
@@ -153,6 +155,55 @@ func TestTelegramConfigApprovalReviewAsksEveryEnabledStage(t *testing.T) {
 	}
 	if next.telegram.configWizard.draft.Stages["planning"].RequireHumanApproval != true {
 		t.Fatal("disabled planning approval must remain unchanged")
+	}
+}
+
+func TestTelegramConfigKeepOptionIsAlwaysFirst(t *testing.T) {
+	m := NewTestModel(nil)
+	m.telegram = &telegramState{
+		configWizard: &telegramConfigWizard{
+			draft: workflowconfig.ManagedConfig{
+				Scope: workflowconfig.Scope{Backend: true},
+				Stages: map[string]workflowconfig.ManagedStage{
+					"research": {Enabled: true, RequireHumanApproval: false},
+				},
+				Agents: map[string]workflowconfig.AgentModelConfig{
+					"orchestration_agent": {Harness: "cursor", Model: "model-a"},
+				},
+			},
+			approvalStages: []string{"research"},
+		},
+	}
+
+	scopePrompt := telegramConfigScopePrompt(m.telegram.configWizard.draft.Scope)
+	if !strings.Contains(scopePrompt, "1 - Manter escopo atual") {
+		t.Fatalf("scope prompt missing keep-first option:\n%s", scopePrompt)
+	}
+
+	stagesPrompt := telegramConfigStagesPrompt(m.telegram.configWizard.draft)
+	if !strings.Contains(stagesPrompt, "1 - Manter stages atuais") {
+		t.Fatalf("stages prompt missing keep-first option:\n%s", stagesPrompt)
+	}
+
+	approvalText := m.telegramConfigStageApprovalTextFor("research")
+	if !strings.Contains(approvalText, "1 - Manter a configuração atual") {
+		t.Fatalf("approval prompt missing keep-first option:\n%s", approvalText)
+	}
+
+	m.telegram.configWizard.step = telegramConfigModelsQuestion
+	if modelsQuestion := m.telegramConfigPrompt(); !strings.Contains(modelsQuestion, "1 - Manter os modelos atuais") {
+		t.Fatalf("models question missing keep-first option:\n%s", modelsQuestion)
+	}
+
+	m.telegram.configWizard.step = telegramConfigModelChoice
+	m.telegram.configWizard.modelTargets = []telegramConfigModelTarget{{agentName: "orchestration_agent"}}
+	if modelText := m.telegramConfigModelText(); !strings.Contains(modelText, "1 - Manter o atual") {
+		t.Fatalf("model choice missing keep-first option:\n%s", modelText)
+	}
+
+	m.telegram.configWizard.modelTargets = []telegramConfigModelTarget{{agentName: "orchestration_agent", subagent: true}}
+	if subagentText := m.telegramConfigSubagentPrompt(); !strings.Contains(subagentText, "1 - Manter a configuração atual") {
+		t.Fatalf("subagent choice missing keep-first option:\n%s", subagentText)
 	}
 }
 
@@ -313,7 +364,7 @@ func TestTelegramConfigModelReviewAsksForEachActiveAgentSubagent(t *testing.T) {
 	if next.telegram.configWizard.step != telegramConfigModelChoice {
 		t.Fatalf("initial step=%q, want model choice", next.telegram.configWizard.step)
 	}
-	next, _ = next.handleTelegramConfigInput("proj", "2")
+	next, _ = next.handleTelegramConfigInput("proj", "1")
 	if next.telegram.configWizard.step != telegramConfigSubagentChoice {
 		t.Fatalf("after keeping parent model step=%q, want subagent choice", next.telegram.configWizard.step)
 	}
@@ -546,4 +597,46 @@ workflow_rules:
 		draft:       doc.Config,
 	}
 	return m, dir
+}
+
+func TestTelegramConfigWizardModelListMergesGrokFamily(t *testing.T) {
+	m, _ := newPickerTestModel(t)
+	var outbound []string
+	m.telegram = &telegramState{
+		connected: true,
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+		configWizard: &telegramConfigWizard{
+			address: "proj",
+			draft: workflowconfig.ManagedConfig{
+				Agents: map[string]workflowconfig.AgentModelConfig{
+					"orchestration_agent": {Harness: "cursor", Model: "composer-2.5"},
+				},
+			},
+			modelTargets: []telegramConfigModelTarget{{agentName: "orchestration_agent"}},
+		},
+	}
+	m.propsSvc.Catalog = propsCatalog(map[string]map[string]modelprops.CatalogProperty{
+		"cursor-grok-4.5": {
+			"fs": {Available: true, Values: []string{"true", "false"}, Default: "false"},
+		},
+	})
+
+	prev := listModelsForHarnessFn
+	listModelsForHarnessFn = func(_ context.Context, _ model, harnessID string) ([]string, error) {
+		return []string{"composer-2.5", "cursor-grok-4.5-high", "cursor-grok-4.5-low"}, nil
+	}
+	t.Cleanup(func() { listModelsForHarnessFn = prev })
+
+	next, cmd := m.startTelegramCycleModelSelection("proj", "orchestration_agent")
+	after, cmd := next.Update(telegramInboundMsg{text: "1", address: "proj"})
+	_ = flushTeaCmds(after.(model), cmd)
+
+	prompt := outbound[len(outbound)-1]
+	for _, want := range []string{"cursor-grok-4.5", "cursor-grok-4.5-high", "cursor-grok-4.5-low"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("hero-config model prompt missing %q:\n%s", want, prompt)
+		}
+	}
 }

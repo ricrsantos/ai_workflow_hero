@@ -268,10 +268,15 @@ func (m model) registryCursorAdapter() *cursoradapter.Adapter {
 }
 
 func (m model) clearHarnessBindingIfMatch(harnessID string) model {
-	if strings.TrimSpace(strings.ToLower(m.harnessSessionHarnessID)) == harnessID ||
-		strings.TrimSpace(strings.ToLower(m.chatHarnessID)) == harnessID {
+	id := strings.TrimSpace(strings.ToLower(harnessID))
+	if strings.TrimSpace(strings.ToLower(m.harnessSessionHarnessID)) == id ||
+		strings.TrimSpace(strings.ToLower(m.chatHarnessID)) == id {
 		m.harnessSessionID = ""
 		m.harnessSessionHarnessID = ""
+	}
+	if strings.TrimSpace(strings.ToLower(m.freechatSessionHarnessID)) == id {
+		m.freechatSessionID = ""
+		m.freechatSessionHarnessID = ""
 	}
 	return m
 }

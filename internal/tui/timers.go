@@ -262,7 +262,7 @@ func (m model) resetSessionTimer() model {
 }
 
 func (m model) handleTimerTick(msg timerTickMsg) (model, tea.Cmd) {
-	if msg.generation != 0 && msg.generation != m.timerGeneration {
+	if msg.generation != m.timerGeneration {
 		return m, nil
 	}
 	m.timerLoopStarted = true

@@ -1072,13 +1072,13 @@ func (h *streamHandler) noteUsage(m map[string]any, perStep bool) {
 		return
 	}
 	usage := extractOpenCodeUsage(m)
-	if usage.InputTokens == 0 && usage.OutputTokens == 0 {
+	if !usage.HasCounts() {
 		return
 	}
 	if !perStep {
 		// OpenCode's message.updated snapshot is useful when no step-finish
-		// event was delivered. Once step usage exists, keep the sum of all
-		// model steps instead of replacing it with the last step.
+		// event was delivered. Once step usage exists, keep billed sums and
+		// the last step's occupancy instead of replacing them with the snapshot.
 		if !h.state.stepUsageSeen {
 			h.state.usage = usage
 		}
@@ -1100,6 +1100,10 @@ func (h *streamHandler) noteUsage(m map[string]any, perStep bool) {
 	}
 	h.state.usage.InputTokens += usage.InputTokens
 	h.state.usage.OutputTokens += usage.OutputTokens
+	// Occupancy is the last model call's full prompt, not the billed sum.
+	h.state.usage.CacheReadTokens = usage.CacheReadTokens
+	h.state.usage.CacheWriteTokens = usage.CacheWriteTokens
+	h.state.usage.ContextTokens = usage.ContextTokens
 }
 
 func extractOpenCodeUsage(m map[string]any) harness.Usage {
@@ -1117,6 +1121,7 @@ func extractOpenCodeUsage(m map[string]any) harness.Usage {
 		if out := int64Field(src, "output", "outputTokens", "output_tokens", "completion", "completionTokens"); out > 0 {
 			usage.OutputTokens = out
 		}
+		extractOpenCodeCache(&usage, src)
 		if total := int64Field(src, "total", "totalTokens", "tokensUsed"); total > 0 && usage.InputTokens == 0 && usage.OutputTokens == 0 {
 			usage.InputTokens = total
 		}
@@ -1127,10 +1132,30 @@ func extractOpenCodeUsage(m map[string]any) harness.Usage {
 	if u, ok := m["usage"].(map[string]any); ok {
 		extract(u)
 	}
-	if usage.InputTokens == 0 && usage.OutputTokens == 0 {
+	if !usage.HasCounts() {
 		extract(m)
 	}
-	return usage
+	return usage.WithContextTokens()
+}
+
+func extractOpenCodeCache(usage *harness.Usage, src map[string]any) {
+	if usage == nil || src == nil {
+		return
+	}
+	if cache, ok := src["cache"].(map[string]any); ok {
+		if n := int64Field(cache, "read", "readTokens"); n > 0 {
+			usage.CacheReadTokens = n
+		}
+		if n := int64Field(cache, "write", "writeTokens", "creation"); n > 0 {
+			usage.CacheWriteTokens = n
+		}
+	}
+	if n := int64Field(src, "cacheRead", "cacheReadTokens", "cache_read_tokens"); n > 0 {
+		usage.CacheReadTokens = n
+	}
+	if n := int64Field(src, "cacheWrite", "cacheWriteTokens", "cache_write_tokens"); n > 0 {
+		usage.CacheWriteTokens = n
+	}
 }
 
 func int64Field(m map[string]any, keys ...string) int64 {

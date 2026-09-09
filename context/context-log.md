@@ -4,6 +4,62 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-08 — Telegram /hero-config keep-first options
+
+**Problem**: The Telegram cycle-config wizard exposed "manter configuração atual"
+at inconsistent numbered positions (e.g. approval at 3, models at 2, scope/stages
+as free text only).
+
+**Change**: Every numbered wizard step that offers keep-current now lists it as
+option **1** — scope, stages, stage approval, models question, parent model,
+and subagent choice. Scope/stage selections shift to items 2+; stage parsing now
+matches the visible stage list. Added `telegramConfigKeepFirst` and
+approval-specific yes/no helpers.
+
+**Validation**: Updated wizard tests plus
+`TestTelegramConfigKeepOptionIsAlwaysFirst`; `go test ./...` passed.
+
+## 2026-09-08 — Telegram status flood
+
+**Problem**: During a long cycle, Telegram started sending Hero status in a
+tight loop (DoS-like). The 2026-09-06 idle/duplicate-timer fix did not cover
+the two remaining senders of `telegramAutoReportText`.
+
+**Change**: Remote text that arrives while Execute is live is stored in
+`telegramPendingTurns` (deduped by text+origin) and gets **one** immediate
+status. The 500ms inbound Tick retry is gone; the queue drains one turn after
+`executeDone` / cancel when the TUI is no longer streaming. Auto-report now
+schedules with wall-clock `max(at, now)` plus `lastAutoReportAt`, so a stale
+1s tick cannot keep `nextAutoReportAt` in the past. `handleTimerTick` rejects
+generation mismatches including generation 0; unused `statusTickCmd` was
+removed.
+
+**Validation**: TUI tests for queued-turn once-only status, drain after
+Execute, stale-tick / burst / generation-0 auto-report, and existing idle
+manual `/status`. `go test ./...` passed.
+
+## 2026-09-08 — Context window occupancy vs billed tokens
+
+**Problem**: The Chat context bar and Telegram `Context` treated billed
+`input+output` as window fill. Cursor/Claude omit cache from `input`, OpenCode
+sums every tool-loop step's full prompt, missing usage fell back to the last
+prompt only, and ordinary freechat during an active cycle could resume the
+stage-agent session. Earlier fixes oscillated between summing turns (too high)
+and replacing with the latest billed turn (too low).
+
+**Change**: `harness.Usage` now carries cache fields and `ContextTokens`
+(occupancy after this turn). Adapters fill occupancy from the last model call,
+including cache; OpenCode keeps billed step sums but occupancy is the last
+step. The TUI stores occupancy per freechat vs cycle-agent session and assigns
+it, never summing billed turns. Freechat has its own in-memory session id and
+does not write cycle metrics or stage session ids. When usage is absent,
+occupancy is chars÷4 of that session's transcript. Cycle Costs remain the
+billed accumulator.
+
+**Validation**: Adapter occupancy tests (Cursor/Claude cache, OpenCode last
+step, Codex `last` not `total`), TUI session-isolation and transcript-estimate
+tests, `go test ./internal/tui` and adapter packages.
+
 ## 2026-09-08 — Multi-agent Implementation ownership and completion contract
 
 **Change**: Standardized implementation ownership across Cursor, Codex,
@@ -1080,3 +1136,26 @@ with implementation agents, preserving the CLI/Runtime boundary.
 completion/progress/no-progress, escalation, retry-copy, and SQLite round-trip
 tests. `go test ./...`, `go test -race ./internal/tui ./internal/cycle`, `go vet ./...`,
 `openspec validate claude-code-adapter --strict`, and `git diff --check` passed.
+
+## 2026-09-08 — build_dev.sh local install
+
+**Change**: `scripts/build_dev.sh` now cross-compiles the Telegram daemon alongside
+Hero, copies linux/amd64 artifacts to `/home/ricardo/installable/hero/hero` and
+`/home/ricardo/.workflow-hero/plugins/telegram/hero-telegram-daemon`, and updates
+the Telegram plugin `manifest.json` version/installed_at via python3.
+
+**Validation**: `go test ./scripts/...`; `./scripts/build_dev.sh` completed successfully.
+
+## 2026-09-08 — Telegram model list parity
+
+**Change**: `internal/tui/telegram_model_selection.go` now mirrors local `/model` refresh behavior, always fetches live harness model lists, merges them with catalog/cache via `modelChoicesForHarness` (`internal/tui/model_picker.go`), and paginates Telegram model prompts. `configModelChoices` delegates to the same helper.
+
+**Validation**: `go test ./internal/tui/...` (Telegram model/config wizard regressions for grok-4.5 merge, live list, pagination, and refresh); `go test ./...`.
+
+## 2026-09-08 — TUI interrupt key remap
+
+**Change**: Chat stream interruption moved from `Esc` to `Ctrl+C`. `Esc` now
+focuses the navbar (overlay dismiss unchanged). Footer hints and Telegram
+`/interrupt` parity docs updated.
+
+**Validation**: `go test ./internal/tui/...`

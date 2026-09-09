@@ -352,7 +352,7 @@ func SetHeight(m model, h int) model {
 
 // CancelConversationStreamForTest interrupts an active stream.
 func CancelConversationStreamForTest(m model) (model, tea.Cmd) {
-	next, cmd := m.handleConversationKey(tea.KeyMsg{Type: tea.KeyEscape})
+	next, cmd := m.handleConversationKey(tea.KeyMsg{Type: tea.KeyCtrlC})
 	return next.(model), cmd
 }
 

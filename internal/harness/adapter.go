@@ -85,10 +85,42 @@ func NormalizeExecuteRequest(req ExecuteRequest) ExecuteRequest {
 
 // Usage holds optional token counts for one harness Execute turn. Adapters
 // that receive cumulative thread snapshots must expose only the current turn
-// here; the TUI and cycle metrics layer perform the session/cycle accumulation.
+// here for billed input/output; the cycle metrics layer accumulates those.
+// ContextTokens is the window occupancy after this turn (prompt including
+// cache plus this output) and is never summed across Executes.
 type Usage struct {
-	InputTokens  int64
-	OutputTokens int64
+	InputTokens      int64
+	OutputTokens     int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+	ContextTokens    int64
+}
+
+// HasCounts reports whether any token field was provided by the harness.
+func (u Usage) HasCounts() bool {
+	return u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 || u.ContextTokens > 0
+}
+
+// Occupancy is the context-window fill after this turn. ContextTokens wins
+// when adapters set it; otherwise occupancy is reconstructed from billed
+// input, cache, and output.
+func (u Usage) Occupancy() int64 {
+	if u.ContextTokens > 0 {
+		return u.ContextTokens
+	}
+	n := u.InputTokens + u.CacheReadTokens + u.CacheWriteTokens + u.OutputTokens
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+// WithContextTokens fills ContextTokens from occupancy fields when unset.
+func (u Usage) WithContextTokens() Usage {
+	if u.ContextTokens <= 0 {
+		u.ContextTokens = u.InputTokens + u.CacheReadTokens + u.CacheWriteTokens + u.OutputTokens
+	}
+	return u
 }
 
 // ExecutionResult is the normalized outcome of Execute.

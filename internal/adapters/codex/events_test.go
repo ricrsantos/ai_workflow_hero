@@ -239,6 +239,40 @@ func TestMapTokenUsageUsesLastTurnFromV2Snapshot(t *testing.T) {
 	if got.InputTokens != 12 || got.OutputTokens != 4 {
 		t.Fatalf("usage=%+v want last-turn usage", got)
 	}
+	if got.ContextTokens != 16 {
+		t.Fatalf("context=%d want last occupancy 12+4, not total", got.ContextTokens)
+	}
+}
+
+func TestMapTokenUsageIncludesCachedInputInOccupancy(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	payload, err := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"usage": map[string]any{
+			"last": map[string]any{
+				"inputTokens":       12,
+				"outputTokens":      4,
+				"cachedInputTokens": 80,
+			},
+			"total": map[string]any{
+				"inputTokens":  120,
+				"outputTokens": 40,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out := a.handleNotification(context.Background(), "thread/tokenUsage/updated", payload, "thr", harness.ExecuteRequest{}, nil, st); out.err != nil {
+		t.Fatal(out.err)
+	}
+	a.mu.Lock()
+	got := a.usageBySession["thr"]
+	a.mu.Unlock()
+	if got.CacheReadTokens != 80 || got.Occupancy() != 96 {
+		t.Fatalf("usage=%+v want cache=80 occupancy=96", got)
+	}
 }
 
 func TestTurnSlotSerializesAndHonorsCancellation(t *testing.T) {

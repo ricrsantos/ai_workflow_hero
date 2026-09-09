@@ -109,7 +109,7 @@ func (a *Adapter) tryRecoverCompletedSession(
 	if !ok || strings.TrimSpace(text) == "" {
 		return false
 	}
-	if state != nil && !state.stepUsageSeen && (usage.InputTokens > 0 || usage.OutputTokens > 0) {
+	if state != nil && !state.stepUsageSeen && usage.HasCounts() {
 		state.usage = usage
 	}
 	existing := ""

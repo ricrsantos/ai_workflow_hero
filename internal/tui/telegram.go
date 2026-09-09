@@ -50,6 +50,7 @@ type telegramState struct {
 	autoReportMinutes int
 	alwaysSend        bool
 	nextAutoReportAt  time.Time
+	lastAutoReportAt  time.Time
 
 	client *telegramClient // nil when the plugin is not installed
 

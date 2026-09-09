@@ -57,7 +57,7 @@ Two or three in-scope implementation agents appear as separate green agent block
 
 - `→ Planning` / `→ Implementation` / `→ QA` / `→ Judge` (and existing `→ Research`) when a handoff Execute starts.
 - Fallback copy still names both harness and model (UI-C04 §6).
-- Esc copy remains “cancels the running agent(s)”.
+- `Ctrl+C` cancels the running agent(s); `Esc` focuses the navbar.
 
 ## 8. Testing UX
 

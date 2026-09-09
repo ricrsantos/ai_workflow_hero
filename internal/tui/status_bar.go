@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -128,10 +127,6 @@ func (m model) setStatusBusyBlocked() model {
 	m.statusKind = statusErr
 	m.statusText = fmt.Sprintf("busy — wait for %s to finish", busy)
 	return m
-}
-
-func statusTickCmd() tea.Cmd {
-	return timerTickCmd(0)
 }
 
 func (m model) statusBarLineCount() int {

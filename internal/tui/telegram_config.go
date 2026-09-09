@@ -320,14 +320,17 @@ func (m model) handleTelegramConfigInput(address, text string) (model, tea.Cmd) 
 		return m, m.telegramOutboundCmd(m.telegramConfigPrompt())
 
 	case telegramConfigScope:
-		if !telegramConfigKeep(trimmed) {
-			selected, err := parseTelegramConfigNumberSet(trimmed, len(telegramConfigScopeOrder))
+		if !telegramConfigKeepFirst(trimmed) {
+			selected, err := parseTelegramConfigNumberSet(trimmed, len(telegramConfigScopeOrder)+1)
 			if err != nil {
-				return m, m.telegramConfigInvalid("Escopo inválido. Use números separados por vírgula, por exemplo: 1,2.")
+				return m, m.telegramConfigInvalid("Escopo inválido. Use 1 para manter ou números separados por vírgula, por exemplo: 2,3.")
 			}
 			w.draft.Scope = workflowconfig.Scope{}
 			for _, index := range selected {
-				switch telegramConfigScopeOrder[index-1] {
+				if index == 1 {
+					return m, m.telegramConfigInvalid("Use apenas 1 para manter o escopo atual ou selecione os escopos a partir do item 2.")
+				}
+				switch telegramConfigScopeOrder[index-2] {
 				case "backend":
 					w.draft.Scope.Backend = true
 				case "frontend":
@@ -345,21 +348,25 @@ func (m model) handleTelegramConfigInput(address, text string) (model, tea.Cmd) 
 		return m, m.telegramOutboundCmd(m.telegramConfigPrompt())
 
 	case telegramConfigStages:
-		if !telegramConfigKeep(trimmed) {
-			selected, err := parseTelegramConfigNumberSet(trimmed, len(telegramConfigStageOrder))
+		if !telegramConfigKeepFirst(trimmed) {
+			visible := telegramConfigVisibleStages(w.draft)
+			selected, err := parseTelegramConfigNumberSet(trimmed, len(visible)+1)
 			if err != nil {
-				return m, m.telegramConfigInvalid("Stages inválidos. Use os números separados por vírgula exibidos acima.")
+				return m, m.telegramConfigInvalid("Stages inválidos. Use 1 para manter ou os números separados por vírgula exibidos acima.")
 			}
 			selectedSet := make(map[int]bool, len(selected))
 			for _, index := range selected {
+				if index == 1 {
+					return m, m.telegramConfigInvalid("Use apenas 1 para manter os stages atuais ou selecione os stages a partir do item 2.")
+				}
 				selectedSet[index] = true
 			}
-			for index, name := range telegramConfigStageOrder {
+			for index, name := range visible {
 				stage, ok := w.draft.Stages[name]
 				if !ok {
 					continue
 				}
-				stage.Enabled = selectedSet[index+1]
+				stage.Enabled = selectedSet[index+2]
 				w.draft.Stages[name] = stage
 			}
 		}
@@ -372,42 +379,42 @@ func (m model) handleTelegramConfigInput(address, text string) (model, tea.Cmd) 
 		}
 		stage := w.draft.Stages[stageName]
 		switch {
-		case telegramConfigYes(trimmed):
-			stage.RequireHumanApproval = true
-		case telegramConfigNo(trimmed):
-			stage.RequireHumanApproval = false
-		case telegramConfigKeep(trimmed):
+		case telegramConfigKeepFirst(trimmed):
 			// Keep the value already present in the draft.
+		case telegramConfigApprovalYes(trimmed):
+			stage.RequireHumanApproval = true
+		case telegramConfigApprovalNo(trimmed):
+			stage.RequireHumanApproval = false
 		default:
-			return m, m.telegramConfigInvalid("Responda 1 para exigir aprovação humana, 2 para não exigir ou 3 para manter a configuração atual.")
+			return m, m.telegramConfigInvalid("Responda 1 para manter a configuração atual, 2 para exigir aprovação humana ou 3 para não exigir.")
 		}
 		w.draft.Stages[stageName] = stage
 		w.approvalIndex++
 		return m.telegramConfigStageApprovalPrompt()
 
 	case telegramConfigModelsQuestion:
-		if telegramConfigYes(trimmed) {
-			return m.beginTelegramConfigModelReview()
-		}
-		if telegramConfigNo(trimmed) {
+		if telegramConfigKeepFirst(trimmed) {
 			w.step = telegramConfigSummary
 			return m, m.telegramOutboundCmd(m.telegramConfigPrompt())
 		}
-		return m, m.telegramConfigInvalid("Responda 1 para revisar os modelos ou 2 para manter os atuais.")
+		if telegramConfigSecondOption(trimmed) {
+			return m.beginTelegramConfigModelReview()
+		}
+		return m, m.telegramConfigInvalid("Responda 1 para manter os modelos atuais ou 2 para revisar pelo wizard remoto.")
 
 	case telegramConfigModelChoice:
-		if telegramConfigYes(trimmed) {
+		if telegramConfigKeepFirst(trimmed) {
+			w.modelIndex++
+			return m.telegramConfigModelPrompt()
+		}
+		if telegramConfigSecondOption(trimmed) {
 			target, ok := w.currentModelTarget()
 			if !ok || target.subagent {
 				return m, m.telegramConfigInvalid("O alvo de modelo atual é inválido. Execute /hero-config novamente.")
 			}
 			return m.startTelegramCycleModelSelection(address, target.agentName)
 		}
-		if telegramConfigNo(trimmed) {
-			w.modelIndex++
-			return m.telegramConfigModelPrompt()
-		}
-		return m, m.telegramConfigInvalid("Responda 1 para escolher outro modelo ou 2 para manter o atual.")
+		return m, m.telegramConfigInvalid("Responda 1 para manter o atual ou 2 para escolher outro modelo.")
 
 	case telegramConfigSubagentChoice:
 		return m.handleTelegramConfigSubagentChoice(trimmed)
@@ -451,7 +458,7 @@ func (m model) telegramConfigPrompt() string {
 	case telegramConfigStageApproval:
 		return m.telegramConfigStageApprovalText()
 	case telegramConfigModelsQuestion:
-		return "Deseja revisar os harnesses e modelos dos agentes do ciclo?\n\n1 - Escolher pelo wizard remoto\n2 - Manter os modelos atuais"
+		return "Deseja revisar os harnesses e modelos dos agentes do ciclo?\n\n1 - Manter os modelos atuais\n2 - Escolher pelo wizard remoto"
 	case telegramConfigModelChoice:
 		return m.telegramConfigModelText()
 	case telegramConfigSubagentChoice:
@@ -468,33 +475,42 @@ func (m model) telegramConfigPrompt() string {
 func telegramConfigScopePrompt(scope workflowconfig.Scope) string {
 	var b strings.Builder
 	b.WriteString("Quais escopos este ciclo deve cobrir?\n\n")
+	b.WriteString("1 - Manter escopo atual\n")
 	for i, name := range telegramConfigScopeOrder {
 		marker := " "
 		if telegramConfigScopeEnabled(scope, name) {
 			marker = "✓"
 		}
-		fmt.Fprintf(&b, "%d - [%s] %s\n", i+1, marker, configStageLabel(name))
+		fmt.Fprintf(&b, "%d - [%s] %s\n", i+2, marker, configStageLabel(name))
 	}
-	b.WriteString("\nEnvie os números separados por vírgula, por exemplo 1,2, ou responda 'manter'.")
+	b.WriteString("\nEnvie 1 para manter ou os números separados por vírgula, por exemplo 2,3.")
 	return b.String()
 }
 
 func telegramConfigStagesPrompt(cfg workflowconfig.ManagedConfig) string {
 	var b strings.Builder
 	b.WriteString("Quais stages devem ficar habilitados?\n\n")
-	for i, name := range telegramConfigStageOrder {
-		stage, ok := cfg.Stages[name]
-		if !ok {
-			continue
-		}
+	b.WriteString("1 - Manter stages atuais\n")
+	for i, name := range telegramConfigVisibleStages(cfg) {
+		stage := cfg.Stages[name]
 		marker := " "
 		if stage.Enabled {
 			marker = "✓"
 		}
-		fmt.Fprintf(&b, "%d - [%s] %s\n", i+1, marker, configStageLabel(name))
+		fmt.Fprintf(&b, "%d - [%s] %s\n", i+2, marker, configStageLabel(name))
 	}
-	b.WriteString("\nEnvie os números separados por vírgula ou responda 'manter'. Depois, o wizard perguntará a aprovação humana de cada etapa habilitada.")
+	b.WriteString("\nEnvie 1 para manter ou os números separados por vírgula. Depois, o wizard perguntará a aprovação humana de cada etapa habilitada.")
 	return b.String()
+}
+
+func telegramConfigVisibleStages(cfg workflowconfig.ManagedConfig) []string {
+	names := make([]string, 0, len(telegramConfigStageOrder))
+	for _, name := range telegramConfigStageOrder {
+		if _, ok := cfg.Stages[name]; ok {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 func (m model) beginTelegramConfigStageApprovalReview() (model, tea.Cmd) {
@@ -559,7 +575,7 @@ func (m model) telegramConfigStageApprovalTextFor(stageName string) string {
 		current = "sim"
 	}
 	return fmt.Sprintf(
-		"A etapa %s precisa de aprovação humana?\nConfiguração atual: %s\n\n1 - Sim\n2 - Não\n3 - Manter a configuração atual",
+		"A etapa %s precisa de aprovação humana?\nConfiguração atual: %s\n\n1 - Manter a configuração atual\n2 - Sim\n3 - Não",
 		configStageLabel(stageName), current,
 	)
 }
@@ -695,11 +711,11 @@ func telegramConfigReviewAgent(w *telegramConfigWizard, target string) (workflow
 
 func telegramConfigModelTextFor(target string, agent workflowconfig.AgentModelConfig) string {
 	if strings.TrimSpace(agent.Harness) == "" || strings.TrimSpace(agent.Model) == "" {
-		return fmt.Sprintf("Modelo de %s ainda não configurado.\n\n1 - Escolher modelo\n2 - Manter o atual",
+		return fmt.Sprintf("Modelo de %s ainda não configurado.\n\n1 - Manter o atual\n2 - Escolher modelo",
 			configStageLabel(target))
 	}
 	return fmt.Sprintf(
-		"Modelo de %s\nAtual: %s\n\n1 - Escolher outro modelo\n2 - Manter o atual",
+		"Modelo de %s\nAtual: %s\n\n1 - Manter o atual\n2 - Escolher outro modelo",
 		configStageLabel(target), telegramConfigAgentPair(agent),
 	)
 }
@@ -762,18 +778,28 @@ func telegramConfigKeep(value string) bool {
 	}
 }
 
-func telegramConfigYes(value string) bool {
+// telegramConfigKeepFirst is true for option 1 or the free-text keep aliases used
+// across the Telegram configuration wizard.
+func telegramConfigKeepFirst(value string) bool {
+	return strings.TrimSpace(value) == "1" || telegramConfigKeep(value)
+}
+
+func telegramConfigSecondOption(value string) bool {
+	return strings.TrimSpace(value) == "2"
+}
+
+func telegramConfigApprovalYes(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "sim", "s", "yes", "y":
+	case "2", "sim", "s", "yes", "y":
 		return true
 	default:
 		return false
 	}
 }
 
-func telegramConfigNo(value string) bool {
+func telegramConfigApprovalNo(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "2", "não", "nao", "n", "no":
+	case "3", "não", "nao", "n", "no":
 		return true
 	default:
 		return false

@@ -11,9 +11,18 @@
 #   dist/hero_<version>_linux_arm64
 #   dist/hero_<version>_darwin_amd64
 #   dist/hero_<version>_darwin_arm64
+#   dist/hero-telegram-daemon_<version>_linux_amd64
+#   dist/hero-telegram-daemon_<version>_linux_arm64
+#   dist/hero-telegram-daemon_<version>_darwin_amd64
+#   dist/hero-telegram-daemon_<version>_darwin_arm64
 #   dist/checksums.txt
 #
-# Requirements: go, git, sha256sum (Linux) or shasum (macOS)
+# After build (linux/amd64 only), installs local dev copies:
+#   /home/ricardo/installable/hero/hero
+#   /home/ricardo/.workflow-hero/plugins/telegram/hero-telegram-daemon
+# and updates /home/ricardo/.workflow-hero/plugins/telegram/manifest.json.
+#
+# Requirements: go, git, sha256sum (Linux) or shasum (macOS), python3 (manifest update)
 
 set -euo pipefail
 
@@ -40,6 +49,7 @@ TARGETS=(
 )
 
 MODULE_PATH="./cmd/hero"
+DAEMON_MODULE_PATH="./cmd/hero-telegram-daemon"
 LDFLAGS="-X main.version=${VERSION}"
 
 for TARGET in "${TARGETS[@]}"; do
@@ -53,6 +63,15 @@ for TARGET in "${TARGETS[@]}"; do
     "${MODULE_PATH}"
   chmod +x "${OUTPUT}"
   echo "✓ Built ${OUTPUT}"
+
+  DAEMON_OUTPUT="${DIST}/hero-telegram-daemon_${VERSION}_${OS}_${ARCH}"
+  echo "→ Building ${DAEMON_OUTPUT}..."
+  GOOS="${OS}" GOARCH="${ARCH}" go build \
+    -ldflags "${LDFLAGS}" \
+    -o "${DAEMON_OUTPUT}" \
+    "${DAEMON_MODULE_PATH}"
+  chmod +x "${DAEMON_OUTPUT}"
+  echo "✓ Built ${DAEMON_OUTPUT}"
 done
 
 # Generate checksums.
@@ -71,9 +90,56 @@ fi
 for TARGET in "${TARGETS[@]}"; do
   OS="${TARGET%/*}"
   ARCH="${TARGET#*/}"
-  BIN="${DIST}/hero_${VERSION}_${OS}_${ARCH}"
   (cd "${DIST}" && ${SHA_CMD} "hero_${VERSION}_${OS}_${ARCH}") >> "${CHECKSUMS_FILE}"
+  (cd "${DIST}" && ${SHA_CMD} "hero-telegram-daemon_${VERSION}_${OS}_${ARCH}") >> "${CHECKSUMS_FILE}"
 done
+
+# Local install (linux/amd64 only).
+HERO_INSTALL_PATH="/home/ricardo/installable/hero/hero"
+LINUX_AMD64_HERO="${DIST}/hero_${VERSION}_linux_amd64"
+LINUX_AMD64_DAEMON="${DIST}/hero-telegram-daemon_${VERSION}_linux_amd64"
+TELEGRAM_PLUGIN_DIR="/home/ricardo/.workflow-hero/plugins/telegram"
+TELEGRAM_DAEMON_PATH="${TELEGRAM_PLUGIN_DIR}/hero-telegram-daemon"
+TELEGRAM_MANIFEST="${TELEGRAM_PLUGIN_DIR}/manifest.json"
+
+echo ""
+echo "→ Installing local dev binaries (linux/amd64)..."
+mkdir -p "$(dirname "${HERO_INSTALL_PATH}")" "${TELEGRAM_PLUGIN_DIR}"
+cp -f "${LINUX_AMD64_HERO}" "${HERO_INSTALL_PATH}"
+chmod +x "${HERO_INSTALL_PATH}"
+echo "✓ Installed ${HERO_INSTALL_PATH}"
+
+cp -f "${LINUX_AMD64_DAEMON}" "${TELEGRAM_DAEMON_PATH}"
+chmod +x "${TELEGRAM_DAEMON_PATH}"
+echo "✓ Installed ${TELEGRAM_DAEMON_PATH}"
+
+if command -v python3 &>/dev/null; then
+  python3 - "${TELEGRAM_MANIFEST}" "${VERSION}" "${TELEGRAM_DAEMON_PATH}" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+manifest_path, version, daemon_path = sys.argv[1:4]
+manifest = {}
+if os.path.exists(manifest_path):
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest = json.load(f)
+
+manifest.setdefault("name", "telegram")
+manifest.setdefault("protocol_version", 1)
+manifest["version"] = version
+manifest["daemon_path"] = daemon_path
+manifest["installed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+with open(manifest_path, "w", encoding="utf-8") as f:
+    json.dump(manifest, f, indent=2)
+    f.write("\n")
+PY
+  echo "✓ Updated ${TELEGRAM_MANIFEST} (version=${VERSION})"
+else
+  echo "[WARN] python3 not found; skipped Telegram manifest update" >&2
+fi
 
 echo ""
 echo "✓ Dev build artifacts in ${DIST}/"

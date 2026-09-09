@@ -21,6 +21,23 @@ func TestParseJSONResult(t *testing.T) {
 	if res.Usage.InputTokens != 7 || res.Usage.OutputTokens != 2 {
 		t.Fatalf("usage=%+v", res.Usage)
 	}
+	if res.Usage.ContextTokens != 9 {
+		t.Fatalf("context=%d want 9", res.Usage.ContextTokens)
+	}
+}
+
+func TestParseJSONResultIncludesCacheInOccupancy(t *testing.T) {
+	raw := `{"type":"result","subtype":"success","is_error":false,"duration_ms":100,"result":"Done.","session_id":"abc","usage":{"inputTokens":200,"outputTokens":100,"cacheReadTokens":5000}}`
+	res, err := cursoradapter.ParseJSONResult([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Usage.InputTokens != 200 || res.Usage.OutputTokens != 100 || res.Usage.CacheReadTokens != 5000 {
+		t.Fatalf("usage=%+v", res.Usage)
+	}
+	if res.Usage.Occupancy() != 5300 {
+		t.Fatalf("occupancy=%d want 5300", res.Usage.Occupancy())
+	}
 }
 
 func TestParseStreamJSONPartialSkipsDuplicates(t *testing.T) {

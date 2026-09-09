@@ -85,22 +85,24 @@ type model struct {
 	outputErr    bool
 
 	// Conversation screen (design D4 / UI-C03-001 §3).
-	conversationStage       string
-	harnessSessionID        string
-	harnessSessionHarnessID string // harness that owns harnessSessionID (session binding)
-	transcript              []convMessage
-	input                   string
-	inputCursor             int // rune offset into input
-	inputVerticalColumn     int // preferred visual column while moving up/down
-	inputVerticalColumnSet  bool
-	streaming               bool
-	streamInterrupted       bool
-	convError               string
-	agentMsgIndex           int
-	thinkingMsgIndex        int
-	convStreamCh            chan tea.Msg
-	nextUserOrigin          string // Telegram origin applied to the next user+agent pair
-	chatInputFocused        bool
+	conversationStage        string
+	harnessSessionID         string
+	harnessSessionHarnessID  string // harness that owns harnessSessionID (session binding)
+	freechatSessionID        string
+	freechatSessionHarnessID string // harness that owns freechatSessionID
+	transcript               []convMessage
+	input                    string
+	inputCursor              int // rune offset into input
+	inputVerticalColumn      int // preferred visual column while moving up/down
+	inputVerticalColumnSet   bool
+	streaming                bool
+	streamInterrupted        bool
+	convError                string
+	agentMsgIndex            int
+	thinkingMsgIndex         int
+	convStreamCh             chan tea.Msg
+	nextUserOrigin           string // Telegram origin applied to the next user+agent pair
+	chatInputFocused         bool
 
 	// Chat panes: composer scroll + linear transcript scroll/follow.
 	inputScrollOffset      int
@@ -172,10 +174,12 @@ type model struct {
 
 	liveAgents []liveAgent // currently executing parent + Task subagents (Chat box)
 
-	// contextUsedTokens is the latest completed Execute's input+output usage,
-	// which approximates the current context sent to the harness. It is not a
-	// cumulative session/cycle metric.
+	// contextUsedTokens is the occupancy of the session currently shown in
+	// the Chat context bar (freechat or the last cycle-agent session). It is
+	// not a cumulative billed-token sum.
 	contextUsedTokens      int64
+	contextOccupancy       map[string]int64
+	contextDisplayKey      string
 	contextUsageGeneration int64
 	contextWindows         contextWindowCatalog
 
@@ -218,8 +222,9 @@ type model struct {
 	// Optional Telegram plugin state (telegram-tui; ADR-059/060). telegram is a
 	// pointer so the engine Notifier adapter installed at boot observes later
 	// connection changes; telegramMsgCh relays daemon frames into Update.
-	telegram      *telegramState
-	telegramMsgCh chan tea.Msg
+	telegram             *telegramState
+	telegramMsgCh        chan tea.Msg
+	telegramPendingTurns []telegramPendingTurn
 
 	// Child CLI lifecycle events arrive through the owning TUI's private relay.
 	// Keep events that arrive while the Telegram connection is reconnecting so
@@ -517,6 +522,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case telegramModelListMsg:
 		return m.handleTelegramModelList(msg)
 
+	case telegramModelPromptMsg:
+		return m.handleTelegramModelPrompt()
+
 	case telegramConfigLoadedMsg:
 		return m.handleTelegramConfigLoaded(msg)
 
@@ -595,6 +603,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "esc":
+		if m.sidebarVisible() && m.shellFocus == shellFocusContent {
+			return m.focusShellNavbar()
+		}
 	case "alt+q":
 		if m.streaming || m.heroStartBootstrapping || m.heroStartPreparing {
 			return m.showConfirm(actionQuit, 0, "Agent is running. Quit? [y/N]")
@@ -1008,7 +1020,7 @@ func (m model) beginNewChat() (model, tea.Cmd) {
 }
 
 func newChatBlockedMessage() string {
-	return "Wait for the agent to finish or press esc to interrupt before starting a new chat."
+	return "Wait for the agent to finish or press Ctrl+C to interrupt before starting a new chat."
 }
 
 func (m model) beginHeroNew() (model, tea.Cmd) {
@@ -1722,6 +1734,8 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}, Alt: true}
 	case "esc":
 		return tea.KeyMsg{Type: tea.KeyEscape}
+	case "ctrl+c":
+		return tea.KeyMsg{Type: tea.KeyCtrlC}
 	case "enter":
 		return tea.KeyMsg{Type: tea.KeyEnter}
 	case "alt+enter":

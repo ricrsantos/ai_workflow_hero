@@ -12,6 +12,23 @@ func TestEstimateUsageCharsDiv4(t *testing.T) {
 	if got.InputTokens != 2 || got.OutputTokens != 3 {
 		t.Fatalf("usage=%+v want in=2 out=3", got)
 	}
+	if got.ContextTokens != 5 || got.Occupancy() != 5 {
+		t.Fatalf("occupancy=%d context=%d want 5", got.Occupancy(), got.ContextTokens)
+	}
+}
+
+func TestUsageOccupancyPrefersContextTokens(t *testing.T) {
+	u := harness.Usage{InputTokens: 10, OutputTokens: 5, CacheReadTokens: 100, ContextTokens: 40}
+	if u.Occupancy() != 40 {
+		t.Fatalf("occupancy=%d want 40", u.Occupancy())
+	}
+}
+
+func TestUsageOccupancyReconstructsFromCache(t *testing.T) {
+	u := harness.Usage{InputTokens: 10, OutputTokens: 5, CacheReadTokens: 100, CacheWriteTokens: 20}
+	if u.Occupancy() != 135 {
+		t.Fatalf("occupancy=%d want 135", u.Occupancy())
+	}
 }
 
 func TestResolveUsagePrefersHarness(t *testing.T) {

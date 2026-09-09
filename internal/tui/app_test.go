@@ -653,34 +653,49 @@ func TestConfigNavigationAllowedWhileStreaming(t *testing.T) {
 	}
 }
 
-func TestEscapeCancelsConversationStream(t *testing.T) {
+func TestCtrlCCancelsConversationStream(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	m = SetStreamingForTest(m, true)
-	next, cancelCmd := HandleTestKey(m, "esc")
+	next, cancelCmd := HandleTestKey(m, "ctrl+c")
 	if cancelCmd == nil {
-		t.Fatal("Esc while streaming must request harness cancellation")
+		t.Fatal("Ctrl+C while streaming must request harness cancellation")
 	}
 	msg := cancelCmd()
 	updated, _ := next.Update(msg)
 	if IsConversationStreaming(updated.(model)) {
-		t.Fatal("expected Esc cancellation to stop streaming")
+		t.Fatal("expected Ctrl+C cancellation to stop streaming")
 	}
 }
 
-func TestCtrlCWhileStreamingIsIgnored(t *testing.T) {
+func TestEscWhileStreamingFocusesNavbar(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	m = SetStreamingForTest(m, true)
+	next, cmd := HandleTestKey(m, "esc")
+	if cmd != nil {
+		t.Fatal("Esc must not trigger harness cancellation while streaming")
+	}
+	if next.shellFocus != shellFocusNavbar {
+		t.Fatal("Esc while streaming must focus the navbar")
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("Esc must leave the harness running")
+	}
+}
+
+func TestCtrlCWhileIdleDoesNotInterrupt(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
 	next, cmd := HandleTestKeyMsg(m, tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd != nil {
-		t.Fatal("Ctrl+C must not trigger a TUI command")
+		t.Fatal("Ctrl+C while idle must not trigger a TUI command")
 	}
 	if ConfirmPendingForTest(next) {
 		t.Fatal("Ctrl+C must not open the quit confirmation")
 	}
-	if !IsConversationStreaming(next) {
-		t.Fatal("Ctrl+C must leave the harness running")
+	if IsConversationStreaming(next) {
+		t.Fatal("Ctrl+C while idle must not start streaming")
 	}
 }
 

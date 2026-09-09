@@ -40,8 +40,8 @@ const (
 var waitAnimFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 var conversationInterruptKey = key.NewBinding(
-	key.WithKeys("esc"),
-	key.WithHelp("esc", "interrupt"),
+	key.WithKeys("ctrl+c"),
+	key.WithHelp("ctrl+c", "interrupt"),
 )
 
 type convMessage struct {
@@ -53,6 +53,8 @@ type convMessage struct {
 	callID      string
 	interrupted bool
 	failed      bool
+
+	occupancyKey string
 
 	// origin labels a Telegram-routed turn (e.g. "telegram:ai_workflow_2"). It
 	// is empty for local composer turns. User messages render a left-arrow
@@ -454,6 +456,8 @@ func (m model) resetChatSession() model {
 	m.transcript = nil
 	m.harnessSessionID = ""
 	m.harnessSessionHarnessID = ""
+	m.freechatSessionID = ""
+	m.freechatSessionHarnessID = ""
 	m.conversationStage = ""
 	m.orchestrationLive = false
 	m.researchLive = false
@@ -507,8 +511,12 @@ func (m model) clearStageHandoffState() model {
 
 func (m model) resetConversationUsage() model {
 	m.contextUsedTokens = 0
+	m.contextDisplayKey = occupancyKeyFreechat
+	m.contextOccupancy = nil
 	m.lastExecutePrompt = ""
 	m.contextUsageGeneration++
+	m.freechatSessionID = ""
+	m.freechatSessionHarnessID = ""
 	return m
 }
 
@@ -699,6 +707,11 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 	if m.stageHandoffLive {
 		wave = m.stageHandoffWave
 	}
+	freechat := m.isFreechatTurn()
+	occupancyKey := occupancyKeyFreechat
+	if !freechat {
+		occupancyKey = cycleOccupancyKey(stageName, parentName)
+	}
 	m, executeID := m.nextExecuteID()
 	if reset || m.executes == nil {
 		m.executes = make(map[string]convExecute)
@@ -715,14 +728,15 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 	})
 	origin := m.nextUserOrigin
 	m.nextUserOrigin = ""
-	m.transcript = append(m.transcript, convMessage{role: labelRole, content: userLabel, origin: origin})
+	m.transcript = append(m.transcript, convMessage{role: labelRole, content: userLabel, origin: origin, occupancyKey: occupancyKey})
 	m.transcript = append(m.transcript, convMessage{
-		role:      convRoleAgent,
-		content:   "",
-		agentName: parentName,
-		modelSlug: parentModel,
-		harnessID: parentHarness,
-		origin:    origin,
+		role:         convRoleAgent,
+		content:      "",
+		agentName:    parentName,
+		modelSlug:    parentModel,
+		harnessID:    parentHarness,
+		origin:       origin,
+		occupancyKey: occupancyKey,
 	})
 	m.agentMsgIndex = len(m.transcript) - 1
 	m.thinkingMsgIndex = -1
@@ -740,6 +754,8 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 		UsageGeneration: m.contextUsageGeneration,
 		AgentMsgIndex:   m.agentMsgIndex,
 		Origin:          origin,
+		Freechat:        freechat,
+		OccupancyKey:    occupancyKey,
 	}
 
 	if m.convStreamCh == nil {
@@ -751,6 +767,7 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 	execute.relay = relay
 	m.executes[executeID] = execute
 	m.startConversationExecute(executeID, userLabel, executePrompt, origin, relay)
+	m = m.showOccupancyKey(occupancyKey)
 	return m.maybeFollowTranscriptBottom()
 }
 
@@ -760,6 +777,9 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.heroStartBootstrapping || m.heroStartPreparing {
 		if key.Matches(msg, conversationInterruptKey) {
 			return m.cancelHeroStartPreparation()
+		}
+		if key.Matches(msg, shellNavbarFocusKey) {
+			return m.focusShellNavbar()
 		}
 		switch s {
 		case "alt+q":
@@ -790,6 +810,9 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.streaming && !m.harnessQuestionPending {
 		if key.Matches(msg, conversationInterruptKey) {
 			return m, m.cancelStreamCmd()
+		}
+		if key.Matches(msg, shellNavbarFocusKey) {
+			return m.focusShellNavbar()
 		}
 		switch s {
 		case "alt+q":
@@ -876,10 +899,11 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch s {
 	case "esc":
-		if strings.TrimSpace(m.input) != "" {
-			m = m.clearChatInput()
+		if m.chatSlashOverlayActive() {
+			m.slashOverlayDismissed = true
+			return m, nil
 		}
-		return m, nil
+		return m.focusShellNavbar()
 	case "alt+m":
 		if m.chatMode == harness.ModePlan {
 			m.chatMode = harness.ModeBuild
@@ -1368,11 +1392,18 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 	if !relay.SendControl(executePairMsg{executeID: executeID, harnessID: pair.HarnessID, model: pair.Model}) {
 		return nil, pair.HarnessID, context.Canceled
 	}
+	freechat := m.isFreechatTurn()
+	if ex, ok := m.executes[executeID]; ok {
+		freechat = ex.Freechat
+	}
 	sessionID := m.harnessSessionIDForPair(stageName, pair.HarnessID)
+	if freechat {
+		sessionID = m.freechatSessionIDForPair(pair.HarnessID)
+	}
 	if resolved.warning != "" {
 		relay.Enqueue(harness.StreamDelta{Kind: harness.StreamKindText, Text: resolved.warning + "\n\n"})
 	}
-	if svc != nil && strings.TrimSpace(stageName) != "" {
+	if !freechat && svc != nil && strings.TrimSpace(stageName) != "" {
 		if err := svc.SetStageHarnessID(stageName, pair.HarnessID); err != nil {
 			slog.Debug("tui persist stage harness id failed", "error", err)
 		}
@@ -1809,10 +1840,10 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !siblingsRemain && m.stageHandoffLive {
 				next, handoffCmd := m.maybeHandoffAfterExecute()
 				if handoffCmd != nil {
-					return next, combineTimerCmds(next.refreshCmd(), handoffCmd, replyCmd, next.ensureTimerLoop())
+					return next.afterExecuteTelegramDrain(combineTimerCmds(next.refreshCmd(), handoffCmd, replyCmd, next.ensureTimerLoop()))
 				}
 			}
-			return m, replyCmd
+			return m.afterExecuteTelegramDrain(replyCmd)
 		}
 		if msg.result != nil {
 			if nativeModel := strings.TrimSpace(msg.result.NativeModel); nativeModel != "" {
@@ -1832,17 +1863,17 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if trackedExecute && executeMeta.Prompt != "" {
 				promptForUsage = executeMeta.Prompt
 			}
-			usage := harness.ResolveUsage(msg.result.Usage, promptForUsage, msg.result.Output)
+			reported := msg.result.Usage
+			usage := harness.ResolveUsage(reported, promptForUsage, msg.result.Output)
+			freechatTurn := !trackedExecute || executeMeta.Freechat
 			if sessionUsageAllowed {
-				// A turn's input usage already represents the context sent for that
-				// request. Summing it across resumed turns counts prior history again
-				// and makes the context window appear to fill too quickly.
-				m.contextUsedTokens = usage.InputTokens + usage.OutputTokens
+				key := occupancyKeyFor(executeMeta, trackedExecute)
+				m = m.applyContextOccupancy(key, reported, promptForUsage, msg.result.Output)
 			}
 			// Cycle metrics record tokens actually consumed by the stage even if
 			// a harness reset invalidated this completion for the new Chat-session
-			// context counter.
-			if m.svc != nil && stageForMetrics != "" {
+			// context counter. Ordinary freechat never writes cycle costs.
+			if !freechatTurn && m.svc != nil && stageForMetrics != "" {
 				if err := m.svc.AccumulateStageHarnessMetrics(
 					stageForMetrics, agentForMetrics, modelForMetrics, usage, msg.result.Duration,
 				); err != nil {
@@ -1854,7 +1885,11 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if harnessID == "" && trackedExecute {
 					harnessID = executeMeta.HarnessID
 				}
-				m = m.persistHarnessSession(msg.result.SessionID, harnessID)
+				if freechatTurn {
+					m = m.persistFreechatSession(msg.result.SessionID, harnessID)
+				} else {
+					m = m.persistHarnessSession(msg.result.SessionID, harnessID)
+				}
 			}
 			if msg.result.Output != "" {
 				m = m.reconcileParentAgentOutput(msg.result.Output)
@@ -1924,10 +1959,10 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		next, handoffCmd := m.maybeHandoffAfterExecute()
 		if handoffCmd != nil {
-			return next, combineTimerCmds(next.refreshCmd(), handoffCmd, convWaitTickCmd(), sessionSaveCmd, replyCmd, next.ensureTimerLoop())
+			return next.afterExecuteTelegramDrain(combineTimerCmds(next.refreshCmd(), handoffCmd, convWaitTickCmd(), sessionSaveCmd, replyCmd, next.ensureTimerLoop()))
 		}
 		next = next.completeBusyExecuteStatus(true, busyExecuteCompletedText(next.statusLabel))
-		return next, combineTimerCmds(next.refreshCmd(), sessionSaveCmd, replyCmd, next.ensureTimerLoop())
+		return next.afterExecuteTelegramDrain(combineTimerCmds(next.refreshCmd(), sessionSaveCmd, replyCmd, next.ensureTimerLoop()))
 
 	case streamCancelDoneMsg:
 		m = m.stopAITimer(time.Now())
@@ -1957,7 +1992,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m = m.completeBusyExecuteStatus(false, "cancelled")
 		slog.Info("tui conversation interrupted")
-		return m, m.ensureTimerLoop()
+		return m.afterExecuteTelegramDrain(m.ensureTimerLoop())
 	}
 	return m, nil
 }
@@ -1968,12 +2003,14 @@ func (m model) applyStreamDelta(msg streamDeltaMsg) model {
 		if ex, ok := m.executes[msg.executeID]; ok {
 			ex.SessionID = sid
 			m.executes[msg.executeID] = ex
+			if ex.Freechat {
+				m = m.persistFreechatSession(sid, ex.HarnessID)
+			} else {
+				m = m.persistHarnessSession(sid, ex.HarnessID)
+			}
+		} else {
+			m = m.persistHarnessSession(sid, "")
 		}
-		hid := ""
-		if ex, ok := m.executes[msg.executeID]; ok {
-			hid = ex.HarnessID
-		}
-		m = m.persistHarnessSession(sid, hid)
 	}
 	prevActivity := m.harnessWatchdog.LastActivityAt()
 	m.harnessWatchdog.RecordDelta(msg.delta, time.Now())

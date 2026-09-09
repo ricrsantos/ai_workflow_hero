@@ -49,6 +49,10 @@ var (
 		key.WithKeys("tab", "shift+tab"),
 		key.WithHelp("tab", "switch focus"),
 	)
+	shellNavbarFocusKey = key.NewBinding(
+		key.WithKeys("esc"),
+		key.WithHelp("esc", "navbar"),
+	)
 	navUpKey = key.NewBinding(
 		key.WithKeys("up"),
 		key.WithHelp("↑", "previous item"),
@@ -141,13 +145,11 @@ func (m model) activeNavIndex() int {
 	return 0
 }
 
-func (m model) toggleShellFocus() (tea.Model, tea.Cmd) {
+func (m model) focusShellNavbar() (tea.Model, tea.Cmd) {
 	if !m.sidebarVisible() {
 		return m, nil
 	}
 	if m.shellFocus == shellFocusNavbar {
-		m.shellFocus = shellFocusContent
-		m.chatInputFocused = m.screen == screenConversation
 		return m, nil
 	}
 	if m.screen == screenConfig && m.config.editing {
@@ -160,6 +162,18 @@ func (m model) toggleShellFocus() (tea.Model, tea.Cmd) {
 	m.navCursor = m.activeNavIndex()
 	m.chatInputFocused = false
 	return m, nil
+}
+
+func (m model) toggleShellFocus() (tea.Model, tea.Cmd) {
+	if !m.sidebarVisible() {
+		return m, nil
+	}
+	if m.shellFocus == shellFocusNavbar {
+		m.shellFocus = shellFocusContent
+		m.chatInputFocused = m.screen == screenConversation
+		return m, nil
+	}
+	return m.focusShellNavbar()
 }
 
 func (m model) handleNavbarKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

@@ -26,6 +26,8 @@ type convExecute struct {
 	SessionID       string
 	AgentMsgIndex   int
 	Origin          string // telegram:<address> when the turn came from Telegram
+	Freechat        bool
+	OccupancyKey    string
 	relay           *conversationStreamRelay
 }
 

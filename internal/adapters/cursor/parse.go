@@ -26,10 +26,17 @@ type cliResultJSON struct {
 }
 
 type cliUsageJSON struct {
-	InputTokens       int64 `json:"inputTokens"`
-	OutputTokens      int64 `json:"outputTokens"`
-	InputTokensSnake  int64 `json:"input_tokens"`
-	OutputTokensSnake int64 `json:"output_tokens"`
+	InputTokens              int64 `json:"inputTokens"`
+	OutputTokens             int64 `json:"outputTokens"`
+	InputTokensSnake         int64 `json:"input_tokens"`
+	OutputTokensSnake        int64 `json:"output_tokens"`
+	CacheReadTokens          int64 `json:"cacheReadTokens"`
+	CacheReadTokensSnake     int64 `json:"cache_read_tokens"`
+	CacheWriteTokens         int64 `json:"cacheWriteTokens"`
+	CacheWriteTokensSnake    int64 `json:"cache_write_tokens"`
+	CacheCreationTokens      int64 `json:"cacheCreationTokens"`
+	CacheCreationTokensSnake int64 `json:"cache_creation_tokens"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 }
 
 type cliStreamEvent struct {
@@ -134,7 +141,29 @@ func (u *cliUsageJSON) toHarness() harness.Usage {
 	if out == 0 {
 		out = u.OutputTokensSnake
 	}
-	return harness.Usage{InputTokens: in, OutputTokens: out}
+	cacheRead := u.CacheReadTokens
+	if cacheRead == 0 {
+		cacheRead = u.CacheReadTokensSnake
+	}
+	cacheWrite := u.CacheWriteTokens
+	if cacheWrite == 0 {
+		cacheWrite = u.CacheWriteTokensSnake
+	}
+	if cacheWrite == 0 {
+		cacheWrite = u.CacheCreationTokens
+	}
+	if cacheWrite == 0 {
+		cacheWrite = u.CacheCreationTokensSnake
+	}
+	if cacheWrite == 0 {
+		cacheWrite = u.CacheCreationInputTokens
+	}
+	return harness.Usage{
+		InputTokens:      in,
+		OutputTokens:     out,
+		CacheReadTokens:  cacheRead,
+		CacheWriteTokens: cacheWrite,
+	}.WithContextTokens()
 }
 
 // ParseJSONResult maps a single JSON object from --output-format json.
@@ -188,12 +217,12 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 	sc.Buffer(buf, 10*1024*1024)
 
 	var (
-		sessionID       string
-		result          *harness.ExecutionResult
-		assistant       strings.Builder
-		sawPartial      bool
-		sawSubstantive  bool
-		state           = newStreamParseState()
+		sessionID      string
+		result         *harness.ExecutionResult
+		assistant      strings.Builder
+		sawPartial     bool
+		sawSubstantive bool
+		state          = newStreamParseState()
 	)
 
 	emit := func(d harness.StreamDelta) {
