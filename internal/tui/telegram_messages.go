@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/telegram"
 	"github.com/ricrsantos/ai_workflow_hero/internal/telegram/ipc"
 )
 
@@ -149,6 +150,9 @@ func (m model) handleTelegramEvent(msg telegramEventMsg) model {
 // acknowledges queued deliveries (telegram-ipc R3).
 func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 	ack := m.telegramAckCmd(msg.inboundID)
+	if telegram.IsHelpCommand(msg.text) {
+		return m, combineTimerCmds(ack, m.telegramOutboundCmd(telegram.CommandHelpText()))
+	}
 	if isTelegramKillCommand(msg.text) {
 		// Defense in depth: production /kill is handled in the IPC client
 		// goroutine before Program.Send. This path covers tests and any

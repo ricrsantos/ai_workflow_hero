@@ -4,6 +4,32 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-09 — Telegram address-token validation
+
+**Problem**: Unprefixed Telegram messages that contained `:` (e.g. pasted errors
+starting with `…agente: aiwkhero: …`) were misparsed as addressed inbound. The
+daemon replied `Unknown address…` even when `/select` pointed at a live
+instance; prefixing `aiwkhero:` made the same text deliver correctly.
+
+**Change**: `parseAddressed` now accepts only leading tokens matching the
+allocated abbrev charset (`[a-z0-9][a-z0-9_-]*`). Invalid left sides fall
+through to `/select` routing with the full original text. Updated UI-C09,
+ADR-063, architecture overview, and current-state.
+
+**Validation**: router + daemon regression tests for the reported prose;
+`go test ./internal/telegram/...` and `go test ./...`.
+
+## 2026-09-09 — Telegram /help command catalog
+
+**Change**: Added daemon-owned `/help` that returns the shared
+`internal/telegram.CommandHelpText` catalog (routing, control, cycle-config,
+permission, queue, and Hero slash commands). It works without `/select`, does
+not forward a harness turn, and is also intercepted for addressed
+`<addr>: /help`. TUI keeps a matching handler as defense in depth. Docs updated
+in PRD/UI/ADR-C09, architecture overview, README, and workflow-help.
+
+**Validation**: package + daemon + TUI help tests; `go test ./...`.
+
 ## 2026-09-09 — Telegram /interrupt and /kill
 
 **Decision**: Keep existing `/interrupt` as the remote equivalent of Chat

@@ -24,8 +24,10 @@ const (
 )
 
 // parseAddressed splits an inbound message into "<address>:" and its payload.
-// The address prefix is required and case-sensitive (PRD-C09-001 §3.2).
-// Malformed input returns ok=false.
+// The address prefix is case-sensitive and must match the allocated abbrev form
+// (lowercase [a-z0-9_-], same charset as normalizeAbbrev). Prose that happens
+// to contain ":" (e.g. "agente: ...") returns ok=false so /select routing can
+// forward the full text (PRD-C09-001 §3.2; ADR-063).
 func parseAddressed(text string) (address, payload string, ok bool) {
 	text = strings.TrimSpace(text)
 	idx := strings.Index(text, ":")
@@ -34,10 +36,32 @@ func parseAddressed(text string) (address, payload string, ok bool) {
 	}
 	address = text[:idx]
 	payload = strings.TrimSpace(text[idx+1:])
-	if address == "" || payload == "" {
+	if payload == "" || !validAddressToken(address) {
 		return "", "", false
 	}
 	return address, payload, true
+}
+
+// validAddressToken reports whether s looks like a daemon-allocated instance
+// address (base abbrev, base_N, or free_N). Uppercase and spaces are rejected
+// so ordinary sentences with colons fall through to selection routing.
+func validAddressToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			continue
+		case r == '_' || r == '-':
+			if i == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // classifyInbound classifies an addressed payload.

@@ -1,7 +1,8 @@
-// Package telegram holds the shared path layout and constants for the optional
-// Telegram remote-interface plugin (PRD-C09-001; ADR-059). It deliberately
-// contains no networking, IPC, or secret-handling logic: only path resolution
-// under the per-OS-user Hero state directory (~/.workflow-hero).
+// Package telegram holds the shared path layout, constants, and small
+// user-facing helpers for the optional Telegram remote-interface plugin
+// (PRD-C09-001; ADR-059). It deliberately contains no networking, IPC, or
+// secret-handling logic: only path resolution under the per-OS-user Hero state
+// directory (~/.workflow-hero) and shared command catalog text.
 package telegram
 
 import (

@@ -192,6 +192,8 @@ List the currently connected instances and select one by its number:
 
 After selection, send ordinary text or Hero slash commands without a prefix. The daemon replies `OK, Received.` once it forwards a message to the live instance. The selection survives daemon restarts, but if that instance disconnects the daemon asks you to run `/list` and `/select` again. Free Chat instances use `free_1`, `free_2`, and so on. You may still use an explicit address (for example, `ai_workflow_2: /hero-status`) for targeted delivery; unavailable explicitly addressed targets stay queued for 24 hours.
 
+Send `/help` for a compact catalog of every Telegram routing, control, cycle-config, permission, queue, and Hero slash command. It works before `/select` and does not start a harness turn.
+
 Send `/status` to see `idle`, the active cycle/stage, or `Waiting for harness`, with the TUI Session, AI wk, AI rp, and context-window counters. While a turn is running, the response also includes an `Agents` block with each active agent and its model; Free Chat is reported as the `harness` agent. In Settings → Telegram Plugin, set **Auto report** to `0` (disabled) or an interval from `1` to `300` minutes for periodic status messages.
 
 Send `/interrupt` to cancel the selected TUI's in-flight agent work the same way Chat `Ctrl+C` does (including concurrent Executes and `/hero-start` preflight). If nothing is running, the bot replies that no process is running.
@@ -633,6 +635,8 @@ Liste as instâncias conectadas e selecione uma pelo número:
 ```
 
 Depois da seleção, envie texto normal ou comandos Hero sem prefixo. O daemon responde `OK, Received.` quando encaminha a mensagem para a instância conectada. A seleção sobrevive a reinicializações do daemon, mas, se a instância desconectar, ele pede que você execute `/list` e `/select` novamente. Instâncias de Free Chat usam `free_1`, `free_2`, e assim por diante. Ainda é possível usar um endereço explícito (por exemplo, `ai_workflow_2: /hero-status`) para entrega direcionada; destinos explicitamente endereçados e indisponíveis permanecem na fila por 24 horas.
+
+Envie `/help` para ver um catálogo compacto de todos os comandos Telegram de roteamento, controle, configuração de ciclo, permissão, fila e slash Hero. Funciona antes do `/select` e não inicia um turno de harness.
 
 Envie `/status` para ver `idle`, o ciclo/etapa ativos ou `Waiting for harness`, junto dos contadores Session, AI wk, AI rp e da janela de contexto. Enquanto houver uma execução, a resposta também inclui um bloco `Agents` com cada agente ativo e seu modelo; o Free Chat aparece como o agente `harness`. Em Settings → Telegram Plugin, configure **Auto report** como `0` (desabilitado) ou um intervalo de `1` a `300` minutos para receber status periódicos.
 

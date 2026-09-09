@@ -3,14 +3,39 @@ package daemon
 import "testing"
 
 func TestParseAddressed(t *testing.T) {
-	addr, payload, ok := parseAddressed("myproj: /hero-status")
-	if !ok || addr != "myproj" || payload != "/hero-status" {
-		t.Fatalf("addr=%q payload=%q ok=%v", addr, payload, ok)
+	for _, tc := range []struct {
+		in      string
+		addr    string
+		payload string
+	}{
+		{in: "myproj: /hero-status", addr: "myproj", payload: "/hero-status"},
+		{in: "aiwkhero: hello", addr: "aiwkhero", payload: "hello"},
+		{in: "aiwkhero_2: /status", addr: "aiwkhero_2", payload: "/status"},
+		{in: "free_1: hi", addr: "free_1", payload: "hi"},
+		{in: "https://example.com", addr: "https", payload: "//example.com"},
+	} {
+		addr, payload, ok := parseAddressed(tc.in)
+		if !ok || addr != tc.addr || payload != tc.payload {
+			t.Errorf("parseAddressed(%q)=(%q, %q, %v), want (%q, %q, true)",
+				tc.in, addr, payload, ok, tc.addr, tc.payload)
+		}
 	}
 }
 
 func TestParseAddressedMalformed(t *testing.T) {
-	for _, in := range []string{"no-colon", ":leading", "addr:", "", "   "} {
+	prose := "Verifique porque está dando este erro na chamada do orchestration agente: aiwkhero: cursor agent execute failed: exit status 1"
+	for _, in := range []string{
+		"no-colon",
+		":leading",
+		"addr:",
+		"",
+		"   ",
+		"Nota: faça X",
+		prose,
+		"MyProj: hello", // uppercase rejected; live addresses are lowercased
+		"-bad: hi",
+		"_bad: hi",
+	} {
 		if _, _, ok := parseAddressed(in); ok {
 			t.Errorf("parseAddressed(%q) should fail", in)
 		}

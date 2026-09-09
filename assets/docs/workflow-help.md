@@ -192,6 +192,8 @@ Each model review uses the same numbered Telegram flow as `/model`: choose the h
 
 Telegram `/status` and automatic reports keep the `idle` response compact. During an active turn, they also include an `Agents` block with each operating agent and its model; the ordinary Free Chat parent is reported as `harness`.
 
+Telegram `/help` returns a compact catalog of routing (`/list`, `/select`), control (`/status`, `/interrupt`, `/kill`), cycle-config, permission, queue, and Hero slash commands. It is answered by the daemon, works before `/select`, and does not start a harness turn.
+
 Telegram `/interrupt` cancels in-flight Chat Execute work (including concurrent executions and `/hero-start` preflight) using the same path as Chat `Ctrl+C`, without starting a harness turn. Telegram `/kill` is a last-resort force exit of the selected TUI only: the IPC client best-effort replies `Killing TUI.` and then `SIGKILL`s that process without waiting on the Bubble Tea Update loop; the Telegram daemon is not stopped.
 
 If a harness asks for native access (for example, OpenCode tool permission), the TUI keeps the local `y`/`n` prompt and forwards the request to paired Telegram as a separate approval. Reply with `/hero-permission <id> allow` or `/hero-permission <id> deny`; the ID prevents an old response from releasing a different request. Cycle approval notifications created by `hero` commands running inside OpenCode are also relayed by the owning TUI; SQLite remains the audit log and is not polled for live delivery.
@@ -531,6 +533,8 @@ Com o plugin opcional do Telegram conectado à TUI correta, envie `/hero-config`
 Cada revisão de modelo usa o mesmo fluxo numerado do `/model` pelo Telegram: escolha o harness, o modelo e cada propriedade de modelo disponível. O wizard mantém um rascunho em memória até a escolha final `Salvar configuração`. `/hero-config-show` mostra uma visão compacta e sem segredos do `workflow-config.yml` canônico; enquanto o wizard estiver aberto, mostra o rascunho. `/hero-config cancel` descarta o rascunho sem alterar o arquivo. Os modelos dos agentes do ciclo são salvos no YAML do ciclo e não alteram o modelo padrão do Free Chat em `hero.json`.
 
 O `/status` do Telegram e os relatórios automáticos mantêm a resposta `idle` compacta. Durante uma execução, eles também incluem um bloco `Agents` com cada agente em operação e seu modelo; o processo pai do Free Chat aparece como `harness`.
+
+O `/help` do Telegram devolve um catálogo compacto dos comandos de roteamento (`/list`, `/select`), controle (`/status`, `/interrupt`, `/kill`), configuração de ciclo, permissão, fila e slash Hero. É respondido pelo daemon, funciona antes do `/select` e não inicia um turno de harness.
 
 O `/interrupt` do Telegram cancela o Execute em andamento no Chat (incluindo execuções concorrentes e o preflight de `/hero-start`) pelo mesmo caminho do `Ctrl+C`, sem iniciar um turno de harness. O `/kill` do Telegram é uma saída forçada de último recurso só da TUI selecionada: o cliente IPC responde best-effort `Killing TUI.` e então aplica `SIGKILL` nesse processo sem esperar o loop Update do Bubble Tea; o daemon do Telegram não é parado.
 

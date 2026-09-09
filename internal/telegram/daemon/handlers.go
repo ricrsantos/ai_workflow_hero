@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/redact"
+	"github.com/ricrsantos/ai_workflow_hero/internal/telegram"
 	"github.com/ricrsantos/ai_workflow_hero/internal/telegram/ipc"
 )
 
@@ -136,6 +137,10 @@ func (d *Daemon) processPairing(ctx context.Context, u Update, text string) {
 // ordinary input to the selected live TUI. Explicit addressing is retained for
 // backwards-compatible pending-queue cancellation and delivery.
 func (d *Daemon) routeInbound(ctx context.Context, u Update, text string) {
+	if telegram.IsHelpCommand(text) {
+		d.send(ctx, u.ChatID, telegram.CommandHelpText())
+		return
+	}
 	if text == listCommand {
 		d.listInstances(ctx, u.ChatID)
 		return
@@ -210,6 +215,10 @@ func (d *Daemon) selectInstance(ctx context.Context, chatID string, n int) {
 }
 
 func (d *Daemon) routeAddressed(ctx context.Context, u Update, address, payload string) {
+	if telegram.IsHelpCommand(payload) {
+		d.send(ctx, u.ChatID, telegram.CommandHelpText())
+		return
+	}
 	action, arg := classifyInbound(payload)
 
 	if action == actionCancelPending {

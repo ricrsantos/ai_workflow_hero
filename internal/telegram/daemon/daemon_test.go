@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -142,6 +143,100 @@ func TestProcessUpdateSelectedDisconnectedInstanceReturnsError(t *testing.T) {
 	want := "CHAT::Selected instance is disconnected. Send /list, then /select <number>."
 	if got := bot.sentTexts(); len(got) != 1 || got[0] != want {
 		t.Fatalf("replies=%v want %q", got, want)
+	}
+}
+
+func TestProcessUpdateColonProseRoutesToSelectedInstance(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+	out := make(chan ipc.Message, 2)
+	_, addr := d.registry.register("/p", ipc.ModeCycle, "aiwkhero", out)
+	if addr != "aiwkhero" {
+		t.Fatalf("addr=%q", addr)
+	}
+	d.processUpdate(context.Background(), Update{UpdateID: 1, ChatID: "CHAT", Text: "/select 1"})
+
+	prose := "Verifique porque está dando este erro na chamada do orchestration agente: aiwkhero: cursor agent execute failed: exit status 1 (Failed to claim persistent session for chat \"ses_f810a8dc9ffeO6nD2Xb69Dnunp\": Persistent-session chat ID must be a UUID)"
+	d.processUpdate(context.Background(), Update{UpdateID: 2, ChatID: "CHAT", Text: prose})
+
+	select {
+	case m := <-out:
+		if m.Text != prose || m.IsCommand {
+			t.Fatalf("selected inbound=%+v", m)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("selected instance did not receive colon prose")
+	}
+
+	prefixedPayload := "cursor agent execute failed: exit status 1"
+	d.processUpdate(context.Background(), Update{
+		UpdateID: 3, ChatID: "CHAT", Text: "aiwkhero: " + prefixedPayload,
+	})
+	select {
+	case m := <-out:
+		if m.Text != prefixedPayload || m.IsCommand {
+			t.Fatalf("addressed inbound=%+v", m)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("addressed instance did not receive payload")
+	}
+
+	want := []string{
+		"CHAT::Selected instance: aiwkhero.",
+		"CHAT::OK, Received.",
+		"CHAT::OK, Received.",
+	}
+	if got := bot.sentTexts(); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("replies=%v want %v", got, want)
+	}
+}
+
+func TestProcessUpdateHelpWithoutSelection(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+
+	d.processUpdate(context.Background(), Update{UpdateID: 1, ChatID: "CHAT", Text: "/help"})
+
+	got := bot.sentTexts()
+	if len(got) != 1 {
+		t.Fatalf("replies=%v", got)
+	}
+	if !strings.Contains(got[0], "CHAT::Hero Telegram commands") {
+		t.Fatalf("help reply=%q", got[0])
+	}
+	if !strings.Contains(got[0], "/interrupt") || !strings.Contains(got[0], "/kill") {
+		t.Fatalf("help missing control commands: %q", got[0])
+	}
+}
+
+func TestProcessUpdateHelpDoesNotForwardToSelectedInstance(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+	out := make(chan ipc.Message, 1)
+	_, _ = d.registry.register("/p", ipc.ModeCycle, "proj", out)
+	if err := d.store.SetSelectedAddress("proj"); err != nil {
+		t.Fatal(err)
+	}
+
+	d.processUpdate(context.Background(), Update{UpdateID: 1, ChatID: "CHAT", Text: "/help"})
+	d.processUpdate(context.Background(), Update{UpdateID: 2, ChatID: "CHAT", Text: "proj: /help"})
+
+	select {
+	case m := <-out:
+		t.Fatalf("help must not reach TUI: %+v", m)
+	default:
+	}
+	got := bot.sentTexts()
+	if len(got) != 2 {
+		t.Fatalf("replies=%v", got)
+	}
+	for i, reply := range got {
+		if !strings.Contains(reply, "Hero Telegram commands") {
+			t.Fatalf("reply[%d]=%q", i, reply)
+		}
+		if strings.Contains(reply, "OK, Received.") {
+			t.Fatalf("help must not send delivery ack: %q", reply)
+		}
 	}
 }
 

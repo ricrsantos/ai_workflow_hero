@@ -353,6 +353,31 @@ func TestTelegramInterruptWithoutActiveProcessDoesNotStartHarnessTurn(t *testing
 	}
 }
 
+func TestTelegramHelpReturnsCommandCatalog(t *testing.T) {
+	outbound := []string{}
+	m := NewTestModel(nil)
+	m.telegram = &telegramState{
+		connected: true,
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	next, cmd := m.handleTelegramInbound(telegramInboundMsg{text: "/help", address: "proj"})
+	if cmd != nil {
+		_ = cmd()
+	}
+	if next.streaming {
+		t.Fatal("/help must not start a harness turn")
+	}
+	if len(outbound) != 1 || !strings.Contains(outbound[0], "Hero Telegram commands") {
+		t.Fatalf("/help outbound=%v", outbound)
+	}
+	if !strings.Contains(outbound[0], "/status") || !strings.Contains(outbound[0], "/kill") {
+		t.Fatalf("/help missing commands: %q", outbound[0])
+	}
+}
+
 func TestIsTelegramKillCommand(t *testing.T) {
 	cases := []struct {
 		text string
