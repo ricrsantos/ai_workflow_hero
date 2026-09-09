@@ -3,7 +3,9 @@ package tui
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -14,8 +16,24 @@ import (
 
 const (
 	telegramInterruptCommand         = "/interrupt"
+	telegramKillCommand              = "/kill"
+	telegramKillOutboundText         = "Killing TUI."
 	telegramHarnessPermissionCommand = "/hero-permission"
 )
+
+// telegramForceKillProcess terminates the TUI process immediately. Tests
+// replace it so unit coverage never SIGKILLs the test binary.
+var telegramForceKillProcess = func() {
+	pid := os.Getpid()
+	_ = syscall.Kill(pid, syscall.SIGKILL)
+	// Unreachable after a successful SIGKILL; keep a hard fallback so a
+	// last-resort /kill never returns into a stuck Update loop.
+	os.Exit(1)
+}
+
+func isTelegramKillCommand(text string) bool {
+	return strings.EqualFold(strings.TrimSpace(text), telegramKillCommand)
+}
 
 // telegramOriginLabel renders the directional transcript label for a
 // Telegram-routed message (UI-C09-001 §3). User messages use ←; answering agent
@@ -131,6 +149,13 @@ func (m model) handleTelegramEvent(msg telegramEventMsg) model {
 // acknowledges queued deliveries (telegram-ipc R3).
 func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 	ack := m.telegramAckCmd(msg.inboundID)
+	if isTelegramKillCommand(msg.text) {
+		// Defense in depth: production /kill is handled in the IPC client
+		// goroutine before Program.Send. This path covers tests and any
+		// inbound that still reaches Update.
+		m.applyTelegramKill(msg.inboundID)
+		return m, nil
+	}
 	if strings.EqualFold(strings.TrimSpace(msg.text), telegramStatusCommand) {
 		return m, combineTimerCmds(ack, m.telegramOutboundCmd(m.telegramStatusText(time.Now())))
 	}
@@ -188,9 +213,9 @@ func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 	return next, combineTimerCmds(ack, cmd)
 }
 
-// handleTelegramInterrupt mirrors the active-process branch of Chat's Esc
-// handling. It cancels every in-flight Execute, including concurrent stage
-// executions, without sending the command through a harness turn.
+// handleTelegramInterrupt mirrors Chat Ctrl+C. It cancels every in-flight
+// Execute, including concurrent stage executions and /hero-start preflight,
+// without sending the command through a harness turn.
 func (m model) handleTelegramInterrupt() (model, tea.Cmd) {
 	if m.heroStartBootstrapping || m.heroStartPreparing {
 		next, cmd := m.cancelHeroStartPreparation()
@@ -200,6 +225,20 @@ func (m model) handleTelegramInterrupt() (model, tea.Cmd) {
 		return m, combineTimerCmds(m.cancelStreamCmd(), m.telegramOutboundCmd("Interrupt requested."))
 	}
 	return m, m.telegramOutboundCmd("No process is running.")
+}
+
+// applyTelegramKill is the last-resort remote shutdown. It best-effort acks
+// delivery, sends a short outbound notice, then force-kills this process.
+// It must not depend on Bubble Tea completing a Cmd.
+func (m model) applyTelegramKill(inboundID string) {
+	if m.telegram != nil && m.telegram.recordOutbound != nil {
+		m.telegram.recordOutbound(telegramKillOutboundText)
+	}
+	if m.telegram != nil && m.telegram.client != nil {
+		m.telegram.client.applyTelegramKill(inboundID)
+		return
+	}
+	telegramForceKillProcess()
 }
 
 func parseTelegramHarnessPermission(text string) (id string, approved, matched, valid bool) {

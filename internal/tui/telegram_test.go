@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
+	"github.com/ricrsantos/ai_workflow_hero/internal/telegram/ipc"
 )
 
 func TestTelegramOriginLabel(t *testing.T) {
@@ -348,6 +350,112 @@ func TestTelegramInterruptWithoutActiveProcessDoesNotStartHarnessTurn(t *testing
 	}
 	if len(outbound) != 1 || outbound[0] != "No process is running." {
 		t.Fatalf("idle interrupt outbound=%v", outbound)
+	}
+}
+
+func TestIsTelegramKillCommand(t *testing.T) {
+	cases := []struct {
+		text string
+		want bool
+	}{
+		{"/kill", true},
+		{" /Kill ", true},
+		{"/KILL", true},
+		{"/interrupt", false},
+		{"/kill now", false},
+		{"kill", false},
+	}
+	for _, tc := range cases {
+		if got := isTelegramKillCommand(tc.text); got != tc.want {
+			t.Fatalf("isTelegramKillCommand(%q)=%v want %v", tc.text, got, tc.want)
+		}
+	}
+}
+
+func TestTelegramKillInboundForceKillsWithoutHarnessTurn(t *testing.T) {
+	old := telegramForceKillProcess
+	killed := false
+	telegramForceKillProcess = func() { killed = true }
+	t.Cleanup(func() { telegramForceKillProcess = old })
+
+	outbound := []string{}
+	m := NewTestModel(nil)
+	m.streaming = true
+	m.telegram = &telegramState{
+		connected: true,
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	next, cmd := m.handleTelegramInbound(telegramInboundMsg{
+		text:      telegramKillCommand,
+		inboundID: "in-kill",
+		address:   "proj",
+	})
+	if cmd != nil {
+		t.Fatal("kill must not schedule Bubble Tea cmds that could hang")
+	}
+	if !killed {
+		t.Fatal("kill must force-kill the TUI process")
+	}
+	if len(outbound) != 1 || outbound[0] != telegramKillOutboundText {
+		t.Fatalf("kill outbound=%v", outbound)
+	}
+	if !next.streaming {
+		t.Fatal("kill must not run the interrupt/cancel path")
+	}
+}
+
+func TestTelegramClientApplyKillAcksAndOutboundsBeforeForceKill(t *testing.T) {
+	old := telegramForceKillProcess
+	killed := false
+	telegramForceKillProcess = func() { killed = true }
+	t.Cleanup(func() { telegramForceKillProcess = old })
+
+	server, client := net.Pipe()
+	t.Cleanup(func() {
+		_ = server.Close()
+		_ = client.Close()
+	})
+
+	recvDone := make(chan []ipc.Message, 1)
+	recvErr := make(chan error, 1)
+	go func() {
+		pc := ipc.NewConn(server)
+		var got []ipc.Message
+		for i := 0; i < 2; i++ {
+			m, err := pc.Recv()
+			if err != nil {
+				recvErr <- err
+				return
+			}
+			got = append(got, m)
+		}
+		recvDone <- got
+	}()
+
+	c := &telegramClient{conn: ipc.NewConn(client)}
+	c.applyTelegramKill("in-42")
+	if !killed {
+		t.Fatal("client kill must force-kill after sending frames")
+	}
+
+	select {
+	case msgs := <-recvDone:
+		if len(msgs) != 2 {
+			t.Fatalf("frames=%d want 2", len(msgs))
+		}
+		if msgs[0].Type != ipc.TypeAckDelivery || msgs[0].AckID != "in-42" {
+			t.Fatalf("ack frame=%+v", msgs[0])
+		}
+		if msgs[1].Type != ipc.TypeOutbound || msgs[1].OutboundText != telegramKillOutboundText {
+			t.Fatalf("outbound frame=%+v", msgs[1])
+		}
+	case err := <-recvErr:
+		t.Fatal(err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for kill frames")
 	}
 }
 

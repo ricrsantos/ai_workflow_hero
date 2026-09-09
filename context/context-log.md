@@ -4,6 +4,20 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-09 — Telegram /interrupt and /kill
+
+**Decision**: Keep existing `/interrupt` as the remote equivalent of Chat
+`Ctrl+C`. Add `/kill` as a last-resort force exit of the selected TUI only.
+
+**Change**: `/kill` is intercepted on the Telegram IPC client goroutine before
+`Program.Send`, best-effort acks delivery, sends `Killing TUI.`, then
+`SIGKILL`s the TUI process (injectable in tests). Update-path handling remains
+as defense in depth. Documented in PRD/UI/ADR-C09, architecture overview,
+README (EN/PT), and `workflow-help.md`. Architecture boundaries unchanged.
+
+**Validation**: `TestIsTelegramKillCommand`, inbound force-kill test, client
+ack/outbound-before-kill test; full `go test ./...` after implementation.
+
 ## 2026-09-08 — Telegram /hero-config keep-first options
 
 **Problem**: The Telegram cycle-config wizard exposed "manter configuração atual"

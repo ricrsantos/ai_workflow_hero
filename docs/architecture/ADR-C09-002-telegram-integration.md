@@ -54,6 +54,8 @@
 
 **Status and reply routing extension:** `/status` is handled by the selected TUI rather than by the daemon or a harness. It uses the TUI's live cycle, execution, timer, and context-window state; while a turn is active it also reports the live agent names and models, naming the ordinary Free Chat parent `harness`. Project-local `telegram.auto_report_minutes` (`0` or `1–300`) schedules the same non-idle reply using the existing non-blocking Bubble Tea timer tick; automatic reporting is silent while idle, while an explicit `/status` may return `idle`. Project-local boolean `telegram.always_send` defaults to `false` and, when enabled, adds completed local TUI harness-turn responses to the existing Telegram outbound path. This keeps the daemon transport-only and avoids a second status/reply model.
 
+**Remote control extension:** `/interrupt` is handled by the selected TUI and reuses the Chat `Ctrl+C` cancellation path for in-flight Execute and `/hero-start` preflight without a harness turn. `/kill` is a last-resort TUI-only force exit: the IPC client goroutine best-effort acks delivery, sends `Killing TUI.`, then `SIGKILL`s the TUI process so a wedged Update loop cannot block shutdown. The daemon is not killed.
+
 ## ADR-064: Project and daemon rotating logs with managed ignore migration
 
 **Context:** The existing TUI log is a single `.workflow-hero/tui.log`. Telegram adds per-project conversation/daemon-related diagnostics plus daemon-global transport diagnostics; unbounded files and tracked logs are unacceptable.

@@ -260,6 +260,13 @@ func (c *telegramClient) connectOnce() error {
 		}
 		switch m.Type {
 		case ipc.TypeInbound:
+			// /kill must not wait on the Bubble Tea Update loop: if Chat is
+			// wedged, Program.Send would never run. Intercept here so the
+			// IPC goroutine can force-kill the process.
+			if isTelegramKillCommand(m.Text) {
+				c.applyTelegramKill(m.InboundID)
+				return fmt.Errorf("telegram: tui killed by remote /kill")
+			}
 			c.emit(telegramInboundMsg{
 				inboundID: m.InboundID,
 				text:      m.Text,
@@ -282,6 +289,23 @@ func (c *telegramClient) emit(msg tea.Msg) {
 	case <-c.quit:
 	case c.msgCh <- msg:
 	}
+}
+
+// applyTelegramKill best-effort acks the inbound frame, notifies Telegram,
+// then force-kills this process. It runs on the IPC client goroutine so a
+// stuck Update loop cannot block the last-resort shutdown.
+func (c *telegramClient) applyTelegramKill(inboundID string) {
+	if c != nil {
+		if id := strings.TrimSpace(inboundID); id != "" {
+			if err := c.Send(ipc.Message{Type: ipc.TypeAckDelivery, AckID: id}); err != nil {
+				slog.Debug("telegram kill ack failed", "error", err)
+			}
+		}
+		if err := c.Send(ipc.Message{Type: ipc.TypeOutbound, OutboundText: telegramKillOutboundText}); err != nil {
+			slog.Debug("telegram kill outbound failed", "error", err)
+		}
+	}
+	telegramForceKillProcess()
 }
 
 func (c *telegramClient) address() string {

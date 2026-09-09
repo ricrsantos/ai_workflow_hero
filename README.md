@@ -194,6 +194,10 @@ After selection, send ordinary text or Hero slash commands without a prefix. The
 
 Send `/status` to see `idle`, the active cycle/stage, or `Waiting for harness`, with the TUI Session, AI wk, AI rp, and context-window counters. While a turn is running, the response also includes an `Agents` block with each active agent and its model; Free Chat is reported as the `harness` agent. In Settings → Telegram Plugin, set **Auto report** to `0` (disabled) or an interval from `1` to `300` minutes for periodic status messages.
 
+Send `/interrupt` to cancel the selected TUI's in-flight agent work the same way Chat `Ctrl+C` does (including concurrent Executes and `/hero-start` preflight). If nothing is running, the bot replies that no process is running.
+
+Send `/kill` only as a last resort when the selected TUI is unusable: it force-kills that TUI process (`SIGKILL`) without confirmation. You should see a best-effort `Killing TUI.` reply; the Telegram daemon keeps running so other instances stay connected.
+
 #### Configure the active cycle from Telegram
 
 After `/hero-new`, send `/hero-config` to open the guided wizard. It collects the title, objective, preferred language, scope, and enabled stages, then optionally reviews the cycle-agent and fallback models. Model choices use the same numbered harness → model → property flow as `/model`.
@@ -631,6 +635,10 @@ Liste as instâncias conectadas e selecione uma pelo número:
 Depois da seleção, envie texto normal ou comandos Hero sem prefixo. O daemon responde `OK, Received.` quando encaminha a mensagem para a instância conectada. A seleção sobrevive a reinicializações do daemon, mas, se a instância desconectar, ele pede que você execute `/list` e `/select` novamente. Instâncias de Free Chat usam `free_1`, `free_2`, e assim por diante. Ainda é possível usar um endereço explícito (por exemplo, `ai_workflow_2: /hero-status`) para entrega direcionada; destinos explicitamente endereçados e indisponíveis permanecem na fila por 24 horas.
 
 Envie `/status` para ver `idle`, o ciclo/etapa ativos ou `Waiting for harness`, junto dos contadores Session, AI wk, AI rp e da janela de contexto. Enquanto houver uma execução, a resposta também inclui um bloco `Agents` com cada agente ativo e seu modelo; o Free Chat aparece como o agente `harness`. Em Settings → Telegram Plugin, configure **Auto report** como `0` (desabilitado) ou um intervalo de `1` a `300` minutos para receber status periódicos.
+
+Envie `/interrupt` para cancelar o trabalho em andamento na TUI selecionada, do mesmo modo que o `Ctrl+C` no Chat (incluindo Executes concorrentes e o preflight de `/hero-start`). Se nada estiver rodando, o bot responde que não há processo ativo.
+
+Envie `/kill` só como último recurso quando a TUI selecionada estiver inutilizável: ele mata à força o processo dessa TUI (`SIGKILL`), sem confirmação. Você deve ver uma resposta best-effort `Killing TUI.`; o daemon do Telegram continua ativo para as demais instâncias.
 
 #### Configurar o ciclo ativo pelo Telegram
 
