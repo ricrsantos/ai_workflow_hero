@@ -39,7 +39,7 @@ func (m model) renderContent() string {
 func (m model) renderStatus() string {
 	var b strings.Builder
 	if m.status.CycleNumber == 0 && len(m.status.Stages) == 0 {
-		b.WriteString(mutedStyle.Render("No active cycle. Run /hero-new, then /hero-start."))
+		b.WriteString(mutedStyle.Render("No current cycle. Run /hero-new, then /hero-start."))
 		return b.String()
 	}
 	b.WriteString(headerStyle.Render(fmt.Sprintf("Cycle C%d — %s", m.status.CycleNumber, m.status.Title)))

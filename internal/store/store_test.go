@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -129,6 +130,56 @@ func TestOpenMigrateAndRoundTrip(t *testing.T) {
 	active, err = s.GetActiveCycle()
 	if err != nil || active.SessionDurationSeconds != 27 {
 		t.Fatalf("session duration = %d, want 27 (err=%v)", active.SessionDurationSeconds, err)
+	}
+}
+
+func TestGetCurrentCyclePrefersActiveAndRetainsCompleted(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(filepath.Join(dir, "hero.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	completedID, err := s.CreateCycle(Cycle{
+		Number: 2, Title: "Completed", Status: CycleStatusCompleted,
+		CompletedAt: nowRFC3339(), ConfigSnapshotJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activeID, err := s.CreateCycle(Cycle{
+		Number: 1, Title: "Active", Status: CycleStatusActive,
+		StartedAt: nowRFC3339(), ConfigSnapshotJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	current, err := s.GetCurrentCycle()
+	if err != nil || current.ID != activeID {
+		t.Fatalf("current with active cycle = %+v, err=%v", current, err)
+	}
+	if _, err := s.GetActiveCycle(); err != nil {
+		t.Fatalf("GetActiveCycle with active cycle: %v", err)
+	}
+
+	if err := s.UpdateCycleStatus(activeID, CycleStatusArchived, ""); err != nil {
+		t.Fatal(err)
+	}
+	current, err = s.GetCurrentCycle()
+	if err != nil || current.ID != completedID || current.Status != CycleStatusCompleted {
+		t.Fatalf("current after active archive = %+v, err=%v", current, err)
+	}
+	if _, err := s.GetActiveCycle(); !errors.Is(err, ErrNoActiveCycle) {
+		t.Fatalf("GetActiveCycle after active archive: %v", err)
+	}
+
+	if err := s.UpdateCycleStatus(completedID, CycleStatusArchived, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetCurrentCycle(); !errors.Is(err, ErrNoActiveCycle) {
+		t.Fatalf("GetCurrentCycle after all archives: %v", err)
 	}
 }
 

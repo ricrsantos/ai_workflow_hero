@@ -18,6 +18,8 @@ The archive path is `.workflow-hero/cycles/archive/C<N>-<YYYY-MM-DD>-<slug>/` (e
 
 When the cycle has a linked OpenSpec change, archive it **before** the Hero filesystem archive. The CLI orchestrates this; agents invoke `hero cycle archive` (do not hand-roll folder moves).
 
+A cycle in `completed` state is the normal result of `/hero-finish` and is a valid archive target. Do not require the cycle to be `active`.
+
 **Name resolution** (CLI applies this order):
 
 1. Stored `openspec_change` on the cycle (set during Planning via `hero cycle openspec-change <name>`).

@@ -288,7 +288,7 @@ hero update-models
 | `/hero-continue` | Grant extra iterations after escalation |
 | `/hero-back` | Reopen Planning after SDD ambiguity |
 | `/hero-finish` | Finish the cycle via `hero finish` (records `completed_at` in SQLite) |
-| `/hero-archive` | Archive current cycle via `hero cycle archive` (folder date from store `completed_at`) |
+| `/hero-archive` | Archive the active or completed-awaiting-archive cycle via `hero cycle archive` (folder date from store `completed_at`) |
 | `/hero-resume` | Restore an archived cycle |
 | `/hero-sync` | Activate / re-sync Hero on an existing project (also merges pending items from `docs/product/` and `docs/architecture/` into `current-state.md`) |
 | `/hero-status` | Show cycle status in chat |

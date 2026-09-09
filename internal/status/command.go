@@ -21,7 +21,9 @@ func NewCommand(version string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show current cycle workflow status",
-		Long: `Read the active cycle stage machine from SQLite and display status.
+		Long: `Read the current cycle stage machine from SQLite and display status.
+
+A completed cycle remains visible until hero cycle archive moves it out of the current workspace.
 
 Outputs a table by default, or JSON with --json.`,
 		SilenceErrors: true,
@@ -70,7 +72,7 @@ Outputs a table by default, or JSON with --json.`,
 
 // Options holds status command options.
 type Options struct {
-	ProjectDir    string
+	ProjectDir     string
 	ClaudeCLIProbe ClaudeCLIProbe
 }
 
@@ -97,7 +99,7 @@ func Run(opts Options) (cycle.StatusView, error) {
 // PrintTable writes a human-readable table to w.
 func PrintTable(w io.Writer, ws cycle.StatusView) {
 	if len(ws.Stages) == 0 {
-		output.Progressf(w, "No active cycle. Run hero cycle new (or /hero-new) to start.")
+		output.Progressf(w, "No current cycle. Run hero cycle new (or /hero-new) to start.")
 		return
 	}
 	if ws.CycleNumber > 0 {

@@ -130,6 +130,10 @@ func TestServiceCycleLifecycleAndReads(t *testing.T) {
 	if err := svc.Finish(""); err != nil {
 		t.Fatal(err)
 	}
+	completedStatus, err := svc.Status()
+	if err != nil || completedStatus.CycleNumber != 1 || completedStatus.Status != store.CycleStatusCompleted || len(completedStatus.Stages) == 0 {
+		t.Fatalf("status after finish: %+v %v", completedStatus, err)
+	}
 	sessionCycle, err := svc.SessionCycle()
 	if err != nil || sessionCycle == nil || sessionCycle.Number != 1 || sessionCycle.Status != store.CycleStatusCompleted {
 		t.Fatalf("session cycle after finish: %+v %v", sessionCycle, err)

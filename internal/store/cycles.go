@@ -29,7 +29,8 @@ func (s *Store) GetCycle(id int64) (Cycle, error) {
 }
 
 // GetActiveCycle returns the active (non-archived) current cycle, if any.
-// Prefers status=active; falls back to the highest-number non-archived cycle.
+// This query intentionally remains active-only because stage and lifecycle
+// mutations must never operate on a completed or cancelled cycle.
 func (s *Store) GetActiveCycle() (Cycle, error) {
 	row := s.db.QueryRow(`
 SELECT `+cycleSelectCols+`
@@ -37,6 +38,23 @@ FROM cycles
 WHERE status = ?
 ORDER BY number DESC
 LIMIT 1`, CycleStatusActive)
+	c, err := scanCycle(row)
+	if err == sql.ErrNoRows {
+		return Cycle{}, ErrNoActiveCycle
+	}
+	return c, err
+}
+
+// GetCurrentCycle returns the cycle shown by status: the active cycle, or the
+// latest completed cycle while it is waiting to be archived. Cancelled and
+// archived cycles are not current for status purposes.
+func (s *Store) GetCurrentCycle() (Cycle, error) {
+	row := s.db.QueryRow(`
+SELECT `+cycleSelectCols+`
+FROM cycles
+WHERE status IN (?, ?)
+ORDER BY CASE WHEN status = ? THEN 0 ELSE 1 END, number DESC
+LIMIT 1`, CycleStatusActive, CycleStatusCompleted, CycleStatusActive)
 	c, err := scanCycle(row)
 	if err == sql.ErrNoRows {
 		return Cycle{}, ErrNoActiveCycle

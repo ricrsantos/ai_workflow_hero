@@ -15,6 +15,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 func TestCanLaunch_RefusesNO_COLOR(t *testing.T) {
@@ -92,6 +93,21 @@ func TestNumberedNavigationUsesVisibleScreenOrder(t *testing.T) {
 				t.Fatalf("%s opened %v, want %v", tc.key, CurrentScreen(next), tc.screen)
 			}
 		})
+	}
+}
+
+func TestCompletedCycleDoesNotExposeActiveCycleChrome(t *testing.T) {
+	m := NewTestModel(nil)
+	m.status.CycleNumber = 13
+	m.status.Status = store.CycleStatusCompleted
+
+	if m.hasActiveCycle() {
+		t.Fatal("completed cycle must not be treated as active by the TUI")
+	}
+	for _, item := range m.visibleNavScreens() {
+		if item.screen == screenConfig {
+			t.Fatal("Config must remain hidden until a cycle is active")
+		}
 	}
 }
 
@@ -927,6 +943,21 @@ stages:
 		t.Fatal(err)
 	}
 	return svc
+}
+
+func TestArchivePreconditionAcceptsCompletedCycle(t *testing.T) {
+	svc := newTestService(t)
+	if err := svc.Finish(""); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewTestModel(svc)
+	if errMsg := m.validateArchivePreconditions(); errMsg != "" {
+		t.Fatalf("completed cycle rejected by archive precondition: %s", errMsg)
+	}
+	if errMsg := m.validateOrchestratorPreconditions(); errMsg == "" {
+		t.Fatal("completed cycle must remain unavailable to active-only transitions")
+	}
 }
 
 func TestHeroModelPickerSelectsAndPersists(t *testing.T) {

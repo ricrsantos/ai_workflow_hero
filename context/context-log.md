@@ -4,6 +4,14 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-09 — Completed cycles remain archiveable
+
+**Problem**: `/hero-finish` correctly changed C13 to `completed`, but `cycle.Service.Status()` and the TUI archive precondition only looked for `active`, so `/hero-status` appeared empty and `/hero-archive` was rejected before reaching `hero cycle archive`.
+
+**Change**: Added the read-only `GetCurrentCycle()` lookup for active or latest completed cycles. Status now exposes a completed cycle until archive; active-only lifecycle mutations and the TUI Config screen remain protected. `/hero-archive` has its own precondition that accepts both `active` and `completed`, and all four Runtime projections document the finish → archive transition.
+
+**Validation**: `go test ./...`; `go run ./cmd/hero status --json` reports C13 with `status: completed` and its stage rows. C13 was not archived during this correction.
+
 ## 2026-09-09 — C13 finished via /hero-finish
 
 **Problem**: Implementation 9/9 was still Running after the TUI completion gate refused the `generic_agent` report (unassigned `task-06.3-projection-lifecycle` on a fully checked `tasks.md`). QA and Judge were Waiting after the last Judge loop-back. The user issued `/hero-finish`.

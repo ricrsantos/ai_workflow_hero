@@ -153,9 +153,11 @@ type StatusStage struct {
 	HumanApproval string `json:"humanApproval"`
 }
 
-// Status returns the active cycle stage machine view.
+// Status returns the current cycle stage machine view. A completed cycle is
+// kept visible until it is archived so the finish → archive lifecycle remains
+// observable to the CLI and TUI.
 func (s *Service) Status() (StatusView, error) {
-	c, err := s.Store.GetActiveCycle()
+	c, err := s.Store.GetCurrentCycle()
 	if err != nil {
 		if errors.Is(err, store.ErrNoActiveCycle) {
 			return StatusView{Stages: nil}, nil
@@ -453,17 +455,25 @@ func (s *Service) ArchiveWithOptions(opts ArchiveOptions) (ArchiveResult, error)
 }
 
 func (s *Service) resolveArchiveCycle() (*store.Cycle, error) {
-	c, err := s.Store.GetActiveCycle()
-	if err != nil {
-		// Also allow archiving a completed (non-active) latest cycle.
-		cycles, listErr := s.Store.ListCycles()
-		if listErr != nil || len(cycles) == 0 {
-			return nil, err
-		}
-		c = cycles[len(cycles)-1]
-		if c.Status == store.CycleStatusArchived {
-			return nil, fmt.Errorf("cycle C%d is already archived", c.Number)
-		}
+	// Match status semantics first: an active cycle wins, otherwise the latest
+	// completed cycle remains the archive target until it is moved out.
+	c, err := s.Store.GetCurrentCycle()
+	if err == nil {
+		return &c, nil
+	}
+	if !errors.Is(err, store.ErrNoActiveCycle) {
+		return nil, err
+	}
+
+	// Preserve the legacy ability to archive a cancelled cycle when there is
+	// no active or completed cycle left to archive.
+	cycles, listErr := s.Store.ListCycles()
+	if listErr != nil || len(cycles) == 0 {
+		return nil, err
+	}
+	c = cycles[len(cycles)-1]
+	if c.Status == store.CycleStatusArchived {
+		return nil, fmt.Errorf("cycle C%d is already archived", c.Number)
 	}
 	return &c, nil
 }

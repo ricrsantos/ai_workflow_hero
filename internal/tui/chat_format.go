@@ -225,7 +225,7 @@ func tuiHeroStatusPreamble() string {
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
 		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
 		"- Run `hero status` (or `hero status --json`) and relay the full CLI table: Stage, Status, Iteration, Human Approval.\n" +
-		"- If no active cycle, tell the user to run /hero-new in the Hero TUI.\n" +
+		"- If there is no current cycle (active or completed and awaiting archive), tell the user to run /hero-new in the Hero TUI.\n" +
 		"- Do NOT read workflow.md for operational status — SQLite via hero status is the source of truth.\n\n" +
 		"---\n\n"
 }
@@ -235,7 +235,7 @@ func tuiHeroArchivePreamble() string {
 		"You are running /hero-archive inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ✗).\n" +
 		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
-		"- Run `hero status` (or `--json`) before archive; persist via `hero cycle archive` — do not hand-roll folder moves.\n" +
+		"- Run `hero status` (or `--json`) before archive; a `completed` cycle from `/hero-finish` is a valid archive target. Persist via `hero cycle archive` — do not hand-roll folder moves.\n" +
 		"- Do NOT dispatch Task or stage agents (including end2end_qa_agent). Archive is orchestrator-only.\n" +
 		"- On OpenSpec failure, offer retry /hero-archive or `hero cycle archive --force` only after explicit user consent.\n" +
 		"- Optionally update metrics-summary.md from `hero metrics` for the archived cycle.\n" +

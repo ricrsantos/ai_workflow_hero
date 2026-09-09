@@ -918,11 +918,21 @@ func (m model) goListScreen(s screen) (model, tea.Cmd) {
 }
 
 func (m model) hasActiveCycle() bool {
-	return !m.freeChatMode && m.status.CycleNumber > 0
+	return !m.freeChatMode && statusViewIsActive(m.status)
 }
 
-// syncActiveCycleChrome reconciles palette and navigation when no cycle is active
-// (e.g. after /hero-archive). Reuses the same rules as TUI boot without a cycle.
+// statusViewIsActive keeps active-only TUI actions separate from the
+// completed-awaiting-archive state exposed by Service.Status.
+func statusViewIsActive(st cycle.StatusView) bool {
+	// StatusView fixtures created by older callers may omit Status. Preserve
+	// their active-cycle meaning while treating a real completed cycle as
+	// archiveable, but not active, chrome.
+	return st.CycleNumber > 0 && (st.Status == "" || st.Status == store.CycleStatusActive)
+}
+
+// syncActiveCycleChrome reconciles palette and navigation when no cycle is
+// active (including a completed cycle waiting for /hero-archive). Reuses the
+// same rules as TUI boot without a cycle.
 func (m model) syncActiveCycleChrome() model {
 	m = m.reloadPaletteItems()
 	if !m.hasActiveCycle() {
@@ -991,8 +1001,22 @@ func (m model) validateOrchestratorPreconditions() (errMsg string) {
 		return "cycle service unavailable"
 	}
 	st, err := m.svc.Status()
-	if err != nil || st.CycleNumber == 0 {
+	if err != nil || !statusViewIsActive(st) {
 		return noActiveCycleForStartMessage()
+	}
+	return ""
+}
+
+func (m model) validateArchivePreconditions() (errMsg string) {
+	if m.svc == nil {
+		return "cycle service unavailable"
+	}
+	st, err := m.svc.Status()
+	if err != nil || st.CycleNumber == 0 {
+		return noCycleToArchiveMessage()
+	}
+	if st.Status != "" && st.Status != store.CycleStatusActive && st.Status != store.CycleStatusCompleted {
+		return noCycleToArchiveMessage()
 	}
 	return ""
 }
@@ -1099,7 +1123,7 @@ func (m model) heroStartBootstrapCmd(ctx context.Context, requestID uint64) tea.
 		if err != nil {
 			return heroStartBootstrapDoneMsg{requestID: requestID, err: err}
 		}
-		if st.CycleNumber == 0 {
+		if !statusViewIsActive(st) {
 			return heroStartBootstrapDoneMsg{requestID: requestID, err: fmt.Errorf("%s", noActiveCycleForStartMessage())}
 		}
 		if err := ctx.Err(); err != nil {
@@ -1265,7 +1289,7 @@ func (m model) beginHeroArchive() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	if errMsg := m.validateOrchestratorPreconditions(); errMsg != "" {
+	if errMsg := m.validateArchivePreconditions(); errMsg != "" {
 		m = m.setStatusResult(false, "/hero-archive", errMsg)
 		return m, nil
 	}
@@ -1309,7 +1333,7 @@ func (m model) validateHeroRejectPreconditions() (errMsg string) {
 		return "cycle service unavailable"
 	}
 	st, err := m.svc.Status()
-	if err != nil || st.CycleNumber == 0 {
+	if err != nil || !statusViewIsActive(st) {
 		return noActiveCycleForStartMessage()
 	}
 	if pendingApprovalStage(st) == "" {
@@ -1443,7 +1467,7 @@ func (m model) beginHeroContinueExecute(extra int) (model, tea.Cmd) {
 		return m, nil
 	}
 	st, err := m.svc.Status()
-	if err != nil || st.CycleNumber == 0 {
+	if err != nil || !statusViewIsActive(st) {
 		m = m.setStatusResult(false, "/hero-continue", noActiveCycleForStartMessage())
 		return m, nil
 	}
@@ -1468,7 +1492,7 @@ func (m model) beginHeroBack() (model, tea.Cmd) {
 		return m, nil
 	}
 	st, err := m.svc.Status()
-	if err != nil || st.CycleNumber == 0 {
+	if err != nil || !statusViewIsActive(st) {
 		m = m.setStatusResult(false, "/hero-back", noActiveCycleForStartMessage())
 		return m, nil
 	}
@@ -1485,6 +1509,10 @@ func (m model) beginHeroBack() (model, tea.Cmd) {
 
 func noActiveCycleForStartMessage() string {
 	return "No active cycle. Run /hero-new to start."
+}
+
+func noCycleToArchiveMessage() string {
+	return "No current cycle to archive. Run /hero-new to start a cycle."
 }
 
 func noPendingApprovalMessage() string {
@@ -1509,7 +1537,7 @@ func (m model) beginHeroApprove() (model, tea.Cmd) {
 		return m, nil
 	}
 	st, err := m.svc.Status()
-	if err != nil || st.CycleNumber == 0 {
+	if err != nil || !statusViewIsActive(st) {
 		m = m.setStatusResult(false, "/hero-approve", noActiveCycleForStartMessage())
 		return m, nil
 	}
