@@ -25,7 +25,7 @@
     },
     "cursor": {
       "enabled": true,
-      "model": "auto",
+      "model": "cursor-grok-4.6-high",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     },
@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "claude",
-    "model": "sonnet"
+    "harness": "cursor",
+    "model": "cursor-grok-4.6-high"
   },
   "chat_verbosity": "debug",
   "telegram": {
@@ -75,6 +75,10 @@
     },
     "cursor": {
       "composer-2.5": {
+        "fs": "false"
+      },
+      "cursor-grok-4.6-high": {
+        "ef": "high",
         "fs": "false"
       },
       "cursor-grok-4.6-low": {

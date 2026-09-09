@@ -23,7 +23,9 @@ const CursorCLI = "cursor"
 const LoginHint = "cursor agent login"
 
 // TrustHint explains workspace trust for non-interactive Hero harness runs.
-const TrustHint = "trust this project in Cursor, or run: cursor agent --trust"
+// Hero already passes --trust on Execute; this is for rare cases where the CLI
+// still blocks (e.g. path mismatch). Bare `cursor agent --trust` is not valid.
+const TrustHint = "trust this folder in Cursor IDE (Hero already passes --trust on each run)"
 
 // CommandSpec describes a resolved Cursor Agent CLI invocation.
 type CommandSpec struct {
@@ -236,10 +238,47 @@ func ndjsonSessionID(stdout string) string {
 	return ""
 }
 
-// IsTrustFailure reports whether stderr/stdout indicates workspace trust is required.
+// TrustError reports that the Cursor Agent CLI requires workspace trust.
+type TrustError struct {
+	Detail string
+}
+
+func (e *TrustError) Error() string {
+	if e.Detail == "" {
+		return fmt.Sprintf("cursor agent workspace trust required; %s", TrustHint)
+	}
+	return fmt.Sprintf("cursor agent workspace trust required (%s); %s", e.Detail, TrustHint)
+}
+
+// IsTrustFailure reports whether CLI stderr (and non-JSON stdout noise) indicates
+// workspace trust is required. NDJSON stream payloads are ignored so assistant
+// or tool text that mentions "workspace trust" cannot false-positive (same
+// hardening as IsAuthFailure / C9).
+//
+// Real Cursor trust blocks emit plain text such as "⚠ Workspace Trust Required"
+// (often with exit 0), so callers must not require processFailed.
 func IsTrustFailure(stdout, stderr string) bool {
-	combined := strings.ToLower(stdout + "\n" + stderr)
-	return strings.Contains(combined, "workspace trust")
+	return containsTrustNeedle(stderr) || containsTrustNeedle(nonJSONOutput(stdout))
+}
+
+func containsTrustNeedle(s string) bool {
+	lower := strings.ToLower(s)
+	needles := []string{
+		"workspace trust required",
+		"workspace trust",
+	}
+	for _, n := range needles {
+		if strings.Contains(lower, n) {
+			return true
+		}
+	}
+	return false
+}
+
+// trustFailureDetail is the user-visible TrustError.Detail: stderr first, then
+// non-JSON stdout. NDJSON init/result lines are never interpolated.
+func trustFailureDetail(stderr, stdout string) string {
+	return authFailureDetail(stderr, stdout)
 }
 
 // IsRetriableFailure reports transient Cursor Agent CLI failures that callers should retry

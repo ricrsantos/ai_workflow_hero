@@ -248,6 +248,18 @@ func TestIsTrustFailure(t *testing.T) {
 	if cursoradapter.IsTrustFailure("ok", "") {
 		t.Fatal("unexpected trust failure")
 	}
+
+	init := `{"type":"system","subtype":"init","apiKeySource":"login","session_id":"s1","model":"Composer 2.5"}`
+	assistant := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Cursor may require workspace trust; run cursor agent --trust"}]},"session_id":"s1"}`
+	stream := init + "\n" + assistant + "\n"
+	if cursoradapter.IsTrustFailure(stream, "") {
+		t.Fatal("NDJSON mentioning workspace trust must not be a trust failure")
+	}
+
+	plain := init + "\n⚠ Workspace Trust Required\n"
+	if !cursoradapter.IsTrustFailure(plain, "") {
+		t.Fatal("expected trust failure from non-JSON stdout line")
+	}
 }
 
 func TestIsRetriableFailure(t *testing.T) {

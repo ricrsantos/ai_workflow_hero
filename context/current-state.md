@@ -195,6 +195,8 @@ The project-local `hero.json` Telegram configuration supports `auto_report_minut
 - **C4 closed (2026-08-15)**: Hero 2.0.0 multi-harness (Cursor+OpenCode TUI).
 - ADR-043–048 (C6 Codex); ADR-038–042 (C5 properties); ADR-033–037 (C4 multi-harness); ADR-030 amended for orchestrator Execute YAML model.
 
+- **2026-09-09 — Cursor trust detector hardened**: `IsTrustFailure` ignores NDJSON assistant/tool chatter (C9 auth pattern); typed `TrustError`; TUI hint no longer recommends bare `cursor agent --trust` (Hero already passes `--trust`).
+
 ## Known Technical Debt
 
 - No GitHub Actions / CI/CD release automation in V1 (ADR-010; deferred to V2 GoReleaser or equivalent).

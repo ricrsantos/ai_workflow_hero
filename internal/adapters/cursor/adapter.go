@@ -258,10 +258,11 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 			a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: LoginHint})
 			return nil, &AuthError{Detail: authFailureDetail(stderr, stdout)}
 		}
+		// Plain-text trust warnings only (IsTrustFailure ignores NDJSON). Do not
+		// require processFailed: Cursor often exits 0 with "Workspace Trust Required".
 		if IsTrustFailure(stdout, stderr) {
-			msg := firstLine(stderr, stdout)
 			a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusFailed, Message: TrustHint})
-			return nil, fmt.Errorf("cursor agent workspace trust required (%s); %s", msg, TrustHint)
+			return nil, &TrustError{Detail: trustFailureDetail(stderr, stdout)}
 		}
 		if err != nil {
 			if runCtx.Err() != nil {

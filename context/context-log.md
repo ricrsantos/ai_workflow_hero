@@ -1351,3 +1351,23 @@ free of harness protocol noise.
 
 **Validation**: Extended `internal/adapters/claude/normalizer_test.go`; `go test
 ./...` passed.
+
+## 2026-09-09 — Cursor harness trust false-positive fix
+
+**Problem**: TUI showed `cursor agent workspace trust required` with a
+`system/init` JSON detail even though Hero already passes `--trust` on every
+Execute and the workspace had `.workspace-trusted`. Cause matched the C9 auth
+false-positive: `IsTrustFailure` scanned full stream-json stdout (including
+assistant text mentioning "workspace trust") and interpolated the init line as
+detail. Remediation also incorrectly suggested bare `cursor agent --trust`.
+
+**Change**: Hardened `IsTrustFailure` to scan stderr + non-JSON stdout only
+(same pattern as `IsAuthFailure`). Added typed `TrustError` with
+`trustFailureDetail` that skips NDJSON. Updated `TrustHint` and the TUI
+remediation line. Expanded unit/Execute tests for NDJSON chatter vs plain
+`Workspace Trust Required` warnings (including exit 0).
+
+**Validation**: `go test ./internal/adapters/cursor ./internal/tui` passed.
+`go test ./...` still reports a pre-existing failure in
+`internal/adapters/opencode` (`TestExtractOpenCodeUsageAccumulatesStepFinishes`);
+untouched by this change.

@@ -658,6 +658,85 @@ func TestExecuteAuthFailureDetailSkipsInitJSON(t *testing.T) {
 	}
 }
 
+func TestExecuteDoesNotTreatStreamTrustPhraseAsTrustFailure(t *testing.T) {
+	dir := withCursorAssets(t)
+	var stream bytes.Buffer
+	stream.WriteString(`{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp","session_id":"s-trust","model":"Composer 2.5","permissionMode":"default"}` + "\n")
+	stream.WriteString(`{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Explain workspace trust for cursor agent"}]},"session_id":"s-trust"}` + "\n")
+	stream.WriteString(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Workspace trust is required unless you pass --trust"}]},"session_id":"s-trust"}` + "\n")
+	stream.WriteString(`{"type":"result","subtype":"success","is_error":false,"duration_ms":12,"result":"Trust explained.","session_id":"s-trust"}` + "\n")
+
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool { return containsArg(args, "stream-json") },
+		result:    cursoradapter.RunResult{Stdout: stream.Bytes()},
+	}}}
+
+	res, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "explain trust", Stream: true})
+	if err != nil {
+		t.Fatalf("stream mentioning workspace trust must not fail: %v", err)
+	}
+	if res.SessionID != "s-trust" || res.Output != "Trust explained." {
+		t.Fatalf("result=%+v", res)
+	}
+}
+
+func TestExecutePlainTrustWarningReturnsTrustError(t *testing.T) {
+	dir := withCursorAssets(t)
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.RetrySleep = func(time.Duration) {}
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool { return true },
+		// Cursor often exits 0 when blocking on trust.
+		result: cursoradapter.RunResult{Stderr: []byte("⚠ Workspace Trust Required\n"), ExitCode: 0},
+	}}}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "hi"})
+	if err == nil {
+		t.Fatal("expected trust error")
+	}
+	var trust *cursoradapter.TrustError
+	if !errors.As(err, &trust) {
+		t.Fatalf("want TrustError, got %T: %v", err, err)
+	}
+	if strings.Contains(trust.Detail, `"type":"system"`) {
+		t.Fatalf("detail must not be NDJSON init: %q", trust.Detail)
+	}
+	if !strings.Contains(trust.Detail, "Workspace Trust Required") {
+		t.Fatalf("detail=%q", trust.Detail)
+	}
+}
+
+func TestExecuteTrustFailureDetailSkipsInitJSON(t *testing.T) {
+	dir := withCursorAssets(t)
+	stdout := `{"type":"system","subtype":"init","apiKeySource":"login","cwd":"/tmp","session_id":"s-t"}` + "\n" +
+		"⚠ Workspace Trust Required\n"
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.RetrySleep = func(time.Duration) {}
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool { return true },
+		result:    cursoradapter.RunResult{Stdout: []byte(stdout), ExitCode: 0},
+	}}}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{Prompt: "hi"})
+	if err == nil {
+		t.Fatal("expected trust error")
+	}
+	var trust *cursoradapter.TrustError
+	if !errors.As(err, &trust) {
+		t.Fatalf("want TrustError, got %T: %v", err, err)
+	}
+	if strings.Contains(trust.Detail, `"type":"system"`) || strings.Contains(trust.Detail, "apiKeySource") {
+		t.Fatalf("detail leaked init JSON: %q", trust.Detail)
+	}
+	if !strings.Contains(trust.Detail, "Workspace Trust Required") {
+		t.Fatalf("detail=%q", trust.Detail)
+	}
+}
+
 func TestExecuteDoesNotRetryNonRetriableError(t *testing.T) {
 	dir := withCursorAssets(t)
 	var calls int

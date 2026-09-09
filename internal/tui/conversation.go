@@ -2752,7 +2752,7 @@ func (m model) renderWrappedConvError() string {
 		b.WriteByte('\n')
 	}
 	if strings.Contains(lower, "workspace trust") || strings.Contains(lower, "trust required") {
-		b.WriteString(mutedStyle.Render("→ Trust this folder in Cursor, or run: cursor agent --trust"))
+		b.WriteString(mutedStyle.Render("→ Trust this folder in Cursor IDE (Hero already passes --trust on each run)"))
 		b.WriteByte('\n')
 	}
 	return b.String()
