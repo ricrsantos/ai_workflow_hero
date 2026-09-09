@@ -3,9 +3,10 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
-const cycleSelectCols = `id, number, title, objective, status, started_at, completed_at, session_duration_seconds, config_snapshot_json, lock_holder, lock_at, openspec_change`
+const cycleSelectCols = `id, number, title, objective, status, started_at, completed_at, session_duration_seconds, config_snapshot_json, lock_holder, lock_at, openspec_change, orchestration_session_id, orchestration_harness_id`
 
 // CreateCycle inserts a new cycle and returns its ID.
 func (s *Store) CreateCycle(c Cycle) (int64, error) {
@@ -142,7 +143,7 @@ func scanCycle(row rowScanner) (Cycle, error) {
 	err := row.Scan(
 		&c.ID, &c.Number, &c.Title, &c.Objective, &c.Status,
 		&started, &completed, &c.SessionDurationSeconds, &c.ConfigSnapshotJSON, &lockHolder, &lockAt,
-		&c.OpenspecChange,
+		&c.OpenspecChange, &c.OrchestrationSessionID, &c.OrchestrationHarnessID,
 	)
 	if err != nil {
 		return Cycle{}, err
@@ -152,6 +153,45 @@ func scanCycle(row rowScanner) (Cycle, error) {
 	c.LockHolder = lockHolder.String
 	c.LockAt = lockAt.String
 	return c, nil
+}
+
+// SetOrchestrationSession stores the orchestrator session pair. A non-empty
+// session requires a harness id; clearing the session also clears the harness.
+func (s *Store) SetOrchestrationSession(cycleID int64, sessionID, harnessID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	if sessionID != "" && harnessID == "" {
+		return fmt.Errorf("orchestration session requires a harness id")
+	}
+	if sessionID == "" {
+		harnessID = ""
+	}
+	res, err := s.db.Exec(`
+UPDATE cycles SET orchestration_session_id = ?, orchestration_harness_id = ? WHERE id = ?`,
+		sessionID, harnessID, cycleID)
+	if err != nil {
+		return fmt.Errorf("set orchestration session: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	s.log.Debug("orchestration session updated", "cycle_id", cycleID, "harness_id", harnessID)
+	return nil
+}
+
+// OrchestrationSession returns the stored orchestrator session pair.
+func (s *Store) OrchestrationSession(cycleID int64) (sessionID, harnessID string, err error) {
+	var sid, hid sql.NullString
+	err = s.db.QueryRow(`
+SELECT orchestration_session_id, orchestration_harness_id FROM cycles WHERE id = ?`, cycleID).Scan(&sid, &hid)
+	if err == sql.ErrNoRows {
+		return "", "", ErrNotFound
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return sid.String, hid.String, nil
 }
 
 func maxInt64(value, minimum int64) int64 {

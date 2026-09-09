@@ -214,6 +214,9 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		args = append(args, "--mode", "plan")
 	}
 	if sessionID != "" {
+		if err := cursorResumeSessionAllowed(sessionID); err != nil {
+			return nil, err
+		}
 		args = append(args, "--resume="+sessionID)
 	}
 	// Prompt is positional (Cursor CLI: -p/--print is print mode, not prompt).
@@ -640,6 +643,37 @@ func dispatchFallbackMessage(req harness.DispatchRequest) string {
 
 func isCustomCommandPrompt(req harness.DispatchRequest) bool {
 	return strings.TrimSpace(req.Prompt) != ""
+}
+
+func cursorResumeSessionAllowed(sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil
+	}
+	if !isCursorChatUUID(sessionID) {
+		return fmt.Errorf("cursor cannot resume session %q: persistent-session chat ID must be a UUID", sessionID)
+	}
+	return nil
+}
+
+func isCursorChatUUID(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		switch i {
+		case 8, 13, 18, 23:
+			if id[i] != '-' {
+				return false
+			}
+		default:
+			c := id[i]
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Compile-time interface check.

@@ -15,6 +15,7 @@ import (
 	herodebug "github.com/ricrsantos/ai_workflow_hero/internal/common/debug"
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
@@ -274,112 +275,161 @@ func (m model) syncConversationContext() model {
 		return m
 	}
 	m.conversationStage = stage
-	live := strings.TrimSpace(m.harnessSessionID)
-	stored := strings.TrimSpace(sessionID)
-	if live != "" {
-		if m.researchLive {
-			// Discover and orchestrator sessions are stored separately during Research.
-			return m
-		}
-		// The TUI orchestrator session spans stages. Never replace a live id with
-		// an empty (or different) per-stage SQLite value — that dropped session
-		// from the Chat header and forced follow-ups into a fresh agent with no context.
-		if stage != "" && live != stored {
-			if err := m.svc.SetStageHarnessSessionID(stage, live); err != nil {
-				slog.Debug("tui copy harness session to stage failed", "error", err)
+	if m.researchLive {
+		// Discover and orchestrator sessions are stored separately during Research.
+		return m
+	}
+	if m.orchestrationLive || strings.EqualFold(strings.TrimSpace(m.runtimeAgentName), agentOrchestration) {
+		m = m.loadOrchestrationSession()
+		if strings.TrimSpace(m.harnessSessionID) == "" {
+			if sid := strings.TrimSpace(m.orchestrationSessionID); sid != "" {
+				m.harnessSessionID = sid
+				m.harnessSessionHarnessID = strings.TrimSpace(strings.ToLower(m.orchestrationSessionHarnessID))
 			}
 		}
 		return m
 	}
-	m.harnessSessionID = stored
-	if m.svc != nil && stage != "" {
+	live := strings.TrimSpace(m.harnessSessionID)
+	if live != "" {
+		return m
+	}
+	hid, sid, bindErr := m.svc.StageSessionBinding(stage)
+	if bindErr != nil {
+		sid = strings.TrimSpace(sessionID)
+		hid = ""
 		if h, err := m.svc.StageHarnessID(stage); err == nil {
-			m.harnessSessionHarnessID = strings.TrimSpace(h)
+			hid = strings.TrimSpace(h)
 		}
 	}
+	sid = strings.TrimSpace(sid)
+	hid = strings.TrimSpace(strings.ToLower(hid))
+	if sid == "" || hid == "" {
+		return m
+	}
+	m.harnessSessionID = sid
+	m.harnessSessionHarnessID = hid
 	return m
 }
 
 // harnessSessionIDForPair returns sessionID only when it belongs to pairHarness (PRD §4.11).
-// Codex thread ids never resume as Cursor/OpenCode (and vice versa).
+// A session without a known owner is never resumed.
 func (m model) harnessSessionIDForPair(stageName, pairHarness string) string {
 	sid := strings.TrimSpace(m.harnessSessionID)
 	pairHarness = strings.TrimSpace(strings.ToLower(pairHarness))
 	if sid == "" || pairHarness == "" {
-		return sid
+		return ""
 	}
-	if m.svc != nil {
+	owner := strings.TrimSpace(strings.ToLower(m.harnessSessionHarnessID))
+	if owner == "" || owner != pairHarness {
+		return ""
+	}
+	if m.svc != nil && strings.TrimSpace(m.runtimeAgentName) != agentOrchestration {
 		stage := strings.TrimSpace(stageName)
 		if stage != "" {
-			if h, err := m.svc.StageHarnessID(stage); err == nil {
-				h = strings.TrimSpace(strings.ToLower(h))
-				if h != "" && h != pairHarness {
-					return ""
-				}
+			if ok, err := m.svc.SessionResumeAllowed(stage, pairHarness); err == nil && !ok {
+				return ""
 			}
 		}
-	}
-	if h := strings.TrimSpace(strings.ToLower(m.harnessSessionHarnessID)); h != "" && h != pairHarness {
-		return ""
 	}
 	return sid
 }
 
-// persistHarnessSession stores the harness session on the in-memory model and on
-// the active SQLite stage (even when /hero-start cleared conversationStage).
+func (m model) persistStageSession(stage, sessionID, harnessID string) {
+	if m.svc == nil {
+		return
+	}
+	stage = strings.TrimSpace(stage)
+	if stage == "" {
+		return
+	}
+	if err := m.svc.SetStageSessionBinding(stage, harnessID, sessionID); err != nil {
+		slog.Error("tui persist stage session binding failed", "error", err)
+	}
+}
+
+func (m model) persistOrchestrationSessionPair(sessionID, harnessID string) model {
+	m.orchestrationSessionID = sessionID
+	m.orchestrationSessionHarnessID = harnessID
+	if m.svc == nil {
+		return m
+	}
+	if err := m.svc.SetOrchestrationSession(sessionID, harnessID); err != nil {
+		slog.Error("tui persist orchestration session failed", "error", err)
+	}
+	return m
+}
+
+func (m model) loadOrchestrationSession() model {
+	if m.svc == nil {
+		return m
+	}
+	sid, hid, err := m.svc.OrchestrationSession()
+	if err != nil {
+		return m
+	}
+	sid = strings.TrimSpace(sid)
+	hid = strings.TrimSpace(strings.ToLower(hid))
+	if sid == "" || hid == "" {
+		return m
+	}
+	m.orchestrationSessionID = sid
+	m.orchestrationSessionHarnessID = hid
+	return m
+}
+
+func (m model) restoreOrchestratorSession() model {
+	m = m.loadOrchestrationSession()
+	if sid := strings.TrimSpace(m.orchestrationSessionID); sid != "" {
+		m.harnessSessionID = sid
+		m.harnessSessionHarnessID = strings.TrimSpace(strings.ToLower(m.orchestrationSessionHarnessID))
+	}
+	return m
+}
+
+// persistHarnessSession stores the harness session on the matching slot.
+// Orchestrator sessions go to cycles; stage-agent sessions go to the stage row.
 func (m model) persistHarnessSession(sessionID, harnessID string) model {
 	sessionID = strings.TrimSpace(sessionID)
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
 	if harnessID == "" {
 		harnessID = strings.TrimSpace(strings.ToLower(m.conversationHarnessTool()))
 	}
-	if sessionID == "" {
+	if sessionID == "" || harnessID == "" {
 		return m
 	}
 	agent := strings.TrimSpace(m.runtimeAgentName)
 	if agent == agentDiscover {
 		m.researchSessionID = sessionID
 		m.harnessSessionID = sessionID
-		if harnessID != "" {
-			m.harnessSessionHarnessID = harnessID
-		}
+		m.harnessSessionHarnessID = harnessID
 		m.conversationStage = stageResearch
-		if m.svc != nil {
-			if err := m.svc.SetStageHarnessSessionID(stageResearch, sessionID); err != nil {
-				slog.Error("tui persist harness session failed", "error", err)
-			}
-			if harnessID != "" {
-				if err := m.svc.SetStageHarnessID(stageResearch, harnessID); err != nil {
-					slog.Debug("tui persist research harness id failed", "error", err)
-				}
-			}
-		}
+		m.persistStageSession(stageResearch, sessionID, harnessID)
 		return m
 	}
-	if m.orchestrationLive {
-		m.orchestrationSessionID = sessionID
+	if agent == agentOrchestration {
+		m = m.persistOrchestrationSessionPair(sessionID, harnessID)
+		if m.researchLive {
+			// Orchestrator result while Research is the live Chat session — keep DISC id.
+			return m
+		}
+		m.harnessSessionID = sessionID
+		m.harnessSessionHarnessID = harnessID
+		return m
 	}
-	if m.researchLive {
-		// Orchestrator result while Research is the live Chat session — keep DISC id.
+	stage := strings.TrimSpace(m.conversationStage)
+	if m.stageHandoffLive || m.researchLive {
+		m.persistStageSession(stage, sessionID, harnessID)
 		return m
 	}
 	m.harnessSessionID = sessionID
 	m.harnessSessionHarnessID = harnessID
-	if m.svc == nil {
-		return m
-	}
-	stage := strings.TrimSpace(m.conversationStage)
-	if stage == "" && m.orchestrationLive {
+	if stage == "" && m.orchestrationLive && m.svc != nil {
 		if s, err := m.svc.ActiveRunStage(); err == nil {
 			stage = s
 			m.conversationStage = s
 		}
 	}
-	if stage != "" {
-		if err := m.svc.SetStageHarnessSessionID(stage, sessionID); err != nil {
-			slog.Error("tui persist harness session failed", "error", err)
-		}
-	}
+	m.persistStageSession(stage, sessionID, harnessID)
 	return m
 }
 
@@ -462,6 +512,7 @@ func (m model) resetChatSession() model {
 	m.orchestrationLive = false
 	m.researchLive = false
 	m.orchestrationSessionID = ""
+	m.orchestrationSessionHarnessID = ""
 	m.researchSessionID = ""
 	m.awaitingRejectReason = false
 	m.runtimeCommandName = ""
@@ -480,9 +531,12 @@ func (m model) resetChatSession() model {
 	m = m.resetConversationUsage()
 	m = m.clearChatInput()
 	if m.svc != nil {
+		if err := m.svc.ClearOrchestrationSession(); err != nil {
+			slog.Debug("tui clear orchestration session failed", "error", err)
+		}
 		stage, _, err := m.svc.ConversationContext()
 		if err == nil && stage != "" {
-			if err := m.svc.SetStageHarnessSessionID(stage, ""); err != nil {
+			if err := m.svc.SetStageSessionBinding(stage, "", ""); err != nil {
 				slog.Debug("tui clear harness session failed", "error", err)
 			}
 		}
@@ -593,7 +647,13 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	if cmdName == "start" {
 		m.researchLive = false
 		m.orchestrationSessionID = ""
+		m.orchestrationSessionHarnessID = ""
 		m.researchSessionID = ""
+		if m.svc != nil {
+			if err := m.svc.ClearOrchestrationSession(); err != nil {
+				slog.Debug("tui clear orchestration session failed", "error", err)
+			}
+		}
 		// /hero-start is the explicit retry after a completion gate leaves a
 		// stage Running for intervention.
 		m.stageHandoffInterventionRequired = false
@@ -1142,6 +1202,9 @@ func (m model) submitChatFollowUp(text string) (model, tea.Cmd) {
 			m.runtimeAgentName = agentOrchestration
 			m = m.applyAgentRuntimePair(agentOrchestration, m.runtimeModelSlug)
 		}
+		if m.orchestrationLive && !m.researchLive && !m.stageHandoffLive {
+			m = m.prepareOrchestratorFollowUp()
+		}
 	} else {
 		var cmd tea.Cmd
 		var ok bool
@@ -1403,7 +1466,7 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 	if resolved.warning != "" {
 		relay.Enqueue(harness.StreamDelta{Kind: harness.StreamKindText, Text: resolved.warning + "\n\n"})
 	}
-	if !freechat && svc != nil && strings.TrimSpace(stageName) != "" {
+	if !freechat && svc != nil && strings.TrimSpace(stageName) != "" && agentName != agentOrchestration {
 		if err := svc.SetStageHarnessID(stageName, pair.HarnessID); err != nil {
 			slog.Debug("tui persist stage harness id failed", "error", err)
 		}
@@ -1590,32 +1653,29 @@ func (m model) cancelStreamCmd() tea.Cmd {
 		delete(m.executes, executeID)
 	}
 	fallbackAdapter := m.harnessAdapter()
-	fallbackSession := m.harnessSessionID
-	svc := m.svc
+	var injected harness.HarnessAdapter
+	var registry harnessmgr.Registry
+	if m.svc != nil {
+		injected = m.svc.Harness
+		registry = m.svc.Registry
+	}
 	return func() tea.Msg {
 		var err error
 		if len(executes) == 0 {
 			if fallbackAdapter != nil {
-				err = fallbackAdapter.Cancel(context.Background(), fallbackSession)
+				err = fallbackAdapter.Cancel(context.Background(), "")
 			}
+			return streamCancelDoneMsg{err: err}
 		}
 		for _, ex := range executes {
 			// The TUI stops accepting this execution before cancelling the
 			// harness, so a relay blocked on a full chat channel cannot leak.
 			ex.relay.Stop()
-			adapter := fallbackAdapter
-			if svc != nil && svc.Harness == nil && svc.Registry != nil && strings.TrimSpace(ex.HarnessID) != "" {
-				if a, aerr := svc.Registry.Adapter(ex.HarnessID); aerr == nil && a != nil {
-					adapter = a
-				}
-			}
+			adapter := adapterForCancel(ex.HarnessID, injected, fallbackAdapter, registry)
 			if adapter == nil {
 				continue
 			}
 			sid := strings.TrimSpace(ex.SessionID)
-			if sid == "" {
-				sid = fallbackSession
-			}
 			if cerr := adapter.Cancel(context.Background(), sid); cerr != nil {
 				slog.Error("tui stream cancel failed", "execute", ex.ID, "error", cerr)
 				err = cerr
@@ -1623,6 +1683,20 @@ func (m model) cancelStreamCmd() tea.Cmd {
 		}
 		return streamCancelDoneMsg{err: err}
 	}
+}
+
+func adapterForCancel(harnessID string, injected, fallback harness.HarnessAdapter, registry harnessmgr.Registry) harness.HarnessAdapter {
+	if injected != nil {
+		// Tests and hero run inject a single adapter; Execute used it, so Cancel must too.
+		return injected
+	}
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	if registry != nil && harnessID != "" {
+		if a, aerr := registry.Adapter(harnessID); aerr == nil && a != nil {
+			return a
+		}
+	}
+	return fallback
 }
 
 func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -2008,8 +2082,6 @@ func (m model) applyStreamDelta(msg streamDeltaMsg) model {
 			} else {
 				m = m.persistHarnessSession(sid, ex.HarnessID)
 			}
-		} else {
-			m = m.persistHarnessSession(sid, "")
 		}
 	}
 	prevActivity := m.harnessWatchdog.LastActivityAt()

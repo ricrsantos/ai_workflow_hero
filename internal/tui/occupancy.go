@@ -50,9 +50,10 @@ func (m model) freechatSessionIDForPair(pairHarness string) string {
 	sid := strings.TrimSpace(m.freechatSessionID)
 	pairHarness = strings.TrimSpace(strings.ToLower(pairHarness))
 	if sid == "" || pairHarness == "" {
-		return sid
+		return ""
 	}
-	if h := strings.TrimSpace(strings.ToLower(m.freechatSessionHarnessID)); h != "" && h != pairHarness {
+	h := strings.TrimSpace(strings.ToLower(m.freechatSessionHarnessID))
+	if h == "" || h != pairHarness {
 		return ""
 	}
 	return sid

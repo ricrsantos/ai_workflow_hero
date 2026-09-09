@@ -6,7 +6,7 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 9
+const currentSchemaVersion = 10
 
 func (s *Store) migrate() error {
 	return s.migrateTo(currentSchemaVersion)
@@ -199,6 +199,15 @@ func (s *Store) applyMigration(version int) error {
 		// C13: deterministic Status can report the TUI's live permission pause
 		// without starting a harness or inspecting credentials.
 		if _, err := tx.Exec(`ALTER TABLE stages ADD COLUMN harness_permission_paused INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+	case 10:
+		// Orchestrator session is cycle-scoped and must not share stages.harness_session_id
+		// with named stage agents (mixed-harness resume). Persist the pair atomically.
+		if _, err := tx.Exec(`ALTER TABLE cycles ADD COLUMN orchestration_session_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migration %d: %w", version, err)
+		}
+		if _, err := tx.Exec(`ALTER TABLE cycles ADD COLUMN orchestration_harness_id TEXT NOT NULL DEFAULT ''`); err != nil {
 			return fmt.Errorf("migration %d: %w", version, err)
 		}
 	default:

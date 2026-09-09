@@ -17,7 +17,7 @@ Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning
 | CLI | Cobra + `internal/common/clierr` |
 | TUI | Bubble Tea + lipgloss + huh (install prompts) |
 | Assets | `assets.FS` (`embed.FS`) |
-| Operational store | SQLite at `.workflow-hero/hero.db` (schema v9; session and active permission-pause state) |
+| Operational store | SQLite at `.workflow-hero/hero.db` (schema v10; orchestrator session pair on `cycles`, stage-agent sessions on `stages`) |
 | SDD | OpenSpec (external CLI; coupled at archive) |
 | V1 harness | Cursor Agent CLI (`cursor-agent` / `cursor agent`) |
 | Platforms | Linux/macOS `amd64` / `arm64` |
@@ -239,7 +239,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero
 
 - **Go owns the state machine**; TUI reads and mutates via `cycle.Service`.
 - **Harness conversations** use `HarnessAdapter.Execute` with streaming (`stream-json`), not IDE chat injection (ADR-026).
-- **Dual OpenCode-style panes** on Chat: composer + response area; session IDs for harness runs are held in TUI memory and/or SQLite `stages.harness_session_id` (schema v3).
+- **Dual OpenCode-style panes** on Chat: composer + response area. Session IDs are slot-scoped: orchestrator pair on `cycles.orchestration_session_id`/`orchestration_harness_id` (schema v10); named stage agents on `stages.harness_session_id`/`harness_id`; freechat stays in TUI memory. A session is never resumed through a different harness.
 - **Orchestrator vs Research**: TUI Execute for control slashes uses `agents.orchestration_agent` from `workflow-config.yml`; Research uses a separate `discover_agent` session (`research_session.go`); Cursor IDE chat keeps grilling in the orchestrator session.
 - **TUI-direct stage Execute (C8 + ADR-075)**: after ORCH starts a stage and STOPs, the TUI Executes named stage agents on their YAML harness+model pair (`stage_handoff.go`). Nested Task fan-out stays inside the parent harness; generic Tasks chip `TASK`. Implementation may run BACK/FRNT/GEN concurrently. For a linked OpenSpec change, the TUI validates canonical ownership, injects only each agent's ordered unchecked task blocks, and persists assignment audits with ordered `task_ids` per agent/wave plus raw result audits. It permits close only after valid complete reports, passing gates, and a scheduler reread with an empty checklist; progress may start a bounded fresh wave without advancing the stage iteration. If Implementation starts/restarts already empty, one verification wave may collect reports/gates; after a wave clears all pending tasks, no empty wave is redispatched. `Escalated` never executes before `/hero-continue`. Cursor IDE Runtime still uses Task for every subagent (ADR-005 / ADR-054 / ADR-075).
 - **Boot** validates harness availability (`IsAvailable`); may prompt for harness selection when `cli.tools` is empty (ADR-027).

@@ -111,33 +111,34 @@ type model struct {
 	waitAnimFrame          int
 
 	// Chat OpenCode-style controls.
-	chatMode                 string // harness.ModeBuild | harness.ModePlan
-	chatModelSlug            string
-	chatHarnessID            string
-	modelOptions             []harnessmgr.ModelOption
-	availableModels          []string
-	pickingModel             bool
-	pickingHarness           bool
-	pickingHarnessReset      bool
-	harnessResetAwaitingOpen bool // loading harness list before reset picker is interactive
-	heroStartPreparing       bool // syncing opencode agents before /hero-start orchestration
-	heroStartBootstrapping   bool // validating/syncing /hero-start before harness execution
-	heroStartCancel          context.CancelFunc
-	heroStartRequestID       uint64
-	modelPickerHarness       string          // non-empty = /hero-model step 2 (models for this harness)
-	harnessDraft             map[string]bool // checkbox state while /hero-harness is open
-	harnessPermissionDraft   map[string]map[harness.PermissionProfile]bool
-	runtimeCommandName       string // hero runtime slash body name (e.g. "new") for Chat output normalization
-	runtimeModelSlug         string // YAML orch/discover slug or /hero-model default for the active runtime slash
-	runtimeHarnessID         string // YAML orch/discover harness (or resolved execute pair); preferred over freechat for labels
-	runtimeAgentName         string // harness agent name for active runtime slash (e.g. orchestration_agent)
-	orchestrationLive        bool   // /hero-start session: follow-ups resume orchestrator model + session
-	researchLive             bool   // TUI Research: free-text follow-ups resume discover_agent
-	orchestrationSessionID   string // saved orchestrator harness session while Research is live
-	researchSessionID        string // discover_agent harness session
-	awaitingRejectReason     bool   // Chat is collecting rejection feedback before Runtime Execute
-	executeSeq               int    // monotonic id for tagged concurrent Executes
-	executes                 map[string]convExecute
+	chatMode                      string // harness.ModeBuild | harness.ModePlan
+	chatModelSlug                 string
+	chatHarnessID                 string
+	modelOptions                  []harnessmgr.ModelOption
+	availableModels               []string
+	pickingModel                  bool
+	pickingHarness                bool
+	pickingHarnessReset           bool
+	harnessResetAwaitingOpen      bool // loading harness list before reset picker is interactive
+	heroStartPreparing            bool // syncing opencode agents before /hero-start orchestration
+	heroStartBootstrapping        bool // validating/syncing /hero-start before harness execution
+	heroStartCancel               context.CancelFunc
+	heroStartRequestID            uint64
+	modelPickerHarness            string          // non-empty = /hero-model step 2 (models for this harness)
+	harnessDraft                  map[string]bool // checkbox state while /hero-harness is open
+	harnessPermissionDraft        map[string]map[harness.PermissionProfile]bool
+	runtimeCommandName            string // hero runtime slash body name (e.g. "new") for Chat output normalization
+	runtimeModelSlug              string // YAML orch/discover slug or /hero-model default for the active runtime slash
+	runtimeHarnessID              string // YAML orch/discover harness (or resolved execute pair); preferred over freechat for labels
+	runtimeAgentName              string // harness agent name for active runtime slash (e.g. orchestration_agent)
+	orchestrationLive             bool   // /hero-start session: follow-ups resume orchestrator model + session
+	researchLive                  bool   // TUI Research: free-text follow-ups resume discover_agent
+	orchestrationSessionID        string // saved orchestrator harness session (cycle-scoped)
+	orchestrationSessionHarnessID string // harness that owns orchestrationSessionID
+	researchSessionID             string // discover_agent harness session
+	awaitingRejectReason          bool   // Chat is collecting rejection feedback before Runtime Execute
+	executeSeq                    int    // monotonic id for tagged concurrent Executes
+	executes                      map[string]convExecute
 
 	stageHandoffLive                 bool
 	stageHandoffStage                string

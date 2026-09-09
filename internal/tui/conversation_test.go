@@ -31,6 +31,7 @@ type streamingHarness struct {
 	executeCount  int
 	sessionID     string
 	cancelCalled  bool
+	lastCancelSID string
 	lastPrompt    string
 	lastSessionID string
 	lastModel     string
@@ -117,6 +118,7 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 func (h *streamingHarness) Cancel(_ context.Context, sessionID string) error {
 	h.mu.Lock()
 	h.cancelCalled = true
+	h.lastCancelSID = sessionID
 	release := h.release
 	h.mu.Unlock()
 	if release != nil {
@@ -411,8 +413,8 @@ func TestConversationResumeSession(t *testing.T) {
 	h.sessionID = "free-sess-1"
 
 	m = EnterConversationForTest(m)
-	if HarnessSessionIDForTest(m) != "existing-session" {
-		t.Fatalf("loaded session = %q", HarnessSessionIDForTest(m))
+	if HarnessSessionIDForTest(m) != "" {
+		t.Fatalf("unbound stage session must not load, got %q", HarnessSessionIDForTest(m))
 	}
 	m = SetConversationInput(m, "continue")
 	next, cmd := SubmitConversationForTest(m)
@@ -1638,12 +1640,19 @@ func TestHeroStartRuntimeConversation(t *testing.T) {
 	if HarnessSessionIDForTest(next) != "start-cycle-sess" {
 		t.Fatalf("session=%q", HarnessSessionIDForTest(next))
 	}
+	orchID, orchHarness, err := svc.OrchestrationSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if orchID != "start-cycle-sess" || orchHarness != "cursor" {
+		t.Fatalf("orch session = (%q, %q)", orchID, orchHarness)
+	}
 	stored, err := svc.StageHarnessSessionID("research")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored != "start-cycle-sess" {
-		t.Fatalf("stored session=%q", stored)
+	if stored != "" {
+		t.Fatalf("orchestrator session must not occupy the stage row, got %q", stored)
 	}
 	view := ViewForTest(next)
 	if strings.Contains(stripANSI(view), "session:") {
@@ -1675,8 +1684,8 @@ func TestConversationSyncPreservesLiveSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored != "live-orch-sess" {
-		t.Fatalf("live session not copied to stage: %q", stored)
+	if stored != "" {
+		t.Fatalf("live orchestrator session must not copy onto the stage row: %q", stored)
 	}
 }
 
@@ -4311,6 +4320,104 @@ func TestHarnessSessionIDForPair_AllowsSameHarness(t *testing.T) {
 	got := HarnessSessionIDForPairForTest(m, "", "cursor")
 	if got != "cursor-sess-abc" {
 		t.Fatalf("session=%q want preserved for same harness", got)
+	}
+}
+
+func TestHarnessSessionIDForPair_EmptyOwnerDoesNotResume(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetHarnessSessionIDForTest(m, "ses_opencode")
+
+	got := HarnessSessionIDForPairForTest(m, "", "cursor")
+	if got != "" {
+		t.Fatalf("session=%q want empty when owner is unknown", got)
+	}
+}
+
+func TestStageAgentOpenCodeSessionDoesNotReplaceOrchestrator(t *testing.T) {
+	svc := newTestServiceWithRunningResearch(t)
+	m := NewTestModel(svc)
+	m = SetOrchestrationLiveForTest(m, true)
+	m.runtimeAgentName = agentOrchestration
+	m.runtimeHarnessID = "cursor"
+	m = m.persistHarnessSession("11111111-1111-4111-8111-111111111111", "cursor")
+	if OrchestrationSessionIDForTest(m) != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("orch session=%q", OrchestrationSessionIDForTest(m))
+	}
+
+	m.stageHandoffLive = true
+	m.conversationStage = stageResearch
+	m.runtimeAgentName = "qa_agent"
+	m.executes = map[string]convExecute{
+		"ex-qa": {ID: "ex-qa", AgentName: "qa_agent", HarnessID: "opencode", StageName: stageResearch},
+	}
+	next, _ := m.Update(streamDeltaMsg{
+		executeID: "ex-qa",
+		delta:     harness.StreamDelta{SessionID: "ses_f810a8dc9ffeO6nD2Xb69Dnunp"},
+	})
+	got := next.(model)
+	if OrchestrationSessionIDForTest(got) != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("qa stream leaked into orch session: %q", OrchestrationSessionIDForTest(got))
+	}
+	orchID, orchHarness, err := svc.OrchestrationSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if orchID != "11111111-1111-4111-8111-111111111111" || orchHarness != "cursor" {
+		t.Fatalf("cycles orch pair = (%q, %q)", orchID, orchHarness)
+	}
+	hid, sid, err := svc.StageSessionBinding(stageResearch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hid != "opencode" || sid != "ses_f810a8dc9ffeO6nD2Xb69Dnunp" {
+		t.Fatalf("stage binding = (%q, %q)", hid, sid)
+	}
+
+	got = got.restoreOrchestratorSession()
+	got = got.withRuntimeAgent(agentOrchestration)
+	got = got.applyAgentRuntimePair(agentOrchestration, "")
+	got = got.bindSessionToRuntimeHarness()
+	if HarnessSessionIDForPairForTest(got, stageResearch, "cursor") != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("orch resume=%q", HarnessSessionIDForPairForTest(got, stageResearch, "cursor"))
+	}
+}
+
+func TestBindSessionToRuntimeHarnessDoesNotRelabel(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetHarnessSessionIDForTest(m, "ses_opencode")
+	m = SetHarnessSessionHarnessIDForTest(m, "opencode")
+	m.runtimeHarnessID = "cursor"
+	m.runtimeAgentName = agentOrchestration
+	next := m.bindSessionToRuntimeHarness()
+	if HarnessSessionIDForTest(next) != "" {
+		t.Fatalf("relabeled session=%q", HarnessSessionIDForTest(next))
+	}
+}
+
+func TestCancelStreamUsesExecuteSessionNotGlobalForeignID(t *testing.T) {
+	cursorH := &streamingHarness{}
+	svc := newTestServiceWithRunningResearch(t)
+	svc.Harness = cursorH
+	m := NewTestModel(svc)
+	m.streaming = true
+	m.harnessSessionID = "ses_global_opencode"
+	m.harnessSessionHarnessID = "opencode"
+	relay := newConversationStreamRelay("ex-1", make(chan tea.Msg, 4))
+	m.executes = map[string]convExecute{
+		"ex-1": {
+			ID:        "ex-1",
+			HarnessID: "cursor",
+			SessionID: "11111111-1111-4111-8111-111111111111",
+			relay:     relay,
+		},
+	}
+	cmd := m.cancelStreamCmd()
+	if cmd == nil {
+		t.Fatal("expected cancel cmd")
+	}
+	_ = cmd()
+	if cursorH.lastCancelSID != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("cancel session=%q", cursorH.lastCancelSID)
 	}
 }
 

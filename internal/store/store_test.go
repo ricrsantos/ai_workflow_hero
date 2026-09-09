@@ -439,3 +439,110 @@ VALUES(1, 'C2', 'obj', ?, '{}', '')`, CycleStatusActive); err != nil {
 		t.Fatal(err)
 	}
 }
+
+func TestOrchestrationSessionRoundTrip(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "hero.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	id, err := s.CreateCycle(Cycle{
+		Number: 1, Title: "C10", Status: CycleStatusActive,
+		StartedAt: nowRFC3339(), ConfigSnapshotJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.GetCycle(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.OrchestrationSessionID != "" || c.OrchestrationHarnessID != "" {
+		t.Fatalf("default orch session = %+v", c)
+	}
+	if err := s.SetOrchestrationSession(id, "uuid-orch", ""); err == nil {
+		t.Fatal("expected harness id required")
+	}
+	if err := s.SetOrchestrationSession(id, "uuid-orch", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+	sid, hid, err := s.OrchestrationSession(id)
+	if err != nil || sid != "uuid-orch" || hid != "cursor" {
+		t.Fatalf("orch session = (%q, %q) %v", sid, hid, err)
+	}
+	if err := s.SetOrchestrationSession(id, "", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+	sid, hid, err = s.OrchestrationSession(id)
+	if err != nil || sid != "" || hid != "" {
+		t.Fatalf("cleared orch session = (%q, %q) %v", sid, hid, err)
+	}
+}
+
+func TestSetStageSessionBindingRequiresHarness(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "hero.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	id, err := s.CreateCycle(Cycle{
+		Number: 1, Title: "C10b", Status: CycleStatusActive,
+		StartedAt: nowRFC3339(), ConfigSnapshotJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateStages([]Stage{
+		{CycleID: id, Name: "qa", Status: StageWaiting, MaxIterations: 2, SortOrder: 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetStageSessionBinding(id, "qa", "", "ses_opencode"); err == nil {
+		t.Fatal("expected harness id required")
+	}
+	if err := s.SetStageSessionBinding(id, "qa", "opencode", "ses_opencode"); err != nil {
+		t.Fatal(err)
+	}
+	hid, sid, err := s.StageSessionBinding(id, "qa")
+	if err != nil || hid != "opencode" || sid != "ses_opencode" {
+		t.Fatalf("binding = (%q, %q) %v", hid, sid, err)
+	}
+}
+
+func TestMigrateV9ToV10AddsOrchestrationSession(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hero.db")
+	s, err := openCapped(path, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.CreateCycle(Cycle{
+		Number: 1, Title: "pre-v10", Status: CycleStatusActive,
+		StartedAt: nowRFC3339(), ConfigSnapshotJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open after v9: %v", err)
+	}
+	defer s2.Close()
+	v, err := s2.SchemaVersion()
+	if err != nil || v != currentSchemaVersion {
+		t.Fatalf("schema version = %d %v, want %d", v, err, currentSchemaVersion)
+	}
+	c, err := s2.GetCycle(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.OrchestrationSessionID != "" || c.OrchestrationHarnessID != "" {
+		t.Fatalf("migrated orch session = %+v", c)
+	}
+	if err := s2.SetOrchestrationSession(id, "after-v10", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+}

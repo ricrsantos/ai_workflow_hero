@@ -196,6 +196,7 @@ func TestChatSlashEnterExecutesControlSlash(t *testing.T) {
 	m = EnterConversationForTest(m)
 	m = SetOrchestrationLiveForTest(m, true)
 	m = SetHarnessSessionIDForTest(m, "orch-sess")
+	m = SetHarnessSessionHarnessIDForTest(m, "cursor")
 	m = SetConversationInput(m, "/hero-approve")
 
 	next, cmd := HandleTestKey(m, "enter")
@@ -246,6 +247,7 @@ func TestChatHeroApproveFollowUpWithoutPendingApproval(t *testing.T) {
 	m = EnterConversationForTest(m)
 	m = SetOrchestrationLiveForTest(m, true)
 	m = SetHarnessSessionIDForTest(m, "orch-sess")
+	m = SetHarnessSessionHarnessIDForTest(m, "cursor")
 	m = SetConversationInput(m, "/hero-approve")
 	m.slashOverlayDismissed = true
 

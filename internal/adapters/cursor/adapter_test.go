@@ -485,13 +485,33 @@ func TestExecuteResumeFlag(t *testing.T) {
 
 	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{
 		Prompt:    "continue",
-		SessionID: "sess-1",
+		SessionID: "11111111-1111-4111-8111-111111111111",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsArg(gotArgs, "--resume=sess-1") {
+	if !containsArg(gotArgs, "--resume=11111111-1111-4111-8111-111111111111") {
 		t.Fatalf("expected resume flag, args=%v", gotArgs)
+	}
+}
+
+func TestExecuteRejectsNonUUIDResume(t *testing.T) {
+	dir := withCursorAssets(t)
+	adapter := cursoradapter.NewAdapter(dir)
+	adapter.LookPath = func(string) (string, error) { return "/bin/cursor-agent", nil }
+	adapter.Runner = &fakeRunner{t: t, handlers: []fakeCall{{
+		matchArgs: func(args []string) bool {
+			t.Fatal("cursor must not launch with a foreign session id")
+			return true
+		},
+	}}}
+
+	_, err := adapter.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt:    "continue",
+		SessionID: "ses_f810a8dc9ffeO6nD2Xb69Dnunp",
+	})
+	if err == nil || !strings.Contains(err.Error(), "must be a UUID") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
@@ -857,12 +877,12 @@ func TestDispatchDoesNotResumePriorSession(t *testing.T) {
 
 	if _, err := adapter.Execute(context.Background(), harness.ExecuteRequest{
 		Prompt:    "chat",
-		SessionID: "sess-prior",
+		SessionID: "22222222-2222-4222-8222-222222222222",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// Arm resume via ResumeSession (legacy path) — Dispatch must still stay fresh.
-	if err := adapter.ResumeSession(context.Background(), "sess-prior"); err != nil {
+	if err := adapter.ResumeSession(context.Background(), "22222222-2222-4222-8222-222222222222"); err != nil {
 		t.Fatal(err)
 	}
 

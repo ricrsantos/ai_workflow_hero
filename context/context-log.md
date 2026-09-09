@@ -4,6 +4,24 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-09 — Harness session isolation (schema v10)
+
+**Problem**: During a mixed-harness cycle, QA on OpenCode emitted `ses_f810…`.
+`persistHarnessSession` overwrote `orchestrationSessionID` because
+`orchestrationLive` was still true. Resume copied that id into Cursor
+`--resume`, which requires a UUID. Cancel then used the global session against
+the wrong adapter (`no in-flight execution`).
+
+**Change**: SQLite schema v10 adds `cycles.orchestration_session_id` and
+`cycles.orchestration_harness_id` as an atomic pair. Stage rows remain the
+named stage-agent session only. TUI persist updates the orchestrator slot only
+for `orchestration_agent`. Resume is fail-closed when the owner is missing or
+mismatched; `bindSessionToRuntimeHarness` no longer relabels. Cursor Execute
+rejects non-UUID resume ids before launching.
+
+**Validation**: store v9→v10 migration, TUI QA-stream vs orch resume, cancel
+session identity, Cursor foreign-id guard; `go test ./...`.
+
 ## 2026-09-09 — Telegram address-token validation
 
 **Problem**: Unprefixed Telegram messages that contained `:` (e.g. pasted errors

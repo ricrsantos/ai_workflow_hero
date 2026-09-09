@@ -746,6 +746,56 @@ func (s *Service) SetStageHarnessID(stageName, harnessID string) error {
 	return s.Store.SetStageHarnessID(c.ID, stageName, harnessID)
 }
 
+// SetStageSessionBinding persists a stage session id and owning harness together.
+func (s *Service) SetStageSessionBinding(stageName, harnessID, sessionID string) error {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	return s.Store.SetStageSessionBinding(c.ID, stageName, harnessID, sessionID)
+}
+
+// StageSessionBinding returns the harness id and session id bound to a stage.
+func (s *Service) StageSessionBinding(stageName string) (harnessID, sessionID string, err error) {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return "", "", err
+	}
+	return s.Store.StageSessionBinding(c.ID, stageName)
+}
+
+// SessionResumeAllowed reports whether the stored stage session may resume as harnessID.
+func (s *Service) SessionResumeAllowed(stageName, harnessID string) (bool, error) {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return false, err
+	}
+	return s.Store.SessionResumeAllowed(c.ID, stageName, harnessID)
+}
+
+// SetOrchestrationSession persists the orchestrator session pair for the active cycle.
+func (s *Service) SetOrchestrationSession(sessionID, harnessID string) error {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	return s.Store.SetOrchestrationSession(c.ID, sessionID, harnessID)
+}
+
+// ClearOrchestrationSession clears the orchestrator session pair on the active cycle.
+func (s *Service) ClearOrchestrationSession() error {
+	return s.SetOrchestrationSession("", "")
+}
+
+// OrchestrationSession returns the stored orchestrator session pair for the active cycle.
+func (s *Service) OrchestrationSession() (sessionID, harnessID string, err error) {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return "", "", err
+	}
+	return s.Store.OrchestrationSession(c.ID)
+}
+
 // SetStageHarnessPermissionPaused persists the active TUI permission gate for
 // deterministic Status. Callers clear it on every answer, cancellation, and
 // turn completion.

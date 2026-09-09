@@ -69,13 +69,23 @@ func (m model) orchestratorModelSlug() (slug string, warned bool) {
 
 // bindSessionToRuntimeHarness records which harness owns harnessSessionID so
 // mixed orchestrator/discover pairs (e.g. cursor + codex) can resume.
+// An existing session is never relabeled onto a different harness.
 func (m model) bindSessionToRuntimeHarness() model {
-	if h := strings.TrimSpace(strings.ToLower(m.runtimeHarnessID)); h != "" {
-		m.harnessSessionHarnessID = h
+	runtime := strings.TrimSpace(strings.ToLower(m.runtimeHarnessID))
+	if runtime == "" {
+		runtime = strings.TrimSpace(strings.ToLower(m.agentHarnessForName(m.runtimeAgentName)))
+	}
+	if strings.TrimSpace(m.harnessSessionID) == "" {
+		if runtime != "" {
+			m.harnessSessionHarnessID = runtime
+		}
 		return m
 	}
-	if h := strings.TrimSpace(strings.ToLower(m.agentHarnessForName(m.runtimeAgentName))); h != "" {
-		m.harnessSessionHarnessID = h
+	owner := strings.TrimSpace(strings.ToLower(m.harnessSessionHarnessID))
+	if owner == "" || (runtime != "" && owner != runtime) {
+		m.harnessSessionID = ""
+		m.harnessSessionHarnessID = ""
+		return m
 	}
 	return m
 }
@@ -91,7 +101,15 @@ func (m model) startDiscoverResearchSession() (model, tea.Cmd) {
 		return m, nil
 	}
 	if sid := strings.TrimSpace(m.harnessSessionID); sid != "" {
-		m.orchestrationSessionID = sid
+		if strings.TrimSpace(m.orchestrationSessionID) == "" {
+			owner := strings.TrimSpace(strings.ToLower(m.harnessSessionHarnessID))
+			if owner == "" {
+				owner = strings.TrimSpace(strings.ToLower(m.agentHarnessForName(agentOrchestration)))
+			}
+			if owner != "" {
+				m = m.persistOrchestrationSessionPair(sid, owner)
+			}
+		}
 	}
 	if err := m.svc.SetStageHarnessSessionID(stageResearch, ""); err != nil {
 		slog.Debug("tui clear research harness session failed", "error", err)
@@ -121,9 +139,8 @@ func (m model) startDiscoverResearchSession() (model, tea.Cmd) {
 }
 
 func (m model) resumeOrchestratorAfterResearch() (model, tea.Cmd) {
-	orchID := strings.TrimSpace(m.orchestrationSessionID)
 	m.researchLive = false
-	m.harnessSessionID = orchID
+	m = m.restoreOrchestratorSession()
 	m = m.withRuntimeAgent(agentOrchestration)
 	m.runtimeCommandName = "start"
 	m = m.applyAgentRuntimePair(agentOrchestration, "")
@@ -156,9 +173,7 @@ func (m model) prepareDiscoverFollowUp() model {
 
 func (m model) prepareOrchestratorFollowUp() model {
 	m.runtimeAgentName = agentOrchestration
-	if sid := strings.TrimSpace(m.orchestrationSessionID); sid != "" {
-		m.harnessSessionID = sid
-	}
+	m = m.restoreOrchestratorSession()
 	m = m.applyAgentRuntimePair(agentOrchestration, "")
 	m = m.bindSessionToRuntimeHarness()
 	return m

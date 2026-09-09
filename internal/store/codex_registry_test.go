@@ -45,7 +45,7 @@ WHERE type = 'index' AND name = 'idx_harness_serve_registry_harness_project'`).S
 }
 
 // codex-app-server-registry: codex rows persist pid + project identity with no
-// HTTP URL (port=0 / url='') and can be listed/scoped/removed (ADR-044).
+// HTTP URL (port=0 / url=”) and can be listed/scoped/removed (ADR-044).
 func TestCodexServeRegistryRoundTrip(t *testing.T) {
 	st := newStoreAt(t, t.TempDir())
 	projectDir := "/proj/a"
@@ -190,5 +190,31 @@ func TestSessionResumeAllowed_UnboundStageAllowsResume(t *testing.T) {
 		if ok, err := st.SessionResumeAllowed(cycleID, "qa", h); err != nil || !ok {
 			t.Fatalf("unbound stage must allow %s resume: ok=%v err=%v", h, ok, err)
 		}
+	}
+}
+
+func TestSessionResumeAllowed_SessionWithoutHarnessRejects(t *testing.T) {
+	st := newStoreAt(t, t.TempDir())
+	cycleID, err := st.CreateCycle(Cycle{
+		Number: 3, Title: "c6c", Status: CycleStatusActive,
+		StartedAt: nowRFC3339(), ConfigSnapshotJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateStages([]Stage{
+		{CycleID: cycleID, Name: "qa", Status: StageWaiting, MaxIterations: 2, SortOrder: 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetStageHarnessSessionID(cycleID, "qa", "ses_unbound"); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := st.SessionResumeAllowed(cycleID, "qa", "cursor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("session without harness_id must not resume")
 	}
 }

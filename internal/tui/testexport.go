@@ -662,6 +662,10 @@ func OrchestrationSessionIDForTest(m model) string {
 	return m.orchestrationSessionID
 }
 
+func OrchestrationSessionHarnessIDForTest(m model) string {
+	return m.orchestrationSessionHarnessID
+}
+
 func ResearchSessionIDForTest(m model) string {
 	return m.researchSessionID
 }

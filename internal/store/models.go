@@ -53,6 +53,11 @@ type Cycle struct {
 	LockAt                 string
 	// OpenspecChange is the OpenSpec change directory name (empty when unset).
 	OpenspecChange string
+	// OrchestrationSessionID is the harness-native session for orchestration_agent
+	// (schema v10). It is independent of stages.harness_session_id.
+	OrchestrationSessionID string
+	// OrchestrationHarnessID is the harness that owns OrchestrationSessionID.
+	OrchestrationHarnessID string
 }
 
 // Stage is a stage row within a cycle.

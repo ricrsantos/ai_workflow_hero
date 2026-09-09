@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -273,6 +274,15 @@ func (m model) clearHarnessBindingIfMatch(harnessID string) model {
 		strings.TrimSpace(strings.ToLower(m.chatHarnessID)) == id {
 		m.harnessSessionID = ""
 		m.harnessSessionHarnessID = ""
+	}
+	if strings.TrimSpace(strings.ToLower(m.orchestrationSessionHarnessID)) == id {
+		m.orchestrationSessionID = ""
+		m.orchestrationSessionHarnessID = ""
+		if m.svc != nil {
+			if err := m.svc.ClearOrchestrationSession(); err != nil {
+				slog.Debug("tui clear orchestration session on harness reset failed", "error", err)
+			}
+		}
 	}
 	if strings.TrimSpace(strings.ToLower(m.freechatSessionHarnessID)) == id {
 		m.freechatSessionID = ""

@@ -288,7 +288,15 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	}
 	m.stageHandoffWave++
 	if sid := strings.TrimSpace(m.harnessSessionID); sid != "" {
-		m.orchestrationSessionID = sid
+		if strings.TrimSpace(m.orchestrationSessionID) == "" {
+			owner := strings.TrimSpace(strings.ToLower(m.harnessSessionHarnessID))
+			if owner == "" {
+				owner = strings.TrimSpace(strings.ToLower(m.agentHarnessForName(agentOrchestration)))
+			}
+			if owner != "" {
+				m = m.persistOrchestrationSessionPair(sid, owner)
+			}
+		}
 	}
 	checklist := m.implementationChecklist()
 	runAgents := append([]string(nil), agents...)
@@ -1088,7 +1096,6 @@ func validateImplementationChecklistPlan(checklist implementationChecklist, acti
 func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	stage := strings.TrimSpace(m.stageHandoffStage)
 	outputs := strings.TrimSpace(strings.Join(m.stageHandoffOutputs, "\n\n"))
-	orchID := strings.TrimSpace(m.orchestrationSessionID)
 	decision := m.evaluateStageHandoff(stage, outputs)
 	if stage == stageImplementation && decision.PartialProgress {
 		// Keep the stage Running and launch a fresh wave in the same iteration.
@@ -1103,7 +1110,7 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 				m.stageHandoffOutputs = nil
 				m.stageHandoffDoneKey = ""
 				m.stageHandoffPendingBefore = append([]string(nil), decision.Checklist.Pending...)
-				m.harnessSessionID = orchID
+				m = m.restoreOrchestratorSession()
 				m.runtimeCommandName = ""
 				return m.startStageAgentSessions(m.namedStageAgents(st))
 			}
@@ -1118,7 +1125,7 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	m.stageHandoffExpectedAgents = nil
 	m.stageHandoffPreparationError = ""
 	m.stageHandoffInterventionRequired = !decision.Complete
-	m.harnessSessionID = orchID
+	m = m.restoreOrchestratorSession()
 	m = m.withRuntimeAgent(agentOrchestration)
 	m.runtimeCommandName = "start"
 	m = m.applyAgentRuntimePair(agentOrchestration, "")

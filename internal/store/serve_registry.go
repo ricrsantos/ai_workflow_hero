@@ -154,7 +154,8 @@ SELECT harness_id, harness_session_id FROM stages WHERE cycle_id = ? AND name = 
 // SessionResumeAllowed reports whether the stored stage session may be resumed as
 // harnessID. A non-empty stored session whose recorded harness differs must never
 // resume: a Codex thread id must never be resumed as a Cursor/OpenCode session and
-// vice versa (ADR-044; PRD-C06-001 §4.3). Unbound stages always allow resume.
+// vice versa (ADR-044; PRD-C06-001 §4.3). A non-empty session with an empty harness
+// binding is not resumeable. Unbound stages (empty session) always allow resume.
 func (s *Store) SessionResumeAllowed(cycleID int64, stageName, harnessID string) (bool, error) {
 	boundHarness, sessionID, err := s.StageSessionBinding(cycleID, stageName)
 	if err == ErrNotFound {
@@ -167,8 +168,37 @@ func (s *Store) SessionResumeAllowed(cycleID int64, stageName, harnessID string)
 	if strings.TrimSpace(sessionID) == "" {
 		return true, nil
 	}
-	if bound := strings.TrimSpace(strings.ToLower(boundHarness)); bound != "" && harnessID != "" && bound != harnessID {
+	bound := strings.TrimSpace(strings.ToLower(boundHarness))
+	if bound == "" {
+		return false, nil
+	}
+	if harnessID != "" && bound != harnessID {
 		return false, nil
 	}
 	return true, nil
+}
+
+// SetStageSessionBinding stores the stage session id and owning harness together.
+// A non-empty session requires a harness id; clearing the session also clears the harness.
+func (s *Store) SetStageSessionBinding(cycleID int64, stageName, harnessID, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	if sessionID != "" && harnessID == "" {
+		return fmt.Errorf("stage session requires a harness id")
+	}
+	if sessionID == "" {
+		harnessID = ""
+	}
+	res, err := s.db.Exec(`
+UPDATE stages SET harness_id = ?, harness_session_id = ? WHERE cycle_id = ? AND name = ?`,
+		harnessID, sessionID, cycleID, stageName)
+	if err != nil {
+		return fmt.Errorf("set stage session binding: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	s.log.Debug("stage session binding updated", "cycle_id", cycleID, "stage", stageName, "harness_id", harnessID)
+	return nil
 }
