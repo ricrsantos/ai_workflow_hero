@@ -12,10 +12,10 @@
   },
   "harnesses": {
     "claude": {
-      "enabled": false,
-      "model": "",
+      "enabled": true,
+      "model": "claude-sonnet-4-6",
       "enable_fast_model": false,
-      "permission_profile": ""
+      "permission_profile": "auto-all"
     },
     "codex": {
       "enabled": true,
@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "codex",
-    "model": "gpt-5.6-luna"
+    "harness": "claude",
+    "model": "claude-sonnet-4-6"
   },
   "chat_verbosity": "debug",
   "telegram": {
@@ -46,6 +46,11 @@
     "always_send": true
   },
   "model_properties": {
+    "claude": {
+      "claude-sonnet-4-6": {
+        "ef": "medium"
+      }
+    },
     "codex": {
       "gpt-5.4-mini": {
         "ef": "medium",
