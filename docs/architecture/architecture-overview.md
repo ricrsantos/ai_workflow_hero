@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **3.1.1**. Cursor, OpenCode, Codex, and the opt-in Claude TUI harness are wired. Claude uses a supervised, turn-scoped CLI process, constrained permission bridge, native model catalog, `.claude/` projection, and marked `CLAUDE.md` ownership; no Claude daemon or Cursor Runtime dispatch exists. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs, remote cycle-config wizard, active-agent/model Telegram status reporting, project-local Always send reply routing, and `/interrupt` / `/kill` commands.
+> **Status:** reflects codebase at Hero **3.1.1**. Cursor, OpenCode, Codex, and the opt-in Claude TUI harness are wired. Claude uses a supervised, turn-scoped CLI process, constrained permission bridge, native model catalog, `.claude/` projection, and marked `CLAUDE.md` ownership; no Claude daemon or Cursor Runtime dispatch exists. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs, remote cycle-config wizard, active-agent/model Telegram status reporting, project-local Always send reply routing, and `/interrupt` / `/kill` commands. Development auto-update (C14) adds a host-targeted Hero build, systemd user timer, atomic binary swap, and TTY-preserving Telegram IPC restart.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -33,14 +33,14 @@ ai_workflow_hero/
 ├── assets/                # embed.FS: cursor/, templates/, models/, config/, docs/
 ├── internal/
 │   ├── install · upgrade · uninstall · doctor · status · variables · update_models
-│   ├── cycle · engine · store · tui · harness · todos · workflowconfig · ideadocs
+│   ├── autoupdate · cycle · engine · store · tui · harness · todos · workflowconfig · ideadocs
 │   ├── adapters/cursor/   # Cursor Agent CLI adapter (NDJSON stream-json)
 │   ├── adapters/opencode/ # OpenCode serve HTTP + SSE /event
 │   ├── adapters/codex/    # Codex app-server stdio JSON-RPC + PrepareHeroStart (C6 §4–§7; Hero 2.5.0)
 │   ├── adapters/claude/   # Claude CLI NDJSON + turn-scoped permission bridge (C13)
 │   ├── common/            # template, clierr, output, envhygiene, userpath
 │   └── integration/       # install/upgrade/doctor integration tests
-├── scripts/               # release.sh, build_dev.sh (+ contract tests)
+├── scripts/               # release/build scripts, updater, systemd user units
 ├── docs/                  # PRD, UI, ADR, deployment, testing
 ├── context/               # current-state.md, context-log.md (dogfood state)
 ├── openspec/              # living specs + archived changes
@@ -352,6 +352,33 @@ The daemon owns Telegram credentials and Bot API transport. TUI clients own rend
 - Project TUI logs rotate under `.workflow-hero/logs/tui.log` (10 MB × 10) with a one-time legacy migration; the daemon logs under `~/.workflow-hero/logs/telegram-daemon.log`. All writes pass shared `internal/common/redact` token/chat-id redaction. `.workflow-hero/logs/` is added to the managed `.gitignore` block.
 - `doctor`/`status` report plugin installed / daemon binary / version compatibility.
 
+### Development auto-update (C14)
+
+```
+Telegram /auto-update
+        │
+        ▼
+internal/autoupdate ── git add/commit ──► needs-update.txt=true
+                                             │
+                              systemd --user timer (5 min)
+                                             │
+                              hero-update.service / script
+                                             │
+                   build_update.sh → temp binary → atomic swap
+                                             │
+                     Telegram IPC EventUpdateRestart
+                                             │
+                         each TUI execs the new binary
+```
+
+The development-only updater is separate from `build_dev.sh` and
+`release.sh`. `build_update.sh` builds only `./cmd/hero` for the current
+machine target. The updater keeps a single `hero.previous` backup, serializes
+runs with `flock`, and leaves the request armed when build or installation
+fails. TUI restart uses `exec` so the existing terminal remains attached; a
+`SIGUSR2` fallback handles local instances that are not registered with the
+Telegram daemon. See [ADR-076](ADR-C14-001-auto-update.md).
+
 **Schema v8** (`internal/store/migrate.go`):
 
 | Table | Purpose |
@@ -582,6 +609,7 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/install` · `upgrade` · `uninstall` | Project materialization and maintenance |
 | `internal/doctor` · `status` · `variables` | Diagnostics and introspection (`doctor/cursor_cli.go` checks Agent CLI) |
 | `internal/update_models` | Upstream model pricing sync |
+| `internal/autoupdate` | Deterministic source commit and atomic update request flag (ADR-076) |
 | `internal/cycle` | CLI-as-API, archive, OpenSpec coupling, legacy import |
 | `internal/engine` | Deterministic AI Loop state machine + `conversation.Notifier` lifecycle publishing |
 | `internal/conversation` | Transport-neutral conversation service: input classification, session/context types, `Notifier` events (ADR-061) |

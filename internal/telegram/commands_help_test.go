@@ -33,6 +33,7 @@ func TestCommandHelpTextListsCoreCommands(t *testing.T) {
 		"/status",
 		"/interrupt",
 		"/kill",
+		"/auto-update",
 		"/model",
 		"/hero-config",
 		"/hero-permission",

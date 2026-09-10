@@ -93,6 +93,24 @@ func TestProcessUpdateRoutesCommandToClient(t *testing.T) {
 	}
 }
 
+func TestBroadcastUpdateRestartEvent(t *testing.T) {
+	d := newTestDaemon(t, &fakeBot{}, openTestStore(t))
+	out := make(chan ipc.Message, 1)
+	d.registry.register("/p", ipc.ModeCycle, "proj", out)
+
+	if got := d.broadcastEvent(ipc.EventUpdateRestart, ""); got != 1 {
+		t.Fatalf("broadcast count=%d want 1", got)
+	}
+	select {
+	case msg := <-out:
+		if msg.Type != ipc.TypeEvent || msg.EventType != ipc.EventUpdateRestart {
+			t.Fatalf("event=%+v", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("restart event was not broadcast")
+	}
+}
+
 func TestProcessUpdateListSelectAndRouteSelectedInstance(t *testing.T) {
 	bot := &fakeBot{}
 	d := newTestDaemon(t, bot, openTestStore(t))

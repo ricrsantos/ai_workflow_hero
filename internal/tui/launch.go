@@ -68,7 +68,12 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 	}
 	// slog default writes stderr and corrupts the alt-screen TUI; redirect while running.
 	restoreLog := redirectSlogForTUI(svc.ProjectDir)
-	defer restoreLog()
+	logRestored := false
+	defer func() {
+		if !logRestored {
+			restoreLog()
+		}
+	}()
 
 	if freeChat {
 		slog.Info("starting hero free-chat tui", "workDir", svc.WorkDir)
@@ -107,15 +112,37 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 	defer stopManaged()
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	defer signal.Stop(sigCh)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGUSR2)
+	signalDone := make(chan struct{})
+	var signalMu sync.Mutex
+	var activeProgram *tea.Program
+	restartPending := false
+	restartSignaled := false
+	defer func() {
+		close(signalDone)
+		signal.Stop(sigCh)
+	}()
 	go func() {
-		sig, ok := <-sigCh
-		if !ok {
-			return
+		for {
+			select {
+			case <-signalDone:
+				return
+			case sig := <-sigCh:
+				if sig == syscall.SIGUSR2 {
+					signalMu.Lock()
+					restartPending = true
+					restartSignaled = true
+					p := activeProgram
+					signalMu.Unlock()
+					if p != nil {
+						p.Send(tuiRestartMsg{})
+					}
+					continue
+				}
+				slog.Info("signal received, stopping managed harness processes", "signal", sig.String())
+				stopManaged()
+			}
 		}
-		slog.Info("signal received, stopping managed harness processes", "signal", sig.String())
-		stopManaged()
 	}()
 
 	m := newModelWithChat(svc, models, modelSlug, harnessID, modelWarn)
@@ -137,15 +164,48 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 			}
 		}
 	}
+	var finalModel tea.Model
 	err := opencodeadapter.RunServeWatchdog(context.Background(), svc.ProjectDir, svc.Store, func() error {
 		p := tea.NewProgram(m, tea.WithAltScreen())
+		signalMu.Lock()
+		activeProgram = p
+		pendingRestart := restartPending
+		restartPending = false
+		signalMu.Unlock()
+		if pendingRestart {
+			p.Send(tuiRestartMsg{})
+		}
 		relayTelegramMsgs(p, m.telegramMsgCh)
 		if eventRelay != nil {
 			relayLifecycleEvents(p, eventRelay.Events())
 		}
-		_, runErr := p.Run()
+		var runErr error
+		finalModel, runErr = p.Run()
+		signalMu.Lock()
+		activeProgram = nil
+		signalMu.Unlock()
 		return runErr
 	})
+	signalMu.Lock()
+	shouldRestart := restartSignaled
+	signalMu.Unlock()
+	restartModel := m
+	if final, ok := finalModel.(model); ok {
+		restartModel = final
+		if final.restartRequested {
+			shouldRestart = true
+		}
+	}
+	if shouldRestart {
+		stopManaged()
+		restartModel.stopTelegram()
+		if eventRelay != nil {
+			_ = eventRelay.Close()
+		}
+		restoreLog()
+		logRestored = true
+		return restartHeroProcess()
+	}
 	if err != nil {
 		slog.Error("tui exited with error", "error", err)
 		return err

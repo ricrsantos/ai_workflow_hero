@@ -378,6 +378,35 @@ func TestTelegramHelpReturnsCommandCatalog(t *testing.T) {
 	}
 }
 
+func TestTelegramAutoUpdateCommandIsExact(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want bool
+	}{
+		{"/auto-update", true},
+		{" /AUTO-UPDATE ", true},
+		{"/auto-update now", false},
+		{"auto-update", false},
+	} {
+		if got := isTelegramAutoUpdateCommand(tc.text); got != tc.want {
+			t.Fatalf("isTelegramAutoUpdateCommand(%q)=%v want %v", tc.text, got, tc.want)
+		}
+	}
+}
+
+func TestTelegramUpdateRestartEventRequestsTUIRestart(t *testing.T) {
+	m := NewTestModel(nil)
+	m.telegram = &telegramState{connected: true, paired: true}
+	next, cmd := m.handleTelegramMsg(telegramEventMsg{eventType: ipc.EventUpdateRestart})
+	updated := next.(model)
+	if !updated.restartRequested {
+		t.Fatal("update restart event must mark the model for restart")
+	}
+	if cmd == nil {
+		t.Fatal("update restart event must quit the TUI")
+	}
+}
+
 func TestIsTelegramKillCommand(t *testing.T) {
 	cases := []struct {
 		text string

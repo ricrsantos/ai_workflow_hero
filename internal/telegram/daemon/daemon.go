@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -274,6 +275,15 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 				return
 			}
 			switch m.Type {
+			case ipc.TypeRequestUpdateRestart:
+				if m.UID != 0 && d.uid != 0 && m.UID != d.uid {
+					_ = c.Send(ipc.Message{Type: ipc.TypeError, ErrorText: "access denied: socket owner mismatch"})
+					return
+				}
+				sent := d.broadcastEvent(ipc.EventUpdateRestart, "")
+				if err := c.Send(ipc.Message{Type: ipc.TypeUpdateRestartAck, EventData: strconv.Itoa(sent)}); err != nil {
+					return
+				}
 			case ipc.TypeRegister:
 				if m.UID != 0 && d.uid != 0 && m.UID != d.uid {
 					_ = c.Send(ipc.Message{Type: ipc.TypeError, ErrorText: "access denied: socket owner mismatch"})

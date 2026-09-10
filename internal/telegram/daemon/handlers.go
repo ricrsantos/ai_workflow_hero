@@ -421,16 +421,20 @@ func (d *Daemon) announceDisconnection(ctx context.Context, c *client) {
 	d.send(ctx, chatID, prefixAddress(c.address, "disconnected."))
 }
 
-// broadcastEvent pushes a lifecycle event frame to every registered client.
-func (d *Daemon) broadcastEvent(eventType, data string) {
+// broadcastEvent pushes an event frame to every registered client and returns
+// the number of clients whose outbound channel accepted it.
+func (d *Daemon) broadcastEvent(eventType, data string) int {
+	sent := 0
 	for _, addr := range d.registry.addresses() {
 		if c, ok := d.registry.lookup(addr); ok {
 			select {
 			case c.outbound <- ipc.Message{Type: ipc.TypeEvent, EventType: eventType, EventData: data}:
+				sent++
 			default:
 			}
 		}
 	}
+	return sent
 }
 
 // ExpirePending expires stale pending rows and returns how many expired.

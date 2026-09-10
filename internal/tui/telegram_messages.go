@@ -94,6 +94,16 @@ func (m model) handleTelegramMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case telegramEventMsg:
 		m = m.handleTelegramEvent(msg)
 		m, notificationCmd := m.flushPendingTelegramNotifications()
+		if m.restartRequested {
+			restartCmds := []tea.Cmd{tea.Quit}
+			if m.streaming {
+				restartCmds = append(restartCmds, m.cancelStreamCmd())
+			}
+			return m, combineTimerCmds(append([]tea.Cmd{
+				notificationCmd,
+				m.telegramOutboundCmd("Hero update installed; restarting this TUI."),
+			}, restartCmds...)...)
+		}
 		return m, notificationCmd
 
 	case telegramInboundMsg:
@@ -133,6 +143,9 @@ func (m model) handleTelegramEvent(msg telegramEventMsg) model {
 			m = m.appendTelegramNotice("⚠ Pairing code expired. Start pairing again.")
 			m = m.setStatusWarning("telegram", "Pairing code expired. Start pairing again.")
 		}
+	case ipc.EventUpdateRestart:
+		m.restartRequested = true
+		m = m.appendTelegramNotice("Hero update received; preparing a TUI restart…")
 	case ipc.EventDaemonUp:
 		m.telegram.connected = true
 		m.telegram.retrying = false
@@ -159,6 +172,10 @@ func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 		// inbound that still reaches Update.
 		m.applyTelegramKill(msg.inboundID)
 		return m, nil
+	}
+	if isTelegramAutoUpdateCommand(msg.text) {
+		next, cmd := m.handleTelegramAutoUpdate()
+		return next, combineTimerCmds(ack, cmd)
 	}
 	if strings.EqualFold(strings.TrimSpace(msg.text), telegramStatusCommand) {
 		return m, combineTimerCmds(ack, m.telegramOutboundCmd(m.telegramStatusText(time.Now())))

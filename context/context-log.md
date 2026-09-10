@@ -4,6 +4,18 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-09 — Development Telegram auto-update
+
+**Change**: Added ADR-076 and the development-only `/auto-update` flow. The TUI command commits safe working-tree changes and sets `needs-update.txt`; a systemd user timer runs `hero-update.sh` every five minutes. The updater invokes the new `scripts/build_update.sh`, which builds only `./cmd/hero` for the host OS/architecture, atomically replaces the installed binary, signals running TUIs through versioned Telegram IPC, and preserves their terminal/process identity. Existing `build_dev.sh` and `release.sh` were not changed.
+
+**Validation**: `go test ./...`, `go vet ./...`, shell syntax checks, `git diff --check`, and a real host-target `build_update.sh` build passed.
+
+## 2026-09-10 — Development auto-update uninstaller
+
+**Change**: Added `scripts/uninstall_update_dev.sh`. It stops/disables the systemd user timer, reloads the user manager, removes the updater service/timer, helper, state, lock, and timer-wants link, and deliberately preserves the installed `hero` binary and `hero.previous` backup.
+
+**Validation**: Added a temp-directory contract test covering the cleanup scope and preserving the Hero binary/backup; shell syntax and the full Go test suite pass.
+
 ## 2026-09-09 — Claude stream-json event mapping
 
 **Change**: The Claude NDJSON normalizer now maps official Agent SDK / CLI `stream-json` types that previously fell through as unknown. User-visible work and errors emit always: tool progress, task lifecycle, hooks/`api_retry`, local command output, informational/permission-denied/worker/auth/rate-limit/result errors, extra assistant content blocks, and control-protocol permission/elicitation warnings. Protocol noise (`stream_event`, compact/plugin/session catalog frames, thinking-token estimates, keep-alives, control ACKs, prompt suggestions, memory/notification) stays `hero --debug` only, matching Codex/OpenCode. `control_request can_use_tool` is a warning, not a TUI permission gate, because Hero answers ask via the MCP bridge rather than stdin `control_response`.

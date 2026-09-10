@@ -23,19 +23,21 @@ const ProtocolVersion = 1
 
 // Frame types.
 const (
-	TypeRegister       = "register"
-	TypeUnregister     = "unregister"
-	TypeAckDelivery    = "ack_delivery"
-	TypeOutbound       = "outbound"
-	TypeRegistered     = "registered"
-	TypeInbound        = "inbound"
-	TypeEvent          = "event"
-	TypeError          = "error"
-	TypeSetCredentials = "set_credentials"
-	TypePairStart      = "pair_start"
-	TypePairCancel     = "pair_cancel"
-	TypeClear          = "clear"
-	TypeTest           = "test"
+	TypeRegister             = "register"
+	TypeUnregister           = "unregister"
+	TypeAckDelivery          = "ack_delivery"
+	TypeOutbound             = "outbound"
+	TypeRegistered           = "registered"
+	TypeInbound              = "inbound"
+	TypeEvent                = "event"
+	TypeError                = "error"
+	TypeSetCredentials       = "set_credentials"
+	TypePairStart            = "pair_start"
+	TypePairCancel           = "pair_cancel"
+	TypeClear                = "clear"
+	TypeTest                 = "test"
+	TypeRequestUpdateRestart = "request_update_restart"
+	TypeUpdateRestartAck     = "update_restart_ack"
 )
 
 // Registration modes.
@@ -53,6 +55,7 @@ const (
 	EventDaemonUp        = "daemon_up"
 	EventQueueNotice     = "queue_notice"
 	EventCleared         = "cleared"
+	EventUpdateRestart   = "update_restart"
 )
 
 // Message is a single wire frame. Payload fields are optional per type

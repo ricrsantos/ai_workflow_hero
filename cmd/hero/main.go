@@ -111,6 +111,7 @@ func newInternalCommand() *cobra.Command {
 			)
 		},
 	})
+	internal.AddCommand(newAutoUpdateRestartCommand())
 	return internal
 }
 

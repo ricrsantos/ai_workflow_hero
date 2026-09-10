@@ -1,0 +1,13 @@
+[Unit]
+Description=Atualiza o Hero de desenvolvimento
+ConditionPathExists=@HERO_UPDATE_INSTALL_DIR@/hero-update.sh
+After=default.target
+
+[Service]
+Type=oneshot
+Environment=HERO_UPDATE_SOURCE=@HERO_UPDATE_SOURCE@
+Environment=HERO_UPDATE_INSTALL_DIR=@HERO_UPDATE_INSTALL_DIR@
+ExecStart=@HERO_UPDATE_INSTALL_DIR@/hero-update.sh
+TimeoutStartSec=30min
+StandardOutput=journal
+StandardError=journal

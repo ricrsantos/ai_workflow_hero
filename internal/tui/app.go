@@ -58,10 +58,12 @@ type model struct {
 	contentOffset int // scroll for Status/Artifacts/Costs/Events
 
 	// Fixed footer status bar (running / result / error).
-	statusKind  statusKind
-	statusLabel string
-	statusText  string
-	actionBusy  bool
+	statusKind       statusKind
+	statusLabel      string
+	statusText       string
+	actionBusy       bool
+	autoUpdateBusy   bool
+	restartRequested bool
 
 	// Shared TUI counters. The session timer is cycle-backed or free-chat
 	// in-memory; AI wk covers the currently executing demand and AI rp tracks
@@ -365,6 +367,13 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tuiRestartMsg:
+		m.restartRequested = true
+		if m.streaming {
+			return m, tea.Batch(m.cancelStreamCmd(), tea.Quit)
+		}
+		return m, tea.Quit
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -457,6 +466,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.setStatusResult(true, label, msg.success)
 		}
 		return m, m.refreshCmd()
+
+	case telegramAutoUpdateResultMsg:
+		return m.handleTelegramAutoUpdateResult(msg)
 
 	case timerTickMsg:
 		return m.handleTimerTick(msg)

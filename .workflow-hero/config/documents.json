@@ -25,6 +25,14 @@
       "title": "TUI Claude Code Adapter"
     },
     {
+      "category": "ADR",
+      "cycle": "C14",
+      "seq": 1,
+      "slug": "development-auto-update",
+      "path": "docs/architecture/ADR-C14-001-auto-update.md",
+      "title": "Development Auto-update via systemd and Telegram IPC (ADR-076)"
+    },
+    {
       "category": "PRD",
       "cycle": "C01",
       "seq": 1,

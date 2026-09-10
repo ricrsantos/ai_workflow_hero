@@ -25,6 +25,7 @@ Selected instance
 /status — Cycle/session status, timers, and context usage
 /interrupt — Cancel in-flight agent work (same as Chat Ctrl+C)
 /kill — Force-kill the selected TUI (last resort; daemon stays up)
+/auto-update — Commit source changes and queue a local Hero binary update
 /model — Choose free-chat harness, model, and properties
 /hero-config — Guided cycle configuration wizard
 /hero-config-show — Show cycle config or the active draft

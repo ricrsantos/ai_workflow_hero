@@ -200,6 +200,21 @@ Send `/interrupt` to cancel the selected TUI's in-flight agent work the same way
 
 Send `/kill` only as a last resort when the selected TUI is unusable: it force-kills that TUI process (`SIGKILL`) without confirmation. You should see a best-effort `Killing TUI.` reply; the Telegram daemon keeps running so other instances stay connected.
 
+Send `/auto-update` from a selected Hero source instance to commit the latest source changes and arm the local development updater. Install the helper and five-minute systemd user timer once from the source checkout:
+
+```bash
+./scripts/install_update_dev.sh
+```
+
+To disable the timer and remove the updater files later, run:
+
+```bash
+./scripts/uninstall_update_dev.sh
+```
+
+The uninstall script keeps the installed `hero` binary and its `hero.previous` backup.
+This flow is Linux/development-only. It uses `scripts/build_update.sh`, which builds only the `hero` binary for the current machine; `build_dev.sh` and `release.sh` are unchanged.
+
 #### Configure the active cycle from Telegram
 
 After `/hero-new`, send `/hero-config` to open the guided wizard. It collects the title, objective, preferred language, scope, and enabled stages, then optionally reviews the cycle-agent and fallback models. Model choices use the same numbered harness → model → property flow as `/model`.
@@ -416,11 +431,13 @@ Cross-compiled release artifacts (4 platforms + `checksums.txt`):
 │   ├── harness/              # HarnessAdapter interface
 │   ├── variables/            # hero variables
 │   ├── update_models/        # hero update-models
+│   ├── autoupdate/           # commit determinístico + fila do updater local
 │   ├── adapters/cursor/      # Cursor adapter + path layout
 │   ├── common/               # errors, output, templates
 │   └── integration/          # lightweight e2e tests
 ├── assets/                   # embed.FS (commands, agents, skills, templates, models)
 ├── scripts/release.sh        # manual cross-compile release
+├── scripts/build_update.sh   # build local do hero para a máquina atual
 ├── docs/                     # PRD, UI, ADR, DEPLOY
 ├── context/                  # this repo's compressed project memory
 ├── openspec/                 # SDD / change planning for Hero itself
@@ -644,6 +661,21 @@ Envie `/interrupt` para cancelar o trabalho em andamento na TUI selecionada, do 
 
 Envie `/kill` só como último recurso quando a TUI selecionada estiver inutilizável: ele mata à força o processo dessa TUI (`SIGKILL`), sem confirmação. Você deve ver uma resposta best-effort `Killing TUI.`; o daemon do Telegram continua ativo para as demais instâncias.
 
+Envie `/auto-update` a partir de uma instância cujo diretório seja o checkout-fonte do Hero para fazer commit das alterações e armar o updater local. Instale o helper e o timer de usuário do systemd uma vez no checkout:
+
+```bash
+./scripts/install_update_dev.sh
+```
+
+Para desativar o timer e remover os arquivos do updater depois, execute:
+
+```bash
+./scripts/uninstall_update_dev.sh
+```
+
+O script de desinstalação preserva o binário instalado `hero` e o backup `hero.previous`.
+Esse fluxo é somente para desenvolvimento em Linux. Ele usa `scripts/build_update.sh`, que gera apenas o binário `hero` para a máquina atual; `build_dev.sh` e `release.sh` permanecem inalterados.
+
 #### Configurar o ciclo ativo pelo Telegram
 
 Depois de `/hero-new`, envie `/hero-config` para abrir o wizard guiado. Ele coleta título, objetivo, idioma preferido, escopo e stages habilitados, e então oferece a revisão opcional dos modelos dos agentes do ciclo e do fallback. As escolhas de modelo usam o mesmo fluxo numerado de harness → modelo → propriedades do `/model`.
@@ -859,11 +891,13 @@ Artefatos de release cross-compilados (4 plataformas + `checksums.txt`):
 │   ├── harness/              # interface HarnessAdapter
 │   ├── variables/            # hero variables
 │   ├── update_models/        # hero update-models
+│   ├── autoupdate/           # commit determinístico + fila do updater local
 │   ├── adapters/cursor/      # adapter Cursor + layout de paths
 │   ├── common/               # erros, output, templates
 │   └── integration/          # testes e2e leves
 ├── assets/                   # embed.FS (commands, agents, skills, templates, models)
 ├── scripts/release.sh        # release manual cross-compilado
+├── scripts/build_update.sh   # build local do hero para a máquina atual
 ├── docs/                     # PRD, UI, ADR, DEPLOY
 ├── context/                  # memória comprimida deste repositório
 ├── openspec/                 # SDD / planejamento de mudanças do próprio Hero

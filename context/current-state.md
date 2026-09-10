@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **3.1.1** released (tag `v3.1.1`). Patch after C13: Telegram `/interrupt` and `/kill`, status-loop and TUI fixes, harness session-id isolation, and local Claude adapter dogfooding on this repo. |
+| **Phase** | Hero **3.1.1** released (tag `v3.1.1`). Patch after C13: Telegram `/interrupt`, `/kill`, and development `/auto-update`, status-loop and TUI fixes, harness session-id isolation, and local Claude adapter dogfooding on this repo. |
 
 ## Technology Stack
 
@@ -50,7 +50,7 @@ The project-local `hero.json` Telegram configuration supports `auto_report_minut
 
 ## Architecture Summary
 
-- **Feature Based + Vertical Slice**: `cmd/hero` + `internal/<feature>/` (`install`, `upgrade`, `uninstall`, `doctor`, `status`, `variables`, `update_models`, `cycle`, `store`, `engine`, `tui`, `harness`, `harnessmgr`, `todos`, `workflowconfig`, `ideadocs`) + `internal/adapters/cursor/` + `internal/adapters/opencode/` + `internal/adapters/codex/` + `internal/adapters/claude/` (C13 protocol, supervised CLI adapter, normalizer, scoped permission bridge, native catalog discovery) + `internal/common/` (includes `assetconflict` for upgrade conflict backup/replace).
+- **Feature Based + Vertical Slice**: `cmd/hero` + `internal/<feature>/` (`install`, `upgrade`, `uninstall`, `doctor`, `status`, `variables`, `update_models`, `cycle`, `store`, `engine`, `tui`, `harness`, `harnessmgr`, `todos`, `workflowconfig`, `ideadocs`, `autoupdate`) + `internal/adapters/cursor/` + `internal/adapters/opencode/` + `internal/adapters/codex/` + `internal/adapters/claude/` (C13 protocol, supervised CLI adapter, normalizer, scoped permission bridge, native catalog discovery) + `internal/common/` (includes `assetconflict` for upgrade conflict backup/replace).
 - **Strict CLI vs Runtime**: CLI is deterministic; orchestration lives in embedded `assets/cursor/`.
 - **Simple templating**: `internal/common/template` — `{{path.key}}` only (ADR-006).
 - **Assets**: embedded via `assets.FS`; install copies into `.cursor/`, `.opencode/`, `.codex/`, `.claude/` (all opt-in), and `.workflow-hero/`. Claude projects agents, commands and `workflow-hero`/`grilling` skills only; it preserves user files and manages only a marker-delimited `CLAUDE.md` block importing `@AGENTS.md`. Codex `SKILL.md` files include required YAML frontmatter (`name`, `description`) for Codex skill discovery.
@@ -72,6 +72,7 @@ The project-local `hero.json` Telegram configuration supports `auto_report_minut
 - **Telegram status payload**: manual idle status includes the selected free-chat model, `Session`, `AI wk`, `AI rp`, and context `used/max`; cycle status includes the title and current stage without the objective/summary. Automatic reports still suppress idle.
 - **Telegram `/interrupt`**: TUI-owned command that reuses the Chat `Ctrl+C` cancellation path for every in-flight Execute or `/hero-start` preflight, without creating a harness turn; idle requests report that no process is running.
 - **Telegram `/kill`**: last-resort TUI-owned force exit of the selected instance only. The IPC client goroutine best-effort acks delivery, sends `Killing TUI.`, then `SIGKILL`s the TUI process so a wedged Bubble Tea Update loop cannot block shutdown; the Telegram daemon is not killed and there is no confirmation step.
+- **Development Telegram auto-update (ADR-076)**: `/auto-update` commits the source checkout, atomically requests an update through `needs-update.txt`, and returns immediately. A systemd user timer invokes the installed `hero-update.sh` every five minutes; it builds only the current machine's `hero` binary through `scripts/build_update.sh`, atomically swaps it, asks every running TUI instance to restart through versioned Telegram IPC, and preserves each instance's terminal/process identity. This is Linux/development-only; `build_dev.sh` and `release.sh` remain unchanged.
 - **Telegram `/help`**: daemon-owned command catalog (`internal/telegram.CommandHelpText`) that works with or without `/select` and never starts a harness turn; the TUI keeps a matching handler as defense in depth.
 - **Telegram native permissions and lifecycle relay**: OpenCode `permission.asked` remains a local blocking TUI prompt and is also sent to the paired Telegram client with a request ID; `/hero-permission <id> allow|deny` answers only that request, while local `y`/`n` and `/interrupt` remain valid. A private per-TUI Unix socket (`internal/lifecycle`) is inherited by the long-lived OpenCode `serve` process; CLI-as-API children install an environment notifier and send append-only event IDs, allowing child `hero stage close` approval events to reach the TUI/Telegram path without SQLite polling. OpenCode resume/recovery and Prepare preserve the selected `permission_profile` instead of falling back to `ask`.
 - Model catalogs: `assets/models/*.yml` pricing + C5 `properties`; OpenCode 27 models; Cursor includes `auto`; Codex-native ids without invented ChatGPT USD rates.
@@ -84,6 +85,7 @@ The project-local `hero.json` Telegram configuration supports `auto_report_minut
 - Embedded Runtime: Cursor + `assets/opencode/` + `assets/codex/` (no AGENTS.md / no Codex config template).
 - C5 model properties: `internal/harness` + `internal/modelprops`; catalogs carry `properties` for Cursor base + OpenCode 27 + Codex ids.
 - `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **3.1.1** (ships `hero-telegram-daemon` per platform; plugin install downloads from GitHub Releases); both scripts install linux/amd64 `hero` to `/home/ricardo/installable/hero/hero` and refresh the local Telegram plugin daemon + manifest; integration tests include C6 Codex path, C9 Telegram lock, and C13 Claude adapter.
+- **Development update tooling**: `scripts/build_update.sh` builds only `./cmd/hero` for the host target; `scripts/hero-update.sh`, `scripts/install_update_dev.sh`, `scripts/uninstall_update_dev.sh`, and `scripts/systemd/` provide the guarded systemd user timer flow, atomic binary replacement, and cleanup. Uninstall preserves `hero` and `hero.previous`.
 - Test strategy in [docs/testing/TESTING.md](docs/testing/TESTING.md); bilingual README.
 
 ## Pending Features
