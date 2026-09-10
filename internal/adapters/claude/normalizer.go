@@ -75,6 +75,22 @@ func (a *resultAssembler) consume(event RawEvent) ([]harness.StreamDelta, error)
 		return a.consumeResult(event, payload)
 	case "stream_event":
 		return a.streamEvent(payload), nil
+	case "tool_progress":
+		return a.toolProgress(payload), nil
+	case "tool_use_summary":
+		return []harness.StreamDelta{harness.ActivityDelta("tool_use_summary", "Claude tool summary", a.sessionID)}, nil
+	case "auth_status":
+		return a.authStatus(payload), nil
+	case "rate_limit_event":
+		return a.rateLimit(payload), nil
+	case "control_request":
+		return a.controlRequest(payload), nil
+	case "conversation_reset":
+		return []harness.StreamDelta{harness.ActivityDelta("conversation_reset", "Claude conversation reset", a.sessionID)}, nil
+	case "mirror_error":
+		return []harness.StreamDelta{{Kind: harness.StreamKindWarning, Text: "Claude session mirror error", HarnessType: "mirror_error", SessionID: a.sessionID}}, nil
+	case "prompt_suggestion", "control_response", "control_cancel_request", "keep_alive", "notification", "memory_recall":
+		return a.debugOnlyActivity(event.Type, debugOnlySummary(event.Type)), nil
 	default:
 		return a.unknownWarning(event.Type, "redacted unknown event"), nil
 	}
@@ -99,10 +115,32 @@ func (a *resultAssembler) system(event RawEvent, p map[string]any) ([]harness.St
 		return []harness.StreamDelta{{Kind: harness.StreamKindTool, Text: "Claude subagent " + name, AgentName: stringAt(p, "agent_id"), Model: a.model, CallID: stringAt(p, "agent_id"), Phase: harness.StreamPhaseStarted, HarnessType: "system.subagent_started", SessionID: a.sessionID}}, nil
 	case "subagent_completed":
 		return []harness.StreamDelta{{Kind: harness.StreamKindTool, Text: "Claude subagent completed", AgentName: stringAt(p, "agent_id"), CallID: stringAt(p, "agent_id"), Phase: harness.StreamPhaseCompleted, HarnessType: "system.subagent_completed", SessionID: a.sessionID}}, nil
-	case "retry", "hook_started", "hook_completed", "plugin_loaded":
+	case "task_started":
+		return a.taskStarted(p), nil
+	case "task_updated":
+		return a.taskUpdated(p), nil
+	case "task_notification":
+		return a.taskNotification(p), nil
+	case "task_progress":
+		return []harness.StreamDelta{harness.ActivityDelta("system.task_progress", taskProgressActivity(p), a.sessionID)}, nil
+	case "retry", "api_retry":
+		return []harness.StreamDelta{harness.ActivityDelta("system."+event.Subtype, systemActivity("retry", p), a.sessionID)}, nil
+	case "hook_started", "hook_completed", "hook_progress", "hook_response":
 		return []harness.StreamDelta{harness.ActivityDelta("system."+event.Subtype, systemActivity(event.Subtype, p), a.sessionID)}, nil
-	case "status":
-		return a.debugOnlyActivity("system.status", systemStatusActivity(p)), nil
+	case "plugin_loaded":
+		return []harness.StreamDelta{harness.ActivityDelta("system.plugin_loaded", systemActivity(event.Subtype, p), a.sessionID)}, nil
+	case "local_command_output":
+		return a.localCommandOutput(p), nil
+	case "informational":
+		return a.informational(p), nil
+	case "permission_denied":
+		return a.permissionDenied(p), nil
+	case "elicitation_complete":
+		return []harness.StreamDelta{harness.ActivityDelta("system.elicitation_complete", "Claude elicitation completed", a.sessionID)}, nil
+	case "worker_shutting_down":
+		return a.workerShuttingDown(p), nil
+	case "status", "compact_boundary", "plugin_install", "thinking_tokens", "session_state_changed", "files_persisted", "commands_changed", "background_tasks_changed":
+		return a.debugOnlyActivity("system."+event.Subtype, debugOnlySystemSummary(event.Subtype, p)), nil
 	case "stderr":
 		return []harness.StreamDelta{{Kind: harness.StreamKindWarning, Text: "Claude CLI emitted a diagnostic (details redacted)", HarnessType: "system.stderr", SessionID: a.sessionID}}, nil
 	default:
@@ -131,7 +169,11 @@ func (a *resultAssembler) assistant(event RawEvent, p map[string]any) []harness.
 			name := firstNonEmpty(stringAt(item, "name"), "tool")
 			out = append(out, harness.StreamDelta{Kind: harness.StreamKindTool, Text: "Claude tool " + name, CallID: stringAt(item, "id"), HarnessType: "assistant.tool_use", SessionID: a.sessionID})
 		default:
-			out = append(out, a.unknownWarning("assistant."+typ, "redacted unknown content block")...)
+			if typ == "" {
+				out = append(out, a.unknownWarning("assistant.content", "redacted unknown content block")...)
+				continue
+			}
+			out = append(out, harness.StreamDelta{Kind: harness.StreamKindText, Text: "Claude " + typ, HarnessType: "assistant." + typ, SessionID: a.sessionID})
 		}
 	}
 	return out
@@ -203,9 +245,8 @@ func (a *resultAssembler) user(_ RawEvent, p map[string]any) []harness.StreamDel
 }
 
 func (a *resultAssembler) consumeResult(event RawEvent, p map[string]any) ([]harness.StreamDelta, error) {
-	if event.Subtype == "error" {
-		message := firstNonEmpty(stringAt(p, "error"), "Claude reported an execution error")
-		return nil, fmt.Errorf("%s", message)
+	if isResultError(event.Subtype) {
+		return nil, fmt.Errorf("%s", resultErrorMessage(event.Subtype, p))
 	}
 	if event.Subtype != "success" && event.Subtype != "" {
 		return nil, fmt.Errorf("Claude terminal result subtype %q is unsupported", event.Subtype)
@@ -343,8 +384,8 @@ func systemActivity(subtype string, p map[string]any) string {
 	switch subtype {
 	case "retry":
 		return "Claude retry " + firstNonEmpty(stringAt(p, "attempt"), "started")
-	case "hook_started", "hook_completed":
-		return "Claude hook " + firstNonEmpty(stringAt(p, "hook"), subtype)
+	case "hook_started", "hook_completed", "hook_progress", "hook_response":
+		return "Claude hook " + firstNonEmpty(stringAt(p, "hook_name"), stringAt(p, "hook"), subtype)
 	case "plugin_loaded":
 		return "Claude plugin loaded"
 	default:

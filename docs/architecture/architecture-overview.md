@@ -394,6 +394,7 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
 | Transport | Harness | Parser |
 |---|---|---|
 | Process stdout NDJSON (`stream-json`) | Cursor | `adapters/cursor/parse.go` |
+| Process stdout NDJSON (`stream-json`) | Claude | `adapters/claude/normalizer.go` |
 | HTTP SSE `GET /event` | OpenCode | `adapters/opencode/events.go` |
 
 **Normalized `StreamDelta` kinds** (shared contract in `internal/harness/stream.go`):

@@ -4,6 +4,12 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-09 — Claude stream-json event mapping
+
+**Change**: The Claude NDJSON normalizer now maps official Agent SDK / CLI `stream-json` types that previously fell through as unknown. User-visible work and errors emit always: tool progress, task lifecycle, hooks/`api_retry`, local command output, informational/permission-denied/worker/auth/rate-limit/result errors, extra assistant content blocks, and control-protocol permission/elicitation warnings. Protocol noise (`stream_event`, compact/plugin/session catalog frames, thinking-token estimates, keep-alives, control ACKs, prompt suggestions, memory/notification) stays `hero --debug` only, matching Codex/OpenCode. `control_request can_use_tool` is a warning, not a TUI permission gate, because Hero answers ask via the MCP bridge rather than stdin `control_response`.
+
+**Validation**: `go test ./internal/adapters/claude` and `go test ./...` passed.
+
 ## 2026-09-09 — C13 archived via /hero-archive
 
 **Change**: `hero cycle archive` archived completed C13. OpenSpec change `claude-code-adapter` was already archived (`openspec/changes/archive/2026-09-09-claude-code-adapter`); CLI skipped `openspec archive`. Hero path: `.workflow-hero/cycles/archive/C13-2026-09-09-implementa-o-do-adapter-para-o-claude-co` (date from store `completed_at`). `metrics-summary.md` already had C13 totals (5006554 tokens, ~$0.7840). No active cycle remains.
