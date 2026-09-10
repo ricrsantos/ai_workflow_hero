@@ -277,6 +277,18 @@ func TestIsRetriableFailure(t *testing.T) {
 	}
 }
 
+func TestIsTransportFailure(t *testing.T) {
+	if !cursoradapter.IsTransportFailure("", "", errors.New("broken pipe")) {
+		t.Fatal("expected broken pipe transport failure")
+	}
+	if !cursoradapter.IsTransportFailure("", "signal: killed", errors.New("exit status 137")) {
+		t.Fatal("expected killed transport failure")
+	}
+	if cursoradapter.IsTransportFailure("", "NonRetriableError: boom", errors.New("exit status 1")) {
+		t.Fatal("API error must not be transport failure")
+	}
+}
+
 func TestParseStreamJSONEmptyResponse(t *testing.T) {
 	ndjson := `{"type":"system","subtype":"init","session_id":"s"}
 {"type":"result","subtype":"success","is_error":false,"result":"","session_id":"s"}

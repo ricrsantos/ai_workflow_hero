@@ -269,9 +269,17 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 				a.setStatus(trackID, harness.ExecutionStatus{SessionID: sessionID, State: harness.StatusCancelled, Message: "cancelled"})
 				return nil, fmt.Errorf("cursor agent execute cancelled: %w", runCtx.Err())
 			}
-			if attempt < attempts && IsRetriableFailure(stdout, stderr, err) {
-				a.log().Warn("cursor agent execute retriable failure", "attempt", attempt, "error", err, "stderr", firstLine(stderr, stdout))
+			transportFail := IsTransportFailure(stdout, stderr, err)
+			retriable := IsRetriableFailure(stdout, stderr, err) || transportFail
+			if attempt < attempts && retriable {
+				a.log().Warn("cursor agent execute retriable failure", "attempt", attempt, "error", err, "stderr", firstLine(stderr, stdout), "transport", transportFail)
+				if transportFail && req.OnStreamDelta != nil {
+					req.OnStreamDelta(harness.ConnectionClosedDelta(sessionID))
+				}
 				a.sleep(executeRetryBackoff(attempt))
+				if transportFail && req.OnStreamDelta != nil {
+					req.OnStreamDelta(harness.ConnectionReconnectedDelta(sessionID))
+				}
 				continue
 			}
 			// C5: a property-composed slug rejected by the CLI must fail

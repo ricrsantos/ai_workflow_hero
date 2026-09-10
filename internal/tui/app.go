@@ -221,6 +221,7 @@ type model struct {
 	// Harness watchdog (v2.3): runtime health during TUI Execute only (warn-only).
 	harnessWatchdog       harness.Watchdog
 	harnessHealthStatus   harness.HealthStatus
+	harnessReconnecting   bool // adapter reported connection.closed; skip HealthFailed cancel
 	harnessHealthInFlight bool
 	lastExecutePrompt     string
 

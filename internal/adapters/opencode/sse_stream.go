@@ -97,6 +97,9 @@ func (a *Adapter) readExecuteSSE(
 				events.Close()
 				return nil
 			}
+			if req.OnStreamDelta != nil {
+				req.OnStreamDelta(harness.ConnectionReconnectedDelta(sessionID))
+			}
 		}
 
 		watchCtx, stopWatch := context.WithCancel(ctx)
@@ -142,6 +145,9 @@ func (a *Adapter) readExecuteSSE(
 		}
 		a.log().Warn("opencode event stream disconnected, reconnecting",
 			"error", readErr, "attempt", attempt+1, "sessionID", sessionID)
+		if req.OnStreamDelta != nil {
+			req.OnStreamDelta(harness.ConnectionClosedDelta(sessionID))
+		}
 		if waitErr := sleepOrDone(ctx, sseReconnectDelay); waitErr != nil {
 			return waitErr
 		}

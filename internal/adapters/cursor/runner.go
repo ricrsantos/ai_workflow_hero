@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/userpath"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
 // AgentCLI is the preferred Cursor Agent CLI binary name searched on PATH.
@@ -299,4 +300,26 @@ func IsRetriableFailure(stdout, stderr string, err error) bool {
 	// Match RetriableError but not NonRetriableError (the latter contains the former).
 	stripped := strings.ReplaceAll(s, "nonretriableerror", "")
 	return strings.Contains(stripped, "retriableerror")
+}
+
+// IsTransportFailure reports process/stdio disconnects that should retry Execute
+// with the same SessionID (distinct from API RetriableError).
+func IsTransportFailure(stdout, stderr string, err error) bool {
+	if harness.IsConnectionClosed(err) {
+		return true
+	}
+	var b strings.Builder
+	b.WriteString(stdout)
+	b.WriteByte('\n')
+	b.WriteString(stderr)
+	if err != nil {
+		b.WriteByte('\n')
+		b.WriteString(err.Error())
+	}
+	s := strings.ToLower(b.String())
+	return strings.Contains(s, "broken pipe") ||
+		strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "connection closed") ||
+		strings.Contains(s, "signal: killed") ||
+		strings.Contains(s, "signal: terminated")
 }

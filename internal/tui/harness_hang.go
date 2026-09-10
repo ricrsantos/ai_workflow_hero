@@ -63,6 +63,7 @@ func (m model) resetHarnessWatchdog(executePrompt string) model {
 	m.harnessWatchdog.Reset(time.Now())
 	m.harnessHealthStatus = harness.HealthHealthy
 	m.harnessHealthInFlight = false
+	m.harnessReconnecting = false
 	m.lastExecutePrompt = executePrompt
 	return m
 }
@@ -115,6 +116,19 @@ func (m model) handleHarnessHealthResult(msg harnessHealthResultMsg) (model, tea
 
 	switch msg.status {
 	case harness.HealthFailed:
+		if m.harnessReconnecting {
+			// Adapter is recovering transport; do not cancel the live Execute.
+			if prev != harness.HealthFailed && prev != harness.HealthDegraded {
+				warn := "Harness connection dropped; reconnecting…"
+				if d := strings.TrimSpace(msg.health.Details); d != "" {
+					warn = d
+				}
+				m.insertBeforeAgent(convMessage{role: convRoleWarning, content: "WARNING: " + warn})
+				m = m.setStatusWarning("harness", warn)
+			}
+			m.harnessHealthStatus = harness.HealthDegraded
+			return m, nil
+		}
 		if prev != harness.HealthFailed {
 			warn := "Harness process is not running."
 			if d := strings.TrimSpace(msg.health.Details); d != "" {

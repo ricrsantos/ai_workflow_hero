@@ -38,6 +38,10 @@
 
 The project-local `hero.json` Telegram configuration supports `auto_report_minutes` and `always_send`. `always_send` defaults to `false`, preserving Telegram replies only for Telegram-originated prompts; when enabled, the TUI forwards the completed final response of local harness turns through the paired Telegram connection as well. Settings exposes both controls in the Telegram section.
 
+## Harness transport reconnect
+
+Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `✓ harness reconnected` via shared `harness` stream deltas. Codex restarts `app-server` and resumes the thread; OpenCode keeps SSE/serve recovery and surfaces the same copy; Cursor retries process/transport failures with the same `SessionID`. The TUI does not auto-cancel HealthFailed while reconnecting.
+
 ## Scope (implementation routing)
 
 | Field | Value |

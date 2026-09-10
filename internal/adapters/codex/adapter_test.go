@@ -52,21 +52,18 @@ type mockStdioPeer struct {
 	approvalMethod string
 	resumeFail     bool
 	threadStarts   int
+	turnStarts     int
 	startDir       string
 	startArgs      []string
 	threadProp     map[string]any
 	lastTurnThread string
+	generations    int
+	dropFirstTurn  bool // close stdio after first turn/start (reconnect coverage)
 }
 
 func newMockPeer() *mockStdioPeer {
-	stdinR, stdinW := io.Pipe()
-	stdoutR, stdoutW := io.Pipe()
 	return &mockStdioPeer{
-		stdinR:  stdinR,
-		stdinW:  stdinW,
-		stdoutR: stdoutR,
-		stdoutW: stdoutW,
-		models:  []string{"gpt-5.4", "gpt-5.3-codex"},
+		models: []string{"gpt-5.4", "gpt-5.3-codex"},
 	}
 }
 
@@ -74,39 +71,62 @@ func (m *mockStdioPeer) Start(_ context.Context, dir, _ string, args ...string) 
 	if len(args) == 0 || args[0] != "app-server" {
 		return nil, errors.New("expected app-server")
 	}
+	stdinR, stdinW := io.Pipe()
+	stdoutR, stdoutW := io.Pipe()
 	m.mu.Lock()
+	m.stdinR = stdinR
+	m.stdinW = stdinW
+	m.stdoutR = stdoutR
+	m.stdoutW = stdoutW
 	m.startDir = dir
 	m.startArgs = append([]string(nil), args...)
+	m.generations++
+	gen := m.generations
+	drop := m.dropFirstTurn && gen == 1
 	m.mu.Unlock()
-	go m.serve()
-	return &pipeHandle{peer: m, pid: 4242}, nil
+	go m.serve(stdinR, stdoutW, drop)
+	return &pipeHandle{
+		pid:     4242 + gen,
+		stdinW:  stdinW,
+		stdoutR: stdoutR,
+		stdinR:  stdinR,
+		stdoutW: stdoutW,
+	}, nil
 }
 
 type pipeHandle struct {
-	peer *mockStdioPeer
-	pid  int
+	pid     int
+	stdinW  *io.PipeWriter
+	stdoutR *io.PipeReader
+	stdinR  *io.PipeReader
+	stdoutW *io.PipeWriter
 }
 
 func (h *pipeHandle) PID() int                 { return h.pid }
-func (h *pipeHandle) Stdin() codex.WriteCloser { return h.peer.stdinW }
-func (h *pipeHandle) Stdout() codex.ReadCloser { return h.peer.stdoutR }
+func (h *pipeHandle) Stdin() codex.WriteCloser { return h.stdinW }
+func (h *pipeHandle) Stdout() codex.ReadCloser { return h.stdoutR }
 func (h *pipeHandle) Wait() error              { return nil }
 func (h *pipeHandle) Kill() error {
-	_ = h.peer.stdinR.Close()
-	_ = h.peer.stdoutW.Close()
+	if h.stdinR != nil {
+		_ = h.stdinR.Close()
+	}
+	if h.stdoutW != nil {
+		_ = h.stdoutW.Close()
+	}
 	return nil
 }
 
-func (m *mockStdioPeer) write(v any) {
+func (m *mockStdioPeer) writeTo(w *io.PipeWriter, v any) {
 	b, _ := json.Marshal(v)
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, _ = m.stdoutW.Write(append(b, '\n'))
+	_, _ = w.Write(append(b, '\n'))
 }
 
-func (m *mockStdioPeer) serve() {
-	sc := bufio.NewScanner(m.stdinR)
+func (m *mockStdioPeer) serve(stdinR *io.PipeReader, stdoutW *io.PipeWriter, dropFirstTurn bool) {
+	sc := bufio.NewScanner(stdinR)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	write := func(v any) { m.writeTo(stdoutW, v) }
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
@@ -121,16 +141,16 @@ func (m *mockStdioPeer) serve() {
 		params, _ := msg["params"].(map[string]any)
 		switch method {
 		case "initialize":
-			m.write(map[string]any{"id": id, "result": map[string]any{"userAgent": "codex-mock"}})
+			write(map[string]any{"id": id, "result": map[string]any{"userAgent": "codex-mock"}})
 		case "initialized":
 			// notification ack — nothing
 		case "account/read":
 			if m.authNil {
-				m.write(map[string]any{"id": id, "result": map[string]any{
+				write(map[string]any{"id": id, "result": map[string]any{
 					"account": nil, "requiresOpenaiAuth": true,
 				}})
 			} else {
-				m.write(map[string]any{"id": id, "result": map[string]any{
+				write(map[string]any{"id": id, "result": map[string]any{
 					"account":            map[string]any{"type": "chatgpt", "email": "u@example.com"},
 					"requiresOpenaiAuth": true,
 				}})
@@ -140,20 +160,20 @@ func (m *mockStdioPeer) serve() {
 			m.threadStarts++
 			m.threadProp = params
 			m.mu.Unlock()
-			m.write(map[string]any{"id": id, "result": map[string]any{
+			write(map[string]any{"id": id, "result": map[string]any{
 				"thread": map[string]any{"id": "thr_test_1"},
 			}})
-			m.write(map[string]any{"method": "thread/started", "params": map[string]any{
+			write(map[string]any{"method": "thread/started", "params": map[string]any{
 				"thread": map[string]any{"id": "thr_test_1"},
 			}})
 		case "thread/resume":
 			if m.resumeFail {
-				m.write(map[string]any{"id": id, "error": map[string]any{
+				write(map[string]any{"id": id, "error": map[string]any{
 					"code": -32000, "message": "thread not found",
 				}})
 				break
 			}
-			m.write(map[string]any{"id": id, "result": map[string]any{
+			write(map[string]any{"id": id, "result": map[string]any{
 				"thread": map[string]any{"id": paramsString(params, "threadId")},
 			}})
 		case "model/list":
@@ -161,53 +181,63 @@ func (m *mockStdioPeer) serve() {
 			for _, id := range m.models {
 				data = append(data, map[string]any{"id": id, "model": id})
 			}
-			m.write(map[string]any{"id": id, "result": map[string]any{
+			write(map[string]any{"id": id, "result": map[string]any{
 				"data": data, "nextCursor": nil,
 			}})
 		case "turn/start":
 			m.mu.Lock()
 			m.turnProp = params
+			m.turnStarts++
+			turnN := m.turnStarts
 			m.lastTurnThread = paramsString(params, "threadId")
 			onTurn := m.onTurn
 			m.mu.Unlock()
 			if onTurn != nil {
 				onTurn(params)
 			}
-			m.write(map[string]any{"id": id, "result": map[string]any{
-				"turn": map[string]any{"id": "turn_1", "status": "inProgress", "items": []any{}, "error": nil},
+			write(map[string]any{"id": id, "result": map[string]any{
+				"turn": map[string]any{"id": fmt.Sprintf("turn_%d", turnN), "status": "inProgress", "items": []any{}, "error": nil},
 			}})
-			m.write(map[string]any{"method": "turn/started", "params": map[string]any{
-				"turn": map[string]any{"id": "turn_1", "status": "inProgress"},
+			write(map[string]any{"method": "turn/started", "params": map[string]any{
+				"turn": map[string]any{"id": fmt.Sprintf("turn_%d", turnN), "status": "inProgress"},
 			}})
-			m.write(map[string]any{"method": "item/agentMessage/delta", "params": map[string]any{
+			if dropFirstTurn && turnN == 1 {
+				write(map[string]any{"method": "item/agentMessage/delta", "params": map[string]any{
+					"threadId": "thr_test_1", "itemId": "item_1", "delta": "partial ",
+				}})
+				_ = stdoutW.Close()
+				_ = stdinR.Close()
+				return
+			}
+			write(map[string]any{"method": "item/agentMessage/delta", "params": map[string]any{
 				"threadId": "thr_test_1", "itemId": "item_1", "delta": "Hello ",
 			}})
-			m.write(map[string]any{"method": "item/agentMessage/delta", "params": map[string]any{
+			write(map[string]any{"method": "item/agentMessage/delta", "params": map[string]any{
 				"threadId": "thr_test_1", "itemId": "item_1", "delta": "Codex",
 			}})
-			m.write(map[string]any{"method": "item/reasoning/summaryTextDelta", "params": map[string]any{
+			write(map[string]any{"method": "item/reasoning/summaryTextDelta", "params": map[string]any{
 				"threadId": "thr_test_1", "delta": "thinking…",
 			}})
-			m.write(map[string]any{"method": "item/completed", "params": map[string]any{
+			write(map[string]any{"method": "item/completed", "params": map[string]any{
 				"threadId": "thr_test_1",
 				"item": map[string]any{
 					"type": "reasoning", "id": "rsn_1", "summary": "thinking…",
 				},
 			}})
-			m.write(map[string]any{"method": "item/completed", "params": map[string]any{
+			write(map[string]any{"method": "item/completed", "params": map[string]any{
 				"threadId": "thr_test_1",
 				"item": map[string]any{
 					"type": "agentMessage", "id": "item_1", "text": "Hello Codex",
 				},
 			}})
-			m.write(map[string]any{"method": "thread/tokenUsage/updated", "params": map[string]any{
+			write(map[string]any{"method": "thread/tokenUsage/updated", "params": map[string]any{
 				"threadId": "thr_test_1",
 				"usage": map[string]any{
 					"inputTokens":  10,
 					"outputTokens": 5,
 				},
 			}})
-			m.write(map[string]any{"method": "unknown/event.from.future", "params": map[string]any{
+			write(map[string]any{"method": "unknown/event.from.future", "params": map[string]any{
 				"threadId": "thr_test_1", "foo": "bar",
 			}})
 			if m.injectApproval {
@@ -215,12 +245,12 @@ func (m *mockStdioPeer) serve() {
 				if method == "" {
 					method = "item/commandExecution/requestApproval"
 				}
-				m.write(map[string]any{
+				write(map[string]any{
 					"id":     99001,
 					"method": method,
 					"params": map[string]any{
 						"threadId": "thr_test_1",
-						"turnId":   "turn_1",
+						"turnId":   fmt.Sprintf("turn_%d", turnN),
 						"itemId":   "cmd_1",
 						"command":  "rm -rf /tmp/x",
 						"reason":   "destructive",
@@ -238,14 +268,14 @@ func (m *mockStdioPeer) serve() {
 					}
 				}
 			}
-			m.write(map[string]any{"method": "turn/completed", "params": map[string]any{
-				"turn": map[string]any{"id": "turn_1", "status": "completed", "error": nil},
+			write(map[string]any{"method": "turn/completed", "params": map[string]any{
+				"turn": map[string]any{"id": fmt.Sprintf("turn_%d", turnN), "status": "completed", "error": nil},
 			}})
 		case "turn/interrupt":
-			m.write(map[string]any{"id": id, "result": map[string]any{}})
+			write(map[string]any{"id": id, "result": map[string]any{}})
 		default:
 			if id != nil {
-				m.write(map[string]any{"id": id, "error": map[string]any{
+				write(map[string]any{"id": id, "error": map[string]any{
 					"code": -32601, "message": "method not found: " + method,
 				}})
 			}
@@ -323,6 +353,62 @@ func TestExecute_MockStdioStreamsAndUsage(t *testing.T) {
 	}
 	if !sawUsageWarn {
 		t.Fatal("expected USD-missing usage warning")
+	}
+}
+
+func TestExecute_ReconnectsAfterConnectionClosed(t *testing.T) {
+	peer := newMockPeer()
+	peer.dropFirstTurn = true
+	a := codex.NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "/mock/codex", nil }
+	a.Runner = peer
+
+	var deltas []harness.StreamDelta
+	var mu sync.Mutex
+	res, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt: "hi",
+		Model:  "gpt-5.4",
+		Stream: true,
+		OnStreamDelta: func(d harness.StreamDelta) {
+			mu.Lock()
+			deltas = append(deltas, d)
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SessionID != "thr_test_1" {
+		t.Fatalf("session=%q", res.SessionID)
+	}
+	if !strings.Contains(res.Output, "Hello") {
+		t.Fatalf("output=%q", res.Output)
+	}
+	if peer.generations < 2 {
+		t.Fatalf("generations=%d want >=2", peer.generations)
+	}
+	if peer.turnStarts < 2 {
+		t.Fatalf("turnStarts=%d want >=2", peer.turnStarts)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	sawClosed, sawReconnected, sawContinue := false, false, false
+	for _, d := range deltas {
+		switch d.HarnessType {
+		case harness.ConnectionClosedHarnessType:
+			sawClosed = true
+		case harness.ConnectionReconnectedHarnessType:
+			sawReconnected = true
+		case "session.turn.continue":
+			sawContinue = true
+		}
+	}
+	if !sawClosed || !sawReconnected {
+		t.Fatalf("lifecycle deltas closed=%v reconnected=%v", sawClosed, sawReconnected)
+	}
+	if !sawContinue {
+		t.Fatal("expected continue-after-restart warning")
 	}
 }
 

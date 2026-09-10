@@ -26,6 +26,15 @@ func (a *Adapter) CheckHealth(ctx context.Context, sessionID string) (harness.Ha
 	if alive && !IsManagedCodexAppServer(pid) {
 		alive = false
 	}
+	if a.isReconnecting() {
+		// Avoid TUI HealthFailed auto-cancel while Execute restarts the child.
+		return harness.HarnessHealth{
+			ProcessAlive: true,
+			ServerAlive:  false,
+			SessionAlive: true,
+			Details:      "codex app-server reconnecting",
+		}, nil
+	}
 	health := harness.HarnessHealth{
 		ProcessAlive: alive,
 		ServerAlive:  alive && rpc != nil,

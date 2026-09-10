@@ -4,6 +4,25 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-10 — Harness connection closed auto-reconnect
+
+**Problem**: When a harness transport dropped mid-turn (notably Codex
+`app-server connection closed`), the TUI only saw a failed `executeDoneMsg`.
+OpenCode already recovered inside Execute; Codex/Cursor did not, and the
+health watchdog could cancel during recovery.
+
+**Change**: Added shared `harness.ErrConnectionClosed` + lifecycle stream
+deltas (`connection.closed` / `connection.reconnected`). Codex Execute now
+detects RPC close, restarts app-server, `thread/resume`s the session, and
+continues with a bounded continuation prompt. OpenCode emits the shared
+deltas on SSE reconnect. Cursor retries `IsTransportFailure` with the same
+SessionID. TUI keeps reconnect warnings visible, sets `harnessReconnecting`,
+and skips HealthFailed auto-cancel while reconnecting; Codex CheckHealth
+reports reconnecting as degraded.
+
+**Validation**: `go test ./...` passes, including
+`TestExecute_ReconnectsAfterConnectionClosed` and transport-failure unit tests.
+
 ## 2026-09-10 — Telegram `/tail` command
 
 **Problem**: No remote way to inspect the tail of the agent's most recent chat

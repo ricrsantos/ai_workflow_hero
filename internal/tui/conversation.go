@@ -1810,6 +1810,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.ensureTimerLoop()
 
 	case executeDoneMsg:
+		m.harnessReconnecting = false
 		var executeMeta convExecute
 		trackedExecute := false
 		if msg.executeID == "" && m.stageHandoffLive {
@@ -2170,12 +2171,19 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 		slog.Warn("harness stream warning", "harness_type", d.HarnessType, "text", d.Text)
 		// UI-C06-001 §5 / D11: yellow status-area warning (not raw JSON in assistant text).
 		m = m.setStatusWarning("harness", firstStatusLine(d.Text))
+		switch d.HarnessType {
+		case harness.ConnectionClosedHarnessType:
+			m.harnessReconnecting = true
+		case harness.ConnectionReconnectedHarnessType:
+			m.harnessReconnecting = false
+		}
 		// Claude warnings can describe project instructions, hooks, plugins, or
 		// MCP loading. Keep those security-relevant diagnostics visible even in
 		// Compact mode; ordinary activity filtering remains unchanged.
 		claudeWarning := strings.EqualFold(strings.TrimSpace(m.conversationHarnessTool()), "claude") ||
 			strings.HasPrefix(strings.ToLower(strings.TrimSpace(d.HarnessType)), "claude")
-		if !claudeWarning && !m.chatVerbosityShows(d) {
+		connectionLifecycle := harness.IsConnectionLifecycleDelta(d)
+		if !claudeWarning && !connectionLifecycle && !m.chatVerbosityShows(d) {
 			return m
 		}
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: d.Text})

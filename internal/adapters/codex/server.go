@@ -369,6 +369,16 @@ func (a *Adapter) handshake(ctx context.Context, rpc *rpcConn) error {
 }
 
 func (a *Adapter) stopAppServerState(ctx context.Context) error {
+	return a.clearAppServerState(ctx, true)
+}
+
+// clearDeadAppServer drops a broken stdio connection without wiping in-flight
+// Execute cancel maps. Used during mid-turn reconnect so Cancel still works.
+func (a *Adapter) clearDeadAppServer(ctx context.Context) error {
+	return a.clearAppServerState(ctx, false)
+}
+
+func (a *Adapter) clearAppServerState(ctx context.Context, clearCancels bool) error {
 	a.mu.Lock()
 	handle := a.appHandle
 	pid := a.appPID
@@ -377,8 +387,10 @@ func (a *Adapter) stopAppServerState(ctx context.Context) error {
 	a.appPID = 0
 	a.rpc = nil
 	a.sessions = make(map[string]*sessionState)
-	a.cancels = make(map[string]context.CancelFunc)
 	a.activeTurn = make(map[string]string)
+	if clearCancels {
+		a.cancels = make(map[string]context.CancelFunc)
+	}
 	a.mu.Unlock()
 
 	if rpc != nil {

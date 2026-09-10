@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
@@ -74,6 +75,7 @@ type Adapter struct {
 	usageBySession         map[string]harness.Usage
 	usageUSDUnsetBySession map[string]bool
 	turnSlot               chan struct{}
+	reconnecting           atomic.Bool
 }
 
 type sessionState struct {
@@ -261,6 +263,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	a.usageUSDUnsetBySession[sessionID] = false
 	a.mu.Unlock()
 	defer func() {
+		a.setReconnecting(false)
 		a.mu.Lock()
 		delete(a.cancels, sessionID)
 		delete(a.usageBySession, sessionID)
@@ -274,15 +277,95 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	defer a.releaseTurnSlot()
 
 	start := time.Now()
+	var buf strings.Builder
+	turnState := newTurnStreamState()
+	continues := 0
+	turnReq := req
+
+	for attempt := 0; attempt < connectionReconnectAttempts; attempt++ {
+		if attempt > 0 {
+			if req.OnStreamDelta != nil {
+				req.OnStreamDelta(harness.ConnectionClosedDelta(sessionID))
+			}
+			if err := a.recoverAppServerAfterDisconnect(runCtx, sessionID, req); err != nil {
+				if runCtx.Err() != nil {
+					a.setStatus(sessionID, harness.StatusCancelled, "cancelled")
+					return nil, runCtx.Err()
+				}
+				a.log().Warn("codex reconnect failed", "attempt", attempt, "error", err, "thread_id", sessionID)
+				if attempt+1 >= connectionReconnectAttempts {
+					a.setStatus(sessionID, harness.StatusFailed, err.Error())
+					return nil, fmt.Errorf("codex app-server reconnect failed: %w", err)
+				}
+				if waitErr := sleepOrDone(runCtx, connectionReconnectDelay*time.Duration(attempt+1)); waitErr != nil {
+					a.setStatus(sessionID, harness.StatusCancelled, "cancelled")
+					return nil, waitErr
+				}
+				continue
+			}
+			if continues < interruptedTurnContinueLimit {
+				turnReq = req
+				turnReq.Prompt = interruptedTurnContinuePrompt
+				continues++
+				if req.OnStreamDelta != nil {
+					req.OnStreamDelta(harness.StreamDelta{
+						Kind:        harness.StreamKindWarning,
+						Text:        interruptedTurnContinueWarning,
+						HarnessType: "session.turn.continue",
+						SessionID:   sessionID,
+					})
+				}
+			} else {
+				turnReq = req
+			}
+		}
+
+		res, err := a.runTurnOnce(runCtx, sessionID, turnReq, &buf, turnState, start)
+		if err == nil {
+			return res, nil
+		}
+		if runCtx.Err() != nil {
+			a.setStatus(sessionID, harness.StatusCancelled, "cancelled")
+			return nil, runCtx.Err()
+		}
+		if !harness.IsConnectionClosed(err) {
+			return nil, err
+		}
+		a.log().Warn("codex app-server connection closed during turn",
+			"attempt", attempt+1, "error", err, "thread_id", sessionID)
+		a.setReconnecting(true)
+		_ = a.clearDeadAppServer(context.Background())
+	}
+
+	a.setStatus(sessionID, harness.StatusFailed, harness.ErrConnectionClosed.Error())
+	return nil, fmt.Errorf("codex app-server: %w", harness.ErrConnectionClosed)
+}
+
+func (a *Adapter) runTurnOnce(
+	runCtx context.Context,
+	sessionID string,
+	req harness.ExecuteRequest,
+	buf *strings.Builder,
+	turnState *turnStreamState,
+	start time.Time,
+) (*harness.ExecutionResult, error) {
+	if err := a.ensureAppServer(runCtx); err != nil {
+		return nil, err
+	}
+	a.mu.Lock()
+	rpc := a.rpc
+	a.mu.Unlock()
+	if rpc == nil {
+		return nil, fmt.Errorf("codex app-server: %w", harness.ErrConnectionClosed)
+	}
+
 	params := turnStartParams(sessionID, req, a.ProjectDir)
 	a.setStatus(sessionID, harness.StatusRunning, "")
 
-	var buf strings.Builder
-	turnState := newTurnStreamState()
 	streamDone := make(chan streamOutcome, 1)
-	a.rpc.SetHandlers(
+	rpc.SetHandlers(
 		func(method string, raw json.RawMessage) {
-			out := a.handleNotification(runCtx, method, raw, sessionID, req, &buf, turnState)
+			out := a.handleNotification(runCtx, method, raw, sessionID, req, buf, turnState)
 			if out.done || out.err != nil {
 				select {
 				case streamDone <- out:
@@ -294,7 +377,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 			a.handleServerRequest(runCtx, id, method, raw, sessionID, req)
 		},
 	)
-	defer a.rpc.SetHandlers(nil, nil)
+	defer rpc.SetHandlers(nil, nil)
 
 	var turnResult struct {
 		Turn struct {
@@ -306,6 +389,9 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		} `json:"turn"`
 	}
 	if err := a.rpcCall(runCtx, "turn/start", params, &turnResult); err != nil {
+		if harness.IsConnectionClosed(err) {
+			return nil, err
+		}
 		a.setStatus(sessionID, harness.StatusFailed, err.Error())
 		return nil, mapPropertyRejection(err, strings.TrimSpace(req.Model), req.Properties)
 	}
@@ -331,12 +417,17 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		a.setStatus(sessionID, harness.StatusFailed, errMsg)
 		return nil, mapPropertyRejection(fmt.Errorf("%s", errMsg), strings.TrimSpace(req.Model), req.Properties)
 	default:
-		// Wait for turn/completed (or cancel / context).
+		// Wait for turn/completed (or cancel / connection drop).
 		select {
 		case <-runCtx.Done():
 			_ = a.interruptTurn(context.Background(), sessionID)
 			a.setStatus(sessionID, harness.StatusCancelled, "cancelled")
 			return nil, runCtx.Err()
+		case <-rpc.Done():
+			a.mu.Lock()
+			delete(a.activeTurn, sessionID)
+			a.mu.Unlock()
+			return nil, fmt.Errorf("codex app-server: %w", harness.ErrConnectionClosed)
 		case out := <-streamDone:
 			if out.err != nil {
 				a.setStatus(sessionID, harness.StatusFailed, out.err.Error())

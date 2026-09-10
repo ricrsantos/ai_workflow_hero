@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
 // notifyQueueSize keeps readLoop draining stdout under TUI backpressure.
@@ -104,6 +106,16 @@ func (c *rpcConn) Close() error {
 	return nil
 }
 
+// Done is closed when the JSON-RPC stdio connection ends (EOF, Close, or read error).
+func (c *rpcConn) Done() <-chan struct{} {
+	if c == nil {
+		ch := make(chan struct{})
+		close(ch)
+		return ch
+	}
+	return c.closed
+}
+
 func (c *rpcConn) Call(ctx context.Context, method string, params any, result any) error {
 	id := c.nextID.Add(1)
 	var paramsRaw json.RawMessage
@@ -140,12 +152,12 @@ func (c *rpcConn) Call(ctx context.Context, method string, params any, result an
 		return ctx.Err()
 	case <-c.closed:
 		if err, _ := c.readErr.Load().(error); err != nil {
-			return err
+			return fmt.Errorf("codex app-server connection closed: %w", err)
 		}
-		return fmt.Errorf("codex app-server connection closed")
+		return fmt.Errorf("codex app-server: %w", harness.ErrConnectionClosed)
 	case msg, ok := <-ch:
 		if !ok {
-			return fmt.Errorf("codex app-server connection closed")
+			return fmt.Errorf("codex app-server: %w", harness.ErrConnectionClosed)
 		}
 		if msg.Error != nil {
 			return msg.Error
@@ -196,7 +208,7 @@ func (c *rpcConn) write(v any) error {
 	defer c.mu.Unlock()
 	select {
 	case <-c.closed:
-		return fmt.Errorf("codex app-server connection closed")
+		return fmt.Errorf("codex app-server: %w", harness.ErrConnectionClosed)
 	default:
 	}
 	if _, err := c.stdin.Write(append(b, '\n')); err != nil {
