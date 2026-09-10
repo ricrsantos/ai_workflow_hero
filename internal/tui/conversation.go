@@ -1247,6 +1247,10 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 			m = m.clearChatInput()
 			next, cmd := m.beginHarnessResetPicker()
 			return next, cmd, true
+		case slashVersion:
+			m = m.clearChatInput()
+			next, cmd := m.beginAction(slashVersion, m.versionCmd())
+			return next, cmd, true
 		default:
 			if strings.HasPrefix(lower, "/hero") {
 				m = m.clearChatInput()
@@ -1315,6 +1319,10 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 	case "/hero-help":
 		m = m.clearChatInput()
 		next, cmd := m.beginAction("/hero-help", m.helpCmd())
+		return next, cmd, true
+	case slashVersion:
+		m = m.clearChatInput()
+		next, cmd := m.beginAction(slashVersion, m.versionCmd())
 		return next, cmd, true
 	case "/new-chat":
 		m = m.clearChatInput()

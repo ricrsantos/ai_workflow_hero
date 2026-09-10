@@ -23,6 +23,7 @@ Routing
 
 Selected instance
 /status — Cycle/session status, timers, and context usage
+/version — Show the Hero version
 /interrupt — Cancel in-flight agent work (same as Chat Ctrl+C)
 /kill — Force-kill the selected TUI (last resort; daemon stays up)
 /auto-update — Commit source changes and queue a local Hero binary update

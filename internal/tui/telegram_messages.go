@@ -182,6 +182,9 @@ func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 	if strings.EqualFold(strings.TrimSpace(msg.text), telegramStatusCommand) {
 		return m, combineTimerCmds(ack, m.telegramOutboundCmd(m.telegramStatusText(time.Now())))
 	}
+	if strings.EqualFold(strings.TrimSpace(msg.text), slashVersion) {
+		return m, combineTimerCmds(ack, m.telegramOutboundCmd(m.versionText()))
+	}
 	if strings.EqualFold(strings.TrimSpace(msg.text), telegramInterruptCommand) {
 		next, cmd := m.handleTelegramInterrupt()
 		return next, combineTimerCmds(ack, cmd)

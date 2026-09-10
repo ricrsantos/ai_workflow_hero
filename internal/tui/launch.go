@@ -53,16 +53,16 @@ func CanLaunch(stdout io.Writer) *LaunchRefusal {
 }
 
 // Run launches the Bubble Tea application using an opened cycle service.
-func Run(svc *cycle.Service) error {
-	return RunWithChat(svc, nil, "", "", "")
+func Run(svc *cycle.Service, version string) error {
+	return RunWithChat(svc, nil, "", "", "", version)
 }
 
 // RunWithChat launches the TUI with optional harness model catalog from boot.
-func RunWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn string) error {
-	return runTUI(svc, models, modelSlug, harnessID, modelWarn, false)
+func RunWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn, version string) error {
+	return runTUI(svc, models, modelSlug, harnessID, modelWarn, version, false)
 }
 
-func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn string, freeChat bool) error {
+func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn, version string, freeChat bool) error {
 	if svc == nil {
 		return fmt.Errorf("cycle service is nil")
 	}
@@ -145,7 +145,7 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 		}
 	}()
 
-	m := newModelWithChat(svc, models, modelSlug, harnessID, modelWarn)
+	m := newModelWithChat(svc, models, modelSlug, harnessID, modelWarn, version)
 	m.freeChatMode = freeChat
 	if freeChat {
 		m = m.reloadPaletteItems()
@@ -244,7 +244,7 @@ func redirectSlogForTUI(projectDir string) func() {
 // RunDefault is the shared entry for `hero` (no args) and `hero tui`.
 // It refuses to start when Hero is not installed in the project and ensures
 // the operational SQLite store exists automatically when it is.
-func RunDefault(stdout, stderr io.Writer) error {
+func RunDefault(stdout, stderr io.Writer, version string) error {
 	if refusal := CanLaunch(stdout); refusal != nil {
 		e := clierr.NewWithSuggestion(refusal.Description, refusal.Suggestion)
 		clierr.Format(stderr, e)
@@ -284,7 +284,7 @@ func RunDefault(stdout, stderr io.Writer) error {
 		svc.Registry = adapter.Registry
 	}
 
-	if err := RunWithChat(svc, adapter.Models, adapter.ModelSlug, adapter.HarnessID, adapter.ModelWarn); err != nil {
+	if err := RunWithChat(svc, adapter.Models, adapter.ModelSlug, adapter.HarnessID, adapter.ModelWarn, version); err != nil {
 		e := clierr.New(err.Error())
 		clierr.Format(stderr, e)
 		return e
@@ -293,7 +293,7 @@ func RunDefault(stdout, stderr io.Writer) error {
 }
 
 // NewCommand returns the `hero tui` command (alias of the default `hero` entry).
-func NewCommand() *cobra.Command {
+func NewCommand(version string) *cobra.Command {
 	return &cobra.Command{
 		Use:           "tui",
 		Short:         "Launch the Hero interactive terminal UI (same as running `hero` with no arguments)",
@@ -301,13 +301,13 @@ func NewCommand() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return RunDefault(cmd.OutOrStdout(), cmd.ErrOrStderr())
+			return RunDefault(cmd.OutOrStdout(), cmd.ErrOrStderr(), version)
 		},
 	}
 }
 
 // RunFreeChat launches a Chat-only TUI without requiring a Hero project install or git.
-func RunFreeChat(stdout, stderr io.Writer) error {
+func RunFreeChat(stdout, stderr io.Writer, version string) error {
 	if refusal := CanLaunch(stdout); refusal != nil {
 		e := clierr.NewWithSuggestion(refusal.Description, refusal.Suggestion)
 		clierr.Format(stderr, e)
@@ -334,7 +334,7 @@ func RunFreeChat(stdout, stderr io.Writer) error {
 		svc.Registry = adapter.Registry
 	}
 
-	if err := runTUI(svc, adapter.Models, adapter.ModelSlug, adapter.HarnessID, adapter.ModelWarn, true); err != nil {
+	if err := runTUI(svc, adapter.Models, adapter.ModelSlug, adapter.HarnessID, adapter.ModelWarn, version, true); err != nil {
 		e := clierr.New(err.Error())
 		clierr.Format(stderr, e)
 		return e
@@ -343,7 +343,7 @@ func RunFreeChat(stdout, stderr io.Writer) error {
 }
 
 // NewChatCommand returns the `hero chat` free-chat TUI entry.
-func NewChatCommand() *cobra.Command {
+func NewChatCommand(version string) *cobra.Command {
 	return &cobra.Command{
 		Use:           "chat",
 		Short:         "Launch a free-chat TUI (no project install required)",
@@ -351,7 +351,7 @@ func NewChatCommand() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return RunFreeChat(cmd.OutOrStdout(), cmd.ErrOrStderr())
+			return RunFreeChat(cmd.OutOrStdout(), cmd.ErrOrStderr(), version)
 		},
 	}
 }

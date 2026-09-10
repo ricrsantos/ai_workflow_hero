@@ -31,6 +31,7 @@ func TestCommandHelpTextListsCoreCommands(t *testing.T) {
 		"/select",
 		"/help",
 		"/status",
+		"/version",
 		"/interrupt",
 		"/kill",
 		"/auto-update",

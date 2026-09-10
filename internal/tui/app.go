@@ -41,6 +41,7 @@ const (
 type model struct {
 	svc          *cycle.Service
 	freeChatMode bool // hero chat: Chat-only, no cycle chrome
+	version      string // Hero CLI version injected at build time (for /version)
 	width        int
 	height       int
 	screen       screen
@@ -297,8 +298,9 @@ func newModel(svc *cycle.Service) model {
 	return m.syncConversationContext()
 }
 
-func newModelWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn string) model {
+func newModelWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn, version string) model {
 	m := newModel(svc)
+	m.version = strings.TrimSpace(version)
 	m.modelOptions = append([]harnessmgr.ModelOption(nil), models...)
 	m.availableModels = flattenModelOptions(models)
 	if strings.TrimSpace(harnessID) != "" {
@@ -1636,6 +1638,23 @@ func (m model) helpCmd() tea.Cmd {
 	return func() tea.Msg {
 		path := filepath.Join(svc.ProjectDir, cursoradapter.WorkflowHelpPath)
 		return actionResultMsg{success: fmt.Sprintf("See %s for Hero workflow help.", path)}
+	}
+}
+
+// versionText returns the canonical Hero version line for /version, falling
+// back to "unknown" when the build-time version was not injected (e.g. tests).
+func (m model) versionText() string {
+	v := strings.TrimSpace(m.version)
+	if v == "" {
+		v = "unknown"
+	}
+	return fmt.Sprintf("hero version %s", v)
+}
+
+func (m model) versionCmd() tea.Cmd {
+	text := m.versionText()
+	return func() tea.Msg {
+		return actionResultMsg{success: text, title: slashVersion}
 	}
 }
 

@@ -31,14 +31,14 @@
     },
     "opencode": {
       "enabled": true,
-      "model": "opencode-go/deepseek-v4-flash",
+      "model": "opencode-go/deepseek-v4-pro",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     }
   },
   "freechat_default": {
-    "harness": "codex",
-    "model": "gpt-5.6-luna"
+    "harness": "opencode",
+    "model": "opencode-go/deepseek-v4-pro"
   },
   "chat_verbosity": "debug",
   "telegram": {

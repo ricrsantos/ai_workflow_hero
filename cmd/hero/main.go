@@ -59,7 +59,7 @@ Stages: Configuration → Research → Planning → Implementation → QA → Ju
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return tui.RunDefault(cmd.OutOrStdout(), cmd.ErrOrStderr())
+			return tui.RunDefault(cmd.OutOrStdout(), cmd.ErrOrStderr(), version)
 		},
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			herodebug.SetEnabled(debug)
@@ -80,8 +80,8 @@ Stages: Configuration → Research → Planning → Implementation → QA → Ju
 		variables.NewCommand(),
 		update_models.NewCommand(),
 		plugin.NewCommand(version),
-		tui.NewCommand(),
-		tui.NewChatCommand(),
+		tui.NewCommand(version),
+		tui.NewChatCommand(version),
 		newVersionCommand(),
 		newInternalCommand(),
 	)

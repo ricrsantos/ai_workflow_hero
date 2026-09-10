@@ -49,6 +49,7 @@ const (
 	slashModel   = "/model"
 	slashHarness = "/harness"
 	slashRefresh = "/hero-refresh"
+	slashVersion = "/version"
 )
 
 type paletteItem struct {
