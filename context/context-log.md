@@ -4,6 +4,21 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-10 — Exclude `~/.workflow-hero` from project root discovery
+
+**Problem**: After `hero chat` (and later Telegram plugins) created
+`~/.workflow-hero/`, `FindProjectRoot` walked up from any cwd under `$HOME`
+and treated the home directory as an installed project. Plain `hero` /
+`hero tui` then opened the full project TUI without a local `hero install`.
+
+**Change**: `cycle.FindProjectRoot` skips a match when the candidate root is
+the OS user home directory (global free-chat/plugin state only). `hero chat`
+still uses `OpenFreeChatService` against `~/.workflow-hero` unchanged.
+Installed projects under `$HOME` continue to resolve via walk-up.
+
+**Validation**: New `TestFindProjectRoot_SkipsUserHomeWorkflowHero` and
+`TestFindProjectRoot_FindsInstalledProjectUnderHome`; `go test ./...`.
+
 ## 2026-09-10 — Harness connection closed auto-reconnect
 
 **Problem**: When a harness transport dropped mid-turn (notably Codex

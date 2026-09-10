@@ -193,7 +193,7 @@ Global flags: `--verbose`, `--debug` (registered; not fully wired to stack trace
 
 ## Level 3 — Hero TUI (ADR-015, ADR-017, ADR-026)
 
-Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / `.workflow-hero/`). Free-chat entry: `hero chat` (Chat-only; no project install/git; config under `~/.workflow-hero/`; Execute workspace = cwd). Requires a TTY; uses Bubble Tea + lipgloss.
+Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / a project `.workflow-hero/`; **`$HOME/.workflow-hero` is never a project root** — that path is global free-chat/plugin state only). Free-chat entry: `hero chat` (Chat-only; no project install/git; config under `~/.workflow-hero/`; Execute workspace = cwd). Requires a TTY; uses Bubble Tea + lipgloss.
 
 ```
   `hero` (default) / `hero tui`

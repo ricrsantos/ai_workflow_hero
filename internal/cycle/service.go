@@ -113,16 +113,27 @@ func (s *Service) Close() error {
 	return s.Store.Close()
 }
 
+// lookupUserHomeDir resolves the OS user home for FindProjectRoot. Tests may
+// replace it to simulate ~/.workflow-hero without touching the real home.
+var lookupUserHomeDir = os.UserHomeDir
+
 // FindProjectRoot walks up from start looking for .workflow-hero/.
+// It never treats the OS user home directory as a Hero project root: that path
+// holds global free-chat and plugin state (~/.workflow-hero), not a project
+// install. Use `hero chat` for the home-backed free-chat TUI.
 func FindProjectRoot(start string) (string, error) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
 		return "", err
 	}
+	home := resolvedUserHomeDir()
 	for {
 		hero := filepath.Join(dir, cursoradapter.HeroDir)
 		if fi, err := os.Stat(hero); err == nil && fi.IsDir() {
-			return dir, nil
+			if home == "" || filepath.Clean(dir) != home {
+				return dir, nil
+			}
+			// Skip ~/.workflow-hero — global free-chat/plugin state only.
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -130,6 +141,18 @@ func FindProjectRoot(start string) (string, error) {
 		}
 		dir = parent
 	}
+}
+
+func resolvedUserHomeDir() string {
+	home, err := lookupUserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(home)
+	if err != nil {
+		return ""
+	}
+	return filepath.Clean(abs)
 }
 
 // ErrNotInstalled is returned when no Hero project is found.
