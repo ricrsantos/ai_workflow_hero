@@ -2,7 +2,7 @@
 
 > High-level architecture of the Hero **framework** (Go CLI + embedded Runtime assets).  
 > For decisions and rationale, see [ADR.md](ADR.md). For cycle-specific deltas, see ADR-C01 / C02 / C03.  
-> **Status:** reflects codebase at Hero **3.1.1**. Cursor, OpenCode, Codex, and the opt-in Claude TUI harness are wired. Claude uses a supervised, turn-scoped CLI process, constrained permission bridge, native model catalog, `.claude/` projection, and marked `CLAUDE.md` ownership; no Claude daemon or Cursor Runtime dispatch exists. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs, remote cycle-config wizard, active-agent/model Telegram status reporting, project-local Always send reply routing, and `/interrupt` / `/kill` commands. Development auto-update (C14) adds a host-targeted Hero build, systemd user timer, atomic binary swap, and TTY-preserving Telegram IPC restart.
+> **Status:** reflects codebase at Hero **3.1.1**. Cursor, OpenCode, Codex, and the opt-in Claude TUI harness are wired. Claude uses a supervised, turn-scoped CLI process, constrained permission bridge, native model catalog, `.claude/` projection, and marked `CLAUDE.md` ownership; no Claude daemon or Cursor Runtime dispatch exists. Optional Telegram plugin (C09) landed: per-OS-user daemon, versioned IPC, conversation service, OS-vault credentials, rotating logs, remote cycle-config wizard, active-agent/model Telegram status reporting, project-local Always send reply routing, and `/interrupt` / `/kill` commands. Development auto-update (C14) builds coupled host-targeted Hero/Telegram artifacts, uses a systemd user timer, atomically updates an installed plugin, and preserves TTY identity during restart.
 
 Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning Runtime** in the IDE harness (Cursor only in V1). The CLI never performs LLM reasoning; orchestration lives in Runtime assets and, optionally, in the Hero TUI via the harness Agent CLI.
 
@@ -364,20 +364,31 @@ internal/autoupdate ── git add/commit ──► needs-update.txt=true
                                              │
                               hero-update.service / script
                                              │
-                   build_update.sh → temp binary → atomic swap
-                                             │
-                     Telegram IPC EventUpdateRestart
+          build_update.sh → temp Hero + temp daemon
+                              │
+            atomic Hero swap + plugin daemon/manifest swap
+                 (only when Telegram is already installed)
+                              │
+                 stop old daemon, then SIGUSR2 each TUI
+                  (IPC fallback, bounded)
                                              │
                          each TUI execs the new binary
 ```
 
-The development-only updater is separate from `build_dev.sh` and
-`release.sh`. `build_update.sh` builds only `./cmd/hero` for the current
-machine target. The updater keeps a single `hero.previous` backup, serializes
-runs with `flock`, and leaves the request armed when build or installation
-fails. TUI restart uses `exec` so the existing terminal remains attached; a
-`SIGUSR2` fallback handles local instances that are not registered with the
-Telegram daemon. See [ADR-076](ADR-C14-001-auto-update.md).
+The development-only updater is separate from the release artifact set, while
+`build_dev.sh` and `release.sh` use the same atomic local installation rules.
+`build_update.sh` builds `./cmd/hero` and `./cmd/hero-telegram-daemon` for the
+current machine target. If the optional Telegram plugin is already installed,
+the updater replaces its daemon and manifest together with Hero; it never
+installs the plugin implicitly. The updater keeps a single `hero.previous`
+backup, serializes runs with `flock`, and leaves the request armed when build,
+manifest validation, or installation fails. After a successful installation it
+stops the old daemon and signals every matching TUI directly with `SIGUSR2`;
+the TUI uses `exec` so the existing terminal remains attached. A bounded
+Telegram IPC request is retained for registrations that are not visible in
+`/proc`, and the daemon's pidfile/executable lifecycle prevents an old
+deleted-inode process from surviving plugin replacement. See
+[ADR-076](ADR-C14-001-auto-update.md).
 
 **Schema v8** (`internal/store/migrate.go`):
 

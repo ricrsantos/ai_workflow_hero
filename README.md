@@ -214,7 +214,7 @@ To disable the timer and remove the updater files later, run:
 ```
 
 The uninstall script keeps the installed `hero` binary and its `hero.previous` backup.
-This flow is Linux/development-only. It uses `scripts/build_update.sh`, which builds only the `hero` binary for the current machine; `build_dev.sh` and `release.sh` are unchanged.
+This flow is Linux/development-only. It uses `scripts/build_update.sh`, which builds both `hero` and `hero-telegram-daemon` for the current machine. If the optional Telegram plugin is already installed, the updater replaces its daemon and manifest atomically with Hero; it never installs the plugin implicitly. The old daemon is stopped before TUIs are restarted: matching TUIs receive `SIGUSR2` directly, while a bounded Telegram IPC request remains available for registrations not visible in the local process table. `build_dev.sh` and `release.sh` use the same coupled daemon lifecycle.
 
 #### Configure the active cycle from Telegram
 
@@ -405,7 +405,7 @@ go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o ./temp/
 rm -f ./temp/hero
 ```
 
-Cross-compiled release artifacts (4 platforms + `checksums.txt`):
+Cross-compiled release artifacts (Hero + Telegram daemon for 4 platforms + `checksums.txt`):
 
 ```bash
 ./scripts/release.sh
@@ -413,6 +413,10 @@ Cross-compiled release artifacts (4 platforms + `checksums.txt`):
 # → dist/hero_<version>_linux_arm64
 # → dist/hero_<version>_darwin_amd64
 # → dist/hero_<version>_darwin_arm64
+# → dist/hero-telegram-daemon_<version>_linux_amd64
+# → dist/hero-telegram-daemon_<version>_linux_arm64
+# → dist/hero-telegram-daemon_<version>_darwin_amd64
+# → dist/hero-telegram-daemon_<version>_darwin_arm64
 # → dist/checksums.txt
 ```
 
@@ -442,7 +446,7 @@ Cross-compiled release artifacts (4 platforms + `checksums.txt`):
 │   └── integration/          # lightweight e2e tests
 ├── assets/                   # embed.FS (commands, agents, skills, templates, models)
 ├── scripts/release.sh        # manual cross-compile release
-├── scripts/build_update.sh   # build local do hero para a máquina atual
+├── scripts/build_update.sh   # build local do Hero + daemon Telegram
 ├── docs/                     # PRD, UI, ADR, DEPLOY
 ├── context/                  # this repo's compressed project memory
 ├── openspec/                 # SDD / change planning for Hero itself
@@ -681,7 +685,7 @@ Para desativar o timer e remover os arquivos do updater depois, execute:
 ```
 
 O script de desinstalação preserva o binário instalado `hero` e o backup `hero.previous`.
-Esse fluxo é somente para desenvolvimento em Linux. Ele usa `scripts/build_update.sh`, que gera apenas o binário `hero` para a máquina atual; `build_dev.sh` e `release.sh` permanecem inalterados.
+Esse fluxo é somente para desenvolvimento em Linux. Ele usa `scripts/build_update.sh`, que gera o `hero` e o `hero-telegram-daemon` para a máquina atual. Se o plugin opcional do Telegram já estiver instalado, o updater substitui atomicamente o daemon e o manifesto junto com o Hero; ele nunca instala o plugin implicitamente. O daemon antigo é encerrado antes da reinicialização das TUIs: as TUIs encontradas recebem `SIGUSR2` diretamente, enquanto uma solicitação IPC limitada ao daemon continua disponível para registros que não aparecem na tabela local de processos. `build_dev.sh` e `release.sh` usam o mesmo ciclo acoplado do daemon.
 
 #### Configurar o ciclo ativo pelo Telegram
 
@@ -871,7 +875,7 @@ go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o ./temp/
 rm -f ./temp/hero
 ```
 
-Artefatos de release cross-compilados (4 plataformas + `checksums.txt`):
+Artefatos de release cross-compilados (Hero + daemon do Telegram para 4 plataformas + `checksums.txt`):
 
 ```bash
 ./scripts/release.sh
@@ -879,6 +883,10 @@ Artefatos de release cross-compilados (4 plataformas + `checksums.txt`):
 # → dist/hero_<version>_linux_arm64
 # → dist/hero_<version>_darwin_amd64
 # → dist/hero_<version>_darwin_arm64
+# → dist/hero-telegram-daemon_<version>_linux_amd64
+# → dist/hero-telegram-daemon_<version>_linux_arm64
+# → dist/hero-telegram-daemon_<version>_darwin_amd64
+# → dist/hero-telegram-daemon_<version>_darwin_arm64
 # → dist/checksums.txt
 ```
 
@@ -908,7 +916,7 @@ Artefatos de release cross-compilados (4 plataformas + `checksums.txt`):
 │   └── integration/          # testes e2e leves
 ├── assets/                   # embed.FS (commands, agents, skills, templates, models)
 ├── scripts/release.sh        # release manual cross-compilado
-├── scripts/build_update.sh   # build local do hero para a máquina atual
+├── scripts/build_update.sh   # build local do Hero + daemon Telegram
 ├── docs/                     # PRD, UI, ADR, DEPLOY
 ├── context/                  # memória comprimida deste repositório
 ├── openspec/                 # SDD / planejamento de mudanças do próprio Hero

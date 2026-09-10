@@ -76,7 +76,9 @@ func (m model) handleTelegramMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case telegramRegisteredMsg:
 		m.telegram.address = msg.address
 		m.telegram.paired = msg.paired
-		slog.Info("telegram client registered", "address", msg.address, "paired", msg.paired)
+		m.telegram.daemonVersion = msg.daemonVersion
+		m.telegram.daemonCaps = append([]string(nil), msg.capabilities...)
+		slog.Info("telegram client registered", "address", msg.address, "paired", msg.paired, "daemon_version", msg.daemonVersion, "capabilities", msg.capabilities)
 		m, notificationCmd := m.flushPendingTelegramNotifications()
 		return m, combineTimerCmds(notificationCmd, m.ensureTimerLoop())
 

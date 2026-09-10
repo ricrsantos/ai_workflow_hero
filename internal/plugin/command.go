@@ -17,9 +17,9 @@ import (
 // subcommands for official plugins (ADR-003; ADR-059).
 func NewCommand(version string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "plugin",
-		Short: "Manage optional official plugins (e.g. telegram)",
-		Long:  `Install, list, and uninstall optional official plugins such as the Telegram remote interface. Plugins are opt-in and are never enabled by a normal hero install.`,
+		Use:           "plugin",
+		Short:         "Manage optional official plugins (e.g. telegram)",
+		Long:          `Install, list, and uninstall optional official plugins such as the Telegram remote interface. Plugins are opt-in and are never enabled by a normal hero install.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
@@ -34,9 +34,9 @@ func NewCommand(version string) *cobra.Command {
 
 func newInstallCommand(version string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "install <name>",
-		Short: "Install an official plugin",
-		Args:  cobra.ExactArgs(1),
+		Use:           "install <name>",
+		Short:         "Install an official plugin",
+		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -53,6 +53,9 @@ func newInstallCommand(version string) *cobra.Command {
 			if err != nil {
 				return fail(stderr, err)
 			}
+			if err := StopTelegramDaemon(); err != nil {
+				fmt.Fprintf(stderr, "Warning: Telegram daemon restart requested but could not stop the current process: %v\n", err)
+			}
 			fmt.Fprintf(stdout, "Installed %s v%s (protocol v%d)\nDaemon: %s\n",
 				m.Name, m.Version, m.ProtocolVersion, m.DaemonPath)
 			return nil
@@ -62,9 +65,9 @@ func newInstallCommand(version string) *cobra.Command {
 
 func newUninstallCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "uninstall <name>",
-		Short: "Uninstall an official plugin",
-		Args:  cobra.ExactArgs(1),
+		Use:           "uninstall <name>",
+		Short:         "Uninstall an official plugin",
+		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -82,6 +85,9 @@ func newUninstallCommand() *cobra.Command {
 				fmt.Fprintf(stdout, "Plugin %q is not installed.\n", name)
 				return nil
 			}
+			if err := StopTelegramDaemon(); err != nil {
+				return fail(stderr, err)
+			}
 			if err := UninstallTelegram(pluginDir); err != nil {
 				return fail(stderr, err)
 			}
@@ -94,8 +100,8 @@ func newUninstallCommand() *cobra.Command {
 func newListCommand() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List installed plugins",
+		Use:           "list",
+		Short:         "List installed plugins",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {

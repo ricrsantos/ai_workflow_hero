@@ -1,6 +1,7 @@
 package ipc
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -37,7 +38,13 @@ func Listen(path string) (net.Listener, error) {
 
 // Dial connects to the daemon socket at path.
 func Dial(path string) (net.Conn, error) {
-	conn, err := net.Dial("unix", path)
+	return DialContext(context.Background(), path)
+}
+
+// DialContext connects to the daemon socket while honoring ctx cancellation.
+// It is used by bounded control-plane operations such as auto-update.
+func DialContext(ctx context.Context, path string) (net.Conn, error) {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", path)
 	if err != nil {
 		return nil, fmt.Errorf("ipc: dial: %w", err)
 	}

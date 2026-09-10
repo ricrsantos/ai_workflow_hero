@@ -8,6 +8,8 @@ Type=oneshot
 Environment=HERO_UPDATE_SOURCE=@HERO_UPDATE_SOURCE@
 Environment=HERO_UPDATE_INSTALL_DIR=@HERO_UPDATE_INSTALL_DIR@
 ExecStart=@HERO_UPDATE_INSTALL_DIR@/hero-update.sh
-TimeoutStartSec=30min
+# Builds may need a few minutes, but a stalled updater must not hold the user
+# service indefinitely after a daemon/IPC failure.
+TimeoutStartSec=5min
 StandardOutput=journal
 StandardError=journal

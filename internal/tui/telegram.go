@@ -27,6 +27,8 @@ type telegramState struct {
 	installed       bool
 	pluginVersion   string
 	protocolVersion int
+	daemonVersion   string
+	daemonCaps      []string
 
 	connected bool   // IPC connection is live and registered
 	address   string // allocated instance address (e.g. "ai_workflow_2")
@@ -72,8 +74,10 @@ type telegramState struct {
 type telegramMsg struct{}
 
 type telegramRegisteredMsg struct {
-	address string
-	paired  bool
+	address       string
+	paired        bool
+	daemonVersion string
+	capabilities  []string
 }
 
 type telegramInboundMsg struct {
@@ -110,9 +114,10 @@ type telegramClient struct {
 	socketPath    string
 	daemonPath    string
 
-	msgCh chan<- tea.Msg
-	quit  chan struct{}
-	done  chan struct{}
+	msgCh     chan<- tea.Msg
+	quit      chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // Send writes one frame to the daemon, returning an error when disconnected.
@@ -148,13 +153,19 @@ func (c *telegramClient) Close() {
 	if c == nil {
 		return
 	}
-	close(c.quit)
-	c.mu.Lock()
-	if c.conn != nil {
-		_ = c.conn.Close()
+	c.closeOnce.Do(func() {
+		if c.quit != nil {
+			close(c.quit)
+		}
+		c.mu.Lock()
+		if c.conn != nil {
+			_ = c.conn.Close()
+		}
+		c.mu.Unlock()
+	})
+	if c.done != nil {
+		<-c.done
 	}
-	c.mu.Unlock()
-	<-c.done
 }
 
 const (
@@ -216,12 +227,13 @@ func (c *telegramClient) connectOnce() error {
 	}
 	pc := ipc.NewConn(conn)
 	if err := pc.Send(ipc.Message{
-		Type:          ipc.TypeRegister,
-		ProjectDir:    c.projectDir,
-		Mode:          c.mode,
-		ProjectAbbrev: c.abbrev,
-		PluginVersion: c.pluginVersion,
-		UID:           ipc.CurrentUID(),
+		Type:               ipc.TypeRegister,
+		ProjectDir:         c.projectDir,
+		Mode:               c.mode,
+		ProjectAbbrev:      c.abbrev,
+		PluginVersion:      c.pluginVersion,
+		ClientCapabilities: []string{ipc.CapabilityUpdateRestart},
+		UID:                ipc.CurrentUID(),
 	}); err != nil {
 		_ = pc.Close()
 		return err
@@ -247,7 +259,12 @@ func (c *telegramClient) connectOnce() error {
 	c.mu.Unlock()
 
 	c.emit(telegramConnectedMsg{})
-	c.emit(telegramRegisteredMsg{address: reg.Address, paired: reg.Paired})
+	c.emit(telegramRegisteredMsg{
+		address:       reg.Address,
+		paired:        reg.Paired,
+		daemonVersion: reg.DaemonVersion,
+		capabilities:  append([]string(nil), reg.Capabilities...),
+	})
 
 	// Relay daemon-pushed frames until the connection ends.
 	for {

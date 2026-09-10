@@ -67,7 +67,7 @@ Responsibilities of the script, run from a clean, tagged commit:
 
 1. Read the current version from `git describe --tags --abbrev=0`.
 2. Cross-compile the 4 target combinations listed in §2, using `GOOS`/`GOARCH` and the `-ldflags` version injection from §3.
-3. Name each binary `hero_<version>_<os>_<arch>` (e.g. `hero_v1.2.0_linux_amd64`).
+3. Produce paired `hero_<version>_<os>_<arch>` and `hero-telegram-daemon_<version>_<os>_<arch>` artifacts for every target.
 4. Generate a `checksums.txt` file containing the SHA256 checksum of every binary produced.
 5. Place all output artifacts in a local `dist/` directory (gitignored).
 
@@ -79,6 +79,10 @@ Usage:
 # → dist/hero_v1.2.0_linux_arm64
 # → dist/hero_v1.2.0_darwin_amd64
 # → dist/hero_v1.2.0_darwin_arm64
+# → dist/hero-telegram-daemon_v1.2.0_linux_amd64
+# → dist/hero-telegram-daemon_v1.2.0_linux_arm64
+# → dist/hero-telegram-daemon_v1.2.0_darwin_amd64
+# → dist/hero-telegram-daemon_v1.2.0_darwin_arm64
 # → dist/checksums.txt
 ```
 
@@ -87,7 +91,7 @@ Usage:
 1. Run `go test ./...` and confirm it passes (see Testing gate above).
 2. Tag the release commit: `git tag v1.2.0 && git push origin v1.2.0`.
 3. Run `./scripts/release.sh`.
-4. Manually create a GitHub Release for the tag and upload all files from `dist/` (4 binaries + `checksums.txt`).
+4. Manually create a GitHub Release for the tag and upload all files from `dist/` (8 paired binaries + `checksums.txt`).
 5. Write release notes summarizing changes since the previous tag.
 
 > V2 candidate: automate steps 2–3 with GoReleaser + GitHub Actions once release frequency justifies the investment (see [PRD.md §2.3](../product/PRD.md#23-v2-scope-out-of-scope-for-v1)).
@@ -121,6 +125,15 @@ sha256sum -c checksums.txt --ignore-missing
 - `hero uninstall`: removes only Hero-owned paths (`.cursor/agents/`, `.cursor/commands/hero-*.md`, `.cursor/skills/workflow-hero/`, `.cursor/skills/grilling/`, `.workflow-hero/`), preserving project artifacts (`AGENTS.md`, `context/`, `docs/`, `openspec/`).
 - `hero doctor`: verifies installation integrity — presence of expected files/folders, version consistency between `hero.json` and the running binary, config file syntax, and git repository presence. Also warn-only soft secrets hygiene: missing `.env.example`, `.gitignore` not ignoring `.env`, or sensitive files tracked by git.
 - Telegram plugin install/upgrade verifies a matching daemon artifact, preserves OS-vault credentials, migrates `.workflow-hero/tui.log` to `.workflow-hero/logs/tui.log` safely, and ensures Hero's managed `.gitignore` block ignores `.workflow-hero/logs/` without altering user entries.
+
+### 7.1 Development auto-update
+
+The Linux-only development flow uses `scripts/build_update.sh` to build both
+`hero` and `hero-telegram-daemon` for the current host. The systemd updater
+updates the installed Telegram daemon and `manifest.json` atomically with Hero
+when the optional plugin already exists; it never installs that plugin for a
+user who has not opted in. It stops the old daemon before restarting TUIs and
+clears `needs-update.txt` only after the applicable artifacts are installed.
 
 ## 8. Pricing Data Updates
 

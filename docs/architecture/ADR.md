@@ -73,7 +73,7 @@
 | [ADR-063](ADR-C09-002-telegram-integration.md#adr-063-addressed-instances-durable-queue-and-remote-queue-cancellation) | Addressed instances, durable queue, and remote queue cancellation | Proposed |
 | [ADR-064](ADR-C09-002-telegram-integration.md#adr-064-project-and-daemon-rotating-logs-with-managed-ignore-migration) | Rotating project/daemon logs and ignore migration | Proposed |
 | [ADR-065](ADR-C09-002-telegram-integration.md#adr-065-relay-child-cli-lifecycle-events-and-correlate-native-permissions) | Child CLI lifecycle relay and correlated native permissions | Proposed |
-| [ADR-076](ADR-C14-001-auto-update.md#adr-076-development-auto-update-uses-a-host-targeted-build-a-systemd-user-timer-and-telegram-ipc-restart-requests) | Development auto-update via systemd user timer and Telegram IPC | Accepted |
+| [ADR-076](ADR-C14-001-auto-update.md#adr-076-development-auto-update-uses-a-host-targeted-build-a-systemd-user-timer-and-resilient-local-tui-restart-signaling) | Development auto-update via systemd user timer and coupled Hero/Telegram artifacts | Accepted |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 
@@ -210,7 +210,7 @@ Only purely administrative commands may have equivalents in both (e.g. `hero sta
 
 **Context**: V1 does not require full CI/CD automation; the priority is getting a working, cross-compiled release out with minimal infrastructure investment.
 
-**Decision**: Releases are built and published manually by the maintainer, but a single shell script (`scripts/release.sh`) automates the repetitive part: it cross-compiles the 4 target combinations (`linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`), reads the current git tag as the version, injects it via `-ldflags "-X main.version=..."`, and generates a `checksums.txt` (SHA256) for all 4 binaries — all from a single command invocation. See [DEPLOY.md](../deployment/DEPLOY.md) for full details.
+**Decision**: Releases are built and published manually by the maintainer, but a single shell script (`scripts/release.sh`) automates the repetitive part: it cross-compiles the 4 target combinations (`linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`), builds paired Hero and Telegram daemon artifacts for each target, reads the current git tag as the version, injects it via `-ldflags "-X main.version=..."`, and generates a `checksums.txt` (SHA256) for all 8 binaries — all from a single command invocation. See [DEPLOY.md](../deployment/DEPLOY.md) for full details.
 
 **Consequences**:
 - No GitHub Actions workflow is required for V1 releases; this is deferred to V2 (GoReleaser or plain Actions) if/when release frequency grows.

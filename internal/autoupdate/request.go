@@ -2,7 +2,8 @@
 //
 // The package deliberately owns only the request side of the flow: it commits
 // the current Hero source repository and atomically arms needs-update.txt. The
-// systemd updater owns compilation, binary replacement, and TUI restart.
+// systemd updater owns compilation, Hero/optional-plugin replacement, and TUI
+// restart.
 package autoupdate
 
 import (

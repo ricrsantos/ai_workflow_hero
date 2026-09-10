@@ -76,6 +76,17 @@ func SocketPath(name string) (string, error) {
 	return filepath.Join(dir, name+".sock"), nil
 }
 
+// DaemonPIDPath resolves the Telegram daemon pid file under the private run
+// directory. It is used only for graceful lifecycle management; the pid file
+// contains no credentials or project data.
+func DaemonPIDPath() (string, error) {
+	dir, err := RunDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "telegram.pid"), nil
+}
+
 // DaemonLogPath resolves the daemon global log (~/.workflow-hero/logs/telegram-daemon.log).
 func DaemonLogPath() (string, error) {
 	dir, err := LogsDir()

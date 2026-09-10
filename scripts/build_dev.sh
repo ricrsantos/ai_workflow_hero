@@ -105,12 +105,46 @@ TELEGRAM_MANIFEST="${TELEGRAM_PLUGIN_DIR}/manifest.json"
 echo ""
 echo "→ Installing local dev binaries (linux/amd64)..."
 mkdir -p "$(dirname "${HERO_INSTALL_PATH}")" "${TELEGRAM_PLUGIN_DIR}"
-cp -f "${LINUX_AMD64_HERO}" "${HERO_INSTALL_PATH}"
-chmod +x "${HERO_INSTALL_PATH}"
+
+install_atomic() {
+  local source="$1"
+  local destination="$2"
+  local temporary
+
+  temporary="$(mktemp "${destination}.tmp.XXXXXX")"
+  if ! install -m 0755 "${source}" "${temporary}"; then
+    rm -f -- "${temporary}"
+    return 1
+  fi
+  if ! mv -f -- "${temporary}" "${destination}"; then
+    rm -f -- "${temporary}"
+    return 1
+  fi
+}
+
+stop_running_daemon() {
+  local daemon_path="$1"
+  local proc pid exe
+  [[ -d /proc ]] || return 0
+  for proc in /proc/[0-9]*; do
+    [[ -d "${proc}" ]] || continue
+    pid="${proc##*/}"
+    [[ "${pid}" == "$$" ]] && continue
+    exe="$(readlink "${proc}/exe" 2>/dev/null || true)"
+    case "${exe}" in
+      "${daemon_path}"|"${daemon_path} (deleted)")
+        if kill -0 "${pid}" 2>/dev/null && kill -TERM "${pid}" 2>/dev/null; then
+          echo "✓ Stopped running Telegram daemon PID ${pid}; it will be respawned from the new artifact"
+        fi
+        ;;
+    esac
+  done
+}
+
+install_atomic "${LINUX_AMD64_HERO}" "${HERO_INSTALL_PATH}"
 echo "✓ Installed ${HERO_INSTALL_PATH}"
 
-cp -f "${LINUX_AMD64_DAEMON}" "${TELEGRAM_DAEMON_PATH}"
-chmod +x "${TELEGRAM_DAEMON_PATH}"
+install_atomic "${LINUX_AMD64_DAEMON}" "${TELEGRAM_DAEMON_PATH}"
 echo "✓ Installed ${TELEGRAM_DAEMON_PATH}"
 
 if command -v python3 &>/dev/null; then
@@ -118,6 +152,7 @@ if command -v python3 &>/dev/null; then
 import json
 import os
 import sys
+import tempfile
 from datetime import datetime, timezone
 
 manifest_path, version, daemon_path = sys.argv[1:4]
@@ -132,14 +167,26 @@ manifest["version"] = version
 manifest["daemon_path"] = daemon_path
 manifest["installed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-with open(manifest_path, "w", encoding="utf-8") as f:
-    json.dump(manifest, f, indent=2)
-    f.write("\n")
+directory = os.path.dirname(manifest_path) or "."
+fd, temporary_path = tempfile.mkstemp(prefix=".manifest.", dir=directory, text=True)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(temporary_path, 0o644)
+    os.replace(temporary_path, manifest_path)
+finally:
+    if os.path.exists(temporary_path):
+        os.unlink(temporary_path)
 PY
   echo "✓ Updated ${TELEGRAM_MANIFEST} (version=${VERSION})"
 else
   echo "[WARN] python3 not found; skipped Telegram manifest update" >&2
 fi
+
+stop_running_daemon "${TELEGRAM_DAEMON_PATH}"
 
 echo ""
 echo "✓ Dev build artifacts in ${DIST}/"

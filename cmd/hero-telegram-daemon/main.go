@@ -18,6 +18,11 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/telegram/vault"
 )
 
+// version is injected at build time together with the Hero binary. Keeping the
+// daemon's build identity in registration responses makes stale processes
+// diagnosable after an atomic plugin replacement.
+var version = "unknown"
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("telegram daemon exited with error", "error", err)
@@ -49,6 +54,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	pidPath, err := telegram.DaemonPIDPath()
+	if err != nil {
+		return err
+	}
 
 	v := vault.NewKeyring()
 	var bot daemon.BotAPI
@@ -62,6 +71,8 @@ func run() error {
 		Store:      store,
 		BotFactory: func(t string) daemon.BotAPI { return daemon.NewHTTPBotAPI(t) },
 		SocketPath: socketPath,
+		PIDPath:    pidPath,
+		Version:    version,
 		Logger:     logger,
 	})
 

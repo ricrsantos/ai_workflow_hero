@@ -4,6 +4,46 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-10 — Coupled Telegram plugin auto-update
+
+**Problem**: The development updater built and installed only Hero, leaving an
+already-installed Telegram daemon on the previous revision. That violated the
+current contract that the optional plugin, once enabled, follows the Hero
+revision.
+
+**Change**: `build_update.sh` now builds both host-targeted executables.
+`hero-update.sh` detects an existing Telegram plugin without auto-installing
+one, stages and atomically replaces its daemon and manifest with Hero, rolls
+back on a pre-commit failure, stops only the daemon process captured before the
+swap, and then restarts TUIs. Tests cover the coupled install, manifest version,
+old-daemon shutdown, optional-plugin preservation, and temporary-file cleanup.
+
+**Validation**: `go test ./... -count=1`, targeted race tests, `go vet ./...`,
+shell syntax checks, `git diff --check`, and a host-targeted build of both
+artifacts completed successfully; generated validation binaries were removed
+from `./temp`.
+
+## 2026-09-10 — Resilient development auto-update restart
+
+**Problem**: The updater installed the new Hero binary but the TUI did not
+restart. `hero-update.sh` waited indefinitely for an ACK from a legacy Telegram
+daemon that silently ignored the restart frame; the TUI and daemon also kept
+running from deleted old binary inodes after replacement.
+
+**Change**: Made direct `/proc`-matched `SIGUSR2` the authoritative TUI restart
+path, with a five-second, context-aware IPC compatibility fallback. Current
+IPC registrations now expose additive daemon version/capability metadata and
+unknown message types return an explicit error. Added daemon pidfile creation
+with ownership-safe cleanup, Linux recovery of legacy deleted-inode daemon
+processes, idempotent TUI client close, atomic daemon/manifest writes, and
+daemon stop during plugin install/uninstall and local `build_dev.sh`/`release.sh`
+installation. Successful installs clear the update flag even when notification
+is unavailable; the systemd service has a five-minute execution limit.
+
+**Validation**: Focused updater, IPC, daemon, plugin, TUI, and script tests;
+shell syntax checks; and `gofmt` passed. The full `go test ./...`, race, vet,
+diff, and final documentation checks are run before handoff.
+
 ## 2026-09-10 — Test binary artifact isolation
 
 **Change**: Added `/hero-telegram-daemon` and `/temp/` to `.gitignore`. `docs/testing/TESTING.md` now prohibits repository-root binaries, requires temporary binaries from tests, validation, and local build checks to use `./temp/`, and requires cleanup on both success and failure. Updated local build examples in `README.md`, `docs/deployment/DEPLOY.md`, and the embedded user help to use `./temp/hero`; added `TESTING.md` to the bilingual README documentation maps.
@@ -22,7 +62,7 @@
 
 ## 2026-09-09 — Development Telegram auto-update
 
-**Change**: Added ADR-076 and the development-only `/auto-update` flow. The TUI command commits safe working-tree changes and sets `needs-update.txt`; a systemd user timer runs `hero-update.sh` every five minutes. The updater invokes the new `scripts/build_update.sh`, which builds only `./cmd/hero` for the host OS/architecture, atomically replaces the installed binary, signals running TUIs through versioned Telegram IPC, and preserves their terminal/process identity. Existing `build_dev.sh` and `release.sh` were not changed.
+**Change**: Added ADR-076 and the development-only `/auto-update` flow. The TUI command commits safe working-tree changes and sets `needs-update.txt`; a systemd user timer runs `hero-update.sh` every five minutes. The initial updater invoked `scripts/build_update.sh` for only `./cmd/hero`; this historical behavior was superseded by the coupled Hero/Telegram artifact update recorded above.
 
 **Validation**: `go test ./...`, `go vet ./...`, shell syntax checks, `git diff --check`, and a real host-target `build_update.sh` build passed.
 

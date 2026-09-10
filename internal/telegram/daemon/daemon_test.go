@@ -6,7 +6,9 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -108,6 +110,49 @@ func TestBroadcastUpdateRestartEvent(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("restart event was not broadcast")
+	}
+}
+
+func TestDaemonUnknownIPCMessageReturnsError(t *testing.T) {
+	d := newTestDaemon(t, &fakeBot{}, openTestStore(t))
+	server, client := net.Pipe()
+	done := make(chan struct{})
+	go func() {
+		d.handleConn(context.Background(), server)
+		close(done)
+	}()
+
+	clientConn := ipc.NewConn(client)
+	if err := clientConn.Send(ipc.Message{Type: "future_message"}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := clientConn.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Type != ipc.TypeError || !strings.Contains(response.ErrorText, "future_message") {
+		t.Fatalf("response=%+v want an explicit unsupported-message error", response)
+	}
+	_ = client.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("daemon connection handler did not stop")
+	}
+}
+
+func TestPIDFileRemovalDoesNotDeleteAReplacement(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "run", "telegram.pid")
+	if err := writePIDFile(path, 101); err != nil {
+		t.Fatal(err)
+	}
+	removePIDFile(path, 202)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("replacement pid file was removed: %v", err)
+	}
+	removePIDFile(path, 101)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("pid file still exists: %v", err)
 	}
 }
 
@@ -410,14 +455,18 @@ func TestDaemonConnectionDropAnnouncesDisconnection(t *testing.T) {
 func TestDaemonRegisterTwoClientsViaSocket(t *testing.T) {
 	bot := &fakeBot{}
 	s := openTestStore(t)
+	runDir := t.TempDir()
+	pidPath := filepath.Join(runDir, "telegram.pid")
 	d := New(Options{
 		Bot:        bot,
 		Vault:      vault.NewMemory(),
 		Store:      s,
 		SocketPath: filepath.Join(t.TempDir(), "telegram.sock"),
+		PIDPath:    pidPath,
 		Now:        time.Now,
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		UID:        1,
+		Version:    "3.1.1-test",
 	})
 	_ = d.vault.Store("123456789:AAHq4K8xZyW0cN1pL9mR2tU5vX7wQ3sB6dF8gH0jK1", "CHAT")
 	d.setCreds("123456789:AAHq4K8xZyW0cN1pL9mR2tU5vX7wQ3sB6dF8gH0jK1", "CHAT")
@@ -428,8 +477,20 @@ func TestDaemonRegisterTwoClientsViaSocket(t *testing.T) {
 	go func() { done <- d.Run(ctx) }()
 
 	time.Sleep(50 * time.Millisecond)
+	pidDeadline := time.Now().Add(time.Second)
+	for time.Now().Before(pidDeadline) {
+		data, err := os.ReadFile(pidPath)
+		if err == nil && strings.TrimSpace(string(data)) == strconv.Itoa(os.Getpid()) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	data, err := os.ReadFile(pidPath)
+	if err != nil || strings.TrimSpace(string(data)) != strconv.Itoa(os.Getpid()) {
+		t.Fatalf("pid file=%q err=%v want current process", data, err)
+	}
 
-	reg := func(abbrev string) string {
+	reg := func(abbrev string) ipc.Message {
 		t.Helper()
 		conn, err := ipc.Dial(d.socketPath)
 		if err != nil {
@@ -446,13 +507,16 @@ func TestDaemonRegisterTwoClientsViaSocket(t *testing.T) {
 		if m.Type != ipc.TypeRegistered {
 			t.Fatalf("type=%q", m.Type)
 		}
-		return m.Address
+		return m
 	}
 
-	a1 := reg("proj")
-	a2 := reg("proj")
-	if a1 != "proj" || a2 != "proj_2" {
-		t.Fatalf("addresses %q %q", a1, a2)
+	m1 := reg("proj")
+	m2 := reg("proj")
+	if m1.Address != "proj" || m2.Address != "proj_2" {
+		t.Fatalf("addresses %q %q", m1.Address, m2.Address)
+	}
+	if m1.DaemonVersion != "3.1.1-test" || !m1.HasCapability(ipc.CapabilityUpdateRestart) {
+		t.Fatalf("registration metadata=%+v", m1)
 	}
 
 	cancel()
@@ -460,6 +524,9 @@ func TestDaemonRegisterTwoClientsViaSocket(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("daemon did not exit on context cancel")
+	}
+	if _, err := os.Stat(pidPath); !os.IsNotExist(err) {
+		t.Fatalf("pid file still exists after daemon exit: %v", err)
 	}
 }
 

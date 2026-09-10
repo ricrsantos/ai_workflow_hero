@@ -513,6 +513,18 @@ func TestTelegramClientApplyKillAcksAndOutboundsBeforeForceKill(t *testing.T) {
 	}
 }
 
+func TestTelegramClientCloseIsIdempotent(t *testing.T) {
+	done := make(chan struct{})
+	close(done)
+	c := &telegramClient{
+		quit: make(chan struct{}),
+		done: done,
+	}
+
+	c.Close()
+	c.Close()
+}
+
 func TestTelegramAutoReportSendsNonIdleStatusOncePerInterval(t *testing.T) {
 	now := time.Now()
 	var outbound []string

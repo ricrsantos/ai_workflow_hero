@@ -29,8 +29,15 @@ type Options struct {
 	// daemon has already started (e.g. the TUI setup flow). May be nil.
 	BotFactory func(token string) BotAPI
 	SocketPath string
-	Now        func() time.Time
-	Logger     *slog.Logger
+	// PIDPath is the daemon-owned pid file used by plugin lifecycle commands to
+	// request a graceful restart after an atomic binary replacement. Empty keeps
+	// the in-process/test lifecycle only.
+	PIDPath string
+	// Version is injected into the daemon binary at build time and returned in
+	// registration responses for diagnostics and capability negotiation.
+	Version string
+	Now     func() time.Time
+	Logger  *slog.Logger
 	// UID is the effective UID clients must declare. Defaults to ipc.CurrentUID().
 	UID int
 }
@@ -41,6 +48,8 @@ type Daemon struct {
 	store      *Store
 	botFactory func(token string) BotAPI
 	socketPath string
+	pidPath    string
+	version    string
 	now        func() time.Time
 	log        *slog.Logger
 	uid        int
@@ -79,6 +88,8 @@ func New(opts Options) *Daemon {
 		botFactory: opts.BotFactory,
 		bot:        opts.Bot,
 		socketPath: opts.SocketPath,
+		pidPath:    opts.PIDPath,
+		version:    opts.Version,
 		now:        opts.Now,
 		log:        opts.Logger,
 		uid:        opts.UID,
@@ -110,6 +121,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 		_ = ln.Close()
 		_ = os.Remove(d.socketPath)
 	}()
+	if d.pidPath != "" {
+		if err := writePIDFile(d.pidPath, os.Getpid()); err != nil {
+			return fmt.Errorf("daemon write pid file: %w", err)
+		}
+		defer removePIDFile(d.pidPath, os.Getpid())
+	}
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -289,13 +306,22 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 					_ = c.Send(ipc.Message{Type: ipc.TypeError, ErrorText: "access denied: socket owner mismatch"})
 					return
 				}
+				if d.version != "" && m.PluginVersion != "" && d.version != m.PluginVersion {
+					d.log.Warn("client and daemon versions differ; keeping protocol-compatible connection", "client_version", m.PluginVersion, "daemon_version", d.version)
+				}
 				reg, _ = d.registry.register(m.ProjectDir, m.Mode, m.ProjectAbbrev, outbound)
 				d.cancelScheduledShutdown()
 				if d.store != nil {
 					_ = d.store.MarkAddressKnown(reg.address, m.Mode, m.ProjectAbbrev, d.now())
 				}
 				d.log.Info("client registered", "address", reg.address, "mode", m.Mode)
-				if err := c.Send(ipc.Message{Type: ipc.TypeRegistered, Address: reg.address, Paired: d.Paired()}); err != nil {
+				if err := c.Send(ipc.Message{
+					Type:          ipc.TypeRegistered,
+					Address:       reg.address,
+					Paired:        d.Paired(),
+					DaemonVersion: d.version,
+					Capabilities:  []string{ipc.CapabilityUpdateRestart},
+				}); err != nil {
 					return
 				}
 				d.announceRegistration(ctx, reg)
@@ -324,6 +350,13 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 					addr := reg.address
 					text := m.OutboundText
 					go d.sendOutbound(ctx, addr, text)
+				}
+			default:
+				if err := c.Send(ipc.Message{
+					Type:      ipc.TypeError,
+					ErrorText: fmt.Sprintf("unsupported IPC message type %q", m.Type),
+				}); err != nil {
+					return
 				}
 			}
 		case m := <-outbound:

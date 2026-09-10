@@ -40,6 +40,13 @@ const (
 	TypeUpdateRestartAck     = "update_restart_ack"
 )
 
+// Capabilities advertised during registration. Capabilities are additive and
+// allow a newer client to keep talking to an older daemon without assuming
+// that every optional message type is understood.
+const (
+	CapabilityUpdateRestart = "update_restart"
+)
+
 // Registration modes.
 const (
 	ModeCycle = "cycle"
@@ -70,7 +77,9 @@ type Message struct {
 	Mode          string `json:"mode,omitempty"`
 	ProjectAbbrev string `json:"project_abbrev,omitempty"`
 	PluginVersion string `json:"plugin_version,omitempty"`
-	UID           int    `json:"uid,omitempty"`
+	// ClientCapabilities is sent by a TUI during registration.
+	ClientCapabilities []string `json:"client_capabilities,omitempty"`
+	UID                int      `json:"uid,omitempty"`
 
 	// set_credentials (TUI → daemon): bot token for OS-vault storage. The frame
 	// travels only over the 0600 OS-user socket; it is never logged or echoed.
@@ -79,6 +88,11 @@ type Message struct {
 	// registered (daemon → TUI)
 	Address string `json:"address,omitempty"`
 	Paired  bool   `json:"paired,omitempty"`
+	// DaemonVersion and Capabilities are returned by current daemons. They are
+	// optional so a TUI can remain compatible with a legacy daemon that only
+	// knows protocol_version 1.
+	DaemonVersion string   `json:"daemon_version,omitempty"`
+	Capabilities  []string `json:"capabilities,omitempty"`
 
 	// inbound (daemon → TUI)
 	InboundID string `json:"inbound_id,omitempty"`
@@ -102,6 +116,16 @@ type Message struct {
 // VersionOK reports whether the frame declares the current protocol version.
 func (m Message) VersionOK() bool {
 	return m.ProtocolVersion == ProtocolVersion
+}
+
+// HasCapability reports whether the frame advertises capability.
+func (m Message) HasCapability(capability string) bool {
+	for _, advertised := range m.Capabilities {
+		if advertised == capability {
+			return true
+		}
+	}
+	return false
 }
 
 // NewMessageID returns a random hex message id.
@@ -162,6 +186,16 @@ func (c *Conn) Close() error {
 		return nil
 	}
 	return c.raw.Close()
+}
+
+// SetDeadline applies a deadline to both reads and writes on the underlying
+// stream. Callers that wait for a response must set one so a compatible-looking
+// but stale peer cannot hold an updater forever.
+func (c *Conn) SetDeadline(deadline time.Time) error {
+	if c.raw == nil {
+		return fmt.Errorf("ipc: nil connection")
+	}
+	return c.raw.SetDeadline(deadline)
 }
 
 // ConnReader returns the underlying io.Reader for deadline-based reads.

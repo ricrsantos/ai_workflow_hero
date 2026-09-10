@@ -44,14 +44,63 @@ func Save(dir string, m Manifest) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create plugin dir: %w", err)
 	}
-	data, err := json.MarshalIndent(m, "", "  ")
+	data, err := marshalManifest(m)
 	if err != nil {
 		return fmt.Errorf("encode plugin manifest: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ManifestFileName), append(data, '\n'), 0o644); err != nil {
+	if err := atomicWriteFile(filepath.Join(dir, ManifestFileName), data, 0o644); err != nil {
 		return fmt.Errorf("write plugin manifest: %w", err)
 	}
 	return nil
+}
+
+func marshalManifest(m Manifest) ([]byte, error) {
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+func stageFile(dir, pattern string, data []byte, mode os.FileMode) (string, error) {
+	tmp, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		cleanup()
+		return "", err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		cleanup()
+		return "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", err
+	}
+	return tmpPath, nil
+}
+
+// atomicWriteFile writes a complete file beside its destination before making
+// it visible. This prevents readers from observing a truncated manifest during
+// plugin upgrades.
+func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
+	tmpPath, err := stageFile(filepath.Dir(path), ".hero-atomic-*", data, mode)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpPath)
+	return os.Rename(tmpPath, path)
 }
 
 // IsInstalled reports whether a manifest exists under dir.

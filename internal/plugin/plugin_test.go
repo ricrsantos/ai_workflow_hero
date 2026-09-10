@@ -79,6 +79,13 @@ func TestInstallTelegramCopiesDaemonAndWritesManifest(t *testing.T) {
 	if !IsInstalled(pluginDir) {
 		t.Fatal("plugin not recorded as installed")
 	}
+	entries, err := os.ReadDir(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("temporary install artifacts remain: %v", entries)
+	}
 }
 
 func TestInstallTelegramMissingSourceFailsClosed(t *testing.T) {
@@ -88,6 +95,45 @@ func TestInstallTelegramMissingSourceFailsClosed(t *testing.T) {
 	}
 	if IsInstalled(pluginDir) {
 		t.Fatal("partial plugin state must not persist on failure")
+	}
+}
+
+func TestInstallTelegramRollsBackDaemonWhenManifestInstallFails(t *testing.T) {
+	base := t.TempDir()
+	src := filepath.Join(base, "daemon-src")
+	if err := os.WriteFile(src, []byte("new daemon\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pluginDir := filepath.Join(base, "plugins", "telegram")
+	if err := os.MkdirAll(pluginDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(pluginDir, telegram.DaemonBinaryName)
+	if err := os.WriteFile(dst, []byte("old daemon\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A directory at the manifest destination makes the second atomic rename
+	// fail after the daemon rename, exercising the pair rollback.
+	if err := os.Mkdir(filepath.Join(pluginDir, ManifestFileName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := InstallTelegram(pluginDir, src, "2.9.3", time.Now()); err == nil {
+		t.Fatal("expected manifest installation failure")
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "old daemon\n" {
+		t.Fatalf("daemon=%q want old daemon after rollback", got)
+	}
+	entries, err := os.ReadDir(pluginDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("temporary install artifacts remain: %v", entries)
 	}
 }
 
