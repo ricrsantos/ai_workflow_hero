@@ -189,6 +189,13 @@ func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 		next, cmd := m.handleTelegramInterrupt()
 		return next, combineTimerCmds(ack, cmd)
 	}
+	if n, matched, valid := parseTelegramTail(msg.text); matched {
+		if !valid {
+			return m, combineTimerCmds(ack, m.telegramOutboundCmd("Usage: /tail or /tail <n> (1-100)."))
+		}
+		next, cmd := m.handleTelegramTail(n)
+		return next, combineTimerCmds(ack, cmd)
+	}
 	if permissionID, approved, matched, valid := parseTelegramHarnessPermission(msg.text); matched {
 		if !valid {
 			return m, combineTimerCmds(ack, m.telegramOutboundCmd("Use /hero-permission <id> allow or /hero-permission <id> deny."))

@@ -26,6 +26,7 @@ Selected instance
 /version — Show the Hero version
 /interrupt — Cancel in-flight agent work (same as Chat Ctrl+C)
 /kill — Force-kill the selected TUI (last resort; daemon stays up)
+/tail [n] — Show the last n lines of the agent's response (default 10, max 100)
 /auto-update — Commit source changes and queue a local Hero binary update
 /model — Choose free-chat harness, model, and properties
 /hero-config — Guided cycle configuration wizard

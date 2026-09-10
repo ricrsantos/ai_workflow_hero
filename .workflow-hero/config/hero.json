@@ -13,7 +13,7 @@
   "harnesses": {
     "claude": {
       "enabled": true,
-      "model": "claude-sonnet-4-6",
+      "model": "sonnet",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     },
@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "opencode",
-    "model": "opencode-go/deepseek-v4-pro"
+    "harness": "claude",
+    "model": "sonnet"
   },
   "chat_verbosity": "debug",
   "telegram": {
@@ -52,7 +52,7 @@
         "ef": "medium"
       },
       "sonnet": {
-        "ef": "medium"
+        "ef": "high"
       }
     },
     "codex": {

@@ -4,6 +4,21 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-10 — Telegram `/tail` command
+
+**Problem**: No remote way to inspect the tail of the agent's most recent chat
+response from Telegram.
+
+**Change**: Added the Telegram-only `/tail [n]` command (`internal/tui/telegram_tail.go`).
+It returns the last n lines of the most recent non-empty `convRoleAgent`
+transcript message, defaulting to 10 and capped at 100 (`n` in `[1, 100]`);
+trailing newlines are not counted as empty lines and shorter responses are
+returned whole. Wired into `handleTelegramInbound` alongside `/status`/`/interrupt`
+so it never starts a harness turn, and documented in `CommandHelpText`.
+
+**Validation**: `go test ./...` passes; new `parseTelegramTail` table tests plus
+`telegramTailText` and inbound-handler coverage in `telegram_tail_test.go`.
+
 ## 2026-09-10 — Claude enable now provisions root CLAUDE.md context
 
 **Problem**: Enabling the Claude harness provisioned `.claude/` but never created
