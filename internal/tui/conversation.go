@@ -2243,7 +2243,13 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 // chatVerbosityShows filters transcript-only details. Permission prompts,
 // questions, session errors, live-agent bookkeeping, and warning status remain
 // active even when their transcript row is hidden.
+//
+// Events with Metadata["hero_debug_only"]="true" are suppressed unless Hero
+// is running with --debug (herodebug.Enabled), regardless of verbosity level.
 func (m model) chatVerbosityShows(d harness.StreamDelta) bool {
+	if d.Metadata["hero_debug_only"] == "true" && !herodebug.Enabled {
+		return false
+	}
 	switch install.NormalizeChatVerbosity(m.settings.verbosity) {
 	case install.ChatVerbosityCompact:
 		return d.Kind == harness.StreamKindText

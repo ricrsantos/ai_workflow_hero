@@ -50,9 +50,17 @@ type cliStreamEvent struct {
 	Message          *cliMessage     `json:"message"`
 	Text             string          `json:"text"` // thinking delta
 	ToolCall         json.RawMessage `json:"tool_call"`
+	ToolResult       json.RawMessage `json:"tool_result"` // top-level tool_result events
+	Event            json.RawMessage `json:"event"`        // stream_event SSE wrapper
 	CallID           string          `json:"call_id"`
 	AgentID          string          `json:"agent_id"`
 	ParentToolCallID string          `json:"parent_tool_call_id"`
+	// system/api_retry fields
+	Attempt      int    `json:"attempt"`
+	MaxRetries   int    `json:"max_retries"`
+	RetryDelayMS int64  `json:"retry_delay_ms"`
+	ErrorStatus  int    `json:"error_status"`
+	ErrorMsg     string `json:"error"` // top-level error event message and api_retry code
 	// Partial-stream filters (docs): skip when model_call_id set or timestamp absent on final flush.
 	TimestampMS *int64  `json:"timestamp_ms"`
 	ModelCallID *string `json:"model_call_id"`
@@ -222,6 +230,7 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 		assistant      strings.Builder
 		sawPartial     bool
 		sawSubstantive bool
+		streamError    string // captured from top-level "error" events
 		state          = newStreamParseState()
 	)
 
@@ -269,8 +278,13 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 			sessionID = ev.SessionID
 		}
 		switch ev.Type {
-		case "system", "user":
-			// Stream lifecycle events; no user-visible delta.
+		case "user":
+			// Echo of the user message; no user-visible delta.
+		case "system":
+			if ev.Subtype == "api_retry" {
+				handleCursorAPIRetry(ev, sessionID, emit)
+			}
+			// Other system subtypes (init, etc.) are lifecycle-only; no delta.
 		case "permission_request", "permission":
 			if err := handleCursorPermission(ctx, line, ev.SessionID, opts, emit); err != nil {
 				return nil, err
@@ -384,6 +398,54 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 			if result.SessionID == "" {
 				result.SessionID = ev.SessionID
 			}
+		case "error":
+			// Fatal stream error emitted before or instead of a "result" event.
+			msg := strings.TrimSpace(ev.ErrorMsg)
+			if msg == "" {
+				msg = strings.TrimSpace(ev.Result)
+			}
+			if msg == "" {
+				msg = "cursor agent stream error"
+			}
+			streamError = msg
+			// Emit immediately so the TUI status bar updates before the function returns.
+			emit(harness.WarningDelta("cursor", "error", sessionID, msg))
+		case "tool_result":
+			// Tool result emitted as a separate top-level event (alternative to tool_call/completed).
+			callID := strings.TrimSpace(ev.CallID)
+			if content := extractTaskResultContent(ev.ToolResult); content != "" && !state.emittedText[callID] {
+				name, model, parentID := state.attrFromEvent(ev)
+				if callID == "" {
+					callID = parentID
+				}
+				emitAttr(harness.StreamKindTool, content, name, model, callID, "")
+			}
+		case "usage":
+			// Standalone token-usage event (Detailed+ via StreamKindActivity).
+			if ev.Usage != nil {
+				u := ev.Usage.toHarness()
+				summary := fmt.Sprintf("Usage: %d in / %d out tokens", u.InputTokens, u.OutputTokens)
+				emit(harness.StreamDelta{
+					Kind:        harness.StreamKindActivity,
+					Text:        summary,
+					HarnessType: "usage",
+					SessionID:   sessionID,
+				})
+				// Cache breakdown is hero-debug-only (too noisy for Detailed).
+				if u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 {
+					detail := fmt.Sprintf("Usage cache: read=%d write=%d tokens", u.CacheReadTokens, u.CacheWriteTokens)
+					emit(harness.StreamDelta{
+						Kind:        harness.StreamKindActivity,
+						Text:        detail,
+						HarnessType: "usage.cache",
+						SessionID:   sessionID,
+						Metadata:    map[string]string{"hero_debug_only": "true"},
+					})
+				}
+			}
+		case "stream_event":
+			// SSE wrapper events emitted with --stream-partial-output.
+			handleCursorStreamEvent(ev, sessionID, emit)
 		default:
 			if ev.Type != "" {
 				emit(harness.WarningDelta("cursor", ev.Type, sessionID, string(line)))
@@ -394,6 +456,10 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 		return nil, fmt.Errorf("read stream-json: %w", err)
 	}
 	if result == nil {
+		// A top-level "error" event with no subsequent "result" is a fatal failure.
+		if streamError != "" {
+			return nil, fmt.Errorf("cursor agent stream error: %s", streamError)
+		}
 		out := strings.TrimSpace(assistant.String())
 		if out == "" && sessionID == "" {
 			return nil, fmt.Errorf("stream-json ended without result event")
@@ -790,4 +856,110 @@ func formatToolPermissionDenied(label string) string {
 		label = "tool"
 	}
 	return fmt.Sprintf("Cursor denied %s (permission not granted). Hero runs with --force and --approve-mcps; if this persists, check .cursor/permissions.json or your team MCP allowlist.", label)
+}
+
+// handleCursorAPIRetry emits retry progress deltas for system/api_retry events.
+//
+//   - Standard+: simple "Retrying (N/M)" as StreamKindTool
+//   - Detailed+: delay and error code as StreamKindActivity
+//   - hero debug: raw payload as StreamKindActivity with hero_debug_only
+func handleCursorAPIRetry(ev cliStreamEvent, sessionID string, emit func(harness.StreamDelta)) {
+	reason := formatRetryReason(ev.ErrorMsg)
+	msg := fmt.Sprintf("Retrying (%d/%d)%s", ev.Attempt, ev.MaxRetries, reason)
+	emit(harness.StreamDelta{
+		Kind:        harness.StreamKindTool,
+		Text:        msg,
+		HarnessType: "system.api_retry",
+		SessionID:   sessionID,
+	})
+	if ev.RetryDelayMS > 0 || ev.ErrorStatus != 0 {
+		detail := fmt.Sprintf("Retry delay: %dms, status: %d, error: %s", ev.RetryDelayMS, ev.ErrorStatus, ev.ErrorMsg)
+		emit(harness.StreamDelta{
+			Kind:        harness.StreamKindActivity,
+			Text:        detail,
+			HarnessType: "system.api_retry.detail",
+			SessionID:   sessionID,
+		})
+	}
+}
+
+// formatRetryReason returns a human-readable suffix for known api_retry error codes.
+func formatRetryReason(code string) string {
+	switch code {
+	case "rate_limit":
+		return " (rate limited)"
+	case "server_error":
+		return " (server error)"
+	case "billing_error":
+		return " (billing error)"
+	case "authentication_failed":
+		return " (auth failed)"
+	case "max_output_tokens":
+		return " (max output tokens)"
+	default:
+		if code != "" {
+			return fmt.Sprintf(" (%s)", code)
+		}
+		return ""
+	}
+}
+
+// handleCursorStreamEvent processes stream_event SSE wrapper events.
+//
+//   - message_delta: Detailed+ (StreamKindActivity)
+//   - all others: hero debug only (hero_debug_only metadata)
+func handleCursorStreamEvent(ev cliStreamEvent, sessionID string, emit func(harness.StreamDelta)) {
+	if len(ev.Event) == 0 {
+		return
+	}
+	var inner struct {
+		Type  string `json:"type"`
+		Delta struct {
+			Type       string `json:"type"`
+			Text       string `json:"text"`
+			StopReason string `json:"stop_reason"`
+		} `json:"delta"`
+		Usage *cliUsageJSON `json:"usage"`
+	}
+	if err := json.Unmarshal(ev.Event, &inner); err != nil || inner.Type == "" {
+		return
+	}
+	harnessType := "stream_event." + inner.Type
+	switch inner.Type {
+	case "message_delta":
+		// Stop reason and final usage — Detailed+ via StreamKindActivity.
+		text := fmt.Sprintf("stream: stop_reason=%s", inner.Delta.StopReason)
+		if inner.Usage != nil {
+			u := inner.Usage.toHarness()
+			text = fmt.Sprintf("stream: stop_reason=%s out=%d tokens", inner.Delta.StopReason, u.OutputTokens)
+		}
+		emit(harness.StreamDelta{
+			Kind:        harness.StreamKindActivity,
+			Text:        text,
+			HarnessType: harnessType,
+			SessionID:   sessionID,
+		})
+	default:
+		// Protocol-level events (message_start/stop, content_block_start/stop/delta):
+		// hero debug only.
+		text := inner.Type
+		if inner.Delta.Text != "" {
+			text = inner.Type + ": " + truncateStreamText(inner.Delta.Text, 120)
+		}
+		emit(harness.StreamDelta{
+			Kind:        harness.StreamKindActivity,
+			Text:        text,
+			HarnessType: harnessType,
+			SessionID:   sessionID,
+			Metadata:    map[string]string{"hero_debug_only": "true"},
+		})
+	}
+}
+
+func truncateStreamText(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
