@@ -1171,21 +1171,27 @@ func TestExtractOpenCodeUsageIncludesCacheInOccupancy(t *testing.T) {
 func TestExtractOpenCodeUsageAccumulatesStepFinishes(t *testing.T) {
 	state := newStreamState()
 	state.assistantMsgID = "msg-asst"
-	for id, tokens := range map[string][2]float64{
-		"prt-fin-1": {10, 3},
-		"prt-fin-2": {20, 4},
+	// Keep event order deterministic: ContextTokens represents the last
+	// model-call occupancy, while billed input/output are accumulated.
+	for _, step := range []struct {
+		id           string
+		inputTokens  float64
+		outputTokens float64
+	}{
+		{id: "prt-fin-1", inputTokens: 10, outputTokens: 3},
+		{id: "prt-fin-2", inputTokens: 20, outputTokens: 4},
 	} {
 		evt := map[string]any{
 			"type": "message.part.updated",
 			"properties": map[string]any{
 				"sessionID": "sess-1",
 				"part": map[string]any{
-					"id":        id,
+					"id":        step.id,
 					"type":      "step-finish",
 					"messageID": "msg-asst",
 					"tokens": map[string]any{
-						"input":  tokens[0],
-						"output": tokens[1],
+						"input":  step.inputTokens,
+						"output": step.outputTokens,
 					},
 				},
 			},

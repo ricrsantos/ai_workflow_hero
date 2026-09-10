@@ -4,6 +4,22 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-10 — Test binary artifact isolation
+
+**Change**: Added `/hero-telegram-daemon` and `/temp/` to `.gitignore`. `docs/testing/TESTING.md` now prohibits repository-root binaries, requires temporary binaries from tests, validation, and local build checks to use `./temp/`, and requires cleanup on both success and failure. Updated local build examples in `README.md`, `docs/deployment/DEPLOY.md`, and the embedded user help to use `./temp/hero`; added `TESTING.md` to the bilingual README documentation maps.
+
+**Document hierarchy**: `docs/testing/TESTING.md` remains a living, unnumbered document and is present in the active `.workflow-hero/config/documents.json` registry and the generated `openspec/config.yml` context, alongside the existing `AGENTS.md`, `ADR.md`, and architecture-overview references. The empty `assets/config/documents.json` remains the bootstrap template.
+
+**Validation**: `git diff --check`, registry JSON parsing, reference assertions, and the isolated OpenCode usage test passed. The full `go test ./... -count=1` run still reproduces the unrelated `internal/adapters/opencode/TestExtractOpenCodeUsageAccumulatesStepFinishes` failure (`context=13`, want `24`); no root executable or `./temp` artifact remained.
+
+## 2026-09-10 — Stabilized OpenCode usage test
+
+**Change**: Replaced the unordered `map` fixture in `TestExtractOpenCodeUsageAccumulatesStepFinishes` with an ordered slice so the `step-finish` event with `20 + 4` tokens is deterministically last. This matches the adapter contract: billed input/output accumulate, while `ContextTokens` represents the last model-call occupancy.
+
+**Root cause**: Map iteration order made the test flaky. When the `20 + 4` event was processed first, the later `10 + 3` event correctly left `ContextTokens=13`, but the test always expected `24`.
+
+**Validation**: The focused test passed 30 consecutive runs and `go test ./...` passed after the change.
+
 ## 2026-09-09 — Development Telegram auto-update
 
 **Change**: Added ADR-076 and the development-only `/auto-update` flow. The TUI command commits safe working-tree changes and sets `needs-update.txt`; a systemd user timer runs `hero-update.sh` every five minutes. The updater invokes the new `scripts/build_update.sh`, which builds only `./cmd/hero` for the host OS/architecture, atomically replaces the installed binary, signals running TUIs through versioned Telegram IPC, and preserves their terminal/process identity. Existing `build_dev.sh` and `release.sh` were not changed.

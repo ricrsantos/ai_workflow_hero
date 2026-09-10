@@ -84,8 +84,9 @@ hero version
 ```bash
 git clone https://github.com/ricrsantos/ai_workflow_hero.git
 cd ai_workflow_hero
-go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" -o hero ./cmd/hero
-sudo mv hero /usr/local/bin/hero
+mkdir -p ./temp
+go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" -o ./temp/hero ./cmd/hero
+sudo mv ./temp/hero /usr/local/bin/hero
 ```
 
 ---
@@ -467,8 +468,9 @@ Verifique o checksum em `checksums.txt` quando disponível. Releases: [GitHub Re
 ```bash
 git clone https://github.com/ricrsantos/ai_workflow_hero.git
 cd ai_workflow_hero
-go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" -o hero ./cmd/hero
-sudo mv hero /usr/local/bin/hero
+mkdir -p ./temp
+go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" -o ./temp/hero ./cmd/hero
+sudo mv ./temp/hero /usr/local/bin/hero
 ```
 
 ---

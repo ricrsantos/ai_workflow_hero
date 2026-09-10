@@ -86,7 +86,7 @@ The project-local `hero.json` Telegram configuration supports `auto_report_minut
 - C5 model properties: `internal/harness` + `internal/modelprops`; catalogs carry `properties` for Cursor base + OpenCode 27 + Codex ids.
 - `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **3.1.1** (ships `hero-telegram-daemon` per platform; plugin install downloads from GitHub Releases); both scripts install linux/amd64 `hero` to `/home/ricardo/installable/hero/hero` and refresh the local Telegram plugin daemon + manifest; integration tests include C6 Codex path, C9 Telegram lock, and C13 Claude adapter.
 - **Development update tooling**: `scripts/build_update.sh` builds only `./cmd/hero` for the host target; `scripts/hero-update.sh`, `scripts/install_update_dev.sh`, `scripts/uninstall_update_dev.sh`, and `scripts/systemd/` provide the guarded systemd user timer flow, atomic binary replacement, and cleanup. Uninstall preserves `hero` and `hero.previous`.
-- Test strategy in [docs/testing/TESTING.md](docs/testing/TESTING.md); bilingual README.
+- Test strategy and build-artifact policy in [docs/testing/TESTING.md](docs/testing/TESTING.md); repository-root binaries are prohibited, temporary test binaries belong under `./temp/` and must be removed after the run; `/hero`, `/hero-telegram-daemon`, and `/temp/` are ignored; the OpenCode step-usage test preserves event order; bilingual README.
 
 ## Pending Features
 

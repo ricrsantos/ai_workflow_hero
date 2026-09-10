@@ -10,6 +10,13 @@ go test ./...
 
 Run from the repository root after any code change. All tests must pass before marking work complete.
 
+## Build artifact policy
+
+- Tests, validation commands, and local test builds **MUST NOT** write executable or other binary files to the repository root. In particular, `./hero` and `./hero-telegram-daemon` are prohibited.
+- Every temporary binary generated for a test, validation, or local build check **MUST** be written below `./temp/` using an explicit output path (for example, `go build -o ./temp/hero ./cmd/hero`). Never rely on Go's default output path.
+- `./temp/` is scratch space. The test or script that creates an artifact **MUST** remove its own files after the run, including when the run fails; shell scripts should register cleanup on `EXIT`.
+- Release artifacts intentionally produced by `scripts/build_dev.sh` or `scripts/release.sh` belong in `./dist/` and are not temporary test artifacts.
+
 ## Strategy
 
 - **Unit tests**: colocated `*_test.go` in each `internal/<feature>/` package; same package; test behavior, not implementation details.

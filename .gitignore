@@ -43,4 +43,6 @@ secrets.json
 # Hero CLI build artifacts
 /dist/
 /hero
+/hero-telegram-daemon
+/temp/
 .workflow-hero/tui.log

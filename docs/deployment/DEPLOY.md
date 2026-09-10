@@ -48,7 +48,9 @@ Windows is **out of scope for V1** (see [PRD.md §2.3](../product/PRD.md#23-v2-s
 The version is not hardcoded in source; it is injected at build time from the current git tag via linker flags:
 
 ```bash
-go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o hero ./cmd/hero
+mkdir -p ./temp
+go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o ./temp/hero ./cmd/hero
+rm -f ./temp/hero
 ```
 
 - `assets.version` (recorded in the installed project's `.workflow-hero/config/hero.json`) is **always equal to** `cli.version`, since assets are embedded in the same binary and cannot diverge from it (see [ADR-001](../architecture/ADR.md#adr-001-go-cobra-and-embedfs-for-cli-distribution)).

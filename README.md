@@ -92,8 +92,9 @@ hero version
 ```bash
 git clone https://github.com/ricrsantos/ai_workflow_hero.git
 cd ai_workflow_hero
-go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" -o hero ./cmd/hero
-sudo mv hero /usr/local/bin/hero
+mkdir -p ./temp
+go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" -o ./temp/hero ./cmd/hero
+sudo mv ./temp/hero /usr/local/bin/hero
 ```
 
 ---
@@ -388,7 +389,9 @@ Pick one entry UI per session for control actions; both read and write `.workflo
 git clone https://github.com/ricrsantos/ai_workflow_hero.git
 cd ai_workflow_hero
 go test ./...
-go build -o hero ./cmd/hero
+mkdir -p ./temp
+go build -o ./temp/hero ./cmd/hero
+rm -f ./temp/hero
 ```
 
 ---
@@ -397,7 +400,9 @@ go build -o hero ./cmd/hero
 
 ```bash
 go test ./...
-go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o hero ./cmd/hero
+mkdir -p ./temp
+go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o ./temp/hero ./cmd/hero
+rm -f ./temp/hero
 ```
 
 Cross-compiled release artifacts (4 platforms + `checksums.txt`):
@@ -456,6 +461,7 @@ Cross-compiled release artifacts (4 platforms + `checksums.txt`):
 | Terminal UX Spec | [docs/product/UI.md](docs/product/UI.md) |
 | Architecture Decision Records | [docs/architecture/ADR.md](docs/architecture/ADR.md) |
 | Deployment Guide | [docs/deployment/DEPLOY.md](docs/deployment/DEPLOY.md) |
+| Testing Strategy | [docs/testing/TESTING.md](docs/testing/TESTING.md) |
 | Agent guidance | [AGENTS.md](AGENTS.md) |
 | End-user guide (installed into projects) | [assets/docs/workflow-help.md](assets/docs/workflow-help.md) → `.workflow-hero/docs/workflow-help.md` |
 
@@ -553,8 +559,9 @@ hero version
 ```bash
 git clone https://github.com/ricrsantos/ai_workflow_hero.git
 cd ai_workflow_hero
-go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" -o hero ./cmd/hero
-sudo mv hero /usr/local/bin/hero
+mkdir -p ./temp
+go build -ldflags "-X main.version=$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" -o ./temp/hero ./cmd/hero
+sudo mv ./temp/hero /usr/local/bin/hero
 ```
 
 ---
@@ -848,7 +855,9 @@ Escolha uma UI por sessão para ações de controle; ambas leem e escrevem `.wor
 git clone https://github.com/ricrsantos/ai_workflow_hero.git
 cd ai_workflow_hero
 go test ./...
-go build -o hero ./cmd/hero
+mkdir -p ./temp
+go build -o ./temp/hero ./cmd/hero
+rm -f ./temp/hero
 ```
 
 ---
@@ -857,7 +866,9 @@ go build -o hero ./cmd/hero
 
 ```bash
 go test ./...
-go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o hero ./cmd/hero
+mkdir -p ./temp
+go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o ./temp/hero ./cmd/hero
+rm -f ./temp/hero
 ```
 
 Artefatos de release cross-compilados (4 plataformas + `checksums.txt`):
@@ -916,6 +927,7 @@ Artefatos de release cross-compilados (4 plataformas + `checksums.txt`):
 | Spec de UX do terminal | [docs/product/UI.md](docs/product/UI.md) |
 | Architecture Decision Records | [docs/architecture/ADR.md](docs/architecture/ADR.md) |
 | Guia de deploy | [docs/deployment/DEPLOY.md](docs/deployment/DEPLOY.md) |
+| Estratégia de testes | [docs/testing/TESTING.md](docs/testing/TESTING.md) |
 | Orientação para agentes | [AGENTS.md](AGENTS.md) |
 | Guia do usuário final (instalado nos projetos) | [assets/docs/workflow-help.md](assets/docs/workflow-help.md) → `.workflow-hero/docs/workflow-help.md` |
 
