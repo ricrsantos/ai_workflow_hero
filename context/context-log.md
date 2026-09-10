@@ -1517,3 +1517,31 @@ remediation line. Expanded unit/Execute tests for NDJSON chatter vs plain
 `go test ./...` still reports a pre-existing failure in
 `internal/adapters/opencode` (`TestExtractOpenCodeUsageAccumulatesStepFinishes`);
 untouched by this change.
+
+## 2026-09-10 — TUI multimodal image architecture direction
+
+**Decision**: Selected the shared multimodal contract approach for a future
+Hero cycle. User and model images will be represented as typed attachment/asset
+references through the conversation, harness, adapter, and TUI boundaries;
+each adapter owns its native protocol translation and unsupported capabilities
+fail explicitly. Direct provider API calls are not the selected direction.
+
+**Proposal**: Added the non-normative PT-BR design note
+`docs/idea/tobe/tui-imagens-multimodais.md`. It covers bidirectional flows,
+domain types, adapter-specific paths, TUI capture/cards/previews, storage,
+security, testing, incremental delivery, and decisions that the future
+PRD/UI/ADR/OpenSpec cycle must close. No runtime architecture or code changed.
+
+**Validation**: documentation-only review and `git diff --check`.
+
+## 2026-09-10 — Telegram model list uses live harness authority
+
+**Change**: Fixed Telegram `/model` and `/hero-config` model selection so a
+successful adapter `ListModels` response is the complete selectable list.
+Catalog, cache, boot rows, and the configured current model are used only as
+the existing fallback when live listing fails. This prevents stale Codex
+catalog entries such as `gpt-5.3-codex` from being offered when the Codex
+app-server does not return them.
+
+**Tests**: Replaced the test that locked in catalog/live merging with live-only
+assertions and added a Codex regression test. `go test ./...` passed.

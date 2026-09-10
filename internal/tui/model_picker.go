@@ -231,6 +231,7 @@ func (m model) modelsForHarness(harnessID string) []string {
 
 // modelChoicesForHarness returns the union of live API rows, persisted cache,
 // boot-time options, embedded catalog, and an optional configured model slug.
+// It is used for local configuration choices, where a local fallback is useful.
 // Lists are deduplicated case-insensitively and sorted alphabetically.
 func (m model) modelChoicesForHarness(harnessID, current string, live []string) []string {
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
@@ -270,6 +271,27 @@ func (m model) modelChoicesForHarness(harnessID, current string, live []string) 
 		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
 	})
 	return filtered
+}
+
+// liveModelChoices normalizes one successful adapter response without adding
+// local catalog or cache rows. A live harness list is authoritative: presenting
+// local-only rows as selectable models can make the next execution fail.
+func liveModelChoices(models []string) []string {
+	seen := make(map[string]bool, len(models))
+	out := make([]string, 0, len(models))
+	for _, slug := range models {
+		slug = strings.TrimSpace(slug)
+		key := strings.ToLower(slug)
+		if slug == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, slug)
+	}
+	slices.SortFunc(out, func(a, b string) int {
+		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+	})
+	return out
 }
 
 func (m model) selectChatModel(slug string) (model, tea.Cmd) {

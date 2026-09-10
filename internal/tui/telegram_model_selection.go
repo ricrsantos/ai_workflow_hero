@@ -253,10 +253,15 @@ func (m model) handleTelegramModelList(msg telegramModelListMsg) (model, tea.Cmd
 	m = m.ensurePropsSvcForTelegram()
 	current := m.telegramModelCurrentSlug(selection)
 	var warning string
-	if msg.err != nil {
+	if msg.err == nil {
+		// A successful adapter response is authoritative. Do not merge the
+		// embedded catalog here: it can contain stale model ids that the
+		// selected harness no longer exposes.
+		selection.models = liveModelChoices(msg.models)
+	} else {
 		warning = "Não foi possível atualizar a lista live; usando modelos locais conhecidos.\n\n"
+		selection.models = m.modelChoicesForHarness(selection.harnessID, current, nil)
 	}
-	selection.models = m.modelChoicesForHarness(selection.harnessID, current, msg.models)
 	if len(selection.models) == 0 {
 		selection.stage = telegramModelSelectHarness
 		if msg.err != nil {

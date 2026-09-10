@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "cursor",
-    "model": "cursor-grok-4.5-high"
+    "harness": "codex",
+    "model": "gpt-5.6-luna"
   },
   "chat_verbosity": "debug",
   "telegram": {
@@ -56,6 +56,10 @@
       }
     },
     "codex": {
+      "gpt-5.3-codex": {
+        "ef": "medium",
+        "th": "off"
+      },
       "gpt-5.4-mini": {
         "ef": "medium",
         "th": "off"
@@ -65,7 +69,7 @@
         "th": "off"
       },
       "gpt-5.6-sol": {
-        "ef": "high",
+        "ef": "medium",
         "th": "off"
       },
       "gpt-5.6-terra": {

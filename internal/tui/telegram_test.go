@@ -1144,7 +1144,7 @@ func flushTeaCmds(m model, cmd tea.Cmd) model {
 	return m
 }
 
-func TestTelegramModelSelectionMergesCatalogAndLiveGrok(t *testing.T) {
+func TestTelegramModelSelectionUsesOnlySuccessfulLiveModels(t *testing.T) {
 	m, _ := newPickerTestModel(t)
 	var outbound []string
 	m.telegram = &telegramState{
@@ -1182,11 +1182,68 @@ func TestTelegramModelSelectionMergesCatalogAndLiveGrok(t *testing.T) {
 	m = flushTeaCmds(next.(model), cmd)
 
 	prompt := outbound[len(outbound)-1]
-	for _, want := range []string{"cursor-grok-4.5", "cursor-grok-4.5-high", "cursor-grok-4.5-low", "cursor-grok-4.5-medium"} {
+	for _, want := range []string{"composer-2.5", "cursor-grok-4.5-high", "cursor-grok-4.5-medium"} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("merged model prompt missing %q:\n%s", want, prompt)
+			t.Fatalf("live model prompt missing %q:\n%s", want, prompt)
 		}
 	}
+	if telegramModelOptionPresent(prompt, "cursor-grok-4.5-low") {
+		t.Fatalf("stale cached model must not be shown after a successful live response:\n%s", prompt)
+	}
+}
+
+func TestTelegramModelSelectionDoesNotAddStaleCodexCatalogModels(t *testing.T) {
+	svc, _ := writeCodexModelPickerFixture(t, `{
+  "harnesses": {
+    "cursor": {"enabled": false},
+    "opencode": {"enabled": false},
+    "codex": {"enabled": true}
+  }
+}
+`, codexStageYAML)
+	m := NewTestModel(svc)
+	var outbound []string
+	m.telegram = &telegramState{
+		installed: true,
+		connected: true,
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+	}
+
+	prev := listModelsForHarnessFn
+	listModelsForHarnessFn = func(_ context.Context, _ model, harnessID string) ([]string, error) {
+		if harnessID != "codex" {
+			t.Fatalf("listed harness=%q want codex", harnessID)
+		}
+		return []string{"gpt-5.6-luna"}, nil
+	}
+	t.Cleanup(func() { listModelsForHarnessFn = prev })
+
+	next, _ := m.Update(telegramInboundMsg{text: "/model", isCommand: true, address: "proj"})
+	next, cmd := next.(model).Update(telegramInboundMsg{text: "1", address: "proj"})
+	m = flushTeaCmds(next.(model), cmd)
+
+	if len(outbound) == 0 {
+		t.Fatal("expected Telegram model prompt")
+	}
+	prompt := outbound[len(outbound)-1]
+	if !telegramModelOptionPresent(prompt, "gpt-5.6-luna") {
+		t.Fatalf("live Codex model missing from prompt:\n%s", prompt)
+	}
+	if telegramModelOptionPresent(prompt, "gpt-5.3-codex") {
+		t.Fatalf("stale Codex catalog model must not be shown:\n%s", prompt)
+	}
+}
+
+func telegramModelOptionPresent(prompt, model string) bool {
+	for _, line := range strings.Split(prompt, "\n") {
+		_, option, ok := strings.Cut(line, " - ")
+		if ok && strings.TrimSpace(option) == model {
+			return true
+		}
+	}
+	return false
 }
 
 func TestTelegramModelSelectionAlwaysUsesLiveList(t *testing.T) {
