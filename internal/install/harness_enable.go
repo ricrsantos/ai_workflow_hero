@@ -53,6 +53,18 @@ func EnableHarnessWithProjection(projectDir, harnessID string, assetsFS fs.FS) e
 	return saveHeroJSON(projectDir, hero)
 }
 
+// EnableClaudeHarness enables the Claude harness, provisions .claude/, and
+// applies the managed root CLAUDE.md context decision. Projection and enable
+// failures are returned as errors; a context decision that cannot be applied
+// (for example a missing AGENTS.md) is returned for the caller to surface
+// without treating the harness enable itself as failed.
+func EnableClaudeHarness(projectDir string, assetsFS fs.FS, decision ClaudeContextDecision) (ClaudeContextResult, error) {
+	if err := EnableHarnessWithProjection(projectDir, "claude", assetsFS); err != nil {
+		return ClaudeContextResult{}, err
+	}
+	return ApplyClaudeContext(projectDir, decision)
+}
+
 func containsHarness(ids []string, id string) bool {
 	for _, h := range ids {
 		if h == id {

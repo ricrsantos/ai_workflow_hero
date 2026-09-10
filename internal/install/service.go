@@ -32,6 +32,9 @@ type Options struct {
 	Summary string
 	// Tools is the list of explicitly enabled harnesses. Claude remains opt-in.
 	Tools []string
+	// ClaudeContext controls how Hero manages the root CLAUDE.md file when
+	// Claude is enabled during install. The zero value leaves it unchanged.
+	ClaudeContext ClaudeContextDecision
 	// Version is the Hero CLI version (injected at build time).
 	Version string
 	// GitInit specifies whether to initialize a git repo if one is missing.
@@ -178,6 +181,15 @@ func Run(opts Options, stdout, stderr io.Writer) error {
 	if containsTool(enabled, "claude") {
 		if err := ProvisionClaude(opts.ProjectDir, opts.AssetsFS, checksums); err != nil {
 			return fmt.Errorf("provision Claude: %w", err)
+		}
+	}
+
+	// The managed root CLAUDE.md block is optional and requires an existing
+	// AGENTS.md, so a rejected decision (missing AGENTS.md, malformed markers)
+	// is surfaced as a warning rather than failing the install.
+	if containsTool(enabled, "claude") {
+		if _, err := ApplyClaudeContext(opts.ProjectDir, opts.ClaudeContext); err != nil {
+			output.Warning(stderr, "Claude managed context: "+err.Error())
 		}
 	}
 

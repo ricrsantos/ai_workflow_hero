@@ -132,6 +132,7 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 	}
 
 	var enabledNames, disabledNames []string
+	claudeContextNeeded := false
 	for _, id := range install.SupportedHarnessIDs {
 		want := m.harnessDraft[id]
 		have := install.IsHarnessEnabled(hero, id)
@@ -146,6 +147,9 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 				m = m.closePalette()
 				m = m.setStatusResult(false, slashHarness, err.Error())
 				return m, nil
+			}
+			if id == "claude" && !m.freeChatMode {
+				claudeContextNeeded = true
 			}
 			enabledNames = append(enabledNames, harnessDisplayName(id))
 		}
@@ -196,10 +200,10 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 		}
 	}
 
+	var statusParts []string
 	if len(enabledNames) == 0 && len(disabledNames) == 0 {
-		m = m.setStatusResult(true, slashHarness, "Harness selection unchanged")
+		statusParts = append(statusParts, "Harness selection unchanged")
 	} else {
-		var parts []string
 		for _, name := range enabledNames {
 			msg := name + " enabled"
 			if !m.freeChatMode {
@@ -212,12 +216,11 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 					msg = "Claude enabled (projected .claude/)"
 				}
 			}
-			parts = append(parts, msg)
+			statusParts = append(statusParts, msg)
 		}
 		for _, name := range disabledNames {
-			parts = append(parts, name+" disabled (files kept)")
+			statusParts = append(statusParts, name+" disabled (files kept)")
 		}
-		m = m.setStatusResult(true, slashHarness, strings.Join(parts, "; "))
 	}
 	var permissionChanges []string
 	for _, id := range install.SupportedHarnessIDs {
@@ -246,13 +249,67 @@ func (m model) applyHarnessDraft() (model, tea.Cmd) {
 		}
 	}
 	if len(permissionChanges) > 0 {
-		statusText := m.statusText
-		if statusText != "" {
-			permissionChanges = append([]string{statusText}, permissionChanges...)
-		}
-		m = m.setStatusResult(true, slashHarness, strings.Join(permissionChanges, "; "))
+		statusParts = append(statusParts, permissionChanges...)
+	}
+
+	// Claude enable offers an explicit managed-context decision before the
+	// palette closes, so the user chooses whether Hero touches root CLAUDE.md.
+	if claudeContextNeeded {
+		m.claudeContextPendingStatus = strings.Join(statusParts, "; ")
+		return m.openClaudeContextPicker(), nil
+	}
+
+	m = m.setStatusResult(true, slashHarness, strings.Join(statusParts, "; "))
+	m = m.closePalette()
+	return m, nil
+}
+
+// openClaudeContextPicker replaces the harness palette items with the two
+// managed-context options for a newly enabled Claude harness.
+func (m model) openClaudeContextPicker() model {
+	m.pickingClaudeContext = true
+	m.pickingHarness = false
+	m.paletteFilter = ""
+	m.paletteIndex = 0
+	m.paletteOffset = 0
+	m.paletteItems = []paletteItem{
+		{label: "Insert/update managed block", hint: "add Hero context to CLAUDE.md", action: actionClaudeContextInsert},
+		{label: "Leave CLAUDE.md unchanged", hint: "skip managed context", action: actionClaudeContextLeave},
+	}
+	return m.ensurePaletteVisible()
+}
+
+// applyClaudeContextDecision applies the selected managed-context decision to
+// root CLAUDE.md and closes the palette with a combined status line.
+func (m model) applyClaudeContextDecision(decision install.ClaudeContextDecision) (model, tea.Cmd) {
+	projectDir := ""
+	if m.svc != nil {
+		projectDir = m.svc.ProjectDir
+	}
+	if projectDir == "" {
+		m = m.closePalette()
+		m = m.setStatusResult(false, slashHarness, "project unavailable")
+		return m, nil
+	}
+	res, err := install.ApplyClaudeContext(projectDir, decision)
+	if err != nil {
+		m = m.closePalette()
+		m = m.setStatusResult(false, slashHarness, err.Error())
+		return m, nil
+	}
+	extra := "CLAUDE.md unchanged"
+	switch {
+	case res.Created:
+		extra = "managed CLAUDE.md block created"
+	case res.Changed:
+		extra = "managed CLAUDE.md block updated"
+	}
+	status := extra
+	if base := strings.TrimSpace(m.claudeContextPendingStatus); base != "" {
+		status = base + "; " + extra
 	}
 	m = m.closePalette()
+	m = m.setStatusResult(true, slashHarness, status)
 	return m, nil
 }
 

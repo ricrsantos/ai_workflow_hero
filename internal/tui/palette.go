@@ -39,6 +39,8 @@ const (
 	actionToggleHarnessPermission
 	actionHarnessPermissionHeading
 	actionHarnessSpacer
+	actionClaudeContextInsert
+	actionClaudeContextLeave
 	actionHarnessReset
 	actionSelectHarnessReset
 	actionConfigUpdate

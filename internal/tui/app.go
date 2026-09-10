@@ -40,7 +40,7 @@ const (
 
 type model struct {
 	svc          *cycle.Service
-	freeChatMode bool // hero chat: Chat-only, no cycle chrome
+	freeChatMode bool   // hero chat: Chat-only, no cycle chrome
 	version      string // Hero CLI version injected at build time (for /version)
 	width        int
 	height       int
@@ -122,6 +122,8 @@ type model struct {
 	availableModels               []string
 	pickingModel                  bool
 	pickingHarness                bool
+	pickingClaudeContext          bool   // Claude managed-context decision after enable
+	claudeContextPendingStatus    string // status text captured before the context decision
 	pickingHarnessReset           bool
 	harnessResetAwaitingOpen      bool // loading harness list before reset picker is interactive
 	heroStartPreparing            bool // syncing opencode agents before /hero-start orchestration
@@ -708,6 +710,7 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Leave palette chrome before global navigation / refresh / quit.
 		m.pickingModel = false
 		m.pickingHarness = false
+		m.pickingClaudeContext = false
 		m.pickingHarnessReset = false
 		m.harnessResetAwaitingOpen = false
 		m.modelPickerHarness = ""
@@ -728,6 +731,9 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.pickingModel && m.modelPickerHarness != "" {
 			return m.openModelPicker()
+		}
+		if m.pickingClaudeContext {
+			return m.applyClaudeContextDecision(install.ClaudeContextLeaveUnchanged)
 		}
 		m = m.closePalette()
 		return m, nil
@@ -781,6 +787,16 @@ func (m model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.propsAwaitingRefresh {
 			return m, nil
+		}
+		if m.pickingClaudeContext {
+			items := m.filteredPaletteItems()
+			if len(items) == 0 {
+				return m, nil
+			}
+			if m.paletteIndex >= len(items) {
+				m.paletteIndex = len(items) - 1
+			}
+			return m.runPaletteAction(items[m.paletteIndex])
 		}
 		if m.pickingHarness {
 			return m.applyHarnessDraft()
@@ -841,6 +857,10 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		return m.toggleHarnessPickerDraft()
 	case actionApplyHarness:
 		return m.applyHarnessDraft()
+	case actionClaudeContextInsert:
+		return m.applyClaudeContextDecision(install.ClaudeContextInsertOrUpdate)
+	case actionClaudeContextLeave:
+		return m.applyClaudeContextDecision(install.ClaudeContextLeaveUnchanged)
 	case actionHarnessReset:
 		return m.beginHarnessResetPicker()
 	case actionSelectHarnessReset:

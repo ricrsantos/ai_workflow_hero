@@ -152,6 +152,27 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 		return e
 	}
 
+	claudeContext := ClaudeContextLeaveUnchanged
+	if containsTool(selected, "claude") && !yes {
+		manage := false
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Create a managed CLAUDE.md block importing @AGENTS.md?").
+					Description("Claude Code loads project instructions from CLAUDE.md. Hero adds a marked block referencing your AGENTS.md; existing CLAUDE.md content is preserved.").
+					Value(&manage),
+			),
+		).WithTheme(heroInstallTheme())
+		if err := form.Run(); err != nil {
+			e := clierr.New("prompt error: " + err.Error())
+			clierr.Format(stderr, e)
+			return e
+		}
+		if manage {
+			claudeContext = ClaudeContextInsertOrUpdate
+		}
+	}
+
 	name = strings.TrimSpace(name)
 	summary = strings.TrimSpace(summary)
 	if name == "" {
@@ -164,13 +185,14 @@ func runInstall(cmd *cobra.Command, version string, assetsFS fs.FS, tools, name,
 	}
 
 	opts := Options{
-		ProjectDir: projectDir,
-		Name:       name,
-		Summary:    summary,
-		Tools:      selected,
-		Version:    version,
-		GitInit:    gitInit,
-		AssetsFS:   assetsFS,
+		ProjectDir:    projectDir,
+		Name:          name,
+		Summary:       summary,
+		Tools:         selected,
+		ClaudeContext: claudeContext,
+		Version:       version,
+		GitInit:       gitInit,
+		AssetsFS:      assetsFS,
 	}
 
 	if err := Run(opts, stdout, stderr); err != nil {

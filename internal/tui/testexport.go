@@ -578,6 +578,11 @@ func PickingHarnessForTest(m model) bool {
 	return m.pickingHarness
 }
 
+// PickingClaudeContextForTest reports whether the Claude managed-context picker is open.
+func PickingClaudeContextForTest(m model) bool {
+	return m.pickingClaudeContext
+}
+
 // PickingHarnessResetForTest reports whether the harness reset picker is open.
 func PickingHarnessResetForTest(m model) bool {
 	return m.pickingHarnessReset

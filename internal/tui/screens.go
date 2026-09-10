@@ -234,6 +234,10 @@ func (m model) renderPalette() string {
 		b.WriteString(headerStyle.Render("Harnesses"))
 		b.WriteByte('\n')
 		b.WriteString(mutedStyle.Render("↑↓ navigate · space toggle · enter save · esc cancel"))
+	case m.pickingClaudeContext:
+		b.WriteString(headerStyle.Render("Claude · managed context"))
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render("↑↓ navigate · enter select · esc skip"))
 	case m.pickingHarnessReset:
 		b.WriteString(headerStyle.Render("/harness-reset · select harness"))
 		b.WriteByte('\n')
@@ -298,6 +302,11 @@ func (m model) renderPalette() string {
 				line = formatHarnessPermissionCheckboxLine(item.label, checked, enabled)
 			}
 		case m.pickingHarnessReset:
+			line = " " + item.label
+			if item.hint != "" {
+				line += "  " + item.hint
+			}
+		case m.pickingClaudeContext:
 			line = " " + item.label
 			if item.hint != "" {
 				line += "  " + item.hint

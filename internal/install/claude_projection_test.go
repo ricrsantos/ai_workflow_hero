@@ -70,6 +70,12 @@ func TestClaudeContext_InsertUpdateLeaveAndRemovePreserveUserText(t *testing.T) 
 	if !inserted.Changed || !strings.Contains(inserted.Content, install.ClaudeContextMarkerBegin) || !strings.Contains(inserted.Content, "@AGENTS.md") {
 		t.Fatalf("unexpected insert result: %+v", inserted)
 	}
+	if !strings.Contains(inserted.Content, "`.claude/skills/workflow-hero/`") {
+		t.Fatalf("managed block missing Hero skill reference: %q", inserted.Content)
+	}
+	if !strings.Contains(inserted.Content, "context/current-state.md") || !strings.Contains(inserted.Content, "context/context-log.md") {
+		t.Fatalf("managed block missing context-file references: %q", inserted.Content)
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)

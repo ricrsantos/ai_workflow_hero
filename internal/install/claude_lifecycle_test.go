@@ -55,6 +55,53 @@ func TestRun_ClaudeOnlyInstallProjectsAssetsAndState(t *testing.T) {
 	}
 }
 
+func TestRun_ClaudeInstallAppliesManagedContextDecision(t *testing.T) {
+	dir := makeGitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Project instructions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := install.Run(install.Options{
+		ProjectDir:    dir,
+		Name:          "Claude context",
+		Summary:       "managed context test",
+		Tools:         []string{"claude"},
+		ClaudeContext: install.ClaudeContextInsertOrUpdate,
+		Version:       "3.1.1",
+		AssetsFS:      assets.FS,
+	}, &out, &out); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("CLAUDE.md missing after Claude install: %v", err)
+	}
+	if !strings.Contains(string(content), "@AGENTS.md") {
+		t.Fatalf("CLAUDE.md missing @AGENTS.md import: %q", content)
+	}
+}
+
+func TestRun_ClaudeInstallLeaveUnchangedDoesNotCreateClaudeMd(t *testing.T) {
+	dir := makeGitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Project instructions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := install.Run(install.Options{
+		ProjectDir:    dir,
+		Name:          "Claude no context",
+		Tools:         []string{"claude"},
+		ClaudeContext: install.ClaudeContextLeaveUnchanged,
+		Version:       "3.1.1",
+		AssetsFS:      assets.FS,
+	}, &out, &out); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatal("CLAUDE.md must not be created for leave-unchanged")
+	}
+}
+
 func TestEnableClaudeProjectsAndDisableKeepsFiles(t *testing.T) {
 	dir := makeGitRepo(t)
 	var out strings.Builder

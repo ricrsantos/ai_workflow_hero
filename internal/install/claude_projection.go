@@ -24,7 +24,7 @@ const (
 		"## AI Workflow Hero\n" +
 		"\n" +
 		"Use the project workflow provided by `.claude/skills/workflow-hero/`.\n" +
-		"Keep operational cycle state in `.workflow-hero/`; project knowledge belongs in `context/`.\n" +
+		"Keep operational cycle state in `.workflow-hero/`; project knowledge belongs in `context/current-state.md` and `context/context-log.md`.\n" +
 		ClaudeContextMarkerEnd + "\n"
 )
 

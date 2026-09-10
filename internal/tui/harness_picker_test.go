@@ -360,6 +360,95 @@ func TestHarnessPickerDisableCodexStopsAppServer(t *testing.T) {
 	}
 }
 
+func TestHarnessPickerEnableClaudeOpensManagedContextDecision(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}, "codex": {"enabled": false}, "claude": {"enabled": false}}
+}
+`))
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Project instructions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
+	items := tui.FilteredPalette(next)
+	idx := paletteIndexByLabel(items, "Claude")
+	if idx < 0 {
+		t.Fatalf("Claude missing from picker: %v", items)
+	}
+	next = tui.SetPaletteIndexForTest(next, idx)
+	next, _ = tui.HandleTestKey(next, " ")
+	next, _ = tui.HandleTestKey(next, "enter")
+
+	if !tui.PickingClaudeContextForTest(next) {
+		t.Fatal("expected Claude managed-context picker after enable")
+	}
+	view := tui.ViewForTest(next)
+	if !strings.Contains(view, "Insert/update managed block") || !strings.Contains(view, "Leave CLAUDE.md unchanged") {
+		t.Fatalf("missing context options: %q", view)
+	}
+
+	next = tui.SetPaletteIndexForTest(next, 0)
+	next, _ = tui.HandleTestKey(next, "enter")
+	if tui.StatusKindForTest(next) != "ok" {
+		t.Fatalf("status=%s text=%q", tui.StatusKindForTest(next), tui.StatusTextForTest(next))
+	}
+	if !strings.Contains(tui.StatusTextForTest(next), "managed CLAUDE.md block created") {
+		t.Fatalf("text=%q", tui.StatusTextForTest(next))
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("CLAUDE.md missing after insert decision: %v", err)
+	}
+	if !strings.Contains(string(content), "@AGENTS.md") {
+		t.Fatalf("CLAUDE.md missing @AGENTS.md import: %q", content)
+	}
+}
+
+func TestHarnessPickerEnableClaudeLeaveUnchangedSkipsContext(t *testing.T) {
+	dir := t.TempDir()
+	writeHeroJSON(t, dir, []byte(`{
+  "harnesses": {"cursor": {"enabled": true}, "opencode": {"enabled": false}, "codex": {"enabled": false}, "claude": {"enabled": false}}
+}
+`))
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# Project instructions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+
+	next, _ := tui.RunPaletteItemForTest(tui.NewTestModel(svc), "/harness")
+	items := tui.FilteredPalette(next)
+	idx := paletteIndexByLabel(items, "Claude")
+	next = tui.SetPaletteIndexForTest(next, idx)
+	next, _ = tui.HandleTestKey(next, " ")
+	next, _ = tui.HandleTestKey(next, "enter")
+
+	if !tui.PickingClaudeContextForTest(next) {
+		t.Fatal("expected Claude managed-context picker after enable")
+	}
+
+	next = tui.SetPaletteIndexForTest(next, 1)
+	next, _ = tui.HandleTestKey(next, "enter")
+	if tui.StatusKindForTest(next) != "ok" {
+		t.Fatalf("status=%s text=%q", tui.StatusKindForTest(next), tui.StatusTextForTest(next))
+	}
+	if !strings.Contains(tui.StatusTextForTest(next), "Claude enabled (projected .claude/)") {
+		t.Fatalf("text=%q", tui.StatusTextForTest(next))
+	}
+	if _, err := os.Stat(filepath.Join(dir, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatal("CLAUDE.md must not be created for leave-unchanged")
+	}
+}
+
 func TestHarnessPickerLastHarnessError(t *testing.T) {
 	dir := t.TempDir()
 	writeHeroJSON(t, dir, []byte(`{

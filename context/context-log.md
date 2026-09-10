@@ -4,6 +4,29 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-10 — Claude enable now provisions root CLAUDE.md context
+
+**Problem**: Enabling the Claude harness provisioned `.claude/` but never created
+the root `CLAUDE.md`, because `ProvisionClaude` only writes the projection and
+`ApplyClaudeContext` was dead code — only tests called it. The enable flow
+(`EnableHarnessWithProjection`, install `Run`, and the `/hero-harness` picker)
+never surfaced the managed-context decision required by `claude-projection`
+spec / ADR-073.
+
+**Change**: Added `install.EnableClaudeHarness` (enable + provision + context),
+an `Options.ClaudeContext` decision consumed by `Run` (warn-only on missing
+`AGENTS.md`/malformed markers), a huh confirm in `hero install` when Claude is
+selected, and a follow-up TUI palette (`Claude · managed context`) after enabling
+Claude via `/hero-harness` with `insert/update` and `leave unchanged` choices
+(`actionClaudeContextInsert`/`Leave`). Esc on the decision = leave unchanged.
+
+**Validation**: `go test ./...` passes; new coverage for `EnableClaudeHarness`
+(create + leave-unchanged), install-time `ClaudeContext` (create + no-create),
+and the TUI enable→decision→create/leave flows. Also strengthened the managed
+block to explicitly name `context/current-state.md` and `context/context-log.md`
+alongside the existing `@AGENTS.md` import and `.claude/skills/workflow-hero/`
+skill reference (locked by a test assertion).
+
 ## 2026-09-10 — Coupled Telegram plugin auto-update
 
 **Problem**: The development updater built and installed only Hero, leaving an
