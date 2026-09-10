@@ -88,13 +88,11 @@ func (m model) applyContextOccupancy(key string, reported harness.Usage, prompt,
 	if key == "" {
 		key = occupancyKeyFreechat
 	}
-	occ := int64(0)
-	if reported.HasCounts() {
-		occ = reported.Occupancy()
-	} else {
+	occ := reported.ContextTokens
+	if occ <= 0 {
 		occ = m.estimateTranscriptOccupancy(key)
 		if occ == 0 {
-			occ = harness.ResolveUsage(reported, prompt, output).Occupancy()
+			occ = harness.EstimateUsage(prompt, output).ContextTokens
 		}
 	}
 	if m.contextOccupancy == nil {

@@ -448,6 +448,34 @@ func TestAdapterExecuteIncludesCacheInOccupancy(t *testing.T) {
 	}
 }
 
+func TestAdapterExecuteUsesLastAssistantUsageNotResultSum(t *testing.T) {
+	process := &fakeProcess{
+		stdout: strings.NewReader(`{"type":"system","subtype":"init","session_id":"claude-s1","model":"sonnet"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read"}],"usage":{"input_tokens":80,"output_tokens":10,"cache_read_input_tokens":400}}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":90,"output_tokens":20,"cache_read_input_tokens":500}}}
+{"type":"result","subtype":"success","session_id":"claude-s1","result":"ok","usage":{"input_tokens":170,"output_tokens":30,"cache_read_input_tokens":900}}
+`),
+		stderr: strings.NewReader(""),
+	}
+	a, _ := newTestAdapter(process)
+	result, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		ProjectDir:        "/work",
+		Prompt:            "continue",
+		Model:             "sonnet",
+		Stream:            true,
+		PermissionProfile: harness.PermissionProfileAutoAll,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Usage.InputTokens != 170 || result.Usage.OutputTokens != 30 || result.Usage.CacheReadTokens != 900 {
+		t.Fatalf("billed usage=%+v want result sum", result.Usage)
+	}
+	if result.Usage.ContextTokens != 610 {
+		t.Fatalf("occupancy=%d want last-call 90+500+20, not billed 170+900+30", result.Usage.ContextTokens)
+	}
+}
+
 func TestAdapterCancelIsIdempotent(t *testing.T) {
 	process := &fakeProcess{}
 	a, _ := newTestAdapter(process)

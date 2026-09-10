@@ -83,11 +83,16 @@ func NormalizeExecuteRequest(req ExecuteRequest) ExecuteRequest {
 	return req
 }
 
-// Usage holds optional token counts for one harness Execute turn. Adapters
-// that receive cumulative thread snapshots must expose only the current turn
-// here for billed input/output; the cycle metrics layer accumulates those.
-// ContextTokens is the window occupancy after this turn (prompt including
-// cache plus this output) and is never summed across Executes.
+// Usage holds optional token counts for one harness Execute turn.
+//
+// InputTokens/OutputTokens/cache fields are billed consumption for this
+// Execute (cycle Costs accumulate those). They may sum every model call in a
+// tool loop and must not be treated as window fill.
+//
+// ContextTokens is window occupancy after the last model call (prompt
+// including cache plus that call's output). Adapters set it only from a
+// per-call snapshot, never from a billed aggregate. It is never summed
+// across Executes.
 type Usage struct {
 	InputTokens      int64
 	OutputTokens     int64
@@ -96,29 +101,59 @@ type Usage struct {
 	ContextTokens    int64
 }
 
-// HasCounts reports whether any token field was provided by the harness.
-func (u Usage) HasCounts() bool {
-	return u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 || u.ContextTokens > 0
+// HasBilledCounts reports whether the harness provided billed token fields.
+func (u Usage) HasBilledCounts() bool {
+	return u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0
 }
 
-// Occupancy is the context-window fill after this turn. ContextTokens wins
-// when adapters set it; otherwise occupancy is reconstructed from billed
-// input, cache, and output.
-func (u Usage) Occupancy() int64 {
-	if u.ContextTokens > 0 {
-		return u.ContextTokens
+// HasCounts reports whether any token field was provided by the harness.
+func (u Usage) HasCounts() bool {
+	return u.HasBilledCounts() || u.ContextTokens > 0
+}
+
+// PromptTokens is the prompt-side size of a single model-call snapshot.
+// When InputTokens already includes cache (OpenAI-style), cache fields are
+// not added again. Otherwise cache read/write are added (Anthropic-style).
+func (u Usage) PromptTokens() int64 {
+	in := u.InputTokens
+	if in < 0 {
+		in = 0
 	}
-	n := u.InputTokens + u.CacheReadTokens + u.CacheWriteTokens + u.OutputTokens
+	cache := u.CacheReadTokens + u.CacheWriteTokens
+	if cache < 0 {
+		cache = 0
+	}
+	if cache > 0 && in >= cache {
+		return in
+	}
+	return in + cache
+}
+
+// CallOccupancy is window fill for a single model-call snapshot (prompt plus
+// that call's output). Do not call this on billed aggregates.
+func (u Usage) CallOccupancy() int64 {
+	n := u.PromptTokens() + u.OutputTokens
 	if n < 0 {
 		return 0
 	}
 	return n
 }
 
-// WithContextTokens fills ContextTokens from occupancy fields when unset.
-func (u Usage) WithContextTokens() Usage {
+// Occupancy is the context-window fill after this turn. Only an adapter-set
+// ContextTokens counts; billed input/cache/output are never reconstructed
+// into occupancy.
+func (u Usage) Occupancy() int64 {
+	if u.ContextTokens > 0 {
+		return u.ContextTokens
+	}
+	return 0
+}
+
+// WithCallOccupancy fills ContextTokens from this snapshot's CallOccupancy
+// when unset. Use only when the Usage represents one model call.
+func (u Usage) WithCallOccupancy() Usage {
 	if u.ContextTokens <= 0 {
-		u.ContextTokens = u.InputTokens + u.CacheReadTokens + u.CacheWriteTokens + u.OutputTokens
+		u.ContextTokens = u.CallOccupancy()
 	}
 	return u
 }

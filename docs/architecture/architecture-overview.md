@@ -229,7 +229,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / a project `.wor
 | `harness_boot.go` / `model_gate.go` | Harness availability, model picker at boot |
 | `telegram_config.go` / `telegram_model_selection.go` | Address-scoped Telegram cycle-config draft, `/hero-config` commands, and numbered remote model/property selection |
 | `agentlabels.go` / `chat_format.go` | Live agents box and `[LABEL - model]` transcript |
-| `contextbar.go` | Session occupancy bar (`ContextTokens` / cache-aware prompt+output) vs `models/*.yml`; freechat and cycle-agent sessions are separate |
+| `contextbar.go` | Session occupancy bar (`ContextTokens` from last model call only) vs `models/*.yml`; billed run totals never fill the bar; freechat and cycle-agent sessions are separate |
 | `config_screen.go` | Active-cycle YAML-backed form, progressive disclosure, save states, and failed-stage retry |
 | `timers.go` | Shared one-second Session/AI wk/AI rp counters and cycle-duration persistence |
 | `internal/workflowconfig` document layer | Latest-file YAML node merge, managed projection/diff, deterministic current-config seeding from template/archive, validation, and atomic write |

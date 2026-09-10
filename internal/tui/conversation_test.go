@@ -3927,7 +3927,7 @@ func TestExecuteDoneUsesLatestContextUsage(t *testing.T) {
 	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
 		SessionID: "sess-1",
 		Output:    "done",
-		Usage:     harness.Usage{InputTokens: 100000, OutputTokens: 80000},
+		Usage:     harness.Usage{InputTokens: 100000, OutputTokens: 80000, ContextTokens: 180000},
 	}, nil))
 	got := next.(model)
 	if got.contextUsedTokens != 180000 {
@@ -3937,7 +3937,7 @@ func TestExecuteDoneUsesLatestContextUsage(t *testing.T) {
 	next, _ = got.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
 		SessionID: "sess-1",
 		Output:    "done again",
-		Usage:     harness.Usage{InputTokens: 12000, OutputTokens: 3000},
+		Usage:     harness.Usage{InputTokens: 12000, OutputTokens: 3000, ContextTokens: 15000},
 	}, nil))
 	got = next.(model)
 	if got.contextUsedTokens != 15000 {
@@ -3949,19 +3949,20 @@ func TestExecuteDoneUsesLatestContextUsage(t *testing.T) {
 	}
 }
 
-func TestExecuteDoneUsesCacheOccupancy(t *testing.T) {
+func TestExecuteDoneIgnoresBilledCacheForOccupancy(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	m = SetChatModelSlugForTest(m, "composer-2.5")
 	m.streaming = true
+	m.lastExecutePrompt = "abcd" // 4 runes → 1
 	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
 		SessionID: "sess-1",
-		Output:    "done",
+		Output:    "done", // 4 runes → 1
 		Usage:     harness.Usage{InputTokens: 200, OutputTokens: 100, CacheReadTokens: 5000},
 	}, nil))
 	got := next.(model)
-	if got.contextUsedTokens != 5300 {
-		t.Fatalf("used=%d want 5300", got.contextUsedTokens)
+	if got.contextUsedTokens != 2 {
+		t.Fatalf("used=%d want last-prompt estimate 2, not billed cache 5300", got.contextUsedTokens)
 	}
 }
 
@@ -4005,7 +4006,7 @@ func TestCycleThenFreechatKeepsSeparateOccupancyAndMetrics(t *testing.T) {
 	next, _ := m.Update(executeDoneMsg{executeID: "ex-cycle", result: &harness.ExecutionResult{
 		SessionID: "stage-sess",
 		Output:    "grill",
-		Usage:     harness.Usage{InputTokens: 80000, OutputTokens: 0},
+		Usage:     harness.Usage{InputTokens: 80000, OutputTokens: 0, ContextTokens: 80000},
 		Duration:  time.Second,
 	}})
 	got := next.(model)
@@ -4026,7 +4027,7 @@ func TestCycleThenFreechatKeepsSeparateOccupancyAndMetrics(t *testing.T) {
 	next, _ = got.Update(executeDoneMsg{executeID: "ex-free", result: &harness.ExecutionResult{
 		SessionID: "free-sess",
 		Output:    "hi",
-		Usage:     harness.Usage{InputTokens: 20000, OutputTokens: 1000},
+		Usage:     harness.Usage{InputTokens: 20000, OutputTokens: 1000, ContextTokens: 21000},
 		Duration:  time.Second,
 	}})
 	got = next.(model)
@@ -4057,12 +4058,12 @@ func TestFreechatOccupancyGrowsWithoutSummingTurns(t *testing.T) {
 	m = SetChatModelSlugForTest(m, "composer-2.5")
 	m.streaming = true
 	next, _ := m.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
-		Usage: harness.Usage{InputTokens: 5000, OutputTokens: 0},
+		Usage: harness.Usage{InputTokens: 5000, OutputTokens: 0, ContextTokens: 5000},
 	}, nil))
 	got := next.(model)
 	got.streaming = true
 	next, _ = got.Update(ExecuteDoneResultForTest(&harness.ExecutionResult{
-		Usage: harness.Usage{InputTokens: 9000, OutputTokens: 0},
+		Usage: harness.Usage{InputTokens: 9000, OutputTokens: 0, ContextTokens: 9000},
 	}, nil))
 	got = next.(model)
 	if got.contextUsedTokens != 9000 {
@@ -4176,7 +4177,7 @@ func TestExecuteDoneAccumulatesStageMetricsWhenCycleActive(t *testing.T) {
 	next, _ := m.Update(executeDoneMsg{executeID: "ex-1", result: &harness.ExecutionResult{
 		SessionID: "sess-1",
 		Output:    "grill done",
-		Usage:     harness.Usage{InputTokens: 70, OutputTokens: 30},
+		Usage:     harness.Usage{InputTokens: 70, OutputTokens: 30, ContextTokens: 100},
 		Duration:  2 * time.Second,
 	}})
 	got := next.(model)
@@ -4196,7 +4197,7 @@ func TestExecuteDoneAccumulatesStageMetricsWhenCycleActive(t *testing.T) {
 	next, _ = got.Update(executeDoneMsg{executeID: "ex-2", result: &harness.ExecutionResult{
 		SessionID: "sess-1",
 		Output:    "grill follow-up",
-		Usage:     harness.Usage{InputTokens: 40, OutputTokens: 30},
+		Usage:     harness.Usage{InputTokens: 40, OutputTokens: 30, ContextTokens: 70},
 		Duration:  time.Second,
 	}})
 	got = next.(model)

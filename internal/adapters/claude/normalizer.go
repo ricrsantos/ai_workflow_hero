@@ -16,15 +16,18 @@ const maxUnknownEventWarnings = 3
 // resultAssembler keeps only the observable state needed to repair a final
 // result after a partial stream. Raw payloads are never retained or emitted.
 type resultAssembler struct {
-	sessionID  string
-	model      string
-	properties map[string]string
-	partial    strings.Builder
-	final      string
-	usage      harness.Usage
-	completed  bool
-	unknowns   int
-	debug      bool
+	sessionID       string
+	model           string
+	properties      map[string]string
+	partial         strings.Builder
+	final           string
+	usage           harness.Usage
+	lastCall        harness.Usage
+	sawTool         bool
+	sawAssistantUse bool
+	completed       bool
+	unknowns        int
+	debug           bool
 }
 
 func newResultAssembler(debug bool) *resultAssembler {
@@ -108,7 +111,7 @@ func (a *resultAssembler) system(event RawEvent, p map[string]any) ([]harness.St
 		}
 		return []harness.StreamDelta{harness.SessionDelta(harness.SessionStateRunning, "Claude session ready", "system."+event.Subtype, a.sessionID)}, nil
 	case "usage":
-		a.usage = usageFrom(p, a.usage)
+		a.noteCallUsage(p, false)
 		return []harness.StreamDelta{harness.ActivityDelta("system.usage", "Claude usage updated", a.sessionID)}, nil
 	case "subagent_started":
 		name := firstNonEmpty(stringAt(p, "agent_type"), stringAt(p, "agent_id"), "subagent")
@@ -166,6 +169,7 @@ func (a *resultAssembler) assistant(event RawEvent, p map[string]any) []harness.
 				out = append(out, harness.StreamDelta{Kind: harness.StreamKindThinking, Text: text, HarnessType: "assistant.thinking", SessionID: a.sessionID})
 			}
 		case "tool_use":
+			a.sawTool = true
 			name := firstNonEmpty(stringAt(item, "name"), "tool")
 			out = append(out, harness.StreamDelta{Kind: harness.StreamKindTool, Text: "Claude tool " + name, CallID: stringAt(item, "id"), HarnessType: "assistant.tool_use", SessionID: a.sessionID})
 		default:
@@ -175,6 +179,14 @@ func (a *resultAssembler) assistant(event RawEvent, p map[string]any) []harness.
 			}
 			out = append(out, harness.StreamDelta{Kind: harness.StreamKindText, Text: "Claude " + typ, HarnessType: "assistant." + typ, SessionID: a.sessionID})
 		}
+	}
+	if message, ok := p["message"].(map[string]any); ok {
+		if usage, ok := message["usage"].(map[string]any); ok {
+			a.noteCallUsage(usage, true)
+		}
+	}
+	if usage, ok := p["usage"].(map[string]any); ok {
+		a.noteCallUsage(usage, true)
 	}
 	return out
 }
@@ -264,8 +276,9 @@ func (a *resultAssembler) consumeResult(event RawEvent, p map[string]any) ([]har
 		return nil, errorsNew("Claude terminal result is missing session_id")
 	}
 	if usage, ok := p["usage"].(map[string]any); ok {
-		a.usage = usageFrom(usage, a.usage)
+		a.usage = usageFrom(usage, harness.Usage{})
 	}
+	a.usage.ContextTokens = claudeOccupancy(a.lastCall, a.sawTool, a.usage)
 	a.completed = true
 	return []harness.StreamDelta{harness.SessionDelta(harness.SessionStateIdle, "Claude stream completed", "result.success", a.sessionID)}, nil
 }
@@ -355,6 +368,34 @@ func contentFrom(p map[string]any) []map[string]any {
 	return out
 }
 
+func (a *resultAssembler) noteCallUsage(p map[string]any, fromAssistant bool) {
+	if a == nil || p == nil {
+		return
+	}
+	call := usageFrom(p, harness.Usage{}).WithCallOccupancy()
+	if call.ContextTokens <= 0 && !call.HasBilledCounts() {
+		return
+	}
+	if fromAssistant {
+		a.sawAssistantUse = true
+		a.lastCall = call
+		return
+	}
+	if !a.sawAssistantUse {
+		a.lastCall = call
+	}
+}
+
+func claudeOccupancy(lastCall harness.Usage, sawTool bool, billed harness.Usage) int64 {
+	if lastCall.ContextTokens > 0 {
+		return lastCall.ContextTokens
+	}
+	if !sawTool {
+		return billed.CallOccupancy()
+	}
+	return 0
+}
+
 func usageFrom(p map[string]any, prior harness.Usage) harness.Usage {
 	if n, ok := firstInt64At(p, "input_tokens", "inputTokens"); ok {
 		prior.InputTokens = n
@@ -368,7 +409,7 @@ func usageFrom(p map[string]any, prior harness.Usage) harness.Usage {
 	if n, ok := firstInt64At(p, "cache_creation_input_tokens", "cacheWriteTokens", "cache_write_tokens", "cacheCreationTokens"); ok {
 		prior.CacheWriteTokens = n
 	}
-	return prior.WithContextTokens()
+	return prior
 }
 
 func firstInt64At(p map[string]any, keys ...string) (int64, bool) {

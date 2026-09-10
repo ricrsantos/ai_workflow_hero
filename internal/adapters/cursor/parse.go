@@ -51,7 +51,7 @@ type cliStreamEvent struct {
 	Text             string          `json:"text"` // thinking delta
 	ToolCall         json.RawMessage `json:"tool_call"`
 	ToolResult       json.RawMessage `json:"tool_result"` // top-level tool_result events
-	Event            json.RawMessage `json:"event"`        // stream_event SSE wrapper
+	Event            json.RawMessage `json:"event"`       // stream_event SSE wrapper
 	CallID           string          `json:"call_id"`
 	AgentID          string          `json:"agent_id"`
 	ParentToolCallID string          `json:"parent_tool_call_id"`
@@ -171,7 +171,19 @@ func (u *cliUsageJSON) toHarness() harness.Usage {
 		OutputTokens:     out,
 		CacheReadTokens:  cacheRead,
 		CacheWriteTokens: cacheWrite,
-	}.WithContextTokens()
+	}
+}
+
+// cursorOccupancy prefers the last per-call usage event. A billed result
+// snapshot is occupancy only when the run had a single model call (no tools).
+func cursorOccupancy(lastCall harness.Usage, sawToolCall bool, billed harness.Usage) int64 {
+	if lastCall.ContextTokens > 0 {
+		return lastCall.ContextTokens
+	}
+	if !sawToolCall {
+		return billed.CallOccupancy()
+	}
+	return 0
 }
 
 // ParseJSONResult maps a single JSON object from --output-format json.
@@ -230,6 +242,8 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 		assistant      strings.Builder
 		sawPartial     bool
 		sawSubstantive bool
+		sawToolCall    bool
+		lastCallUsage  harness.Usage
 		streamError    string // captured from top-level "error" events
 		state          = newStreamParseState()
 	)
@@ -313,6 +327,7 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 			callID := strings.TrimSpace(ev.CallID)
 			switch ev.Subtype {
 			case "", "started":
+				sawToolCall = true
 				if isTask {
 					if callID == "" {
 						callID = "task:" + info.Name
@@ -387,11 +402,13 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 			if out == "" {
 				out = strings.TrimSpace(assistant.String())
 			}
+			usage := ev.Usage.toHarness()
+			usage.ContextTokens = cursorOccupancy(lastCallUsage, sawToolCall, usage)
 			result = &harness.ExecutionResult{
 				SessionID:  sessionID,
 				Output:     out,
 				Summary:    summarize(out),
-				Usage:      ev.Usage.toHarness(),
+				Usage:      usage,
 				Duration:   time.Duration(ev.DurationMS) * time.Millisecond,
 				StreamDone: true,
 			}
@@ -421,9 +438,11 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 				emitAttr(harness.StreamKindTool, content, name, model, callID, "")
 			}
 		case "usage":
-			// Standalone token-usage event (Detailed+ via StreamKindActivity).
+			// Per-model-call usage (Detailed+ via StreamKindActivity). The last
+			// event is window occupancy; result.usage stays the billed run sum.
 			if ev.Usage != nil {
-				u := ev.Usage.toHarness()
+				u := ev.Usage.toHarness().WithCallOccupancy()
+				lastCallUsage = u
 				summary := fmt.Sprintf("Usage: %d in / %d out tokens", u.InputTokens, u.OutputTokens)
 				emit(harness.StreamDelta{
 					Kind:        harness.StreamKindActivity,

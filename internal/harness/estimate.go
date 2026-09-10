@@ -8,14 +8,15 @@ func EstimateUsage(prompt, output string) Usage {
 	return Usage{
 		InputTokens:  roundCharsToTokens(prompt),
 		OutputTokens: roundCharsToTokens(output),
-	}.WithContextTokens()
+	}.WithCallOccupancy()
 }
 
-// ResolveUsage prefers harness-reported counts when any usage field is
-// non-zero; otherwise falls back to EstimateUsage(prompt, output).
+// ResolveUsage prefers harness-reported billed counts when any usage field is
+// non-zero; otherwise falls back to EstimateUsage(prompt, output). It does
+// not invent ContextTokens from a billed aggregate.
 func ResolveUsage(reported Usage, prompt, output string) Usage {
 	if reported.HasCounts() {
-		return reported.WithContextTokens()
+		return reported
 	}
 	return EstimateUsage(prompt, output)
 }

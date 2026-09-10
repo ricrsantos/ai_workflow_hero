@@ -21,12 +21,12 @@ func TestParseJSONResult(t *testing.T) {
 	if res.Usage.InputTokens != 7 || res.Usage.OutputTokens != 2 {
 		t.Fatalf("usage=%+v", res.Usage)
 	}
-	if res.Usage.ContextTokens != 9 {
-		t.Fatalf("context=%d want 9", res.Usage.ContextTokens)
+	if res.Usage.ContextTokens != 0 {
+		t.Fatalf("json result billed usage must not invent occupancy: %+v", res.Usage)
 	}
 }
 
-func TestParseJSONResultIncludesCacheInOccupancy(t *testing.T) {
+func TestParseJSONResultDoesNotTreatBilledCacheAsOccupancy(t *testing.T) {
 	raw := `{"type":"result","subtype":"success","is_error":false,"duration_ms":100,"result":"Done.","session_id":"abc","usage":{"inputTokens":200,"outputTokens":100,"cacheReadTokens":5000}}`
 	res, err := cursoradapter.ParseJSONResult([]byte(raw))
 	if err != nil {
@@ -35,8 +35,8 @@ func TestParseJSONResultIncludesCacheInOccupancy(t *testing.T) {
 	if res.Usage.InputTokens != 200 || res.Usage.OutputTokens != 100 || res.Usage.CacheReadTokens != 5000 {
 		t.Fatalf("usage=%+v", res.Usage)
 	}
-	if res.Usage.Occupancy() != 5300 {
-		t.Fatalf("occupancy=%d want 5300", res.Usage.Occupancy())
+	if res.Usage.Occupancy() != 0 {
+		t.Fatalf("occupancy=%d want 0; billed cache is not window fill", res.Usage.Occupancy())
 	}
 }
 
@@ -286,6 +286,67 @@ func TestIsTransportFailure(t *testing.T) {
 	}
 	if cursoradapter.IsTransportFailure("", "NonRetriableError: boom", errors.New("exit status 1")) {
 		t.Fatal("API error must not be transport failure")
+	}
+}
+
+func TestParseStreamJSONLastUsageIsOccupancyNotResultSum(t *testing.T) {
+	ndjson := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"s"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"reading"}]},"session_id":"s","timestamp_ms":1}`,
+		`{"type":"tool_call","subtype":"started","call_id":"c1","tool_call":{"readToolCall":{"args":{"path":"README.md"}}},"session_id":"s"}`,
+		`{"type":"usage","usage":{"inputTokens":80,"outputTokens":10,"cacheReadTokens":400},"session_id":"s"}`,
+		`{"type":"tool_call","subtype":"completed","call_id":"c1","tool_call":{"readToolCall":{"args":{"path":"README.md"}}},"session_id":"s"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"session_id":"s","timestamp_ms":2}`,
+		`{"type":"usage","usage":{"inputTokens":90,"outputTokens":20,"cacheReadTokens":500},"session_id":"s"}`,
+		`{"type":"result","subtype":"success","is_error":false,"duration_ms":5,"result":"done","session_id":"s","usage":{"inputTokens":170,"outputTokens":30,"cacheReadTokens":900}}`,
+	}, "\n") + "\n"
+
+	res, err := cursoradapter.ParseStreamJSON(strings.NewReader(ndjson), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Usage.InputTokens != 170 || res.Usage.OutputTokens != 30 || res.Usage.CacheReadTokens != 900 {
+		t.Fatalf("billed usage=%+v want result sum", res.Usage)
+	}
+	if res.Usage.ContextTokens != 610 {
+		t.Fatalf("occupancy=%d want last-call 90+500+20, not billed 170+900+30", res.Usage.ContextTokens)
+	}
+}
+
+func TestParseStreamJSONSingleCallResultIsOccupancy(t *testing.T) {
+	ndjson := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"s"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]},"session_id":"s","timestamp_ms":1}`,
+		`{"type":"result","subtype":"success","is_error":false,"duration_ms":5,"result":"hi","session_id":"s","usage":{"inputTokens":20,"outputTokens":5,"cacheReadTokens":100}}`,
+	}, "\n") + "\n"
+
+	res, err := cursoradapter.ParseStreamJSON(strings.NewReader(ndjson), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Usage.ContextTokens != 125 {
+		t.Fatalf("occupancy=%d want single-call 20+100+5", res.Usage.ContextTokens)
+	}
+}
+
+func TestParseStreamJSONToolLoopWithoutUsageHasNoOccupancy(t *testing.T) {
+	ndjson := strings.Join([]string{
+		`{"type":"system","subtype":"init","session_id":"s"}`,
+		`{"type":"tool_call","subtype":"started","call_id":"c1","tool_call":{"readToolCall":{"args":{"path":"README.md"}}},"session_id":"s"}`,
+		`{"type":"tool_call","subtype":"completed","call_id":"c1","tool_call":{"readToolCall":{"args":{"path":"README.md"}}},"session_id":"s"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]},"session_id":"s","timestamp_ms":1}`,
+		`{"type":"result","subtype":"success","is_error":false,"duration_ms":5,"result":"done","session_id":"s","usage":{"inputTokens":80000,"outputTokens":1000,"cacheReadTokens":70000}}`,
+	}, "\n") + "\n"
+
+	res, err := cursoradapter.ParseStreamJSON(strings.NewReader(ndjson), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Usage.InputTokens != 80000 || res.Usage.OutputTokens != 1000 {
+		t.Fatalf("billed usage=%+v", res.Usage)
+	}
+	if res.Usage.ContextTokens != 0 {
+		t.Fatalf("occupancy=%d want 0 when only billed aggregate is available", res.Usage.ContextTokens)
 	}
 }
 

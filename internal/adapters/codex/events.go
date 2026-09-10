@@ -618,7 +618,7 @@ func (a *Adapter) mapTokenUsage(params map[string]any, sessionID string, debug b
 		}
 	}
 
-	usage = usage.WithContextTokens()
+	usage = usage.WithCallOccupancy()
 
 	a.mu.Lock()
 	if usage.HasCounts() {

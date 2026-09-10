@@ -4,6 +4,27 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-10 — Context bar occupancy vs billed run totals
+
+**Problem**: The Chat context bar (and Telegram `Context`) filled too quickly
+in freechat and during cycles. Previous fixes stopped summing Executes, but
+Cursor/Claude `result.usage` is the billed sum of every model call in the
+tool loop. `WithContextTokens()` then added cache on top of that aggregate,
+so occupancy looked like window overflow after a few tool uses.
+
+**Change**: `ContextTokens` is last-call occupancy only. Billed
+`Input`/`Output`/cache stay for Costs. Inclusive cache (input already
+contains cache) is not added twice. Cursor uses the last stream `usage`
+event; Claude uses the last assistant `message.usage`. A billed result is
+occupancy only for a single-call turn (no tools). Otherwise the TUI falls
+back to chars÷4 of that session's transcript and never reconstructs the bar
+from billed totals. OpenCode last-step and Codex `last` keep occupancy via
+`WithCallOccupancy()`.
+
+**Validation**: Harness occupancy tests (Cursor last-usage vs result sum,
+Claude last-assistant vs result sum, Codex inclusive cache), TUI billed-
+aggregate fallback tests, `go test` on harness/adapter/tui packages.
+
 ## 2026-09-10 — Exclude `~/.workflow-hero` from project root discovery
 
 **Problem**: After `hero chat` (and later Telegram plugins) created

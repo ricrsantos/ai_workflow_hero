@@ -1135,7 +1135,7 @@ func extractOpenCodeUsage(m map[string]any) harness.Usage {
 	if !usage.HasCounts() {
 		extract(m)
 	}
-	return usage.WithContextTokens()
+	return usage.WithCallOccupancy()
 }
 
 func extractOpenCodeCache(usage *harness.Usage, src map[string]any) {

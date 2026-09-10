@@ -275,6 +275,33 @@ func TestMapTokenUsageIncludesCachedInputInOccupancy(t *testing.T) {
 	}
 }
 
+func TestMapTokenUsageInclusiveCacheDoesNotDoubleCount(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	payload, err := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"usage": map[string]any{
+			"last": map[string]any{
+				"inputTokens":       100,
+				"outputTokens":      4,
+				"cachedInputTokens": 80,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out := a.handleNotification(context.Background(), "thread/tokenUsage/updated", payload, "thr", harness.ExecuteRequest{}, nil, st); out.err != nil {
+		t.Fatal(out.err)
+	}
+	a.mu.Lock()
+	got := a.usageBySession["thr"]
+	a.mu.Unlock()
+	if got.CacheReadTokens != 80 || got.Occupancy() != 104 {
+		t.Fatalf("usage=%+v want inclusive occupancy 100+4, not 100+80+4", got)
+	}
+}
+
 func TestTurnSlotSerializesAndHonorsCancellation(t *testing.T) {
 	a := NewAdapter(t.TempDir(), nil)
 	if err := a.acquireTurnSlot(context.Background()); err != nil {

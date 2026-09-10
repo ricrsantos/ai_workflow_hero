@@ -25,7 +25,7 @@
     },
     "cursor": {
       "enabled": true,
-      "model": "cursor-grok-4.5-high",
+      "model": "cursor-grok-4.6-high",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     },
@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "codex",
-    "model": "gpt-5.6-luna"
+    "harness": "cursor",
+    "model": "cursor-grok-4.6-high"
   },
   "chat_verbosity": "debug",
   "telegram": {
