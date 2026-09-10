@@ -3304,8 +3304,7 @@ func (m model) maxTranscriptScroll() int {
 	return maxOff
 }
 
-func (m model) scrollTranscript(delta int) model {
-	m.transcriptScrollOffset += delta
+func (m model) clampTranscriptScroll() model {
 	maxOff := m.maxTranscriptScroll()
 	if m.transcriptScrollOffset < 0 {
 		m.transcriptScrollOffset = 0
@@ -3313,7 +3312,23 @@ func (m model) scrollTranscript(delta int) model {
 	if m.transcriptScrollOffset > maxOff {
 		m.transcriptScrollOffset = maxOff
 	}
-	m.transcriptFollowBottom = m.transcriptScrollOffset >= maxOff
+	return m
+}
+
+func (m model) scrollTranscript(delta int) model {
+	m.transcriptScrollOffset += delta
+	m = m.clampTranscriptScroll()
+	m.transcriptFollowBottom = m.transcriptScrollOffset >= m.maxTranscriptScroll()
+	return m
+}
+
+func (m model) preserveTranscriptFollowOnResize() model {
+	followBottom := m.transcriptFollowBottom
+	m = m.clampTranscriptScroll()
+	if followBottom {
+		m.transcriptScrollOffset = m.maxTranscriptScroll()
+	}
+	m.transcriptFollowBottom = followBottom
 	return m
 }
 

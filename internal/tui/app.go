@@ -393,7 +393,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.rebuildOutputLines()
 		}
 		if m.screen == screenConversation {
-			m = m.scrollTranscript(0) // clamp to new transcript viewport
+			m = m.preserveTranscriptFollowOnResize()
 			m = m.ensureInputCaretVisible()
 		}
 		m = m.clampContentOffset()

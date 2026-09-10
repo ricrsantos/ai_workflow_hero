@@ -780,6 +780,40 @@ func TestBeginConversationExecuteFollowsTranscriptBottom(t *testing.T) {
 	}
 }
 
+func TestTranscriptResizePreservesBottomFollow(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: strings.Repeat("line ", 400)},
+		{role: convRoleAgent, content: strings.Repeat("reply ", 400), modelSlug: "composer-2.5", harnessID: "cursor"},
+	}
+	m.transcriptScrollOffset = m.maxTranscriptScroll()
+	m.transcriptFollowBottom = true
+	if m.transcriptScrollOffset < 2 {
+		t.Fatalf("expected scrollable transcript, max=%d", m.transcriptScrollOffset)
+	}
+
+	resized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	tall := resized.(model)
+	if !tall.transcriptFollowBottom {
+		t.Fatal("resize must preserve bottom-follow mode")
+	}
+	if tall.transcriptScrollOffset != tall.maxTranscriptScroll() {
+		t.Fatalf("after resize offset=%d want max=%d", tall.transcriptScrollOffset, tall.maxTranscriptScroll())
+	}
+
+	restored, _ := tall.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	short := restored.(model)
+	if !short.transcriptFollowBottom {
+		t.Fatal("restoring size must preserve bottom-follow mode")
+	}
+	if short.transcriptScrollOffset != short.maxTranscriptScroll() {
+		t.Fatalf("after restoring size offset=%d want max=%d", short.transcriptScrollOffset, short.maxTranscriptScroll())
+	}
+}
+
 func TestHeroResumeKeepsTranscriptAndShowsWait(t *testing.T) {
 	dir := t.TempDir()
 	setupHeroApproveRuntimeFiles(t, dir)

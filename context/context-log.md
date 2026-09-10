@@ -1545,3 +1545,18 @@ app-server does not return them.
 
 **Tests**: Replaced the test that locked in catalog/live merging with live-only
 assertions and added a Codex regression test. `go test ./...` passed.
+
+## 2026-09-10 — TUI transcript stays at the bottom across resize
+
+**Problem**: A terminal dimension event could be processed as `scrollTranscript(0)`.
+When the viewport first grew and later returned to its previous height, the offset
+remained below the new maximum and `transcriptFollowBottom` was cleared. This made
+the chat appear to jump upward after returning to the TUI window.
+
+**Change**: Separated transcript offset clamping from manual-scroll semantics.
+`WindowSizeMsg` now clamps the offset while preserving the prior follow-bottom
+state and recomputes the bottom offset when that state was active. Manual scrolling
+continues to opt out of auto-follow.
+
+**Validation**: Added a regression test covering grow-and-restore resize events;
+`gofmt`, `go test ./...`, and `git diff --check` passed.
