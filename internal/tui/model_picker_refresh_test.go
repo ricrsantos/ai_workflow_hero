@@ -155,6 +155,54 @@ func TestSlugLockedPropertiesShownAndCommitted(t *testing.T) {
 	if props["ef"] != "low" || props["fs"] != "false" {
 		t.Fatalf("committed props=%v", props)
 	}
+
+	m = OpenHeroModelForTest(m)
+	m = SetPaletteIndexForTest(m, 0)
+	m, _ = HandleTestKey(m, "enter")
+	m = SetPaletteIndexForTest(m, 0)
+	m, _ = HandleTestKey(m, "enter")
+	if StatusTextForTest(m) == modelprops.WarningInvalidated {
+		t.Fatal("reselecting a slug-locked variant must not warn for matching saved values")
+	}
+	if m.propsDraft[harness.PropertyEffort] != "low" {
+		t.Fatalf("reselect draft effort=%q want low", m.propsDraft[harness.PropertyEffort])
+	}
+}
+
+func TestSlugLockedHighSavedEffortDoesNotWarn(t *testing.T) {
+	m, dir := newPickerTestModel(t)
+	if err := install.CommitModelSelection(dir, "cursor", "cursor-grok-4.6-high", map[string]string{
+		"ef": "high",
+		"fs": "false",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m.propsSvc.Catalog = propsCatalog(map[string]map[string]modelprops.CatalogProperty{
+		"cursor-grok-4.6": {
+			"fs": {Available: true, Values: []string{"true", "false"}, Default: "false"},
+			"th": {Available: false, Values: []string{"na"}, Default: "na"},
+			"ef": {Available: true, Values: []string{"low", "medium", "high", "xhigh"}, Default: "medium"},
+		},
+	})
+	m = SetAvailableModelsForTest(m, []string{"cursor-grok-4.6-high"})
+	m = OpenHeroModelForTest(m)
+	m = SetPaletteIndexForTest(m, 0)
+	m, _ = HandleTestKey(m, "enter")
+	m = SetPaletteIndexForTest(m, 0)
+	m, _ = HandleTestKey(m, "enter")
+
+	if m.pickingProps {
+		t.Fatal("high variant with no selectable property must skip the picker")
+	}
+	if StatusTextForTest(m) == modelprops.WarningInvalidated {
+		t.Fatalf("matching slug-locked effort must not warn: %q", StatusTextForTest(m))
+	}
+	if !strings.Contains(StatusTextForTest(m), "cursor-grok-4.6-high") {
+		t.Fatalf("status=%q", StatusTextForTest(m))
+	}
+	if m.freechatProps[harness.PropertyEffort] != "high" {
+		t.Fatalf("locked high effort must remain visible: %v", m.freechatProps)
+	}
 }
 
 func TestLunaCatalogCyclesEffortWithSpace(t *testing.T) {

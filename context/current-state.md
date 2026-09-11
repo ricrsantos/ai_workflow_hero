@@ -89,7 +89,7 @@ Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `�
 - `update-models`: upstream YAML fetch + conflict backup; updates `checksums.json`.
 - **`/hero-harness`** / **`/hero-model`**: Codex enable→`.codex/` projection; model step lists native ids (Codex may start app-server); C5 property submenu; Chat `[LABEL - model · harness]` / `Build · model · harness` follow the **active execute pair** (`runtimeHarnessID` + `runtimeModelSlug` from agent YAML / `ResolveExecutePair`), not a cross-mix with freechat; UI-C06-001 §6 goldens.
 - Embedded Runtime: Cursor + `assets/opencode/` + `assets/codex/` (no AGENTS.md / no Codex config template).
-- C5 model properties: `internal/harness` + `internal/modelprops`; catalogs carry `properties` for Cursor base + OpenCode 27 + Codex ids.
+- C5 model properties: `internal/harness` + `internal/modelprops`; catalogs carry `properties` for Cursor base + OpenCode 27 + Codex ids. Cursor variant slugs (`-high`, `-fast`) lock `ef`/`fs`; matching saved values are kept without the “reset to na” warning.
 - `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **3.2.0** (ships `hero-telegram-daemon` per platform; plugin install downloads from GitHub Releases); both scripts install linux/amd64 `hero` to `/home/ricardo/installable/hero/hero` and refresh the local Telegram plugin daemon + manifest; integration tests include C6 Codex path, C9 Telegram lock, and C13 Claude adapter.
 - **Development update tooling**: `scripts/build_update.sh` builds `./cmd/hero` and `./cmd/hero-telegram-daemon` for the host target; `scripts/hero-update.sh`, `scripts/install_update_dev.sh`, `scripts/uninstall_update_dev.sh`, and `scripts/systemd/` provide the guarded systemd user timer flow, coupled atomic artifact replacement, bounded restart notification, stale-process recovery, and cleanup. Uninstall preserves `hero` and `hero.previous`.
 - Test strategy and build-artifact policy in [docs/testing/TESTING.md](docs/testing/TESTING.md); repository-root binaries are prohibited, temporary test binaries belong under `./temp/` and must be removed after the run; `/hero`, `/hero-telegram-daemon`, and `/temp/` are ignored; the OpenCode step-usage test preserves event order; bilingual README.
@@ -104,6 +104,8 @@ Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `�
 - **Loop-back findings handoff** — persist QA/Judge/Browser UI/E2E findings in `hero.db`, assign `find-*` on Implementation waves, `/hero-add-todo` to defer on Escalated, and show the ping-pong on Status. Idea: `docs/idea/tobe/loopback-findings-handoff.md` (not C14).
 
 ## Recent Decisions
+
+- **2026-09-11 — Cursor slug-locked properties are not “unsupported”**: `/model` no longer warns or resets matching `ef`/`fs` values to `na` on slugs such as `cursor-grok-4.6-high`. Conflicting saved values still warn and fall back to the lock.
 
 - **2026-09-11 — Chat transcript layout cache**: Conversation `View` no longer rebuilds the full session history on every composer keystroke or 1s timer tick. Laid-out rows live in a heap-backed cache so long `/hero-start` sessions stay responsive.
 

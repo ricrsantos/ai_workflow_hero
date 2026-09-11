@@ -63,8 +63,8 @@ Decision:
 1. Keep `harnesses.<harness>.model` and `freechat_default` as the selected model-pair fields.
 2. Add an extensible `model_properties` map keyed by harness and native model ID.
 3. Store selected values as strings so boolean, enum, and future harness values use one persistence shape.
-4. Restore values only when they remain accepted by current metadata.
-5. Convert removed or invalid values to `na` and warn the user.
+4. Restore values only when they remain accepted by current metadata, including slug-locked defaults that are not user-editable (Cursor `-high` / `-fast` variants).
+5. Convert removed or conflicting values to `na` (or the slug-locked default when one exists) and warn the user. A saved value that still matches the lock is not a warning.
 6. Do not write these selections into `agents.*` or `fallback_model` blocks in a cycle's `workflow-config.yml`.
 
 Consequences:

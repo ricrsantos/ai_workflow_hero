@@ -179,8 +179,8 @@ func TestEffectiveValuesDefaultPrecedence(t *testing.T) {
 	if values["th"] != "na" {
 		t.Fatalf("missing default must resolve to na: %v", values)
 	}
-	if values["ef"] != "na" {
-		t.Fatalf("unavailable property must be na: %v", values)
+	if values["ef"] != "high" {
+		t.Fatalf("slug-locked default must surface: %v", values)
 	}
 	if len(invalidated) != 0 {
 		t.Fatalf("nothing was saved; no invalidation: %v", invalidated)
@@ -191,9 +191,44 @@ func TestEffectiveValuesIgnoresSavedForUnavailable(t *testing.T) {
 	snap := Snapshot{Properties: map[string]harness.PropertyCapability{
 		"ef": {Key: "ef", Available: false},
 	}}
-	values, _ := EffectiveValues(snap, map[string]string{"ef": "high"})
+	values, invalidated := EffectiveValues(snap, map[string]string{"ef": "high"})
 	if values["ef"] != "na" {
 		t.Fatalf("unavailable saved value must not surface: %v", values)
+	}
+	if invalidated["ef"] != "high" {
+		t.Fatalf("unsupported saved value must invalidate: %v", invalidated)
+	}
+}
+
+func TestEffectiveValuesKeepsSlugLockedSavedValue(t *testing.T) {
+	snap := Snapshot{Properties: map[string]harness.PropertyCapability{
+		"fs": {Key: "fs", AcceptedValues: []string{"false"}, DefaultValue: "false", Available: false},
+		"th": {Key: "th", Available: false},
+		"ef": {Key: "ef", AcceptedValues: []string{"high"}, DefaultValue: "high", Available: false},
+	}}
+	saved := map[string]string{"fs": "false", "ef": "high"}
+	values, invalidated := EffectiveValues(snap, saved)
+	if values["ef"] != "high" || values["fs"] != "false" {
+		t.Fatalf("locked slug values must be kept: %v", values)
+	}
+	if values["th"] != "na" {
+		t.Fatalf("unsupported thinking must stay na: %v", values)
+	}
+	if len(invalidated) != 0 {
+		t.Fatalf("matching locked values must not invalidate: %v", invalidated)
+	}
+}
+
+func TestEffectiveValuesInvalidatesConflictingLockedValue(t *testing.T) {
+	snap := Snapshot{Properties: map[string]harness.PropertyCapability{
+		"ef": {Key: "ef", AcceptedValues: []string{"low"}, DefaultValue: "low", Available: false},
+	}}
+	values, invalidated := EffectiveValues(snap, map[string]string{"ef": "high"})
+	if values["ef"] != "low" {
+		t.Fatalf("conflicting saved effort must fall back to slug lock: %v", values)
+	}
+	if invalidated["ef"] != "high" {
+		t.Fatalf("conflicting saved value must invalidate: %v", invalidated)
 	}
 }
 

@@ -129,6 +129,36 @@ func TestSnapshotUsesCatalogWhenStoreEmpty(t *testing.T) {
 	}
 }
 
+func TestSnapshotGrokHighKeepsLockedSavedEffort(t *testing.T) {
+	dir := t.TempDir()
+	svc, _ := newTestService(t, dir)
+	svc.Catalog = Catalog{
+		"cursor-grok-4.6": CatalogModel{Properties: map[string]CatalogProperty{
+			"fs": {Available: true, Values: []string{"true", "false"}, Default: "false", HasProperty: true},
+			"ef": {Available: true, Values: []string{"low", "medium", "high", "xhigh"}, Default: "medium", HasProperty: true},
+			"th": {Available: false, Values: []string{"na"}, Default: "na", HasProperty: true},
+		}},
+	}
+	snap := svc.Snapshot("cursor", "cursor-grok-4.6-high")
+	if snap.Property("ef").Available || snap.Property("fs").Available {
+		t.Fatalf("high slug must lock effort and fast: %+v", snap.Properties)
+	}
+	values, invalidated := EffectiveValues(snap, map[string]string{"ef": "high", "fs": "false"})
+	if values["ef"] != "high" || values["fs"] != "false" {
+		t.Fatalf("matching lock must be kept: %v", values)
+	}
+	if len(invalidated) != 0 {
+		t.Fatalf("matching lock must not invalidate: %v", invalidated)
+	}
+	values, invalidated = EffectiveValues(snap, nil)
+	if values["ef"] != "high" {
+		t.Fatalf("unset must use slug lock: %v", values)
+	}
+	if len(invalidated) != 0 {
+		t.Fatalf("unset lock must not warn: %v", invalidated)
+	}
+}
+
 func TestSnapshotUsesPersistedCache(t *testing.T) {
 	dir := t.TempDir()
 	svc, st := newTestService(t, dir)

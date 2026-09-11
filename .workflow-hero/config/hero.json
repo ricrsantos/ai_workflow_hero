@@ -1,14 +1,14 @@
 {
   "cli": {
-    "version": "3.1.1_9c04fbd",
+    "version": "3.2.0_92647fa",
     "installedAt": "2026-08-04T19:30:24Z",
     "tools": [
       "cursor"
     ]
   },
   "assets": {
-    "version": "3.1.1_9c04fbd",
-    "installedAt": "2026-09-09T23:35:35Z"
+    "version": "3.2.0_92647fa",
+    "installedAt": "2026-09-11T13:03:13Z"
   },
   "harnesses": {
     "claude": {
@@ -78,10 +78,6 @@
     },
     "cursor": {
       "composer-2.5": {
-        "fs": "false"
-      },
-      "cursor-grok-4.6-high": {
-        "ef": "high",
         "fs": "false"
       },
       "cursor-grok-4.6-low": {

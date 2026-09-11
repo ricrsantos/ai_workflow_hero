@@ -4,6 +4,16 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-11 — Cursor `/model` false “reset to na” on Grok 4.6 High
+
+**Problem**: Selecting `cursor-grok-4.6-high` in the TUI showed `⚠ /model — The selected value is no longer supported by this model and was reset to na.` The model itself was valid; effort is baked into the slug.
+
+**Cause**: `EffectiveValues` treated any saved value on an unavailable property as invalidated. Cursor slug locks mark `ef`/`fs` unavailable while keeping the locked default (`high`, `false`). Matching saved values were wiped to `na`.
+
+**Change**: Unavailable properties now keep a saved value that matches the lock, surface the locked default when unset, and warn only on a real conflict (e.g. `cursor-grok-4.6-low` with saved `ef: high`). ADR-040 points 4–5 clarified.
+
+**Validation**: `go test ./...`.
+
 ## 2026-09-11 — TUI Chat lag after long sessions
 
 **Problem**: After ~12h of C14 in one `hero tui` process, typing in the composer and scrolling the agent pane were extremely slow.

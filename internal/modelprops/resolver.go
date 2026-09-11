@@ -225,24 +225,38 @@ func EncodeCapabilities(caps harness.ModelCapabilities) string {
 }
 
 // EffectiveValues reconciles saved user choices against the snapshot (ADR-040):
-// a valid saved value wins over defaults; a removed/invalid value becomes "na"
-// and is reported in invalidated; unset values fall back to API default → catalog
-// default → "na".
+// a valid saved value wins over defaults; a removed/invalid value is reported
+// in invalidated and falls back to the slug-locked/catalog default when one
+// exists, otherwise "na"; unset values fall back to API default → catalog or
+// slug-lock default → "na".
+//
+// Cursor variant slugs bake effort/fast into the model ID and mark those
+// properties unavailable. A saved value that still matches the lock is kept
+// without a warning — it is not "no longer supported".
 func EffectiveValues(snap Snapshot, saved map[string]string) (values map[string]string, invalidated map[string]string) {
 	values = make(map[string]string, len(harness.PropertyKeys()))
 	for _, key := range harness.PropertyKeys() {
 		cap, ok := snap.Properties[key]
+		chosen := strings.TrimSpace(saved[key])
 		if !ok || !cap.Available {
-			if chosen := strings.TrimSpace(saved[key]); chosen != "" && chosen != "na" {
+			fallback := unavailableFallback(cap)
+			if chosen != "" && chosen != "na" {
+				if chosen == fallback || containsValue(cap.AcceptedValues, chosen) {
+					values[key] = chosen
+					continue
+				}
 				if invalidated == nil {
 					invalidated = map[string]string{}
 				}
 				invalidated[key] = chosen
 			}
-			values[key] = "na"
+			if fallback != "" {
+				values[key] = fallback
+			} else {
+				values[key] = "na"
+			}
 			continue
 		}
-		chosen := strings.TrimSpace(saved[key])
 		if chosen != "" && chosen != "na" {
 			if containsValue(cap.AcceptedValues, chosen) {
 				values[key] = chosen
@@ -263,6 +277,28 @@ func EffectiveValues(snap Snapshot, saved map[string]string) (values map[string]
 		}
 	}
 	return values, invalidated
+}
+
+// unavailableFallback is the display value for a property the user cannot edit:
+// the slug-locked/catalog default, or a single non-na accepted value.
+func unavailableFallback(cap harness.PropertyCapability) string {
+	if def := strings.TrimSpace(cap.DefaultValue); def != "" && def != "na" {
+		return def
+	}
+	var only string
+	n := 0
+	for _, v := range cap.AcceptedValues {
+		v = strings.TrimSpace(v)
+		if v == "" || v == "na" {
+			continue
+		}
+		n++
+		only = v
+	}
+	if n == 1 {
+		return only
+	}
+	return ""
 }
 
 func containsValue(values []string, want string) bool {
