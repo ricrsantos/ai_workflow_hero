@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **3.1.1** released (tag `v3.1.1`). Patch after C13: Telegram `/interrupt`, `/kill`, and development `/auto-update`, status-loop and TUI fixes, harness session-id isolation, and local Claude adapter dogfooding on this repo. |
+| **Phase** | Hero **3.2.0** released (tag `v3.2.0`). Minor after 3.1.x: Linux development auto-update (coupled Hero + Telegram daemon), harness connection-closed recovery, TUI context-bar occupancy vs billed totals, Claude enable `CLAUDE.md` provisioning, Telegram `/tail`, project-root discovery excluding `~/.workflow-hero`, and broader Cursor/Claude adapter message coverage. |
 
 ## Technology Stack
 
@@ -90,7 +90,7 @@ Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `�
 - **`/hero-harness`** / **`/hero-model`**: Codex enable→`.codex/` projection; model step lists native ids (Codex may start app-server); C5 property submenu; Chat `[LABEL - model · harness]` / `Build · model · harness` follow the **active execute pair** (`runtimeHarnessID` + `runtimeModelSlug` from agent YAML / `ResolveExecutePair`), not a cross-mix with freechat; UI-C06-001 §6 goldens.
 - Embedded Runtime: Cursor + `assets/opencode/` + `assets/codex/` (no AGENTS.md / no Codex config template).
 - C5 model properties: `internal/harness` + `internal/modelprops`; catalogs carry `properties` for Cursor base + OpenCode 27 + Codex ids.
-- `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **3.1.1** (ships `hero-telegram-daemon` per platform; plugin install downloads from GitHub Releases); both scripts install linux/amd64 `hero` to `/home/ricardo/installable/hero/hero` and refresh the local Telegram plugin daemon + manifest; integration tests include C6 Codex path, C9 Telegram lock, and C13 Claude adapter.
+- `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **3.2.0** (ships `hero-telegram-daemon` per platform; plugin install downloads from GitHub Releases); both scripts install linux/amd64 `hero` to `/home/ricardo/installable/hero/hero` and refresh the local Telegram plugin daemon + manifest; integration tests include C6 Codex path, C9 Telegram lock, and C13 Claude adapter.
 - **Development update tooling**: `scripts/build_update.sh` builds `./cmd/hero` and `./cmd/hero-telegram-daemon` for the host target; `scripts/hero-update.sh`, `scripts/install_update_dev.sh`, `scripts/uninstall_update_dev.sh`, and `scripts/systemd/` provide the guarded systemd user timer flow, coupled atomic artifact replacement, bounded restart notification, stale-process recovery, and cleanup. Uninstall preserves `hero` and `hero.previous`.
 - Test strategy and build-artifact policy in [docs/testing/TESTING.md](docs/testing/TESTING.md); repository-root binaries are prohibited, temporary test binaries belong under `./temp/` and must be removed after the run; `/hero`, `/hero-telegram-daemon`, and `/temp/` are ignored; the OpenCode step-usage test preserves event order; bilingual README.
 

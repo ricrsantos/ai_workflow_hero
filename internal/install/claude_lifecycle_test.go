@@ -20,7 +20,7 @@ func TestRun_ClaudeOnlyInstallProjectsAssetsAndState(t *testing.T) {
 		Name:       "Claude project",
 		Summary:    "projection test",
 		Tools:      []string{"claude"},
-		Version:    "3.1.1",
+		Version:    "3.2.0",
 		AssetsFS:   assets.FS,
 	}, &out, &out); err != nil {
 		t.Fatalf("install: %v", err)
@@ -67,7 +67,7 @@ func TestRun_ClaudeInstallAppliesManagedContextDecision(t *testing.T) {
 		Summary:       "managed context test",
 		Tools:         []string{"claude"},
 		ClaudeContext: install.ClaudeContextInsertOrUpdate,
-		Version:       "3.1.1",
+		Version:       "3.2.0",
 		AssetsFS:      assets.FS,
 	}, &out, &out); err != nil {
 		t.Fatalf("install: %v", err)
@@ -92,7 +92,7 @@ func TestRun_ClaudeInstallLeaveUnchangedDoesNotCreateClaudeMd(t *testing.T) {
 		Name:          "Claude no context",
 		Tools:         []string{"claude"},
 		ClaudeContext: install.ClaudeContextLeaveUnchanged,
-		Version:       "3.1.1",
+		Version:       "3.2.0",
 		AssetsFS:      assets.FS,
 	}, &out, &out); err != nil {
 		t.Fatalf("install: %v", err)
@@ -109,7 +109,7 @@ func TestEnableClaudeProjectsAndDisableKeepsFiles(t *testing.T) {
 		ProjectDir: dir,
 		Name:       "Enable Claude",
 		Tools:      []string{"cursor"},
-		Version:    "3.1.1",
+		Version:    "3.2.0",
 		AssetsFS:   assets.FS,
 	}, &out, &out); err != nil {
 		t.Fatal(err)

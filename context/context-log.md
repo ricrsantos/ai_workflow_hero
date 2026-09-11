@@ -4,6 +4,12 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-10 — Release Hero v3.2.0
+
+**Change**: Tagged `v3.2.0` (minor after `v3.1.1`). Release commit bumps default `main.version`, `current-state`, and architecture overview. GitHub Release ships cross-compiled Hero + Telegram daemon artifacts and `checksums.txt`.
+
+**Validation**: `go test ./...`; `./scripts/release.sh`.
+
 ## 2026-09-10 — Context bar occupancy vs billed run totals
 
 **Problem**: The Chat context bar (and Telegram `Context`) filled too quickly
