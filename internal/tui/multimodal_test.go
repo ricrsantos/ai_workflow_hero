@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 )
 
 func TestFreeChatAttachmentShortcutsAndSlashBoundary(t *testing.T) {
@@ -69,6 +70,9 @@ func TestImageOnlyAttachmentHandoffPreservesOrder(t *testing.T) {
 	if len(got) != 2 || got[0].Name != "first.png" || got[1].Name != "second.png" {
 		t.Fatalf("attachments=%+v, want images in composer order", got)
 	}
+	if len(next.attachments) != 0 {
+		t.Fatalf("successful image turn left composer chips behind: %+v", next.attachments)
+	}
 }
 
 func TestAssetStreamAndFinalRepairDoesNotDuplicateCards(t *testing.T) {
@@ -83,6 +87,84 @@ func TestAssetStreamAndFinalRepairDoesNotDuplicateCards(t *testing.T) {
 	}
 	if got := len(m.renderAssetCardLines(80)); got == 0 || !strings.Contains(strings.Join(m.renderAssetCardLines(80), "\n"), "preview.png") {
 		t.Fatalf("asset card rendering=%v", m.renderAssetCardLines(80))
+	}
+}
+
+func TestMosaicSpinnerAndResizeAreAsynchronous(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "generated.png")
+	if err := os.WriteFile(path, []byte("not decoded here"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := EnterConversationForTest(NewTestModel(nil))
+	m.assets = []harness.Asset{{Attachment: harness.Attachment{Name: "generated.png", Path: path}, Source: harness.AssetSourceModel}}
+	m.assetFocus = true
+	m.assetCursor = 0
+	m.width = 80
+	m.height = 24
+
+	started, cmd := m.toggleAssetMosaic()
+	if cmd == nil || !started.assetMosaicPending[assetKey(started.assets[0])] {
+		t.Fatalf("toggle should schedule async mosaic: pending=%v cmd=%v", started.assetMosaicPending, cmd != nil)
+	}
+	if rendered := strings.Join(started.renderAssetCardLines(80), "\n"); !strings.Contains(rendered, "rendering mosaic") {
+		t.Fatalf("pending card missing spinner: %q", rendered)
+	}
+
+	started.assetMosaics[assetKey(started.assets[0])] = media.MosaicResult{Available: true, Text: "old preview"}
+	delete(started.assetMosaicPending, assetKey(started.assets[0]))
+	resized, resizeCmd := started.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	if resizeCmd == nil {
+		t.Fatal("expanded mosaic resize should schedule a new async render")
+	}
+	resizedModel := resized.(model)
+	if !resizedModel.assetMosaicPending[assetKey(resizedModel.assets[0])] {
+		t.Fatal("expanded mosaic should be marked pending while resize render runs")
+	}
+	if rendered := strings.Join(resizedModel.renderAssetCardLines(140), "\n"); !strings.Contains(rendered, "rendering mosaic") {
+		t.Fatalf("resize card missing spinner: %q", rendered)
+	}
+}
+
+func TestStreamAssetUsesProducingExecuteTurn(t *testing.T) {
+	m := EnterConversationForTest(NewTestModel(nil))
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "first prompt"},
+		{role: convRoleAgent, content: "first answer"},
+		{role: convRoleUser, content: "second prompt"},
+		{role: convRoleAgent, content: "second answer"},
+	}
+	m.executes = map[string]convExecute{
+		"first":  {ID: "first", AgentMsgIndex: 1},
+		"second": {ID: "second", AgentMsgIndex: 3},
+	}
+	m.agentMsgIndex = 3
+	m = m.applyStreamDelta(streamDeltaMsg{
+		executeID: "first",
+		delta: harness.StreamDelta{
+			Kind:  harness.StreamKindAsset,
+			Asset: &harness.Asset{Attachment: harness.Attachment{Name: "first-stream.png", ContentHash: "first-stream"}},
+		},
+	})
+	m = m.applyStreamDelta(streamDeltaMsg{
+		executeID: "second",
+		delta: harness.StreamDelta{
+			Kind:  harness.StreamKindAsset,
+			Asset: &harness.Asset{Attachment: harness.Attachment{Name: "second-stream.png", ContentHash: "second-stream"}},
+		},
+	})
+
+	if len(m.transcript[1].assets) != 1 || m.transcript[1].assets[0].Name != "first-stream.png" {
+		t.Fatalf("first execute assets=%+v", m.transcript[1].assets)
+	}
+	if len(m.transcript[3].assets) != 1 || m.transcript[3].assets[0].Name != "second-stream.png" {
+		t.Fatalf("second execute assets=%+v", m.transcript[3].assets)
+	}
+	rendered := strings.Join(m.transcriptContentLines(70), "\n")
+	if strings.Index(rendered, "first answer") > strings.Index(rendered, "first-stream.png") {
+		t.Fatalf("first stream asset rendered outside its turn: %q", rendered)
+	}
+	if strings.Index(rendered, "second answer") > strings.Index(rendered, "second-stream.png") {
+		t.Fatalf("second stream asset rendered outside its turn: %q", rendered)
 	}
 }
 
@@ -164,6 +246,10 @@ func TestExternalAttachmentPolicyControlsMaterialization(t *testing.T) {
 	svc, _ := newConversationTestService(t)
 	configDir := filepath.Join(svc.ProjectDir, ".workflow-hero", "config")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	svc.WorkDir = filepath.Join(t.TempDir(), "workspace")
+	if err := os.MkdirAll(svc.WorkDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	externalPath := writeAcceptancePNG(t, t.TempDir(), "external.png")

@@ -17,7 +17,6 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
-	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
@@ -800,11 +799,9 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 	turnAttachments := append([]harness.Attachment(nil), m.pendingExecuteAttachments...)
 	m.pendingExecuteAttachments = nil
 	turnChips := append([]tuiAttachment(nil), m.attachments...)
-	if len(turnAttachments) > 0 {
-		// Keep the validated chip metadata on the execution so capability
-		// admission failures can return it to the composer.
-		m = m.clearAttachmentChips()
-	}
+	// Keep the validated chip metadata on the execution. The composer chips
+	// stay visible until this execute succeeds; capability and adapter failures
+	// must leave the user able to remove or resend the images.
 	occupancyKey := occupancyKeyFreechat
 	if !freechat {
 		occupancyKey = cycleOccupancyKey(stageName, parentName)
@@ -1694,8 +1691,12 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 		},
 	}
 	req = harness.NormalizeExecuteRequest(req)
-	if len(req.Attachments) > 0 && m.mediaRegistry != nil {
+	if len(req.Attachments) > 0 && m.mediaAdmissionEnabled() {
+		m.prepareMediaCapability(ctx, pair.Adapter, pair.HarnessID, pair.Model)
 		if err := m.mediaRegistry.Admit(pair.HarnessID, pair.Model, req); err != nil {
+			return nil, pair.HarnessID, err
+		}
+		if err := m.applyAdmittedMediaCapability(pair.Adapter, pair.HarnessID, pair.Model); err != nil {
 			return nil, pair.HarnessID, err
 		}
 	}
@@ -2050,9 +2051,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if msg.err != nil {
-			if trackedExecute && executeMeta.Freechat && media.IsAdmissionError(msg.err) {
-				m = m.restoreAttachmentChips(executeMeta.AttachmentChips)
-			}
 			errText := msg.err.Error()
 			m.convError = errText
 			label := "execute"
@@ -2087,6 +2085,12 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m.afterExecuteTelegramDrain(replyCmd)
+		}
+		if trackedExecute && executeMeta.Freechat && len(executeMeta.Attachments) > 0 {
+			// Only clear the chips after the provider accepted the turn. This
+			// also covers adapters that reject image input with their own safe
+			// provider-specific error.
+			m = m.clearAttachmentChipsForExecute(executeMeta)
 		}
 		if msg.result != nil {
 			assetTurnIndex := m.agentMsgIndex
@@ -2248,6 +2252,12 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) applyStreamDelta(msg streamDeltaMsg) model {
+	turnIndex := m.agentMsgIndex
+	if msg.executeID != "" {
+		if execute, ok := m.executes[msg.executeID]; ok {
+			turnIndex = execute.AgentMsgIndex
+		}
+	}
 	m = m.bindExecuteView(msg.executeID)
 	if sid := strings.TrimSpace(msg.delta.SessionID); sid != "" {
 		if ex, ok := m.executes[msg.executeID]; ok {
@@ -2265,7 +2275,7 @@ func (m model) applyStreamDelta(msg streamDeltaMsg) model {
 	if m.harnessWatchdog.LastActivityAt().After(prevActivity) {
 		m = m.clearHarnessHealthWarnings()
 	}
-	return m.appendStreamDelta(msg.delta)
+	return m.appendStreamDeltaForTurn(msg.delta, turnIndex)
 }
 
 func (m model) bindExecuteView(executeID string) model {
@@ -2288,6 +2298,10 @@ func (m model) bindExecuteView(executeID string) model {
 }
 
 func (m model) appendStreamDelta(d harness.StreamDelta) model {
+	return m.appendStreamDeltaForTurn(d, m.agentMsgIndex)
+}
+
+func (m model) appendStreamDeltaForTurn(d harness.StreamDelta, turnIndex int) model {
 	// AI rp measures harness responsiveness, not transcript visibility. A
 	// detail profile may hide a valid response (for example, thinking in
 	// Compact), but that response still proves the harness is active.
@@ -2296,7 +2310,7 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 	}
 	if d.Kind == harness.StreamKindAsset {
 		if d.Asset != nil {
-			m = m.addAsset(*d.Asset)
+			m = m.addAssetToTurn(*d.Asset, turnIndex)
 		}
 		return m
 	}
@@ -3075,7 +3089,6 @@ func (m model) buildTranscriptLayoutLines(contentW, rowW int) []string {
 
 	var out []string
 	assetOffset := 0
-	hasTurnAssets := false
 	for i := range m.transcript {
 		msg := &m.transcript[i]
 		if msg.role == convRoleAgent && strings.TrimSpace(msg.content) == "" && len(msg.assets) == 0 && m.streaming && !msg.failed && !msg.interrupted {
@@ -3099,7 +3112,6 @@ func (m model) buildTranscriptLayoutLines(contentW, rowW int) []string {
 			out = append(out, chatThinBarRow(bar, line, rowW))
 		}
 		if len(msg.assets) > 0 {
-			hasTurnAssets = true
 			for _, card := range m.renderAssetCardLinesFor(contentW, msg.assets, assetOffset) {
 				out = append(out, chatThinBarRow(bar, chatInMuted.Render(card), rowW))
 			}
@@ -3107,16 +3119,6 @@ func (m model) buildTranscriptLayoutLines(contentW, rowW int) []string {
 		}
 		if i < len(m.transcript)-1 {
 			out = append(out, "")
-		}
-	}
-	if !hasTurnAssets {
-		// Compatibility fallback for an asset received before a transcript turn
-		// exists. Normal execution always renders cards at the owning agent turn.
-		if cards := m.renderAssetCardLines(contentW); len(cards) > 0 {
-			out = append(out, "")
-			for _, card := range cards {
-				out = append(out, chatThinBarRow(chatBarMuted, chatInMuted.Render(card), rowW))
-			}
 		}
 	}
 	return out

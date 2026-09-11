@@ -250,6 +250,7 @@ func AttachmentsForTest(m model) []harness.Attachment {
 // SetMediaRegistryForTest injects capability admission data for a TUI test.
 func SetMediaRegistryForTest(m model, registry *media.Registry) model {
 	m.mediaRegistry = registry
+	m.mediaRegistryExplicit = true
 	return m
 }
 

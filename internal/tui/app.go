@@ -131,6 +131,7 @@ type model struct {
 	assetSaveInputDirty       bool
 	pendingExecuteAttachments []harness.Attachment
 	mediaRegistry             *media.Registry
+	mediaRegistryExplicit     bool // test/injected registry must still gate fake adapters
 
 	// Chat panes: composer scroll + linear transcript scroll/follow.
 	inputScrollOffset      int
@@ -328,6 +329,11 @@ func newModel(svc *cycle.Service) model {
 	m.contextWindows = loadContextWindowCatalog(projectDir)
 	m = m.reloadPaletteItems()
 	m = m.initModelProps(projectDir)
+	m.mediaRegistry = media.NewRegistry()
+	if productionRegistry := newMediaCapabilityRegistry(svc); productionRegistry != nil {
+		m.mediaRegistry = productionRegistry
+	}
+	m.registerCatalogMediaCapability(m.chatHarnessID, m.chatModelSlug)
 	m.convService = conversation.New(nil, nil)
 	return m.syncConversationContext()
 }
@@ -347,6 +353,7 @@ func newModelWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, model
 	// freechat_default.model is still empty.  Re-run the local C5 projection
 	// after applying the boot pair so persisted model_properties are restored.
 	m = m.loadFreechatProps()
+	m.registerCatalogMediaCapability(m.chatHarnessID, m.chatModelSlug)
 	if modelWarn != "" {
 		m = m.setStatusResult(false, "model", modelWarn)
 	}
@@ -429,6 +436,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.ensureInputCaretVisible()
 		}
 		m = m.clampContentOffset()
+		if m.screen == screenConversation {
+			var mosaicCmd tea.Cmd
+			m, mosaicCmd = m.refreshExpandedMosaics()
+			if mosaicCmd != nil {
+				return m, tea.Batch(mosaicCmd, convWaitTickCmd())
+			}
+		}
 		return m, nil
 
 	case refreshDataMsg:
@@ -513,6 +527,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case convWaitTickMsg:
 		if m.streaming {
 			m.waitAnimFrame++
+			if m.hasPendingMosaic() {
+				m.bumpTranscriptLayout()
+			}
 			m = m.maybeFollowTranscriptBottom()
 			return m, convWaitTickCmd()
 		}
@@ -521,6 +538,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.heroStartPreparing || m.heroStartBootstrapping {
 				m = m.maybeFollowTranscriptBottom()
 			}
+			return m, convWaitTickCmd()
+		}
+		if m.hasPendingMosaic() {
+			m.waitAnimFrame++
+			m.bumpTranscriptLayout()
 			return m, convWaitTickCmd()
 		}
 		return m, nil

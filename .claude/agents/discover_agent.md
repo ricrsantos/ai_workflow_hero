@@ -2,7 +2,8 @@
 name: discover_agent
 description: Drives the Research stage — grilling and requirements gathering to produce project specifications.
 # BEGIN AI WORKFLOW HERO MANAGED FIELDS
-model: inherit
+model: claude-sonnet-4-6
+effort: high
 skills:
   - workflow-hero
   - grilling

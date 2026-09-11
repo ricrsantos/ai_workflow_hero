@@ -164,12 +164,12 @@ agents:
             thinking: off
     qa_agent:
         harness: codex
-        model: gpt-5.6-sol
-        reasoning_effort: high
+        model: gpt-5.6-luna
+        reasoning_effort: max
         enable_fast_model: false
         thinking: off
         subagent:
-            same_of_agent: false
+            same_of_agent: true
             model: gpt-5.6-luna
             reasoning_effort: max
             enable_fast_model: false

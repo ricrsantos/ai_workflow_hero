@@ -4,6 +4,42 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-11 — C14 archived
+
+**Change**: `/hero-archive` ran `openspec archive tui-multimodal-images -y` (merged 18 spec additions; archived as `2026-09-11-tui-multimodal-images`), then Hero archived cycle C14 to `.workflow-hero/cycles/archive/C14-2026-09-11-implementa-o-da-capacidade-de-lidar-com` using store `completed_at` 2026-09-11. No current cycle remains. Metrics for C14 were already in `.workflow-hero/metrics-summary.md` from `/hero-finish` (2101873 tokens, ~$0.5692).
+
+## 2026-09-11 — C14 implementation verification formatting
+
+**Change**: Applied the required gofmt comment-column alignment in
+`internal/tui/model_picker_refresh_test.go` after the QA loop-back. Behavior and
+task checkboxes were unchanged.
+
+**Validation**: `gofmt -d internal/tui/model_picker_refresh_test.go`,
+`go test ./...`, `go test -race ./...`, `go vet ./...`, `go build ./...`,
+`git diff --check`, and strict OpenSpec validation all pass.
+
+## 2026-09-11 — C14 multimodal loop-back hardening
+
+**Problem**: QA identified edge regressions around image-bearing Free Chat
+turns: composer chips could disappear before capability/adapter rejection,
+free-chat policy lookup could read the execution work directory instead of the
+Hero config root, and streamed assets could follow the mutable active-agent
+index rather than their producing Execute.
+
+**Change**: Deferred chip removal until a successful image Execute; rejected
+turns therefore preserve validated chips. Permission lookup now uses the
+configured Hero project root while materialization still uses the execution
+workspace. Stream asset routing carries the Execute's transcript index,
+associates fallback assets with an agent turn, invalidates transcript layout,
+and removes the populated-transcript global-tail fallback. Downloads-prefilled
+save behavior with explicit overwrite confirmation remains covered. The
+Claude Unix process was normalized with `gofmt`.
+
+**Validation**: Added focused regressions for pre-admission chip retention,
+split config/workspace policy resolution, and concurrent stream asset ownership.
+Focused TUI tests, `gofmt`, `go test ./...`, `go test -race ./...`, `go vet
+./...`, and strict OpenSpec validation all passed.
+
 ## 2026-09-11 — Cursor `/model` false “reset to na” on Grok 4.6 High
 
 **Problem**: Selecting `cursor-grok-4.6-high` in the TUI showed `⚠ /model — The selected value is no longer supported by this model and was reset to na.` The model itself was valid; effort is baked into the slug.
@@ -1654,3 +1690,61 @@ The Claude Unix process file was also normalized with `gofmt`.
 **Validation**: Added focused TUI regressions; `go test ./...`,
 `go test -race ./...`, `go vet ./...`, strict OpenSpec validation, `gofmt`,
 and `git diff --check` passed. No image bytes or sensitive paths were logged.
+
+## 2026-09-11 — C14 implementation loop-back wiring
+
+**Problem**: The C14 contracts and adapter translation helpers existed, but the
+live multi-harness TUI never constructed its media registry. Adapter media
+capabilities therefore stayed zero, model-side discovery/catalog facts were not
+intersected, and expanded asset mosaics kept stale dimensions after resize
+without a progress state.
+
+**Change**: Production TUI models now keep a `media.Registry`, register each
+adapter transport, consume explicit catalog media blocks and lazy native model
+discovery, admit attachment requests before Execute, and apply the admitted
+intersection through the shared adapter setter. Cursor, OpenCode, Codex, and
+Claude expose transport/discovery hooks; legacy catalog rows remain unknown.
+Window resize schedules fresh mosaic commands for expanded cards, and pending
+cards render a non-blocking spinner driven by the existing wait tick. No image
+bytes, credentials, or sensitive paths are logged or written to context files.
+
+**Validation**: Focused harness, catalog, adapter, and TUI tests pass, including
+the asynchronous mosaic spinner/resize regression. Full `go test ./...` and
+strict OpenSpec validation are the final handoff checks.
+
+## 2026-09-11 — C14 Implementation gate refused: unassigned loop-back IDs
+
+**Problem**: Implementation 4/4 stayed Running. TUI gate: reports invalid or
+missing required gate fields. `generic_agent` returned `status: complete` with
+canonical gates true and `tasks_completed: ["task-03.1", "task-03.2",
+"task-05.1", "task-11.2"]`. OpenSpec `tasks.md` is already 38/38 `[x]`, so the
+Judge loop-back wave assignment was empty (verification-only). Claiming those
+unassigned (and abbreviated) IDs fails closed. `judge-gaps.md` is prompt
+context only and is not the scheduler assignment.
+
+**Change**: Did not close Implementation or start QA. Live registry/admission
+and async mosaic resize/spinner wiring remain on disk from this wave. Next
+`/hero-start` verification wave must report empty `tasks_completed` /
+`tasks_remaining` to match the empty assignment.
+
+**Validation**: `hero status` — Implementation Running 4/4; QA Waiting 3/3;
+Judge Waiting 1/3.
+
+## 2026-09-11 — C14 finished via /hero-finish
+
+**Problem**: Implementation 4/4 was still Running after the TUI completion gate
+refused the `generic_agent` report (unassigned abbreviated loop-back IDs on a
+fully checked `tasks.md`). QA and Judge were Waiting after the last Judge
+loop-back. The user issued `/hero-finish`.
+
+**Change**: `hero finish` with last-wave metrics (`gpt-5.6-luna`, 46250 in /
+8000 out tokens, ~$0.01885, 1980000 ms). Did not close Implementation/QA/Judge
+as completed stages (Implementation stayed Running). Recorded cycle
+`completed_at` for archive dating. Updated `current-state.md` and
+`metrics-summary.md`. Stored cycle totals from the last active `hero metrics`
+snapshot: 1967096 in / 134777 out tokens (~2101873 total), ~$0.5692.
+OpenSpec change `tui-multimodal-images` remains linked until `/hero-archive`.
+Live registry/admission and async mosaic resize/spinner wiring remain on disk.
+
+**Validation**: `hero status` — C14 `completed`; OpenSpec still
+`tui-multimodal-images`. `hero metrics` reports no active cycle.

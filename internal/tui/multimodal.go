@@ -65,19 +65,33 @@ func (m model) multimodalFreeChat() bool {
 	return m.freeChatMode && m.screen == screenConversation && !m.researchLive && !m.workflowAgentActive()
 }
 
+// attachmentPermissionProfile reads the persisted policy from the Hero
+// configuration root. Free Chat intentionally executes in the current working
+// directory, so using executeDir here would skip ~/.workflow-hero/config and
+// silently fall back to Ask.
+func (m model) attachmentPermissionProfile() harness.PermissionProfile {
+	profile := harness.PermissionProfileAsk
+	configRoot := ""
+	if m.svc != nil {
+		configRoot = m.svc.ProjectDir
+	}
+	if strings.TrimSpace(configRoot) == "" {
+		configRoot = m.executeDir()
+	}
+	if strings.TrimSpace(configRoot) != "" {
+		if hero, err := install.LoadHeroJSON(configRoot); err == nil {
+			profile = install.HarnessPermissionProfile(hero, m.conversationHarnessTool())
+		}
+	}
+	return harness.NormalizePermissionProfile(profile)
+}
+
 // allowExternalAttachmentPaths maps Hero's file-permission policy to the
 // attachment boundary. An explicit attachment selection satisfies the Ask
 // profile; Auto-project is the only profile that denies paths outside the
 // workspace, while Auto-all permits them.
 func (m model) allowExternalAttachmentPaths() bool {
-	profile := harness.PermissionProfileAsk
-	projectDir := m.executeDir()
-	if strings.TrimSpace(projectDir) != "" {
-		if hero, err := install.LoadHeroJSON(projectDir); err == nil {
-			profile = install.HarnessPermissionProfile(hero, m.conversationHarnessTool())
-		}
-	}
-	return harness.NormalizePermissionProfile(profile) != harness.PermissionProfileAutoProject
+	return m.attachmentPermissionProfile() != harness.PermissionProfileAutoProject
 }
 
 func (m model) openAttachmentPicker() (model, tea.Cmd) {
@@ -339,15 +353,16 @@ func (m model) readyAttachments() ([]harness.Attachment, error) {
 	return ready, nil
 }
 
-func (m model) restoreAttachmentChips(chips []tuiAttachment) model {
-	if len(chips) == 0 || len(m.attachments) > 0 {
+func (m model) clearAttachmentChipsForExecute(ex convExecute) model {
+	if len(ex.AttachmentChips) == 0 || len(m.attachments) != len(ex.AttachmentChips) {
 		return m
 	}
-	m.attachments = append([]tuiAttachment(nil), chips...)
-	m.attachmentFocus = false
-	m.chatInputFocused = true
-	m.attachmentCursor = 0
-	return m
+	for index, chip := range ex.AttachmentChips {
+		if chip.token == "" || chip.token != m.attachments[index].token {
+			return m
+		}
+	}
+	return m.clearAttachmentChips()
 }
 
 func (m model) clearAttachmentChips() model {
@@ -417,17 +432,28 @@ func (m model) addAssetToTurn(asset harness.Asset, turnIndex int) model {
 	if strings.TrimSpace(asset.ContentHash) == "" {
 		asset.ContentHash = asset.Attachment.ContentHash
 	}
-	if turnIndex >= 0 && turnIndex < len(m.transcript) && m.transcript[turnIndex].role == convRoleAgent {
-		msg := m.transcript[turnIndex]
-		msg.assets = harness.MergeAssetsByContentHash(msg.assets, []harness.Asset{asset})
-		m.transcript[turnIndex] = msg
-		m.rebuildAssetIndex()
-	} else {
-		// Keep a compatibility path for an asset received before a transcript
-		// turn exists (and for focused unit tests). Normal stream/final events
-		// always have an owning agent message and take the branch above.
-		m.assets = harness.MergeAssetsByContentHash(m.assets, []harness.Asset{asset})
+	if turnIndex < 0 || turnIndex >= len(m.transcript) || m.transcript[turnIndex].role != convRoleAgent {
+		for index := len(m.transcript) - 1; index >= 0; index-- {
+			if m.transcript[index].role == convRoleAgent {
+				turnIndex = index
+				break
+			}
+		}
 	}
+	if turnIndex < 0 || turnIndex >= len(m.transcript) || m.transcript[turnIndex].role != convRoleAgent {
+		m.transcript = append(m.transcript, convMessage{
+			role:      convRoleAgent,
+			agentName: strings.TrimSpace(m.runtimeAgentName),
+			modelSlug: m.conversationModelSlug(),
+			harnessID: m.conversationHarnessTool(),
+		})
+		turnIndex = len(m.transcript) - 1
+		m.agentMsgIndex = turnIndex
+	}
+	msg := m.transcript[turnIndex]
+	msg.assets = harness.MergeAssetsByContentHash(msg.assets, []harness.Asset{asset})
+	m.transcript[turnIndex] = msg
+	m.rebuildAssetIndex()
 	if m.assetMosaics == nil {
 		m.assetMosaics = make(map[string]media.MosaicResult)
 	}
@@ -437,6 +463,7 @@ func (m model) addAssetToTurn(asset harness.Asset, turnIndex int) model {
 	if m.assetCursor < 0 {
 		m.assetCursor = 0
 	}
+	m.bumpTranscriptLayout()
 	return m
 }
 
@@ -445,9 +472,7 @@ func (m *model) rebuildAssetIndex() {
 	for _, msg := range m.transcript {
 		assets = append(assets, msg.assets...)
 	}
-	if len(assets) > 0 || len(m.assets) == 0 {
-		m.assets = assets
-	}
+	m.assets = assets
 }
 
 func assetKey(asset harness.Asset) string {
@@ -469,6 +494,9 @@ func (m model) toggleAssetMosaic() (model, tea.Cmd) {
 	if m.assetMosaics == nil {
 		m.assetMosaics = make(map[string]media.MosaicResult)
 	}
+	if m.assetMosaicPending == nil {
+		m.assetMosaicPending = make(map[string]bool)
+	}
 	if _, expanded := m.assetMosaics[key]; expanded {
 		delete(m.assetMosaics, key)
 		return m, nil
@@ -477,7 +505,50 @@ func (m model) toggleAssetMosaic() (model, tea.Cmd) {
 		return m, nil
 	}
 	m.assetMosaicPending[key] = true
-	return m, media.MosaicCmd(asset.Path, media.MosaicConfig{Width: minInt(64, maxInt(1, m.transcriptTextWidth()/2)), Height: 12, ColorDepth: tuiMosaicColorDepth()})
+	return m, tea.Batch(media.MosaicCmd(asset.Path, m.assetMosaicConfig()), convWaitTickCmd())
+}
+
+func (m model) assetMosaicConfig() media.MosaicConfig {
+	return media.MosaicConfig{
+		Width:      minInt(64, maxInt(1, m.transcriptTextWidth()/2)),
+		Height:     minInt(12, maxInt(1, m.frameContentHeight()/3)),
+		ColorDepth: tuiMosaicColorDepth(),
+	}
+}
+
+func (m model) hasPendingMosaic() bool {
+	for _, pending := range m.assetMosaicPending {
+		if pending {
+			return true
+		}
+	}
+	return false
+}
+
+// refreshExpandedMosaics schedules a fresh decode/render for every expanded
+// card after a terminal resize. The command owns all filesystem/image work;
+// Update only marks the cards pending so keys and View remain responsive.
+func (m model) refreshExpandedMosaics() (model, tea.Cmd) {
+	if len(m.assetMosaics) == 0 || len(m.assets) == 0 {
+		return m, nil
+	}
+	if m.assetMosaicPending == nil {
+		m.assetMosaicPending = make(map[string]bool)
+	}
+	config := m.assetMosaicConfig()
+	cmds := make([]tea.Cmd, 0, len(m.assetMosaics))
+	for _, asset := range m.assets {
+		key := assetKey(asset)
+		if _, expanded := m.assetMosaics[key]; !expanded || strings.TrimSpace(asset.Path) == "" {
+			continue
+		}
+		m.assetMosaicPending[key] = true
+		cmds = append(cmds, media.MosaicCmd(asset.Path, config))
+	}
+	if len(cmds) == 0 {
+		return m, nil
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m model) handleMosaicMsg(msg media.MosaicMsg) model {
@@ -485,6 +556,7 @@ func (m model) handleMosaicMsg(msg media.MosaicMsg) model {
 		delete(m.assetMosaicPending, assetKeyByPath(m.assets, msg.Path))
 	}
 	if msg.Err != nil {
+		m.bumpTranscriptLayout()
 		return m.setStatusWarning("preview", firstStatusLine(msg.Err.Error()))
 	}
 	if m.assetMosaics == nil {
@@ -496,6 +568,7 @@ func (m model) handleMosaicMsg(msg media.MosaicMsg) model {
 			break
 		}
 	}
+	m.bumpTranscriptLayout()
 	return m
 }
 
@@ -542,6 +615,15 @@ func (m model) renderAssetCardLinesFor(width int, assets []harness.Asset, offset
 		}
 		lines = append(lines, line)
 		lines = append(lines, "  Enter preview · o open · c copy path · a attach · s save")
+		key := assetKey(asset)
+		if m.assetMosaicPending[key] {
+			_, expanded := m.assetMosaics[key]
+			selected := i+offset == m.assetCursor && m.assetFocus
+			if selected || expanded {
+				frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
+				lines = append(lines, "  "+frame+" rendering mosaic…")
+			}
+		}
 		if i+offset == m.assetCursor && m.assetFocus && m.assetSavePending {
 			input := m.assetSaveInput
 			if input == "" {
@@ -552,7 +634,7 @@ func (m model) renderAssetCardLinesFor(width int, assets []harness.Asset, offset
 				lines = append(lines, "  destination exists · y overwrite · n choose another · esc cancel")
 			}
 		}
-		if preview, ok := m.assetMosaics[assetKey(asset)]; ok {
+		if preview, ok := m.assetMosaics[key]; ok {
 			if preview.Available {
 				for _, previewLine := range strings.Split(preview.Text, "\n") {
 					lines = append(lines, "  "+truncateDisplayWidth(previewLine, maxInt(1, width-2)))

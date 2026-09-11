@@ -142,7 +142,7 @@ func TestSlugLockedPropertiesShownAndCommitted(t *testing.T) {
 		t.Fatalf("locked effort must stay low, got %q", m.propsDraft[harness.PropertyEffort])
 	}
 
-	m, _ = HandleTestKey(m, "up") // thinking row (still selectable)
+	m, _ = HandleTestKey(m, "up")    // thinking row (still selectable)
 	m, _ = HandleTestKey(m, "enter") // save complete draft
 	if m.pickingProps {
 		t.Fatal("property draft must commit after thinking confirm")

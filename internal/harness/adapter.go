@@ -217,6 +217,27 @@ type ModelLister interface {
 	ListModels(ctx context.Context) ([]string, error)
 }
 
+// MediaTransportCapabilityProvider exposes the adapter-side image transport
+// contract. The TUI combines this independent fact with model discovery or
+// catalog data before an attachment-bearing Execute.
+type MediaTransportCapabilityProvider interface {
+	MediaTransportCapability() MediaCapability
+}
+
+// MediaCapabilityDiscoverer returns native model-side image capability data.
+// Implementations must return an error when the selected model is unknown or
+// the provider did not expose enough information to make a safe decision.
+type MediaCapabilityDiscoverer interface {
+	DiscoverMediaCapability(ctx context.Context, modelID string) (MediaCapability, error)
+}
+
+// MediaCapabilitySetter receives the effective transport/model intersection
+// immediately before Execute. Adapters use it to select the admitted native
+// translation path and must remain fail-closed when it is not called.
+type MediaCapabilitySetter interface {
+	SetMediaCapability(MediaCapability)
+}
+
 // Chat mode constants for ExecuteRequest.Mode.
 const (
 	ModeBuild = "build"

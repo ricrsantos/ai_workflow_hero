@@ -85,6 +85,9 @@ func TestC14AcceptanceClipboardChipCapabilityBlockAndToolCard(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("capability-blocked turn did not return a completion command")
 	}
+	if len(m.attachments) != 1 || m.attachments[0].attachment.Name != "clipboard.png" {
+		t.Fatalf("capability check removed composer chip before execution: %+v", m.attachments)
+	}
 	m = drainConversationStream(t, m, cmd)
 	if h.ExecuteCount() != 0 || !strings.Contains(strings.ToLower(ConversationErrorForTest(m)), "does not support image input") {
 		t.Fatalf("capability block execute_count=%d error=%q", h.ExecuteCount(), ConversationErrorForTest(m))

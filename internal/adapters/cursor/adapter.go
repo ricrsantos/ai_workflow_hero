@@ -180,7 +180,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	if len(req.Attachments) > 0 {
 		prompt, err = ComposeCursorFileReferencePrompt(prompt, req.Attachments, CursorFileReferenceOptions{
 			Model:      req.Model,
-			Capability: a.MediaCapability,
+			Capability: a.currentMediaCapability(),
 		})
 		if err != nil {
 			return nil, err

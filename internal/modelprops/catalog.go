@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"gopkg.in/yaml.v3"
 )
 
@@ -60,6 +61,58 @@ func nodeHasKey(node *yaml.Node, key string) bool {
 	return false
 }
 
+// CatalogMediaCapability is the optional model-side media fact stored in a
+// local catalog. HasCapability distinguishes an explicit unsupported block
+// from a legacy pricing/property row that says nothing about images.
+type CatalogMediaCapability struct {
+	ImageInputNative        bool     `yaml:"image_input_native"`
+	ImageInputFileReference bool     `yaml:"image_input_file_reference"`
+	ImageOutputNative       bool     `yaml:"image_output_native"`
+	ImageOutputFile         bool     `yaml:"image_output_file"`
+	SupportedImageMIMETypes []string `yaml:"supported_image_mime_types"`
+	MaxAttachmentBytes      int64    `yaml:"max_attachment_bytes"`
+	HasCapability           bool
+}
+
+// UnmarshalYAML records presence separately from the boolean values so an
+// explicit all-false catalog entry remains a known unsupported model.
+func (m *CatalogMediaCapability) UnmarshalYAML(node *yaml.Node) error {
+	if node == nil {
+		return nil
+	}
+	m.HasCapability = true
+	var raw struct {
+		ImageInputNative        bool     `yaml:"image_input_native"`
+		ImageInputFileReference bool     `yaml:"image_input_file_reference"`
+		ImageOutputNative       bool     `yaml:"image_output_native"`
+		ImageOutputFile         bool     `yaml:"image_output_file"`
+		SupportedImageMIMETypes []string `yaml:"supported_image_mime_types"`
+		MaxAttachmentBytes      int64    `yaml:"max_attachment_bytes"`
+	}
+	if err := node.Decode(&raw); err != nil {
+		slog.Debug("modelprops catalog media block malformed", "error", err)
+		return nil
+	}
+	m.ImageInputNative = raw.ImageInputNative
+	m.ImageInputFileReference = raw.ImageInputFileReference
+	m.ImageOutputNative = raw.ImageOutputNative
+	m.ImageOutputFile = raw.ImageOutputFile
+	m.SupportedImageMIMETypes = append([]string(nil), raw.SupportedImageMIMETypes...)
+	m.MaxAttachmentBytes = raw.MaxAttachmentBytes
+	return nil
+}
+
+func (m CatalogMediaCapability) Capability() harness.MediaCapability {
+	return harness.MediaCapability{
+		ImageInputNative:        m.ImageInputNative,
+		ImageInputFileReference: m.ImageInputFileReference,
+		ImageOutputNative:       m.ImageOutputNative,
+		ImageOutputFile:         m.ImageOutputFile,
+		SupportedImageMIMETypes: append([]string(nil), m.SupportedImageMIMETypes...),
+		MaxAttachmentBytes:      m.MaxAttachmentBytes,
+	}
+}
+
 // CatalogModel is one model row from a catalog file. Pricing fields are ignored
 // by this parser so pricing-only entries keep loading unchanged.
 type CatalogModel struct {
@@ -68,6 +121,7 @@ type CatalogModel struct {
 	// native model ID remains the map key and is never rewritten.
 	Provider   string
 	Properties map[string]CatalogProperty
+	Media      CatalogMediaCapability
 }
 
 // Catalog maps native model IDs to catalog metadata.
@@ -75,11 +129,13 @@ type Catalog map[string]CatalogModel
 
 type catalogFile struct {
 	Provider string                  `yaml:"provider"`
+	Media    CatalogMediaCapability  `yaml:"media"`
 	Models   map[string]catalogEntry `yaml:"models"`
 }
 
 type catalogEntry struct {
 	Properties map[string]CatalogProperty `yaml:"properties"`
+	Media      CatalogMediaCapability     `yaml:"media"`
 }
 
 // CatalogPropertyKeys returns the property keys defined for a model in
@@ -209,6 +265,10 @@ func mergeCatalogYAML(cat Catalog, data []byte) {
 		model := CatalogModel{
 			Provider:   strings.TrimSpace(file.Provider),
 			Properties: map[string]CatalogProperty{},
+			Media:      file.Media,
+		}
+		if entry.Media.HasCapability {
+			model.Media = entry.Media
 		}
 		for key, prop := range entry.Properties {
 			key = strings.TrimSpace(key)
@@ -223,6 +283,14 @@ func mergeCatalogYAML(cat Catalog, data []byte) {
 		if model.Provider == "" {
 			if previous, ok := cat[id]; ok {
 				model.Provider = previous.Provider
+				if !model.Media.HasCapability {
+					model.Media = previous.Media
+				}
+			}
+		}
+		if !model.Media.HasCapability {
+			if previous, ok := cat[id]; ok {
+				model.Media = previous.Media
 			}
 		}
 		// Keep a provider-scoped copy as well as the legacy unqualified key.
@@ -277,6 +345,21 @@ func catalogPropertyForHarness(cat Catalog, harnessID, modelID, key string) (Cat
 		return CatalogProperty{}, false
 	}
 	return p, true
+}
+
+func catalogMediaForHarness(cat Catalog, harnessID, modelID string) (CatalogMediaCapability, bool) {
+	for _, provider := range catalogProvidersForHarness(harnessID) {
+		if m, ok := cat[catalogScopedKey(provider, modelID)]; ok && m.Media.HasCapability {
+			return m.Media, true
+		}
+	}
+	// Backward compatibility for unscoped local overlays. A provider mismatch
+	// must never make a model appear image-capable under another harness.
+	m, ok := cat[strings.TrimSpace(modelID)]
+	if !ok || !catalogProviderMatchesHarness(m.Provider, harnessID) || !m.Media.HasCapability {
+		return CatalogMediaCapability{}, false
+	}
+	return m.Media, true
 }
 
 func catalogProvidersForHarness(harnessID string) []string {
@@ -335,6 +418,18 @@ func (c Catalog) CatalogValuesForHarness(harnessID, modelID, key string) (Catalo
 		}
 	}
 	return CatalogProperty{}, false
+}
+
+// MediaCapabilityForHarness returns an explicit model media block scoped to
+// the selected native harness. Legacy catalog rows without a media block are
+// unknown and therefore return false.
+func (c Catalog) MediaCapabilityForHarness(harnessID, modelID string) (harness.MediaCapability, bool) {
+	for _, candidate := range catalogBaseModelCandidates(modelID) {
+		if media, ok := catalogMediaForHarness(c, harnessID, candidate); ok {
+			return media.Capability(), true
+		}
+	}
+	return harness.MediaCapability{}, false
 }
 
 // HasModel reports whether the catalog supplies a row for the model ID.

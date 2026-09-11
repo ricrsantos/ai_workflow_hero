@@ -14,7 +14,7 @@
 | **Repository** | `github.com/ricrsantos/ai_workflow_hero` |
 | **Goal** | Open-source framework that coordinates specialized AI subagents, organizes project artifacts, compresses context, and makes AI-driven development cycles reproducible and less dependent on any single LLM provider. |
 | **License** | BSD-2-Clause |
-| **Phase** | Hero **3.2.0** released (tag `v3.2.0`). Minor after 3.1.x: Linux development auto-update (coupled Hero + Telegram daemon), harness connection-closed recovery, TUI context-bar occupancy vs billed totals, Claude enable `CLAUDE.md` provisioning, Telegram `/tail`, project-root discovery excluding `~/.workflow-hero`, and broader Cursor/Claude adapter message coverage. |
+| **Phase** | Hero **3.2.0** released (tag `v3.2.0`). C14 (`tui-multimodal-images`) is **archived**: Free Chat image attach/send/receive across Cursor, OpenCode, Codex, and Claude, with live capability admission and async mosaic cards. No current cycle. |
 
 ## Technology Stack
 
@@ -81,7 +81,7 @@ Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `�
 - **Development Telegram auto-update (ADR-076)**: `/auto-update` commits the source checkout, atomically requests an update through `needs-update.txt`, and returns immediately. A systemd user timer invokes the installed `hero-update.sh` every five minutes; `scripts/build_update.sh` builds both host-targeted `hero` and `hero-telegram-daemon` artifacts. When the optional Telegram plugin is already installed, the updater atomically replaces its daemon and manifest together with Hero, stops the captured old daemon, then signals every discoverable installed Hero TUI directly with `SIGUSR2`; it never installs the optional plugin implicitly. It retains a bounded five-second Telegram IPC compatibility request for registrations not visible in `/proc`. The TUI stops managed harnesses and `exec`s the installed binary, preserving terminal/process identity. Notification failure is non-fatal after a successful coupled install; failed build/manifest/install leaves the flag armed. The Telegram daemon has version/capability registration metadata, a private ownership-checked pidfile, explicit unknown-frame errors, and stale deleted-inode recovery; plugin binaries/manifests and local `build_dev.sh`/`release.sh` installs use atomic replacement. This is Linux/development-only.
 - **Telegram `/help`**: daemon-owned command catalog (`internal/telegram.CommandHelpText`) that works with or without `/select` and never starts a harness turn; the TUI keeps a matching handler as defense in depth.
 - **Telegram native permissions and lifecycle relay**: OpenCode `permission.asked` remains a local blocking TUI prompt and is also sent to the paired Telegram client with a request ID; `/hero-permission <id> allow|deny` answers only that request, while local `y`/`n` and `/interrupt` remain valid. A private per-TUI Unix socket (`internal/lifecycle`) is inherited by the long-lived OpenCode `serve` process; CLI-as-API children install an environment notifier and send append-only event IDs, allowing child `hero stage close` approval events to reach the TUI/Telegram path without SQLite polling. OpenCode resume/recovery and Prepare preserve the selected `permission_profile` instead of falling back to `ask`.
-- Model catalogs: `assets/models/*.yml` pricing + C5 `properties`; OpenCode 27 models; Cursor includes `auto`; Codex-native ids without invented ChatGPT USD rates.
+- Model catalogs: `assets/models/*.yml` pricing + C5 `properties` + optional explicit C14 `media` facts; OpenCode 27 models; Cursor includes `auto`; Codex-native ids without invented ChatGPT USD rates.
 - Install: interactive harness picker (≥1 required; Cursor / OpenCode / **Codex**); conditional projections; 2.4.x → 2.5.0 never auto-provisions `.codex/` (ADR-048).
 - Doctor / status / variables: table + `--json`; warn-only Cursor/OpenCode/Codex CLI checks when enabled; `.codex/` supported marker (C6).
 - Upgrade: checksum conflict backup/replace; env hygiene (`.env.example`, `.gitignore` secrets block, and `.workflow-hero/tui.log`); refreshes `docs/workflow-help.md` when not customized.
@@ -94,6 +94,7 @@ Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `�
 - **Development update tooling**: `scripts/build_update.sh` builds `./cmd/hero` and `./cmd/hero-telegram-daemon` for the host target; `scripts/hero-update.sh`, `scripts/install_update_dev.sh`, `scripts/uninstall_update_dev.sh`, and `scripts/systemd/` provide the guarded systemd user timer flow, coupled atomic artifact replacement, bounded restart notification, stale-process recovery, and cleanup. Uninstall preserves `hero` and `hero.previous`.
 - Test strategy and build-artifact policy in [docs/testing/TESTING.md](docs/testing/TESTING.md); repository-root binaries are prohibited, temporary test binaries belong under `./temp/` and must be removed after the run; `/hero`, `/hero-telegram-daemon`, and `/temp/` are ignored; the OpenCode step-usage test preserves event order; bilingual README.
 - **C14 multimodal images**: Free Chat now materializes validated image attachments into session-scoped XDG data, carries immutable `harness.Attachment`/`Asset` references through conversation and adapter boundaries, intersects transport/model capabilities with fail-closed admission, and renders asynchronous asset cards with Unicode mosaic, open/copy/attach/save actions. Codex, OpenCode, Cursor, and Claude implement native or labeled file-reference input paths plus output/tool-written image normalization and SHA-256 dedupe. Advanced Kitty/Sixel/iTerm2 previews are explicit opt-in; image bytes never enter Bubble Tea model state.
+- **C14 loop-back wiring**: Production TUI models retain a `media.Registry`, register adapter transport facts, load explicit catalog media facts, and perform lazy adapter model discovery on the execute worker. Successful admission applies the transport/model intersection back to Cursor, OpenCode, Codex, and Claude adapters; unknown pairs fail closed. Expanded mosaics re-render through async commands on terminal resize and show a tick-driven spinner while pending. Legacy catalog rows remain unknown.
 
 ## Pending Features
 
@@ -104,6 +105,12 @@ Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `�
 - **Loop-back findings handoff** — persist QA/Judge/Browser UI/E2E findings in `hero.db`, assign `find-*` on Implementation waves, `/hero-add-todo` to defer on Escalated, and show the ping-pong on Status. Idea: `docs/idea/tobe/loopback-findings-handoff.md` (not C14).
 
 ## Recent Decisions
+
+- **2026-09-11 — C14 archived**: Hero archive at `.workflow-hero/cycles/archive/C14-2026-09-11-implementa-o-da-capacidade-de-lidar-com`. OpenSpec `tui-multimodal-images` merged and archived as `openspec/changes/archive/2026-09-11-tui-multimodal-images`. Resume with `/hero-resume` C14.
+
+- **2026-09-11 — C14 finished via /hero-finish**: Cycle completed while Implementation 4/4 was still Running (TUI gate refused unassigned loop-back IDs on a fully checked `tasks.md`; QA/Judge left Waiting). Live media registry, Admit-before-Execute, adapter capability application, and async mosaic resize/spinner remain on disk.
+
+- **2026-09-11 — C14 multimodal loop-back hardening**: Free Chat keeps validated image chips until an image-bearing Execute succeeds, so capability and adapter rejections preserve resend/remove behavior. External-path policy is loaded from the Hero configuration root even when Free Chat executes in a different work directory. Streamed assets route by execute ownership and are attached to their producing transcript turn; layout caches invalidate when cards arrive and populated transcripts no longer render a global asset tail. Downloads-prefilled save dialogs retain explicit overwrite confirmation, and the Claude Unix process plus model-picker regression test remain gofmt-clean.
 
 - **2026-09-11 — Cursor slug-locked properties are not “unsupported”**: `/model` no longer warns or resets matching `ef`/`fs` values to `na` on slugs such as `cursor-grok-4.6-high`. Conflicting saved values still warn and fall back to the lock.
 
@@ -231,7 +238,8 @@ Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `�
 
 ## Next Steps
 
-1. Keep historical C7/C8 QA/Judge and C6 OpenSpec archive work as backlog items when they become relevant.
+1. Start a new cycle with `/hero-new` when ready, or restore C14 with `/hero-resume` C14.
+2. Keep historical C7/C8 QA/Judge and C6 OpenSpec archive work as backlog items when they become relevant.
 
 ---
 

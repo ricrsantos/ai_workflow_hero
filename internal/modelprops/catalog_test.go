@@ -317,3 +317,27 @@ func TestCatalogModelsForHarnessUsesProviderAndNativeIDFallback(t *testing.T) {
 		t.Fatalf("codex catalog rows=%v", codex)
 	}
 }
+
+func TestCatalogMediaCapabilityIsExplicitAndHarnessScoped(t *testing.T) {
+	cat := testCatalogFromFS(t, map[string]string{
+		"models/cursor.yml": `provider: cursor
+media:
+  image_input_file_reference: true
+  image_output_file: true
+  max_attachment_bytes: 1024
+models:
+  composer-2.5: {}
+`,
+		"models/claude.yml": `provider: claude
+models:
+  composer-2.5: {}
+`,
+	})
+	capability, ok := cat.MediaCapabilityForHarness("cursor", "composer-2.5")
+	if !ok || !capability.ImageInputFileReference || capability.MaxAttachmentBytes != 1024 {
+		t.Fatalf("cursor media capability=%+v known=%v", capability, ok)
+	}
+	if _, ok := cat.MediaCapabilityForHarness("claude", "composer-2.5"); ok {
+		t.Fatal("legacy model row without explicit media must remain unknown")
+	}
+}

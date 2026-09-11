@@ -549,7 +549,11 @@ internal/tui ── immutable Attachment refs ──► internal/conversation
     │                                           │
     │ media.Validate + media.Store              │ ExecuteRequest
     ▼                                           ▼
-session assets (0600, SHA-256, manifest)   harness adapter admission
+session assets (0600, SHA-256, manifest)   media.Registry admission
+                                                │
+                                  transport ∩ discovery/catalog
+                                                │
+                                     admitted adapter capability
                                                 │
                     ┌─────────────────────────┼─────────────────────────┐
                     ▼                         ▼                         ▼
@@ -566,11 +570,15 @@ session assets (0600, SHA-256, manifest)   harness adapter admission
 `internal/harness` owns the provider-neutral `Attachment`, `Asset`,
 `MediaKind`, `MediaCapability`, and asset-repair contract. `internal/media`
 owns validation, session-scoped storage, retention, capability admission,
-Unicode mosaic rendering, and opt-in terminal preview helpers. Adapter output
-paths are copied into the session store before they reach the TUI; workers send
-immutable messages and never mutate Bubble Tea maps directly. Tool-written
-images are correlated within a turn and deduplicated by content hash. C14
-attachments are enabled only in Free Chat; Research and workflow-stage
+Unicode mosaic rendering, and opt-in terminal preview helpers. The TUI asks
+adapters for transport facts and lazy model discovery, registers explicit
+catalog facts only when present, and sets the admitted intersection immediately
+before Execute. Adapter output paths are copied into the session store before
+they reach the TUI; workers send immutable messages and never mutate Bubble Tea
+maps directly. Tool-written images are correlated within a turn and
+deduplicated by content hash. Expanded mosaics are re-rendered by async
+commands after WindowSizeMsg; the card spinner is model state, not View I/O.
+C14 attachments are enabled only in Free Chat; Research and workflow-stage
 composers ignore the attachment keymap and slash commands.
 
 ---

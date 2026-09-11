@@ -64,6 +64,9 @@ type Adapter struct {
 	Runner     ProcessRunner
 	// ClientInfo overrides initialize clientInfo (tests inject).
 	ClientInfo map[string]string
+	// MediaCapability is the admitted transport/model intersection. A zero
+	// value remains fail-closed for direct attachment calls outside the TUI.
+	MediaCapability harness.MediaCapability
 
 	mu                     sync.Mutex
 	startMu                sync.Mutex
@@ -377,6 +380,9 @@ func (a *Adapter) runTurnOnce(
 	}
 
 	if len(req.Attachments) > 0 {
+		if !a.currentMediaCapability().SupportsImageInput("") {
+			return nil, fmt.Errorf("Codex model %q does not support image input; capability admission is required before Execute", strings.TrimSpace(req.Model))
+		}
 		a.mu.Lock()
 		schema := a.multimodalSchema
 		a.mu.Unlock()

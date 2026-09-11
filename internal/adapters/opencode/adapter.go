@@ -294,7 +294,7 @@ func (a *Adapter) ResumeSession(ctx context.Context, sessionID string) error {
 // Execute implements harness.HarnessAdapter.
 func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*harness.ExecutionResult, error) {
 	req = harness.NormalizeExecuteRequest(req)
-	if len(req.Attachments) > 0 && !a.MediaCapability.SupportsImageInput("") {
+	if len(req.Attachments) > 0 && !a.currentMediaCapability().SupportsImageInput("") {
 		return nil, fmt.Errorf("OpenCode model %q (%s) does not support image input; remove the attachments or select a capable model", strings.TrimSpace(req.Model), adapterName)
 	}
 	ctx = withPermissionProfile(ctx, req.PermissionProfile)

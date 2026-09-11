@@ -218,7 +218,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		plan, planErr := BuildClaudeAttachmentPlan(prompt, req.Attachments, ClaudeAttachmentOptions{
 			WorkingDir: dirOrDefault(req.ProjectDir, a.ProjectDir),
 			Model:      req.Model,
-			Capability: a.MediaCapability,
+			Capability: a.currentMediaCapability(),
 			Spike:      a.ImageSpike,
 		})
 		if planErr != nil {

@@ -4,6 +4,14 @@ last_updated: 2026-08-21
 currency: usd
 unit: per_1m_tokens
 
+# Cursor's native file-reference prompt path is available for the explicitly
+# catalogued model rows. The adapter still verifies the selected slug through
+# live model discovery before an attachment turn.
+media:
+  image_input_file_reference: true
+  image_output_file: true
+  max_attachment_bytes: 20971520
+
 # C5 property metadata is defined on base model rows. Variant slugs such as
 # cursor-grok-4.6-low or composer-2.5-fast inherit properties via catalog
 # base-slug lookup (ADR-039).
