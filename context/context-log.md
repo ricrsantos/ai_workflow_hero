@@ -4,6 +4,24 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-11 — TUI Chat lag after long sessions
+
+**Problem**: After ~12h of C14 in one `hero tui` process, typing in the composer and scrolling the agent pane were extremely slow.
+
+**Cause**: `View` rebuilt the entire transcript on every keystroke and timer tick. `transcriptVisibleLines` called `buildConversation(0)`, which walked all messages, wrapped, and Lip Gloss-painted every row. Per-message `responseLines` lived on the View copy and did not persist across frames.
+
+**Change**: Heap-backed `transcriptLayout` cache shared by View copies; wait spinner appended outside the cache; chrome height measured without rebuilding history.
+
+**Validation**: `go test ./internal/tui/` (43s). Restart the running TUI to pick up the binary.
+
+## 2026-09-11 — Idea: loop-back findings handoff (tobe)
+
+**Problem**: C14 Implementation stayed Running after QA loop-back because ADR-075 assigned only unchecked OpenSpec IDs. Informal `qa-gaps.md` / `judge-gaps.md` and `stages.summary` reasons never enter the scheduler. The same hole exists for Judge, Browser UI Validation, and QA End-to-End.
+
+**Decision**: Non-normative idea at `docs/idea/tobe/loopback-findings-handoff.md` (Discover ignores `tobe/`). Findings live in `hero.db`; agents emit JSON only; scheduler owns status. OpenSpec `task-*` stays planning. Escalation gains `/hero-add-todo` (defer finding to `current-state.md` Pending and continue); `/hero-todos` stays read-only. Status / `hero status` / `/hero-status` show loop-back + findings + deferred todos. Next dedicated cycle; do not fold into C14.
+
+**Validation**: Idea file written; no code or schema change.
+
 ## 2026-09-10 — Release Hero v3.2.0
 
 **Change**: Tagged `v3.2.0` (minor after `v3.1.1`). Release commit bumps default `main.version`, `current-state`, and architecture overview. GitHub Release ships cross-compiled Hero + Telegram daemon artifacts and `checksums.txt`.
@@ -1587,3 +1605,42 @@ continues to opt out of auto-follow.
 
 **Validation**: Added a regression test covering grow-and-restore resize events;
 `gofmt`, `go test ./...`, and `git diff --check` passed.
+
+## 2026-09-10 — C14 multimodal Free Chat implementation
+
+**Change**: Implemented the C14 shared multimodal contract and end-to-end
+reference flow. `internal/harness` now carries typed attachments, assets,
+capabilities, asset-stream deltas, and stream/final repair. `internal/media`
+validates image headers and limits, materializes UUID-named 0600 session files
+under XDG data, writes a redacted metadata manifest, deduplicates by SHA-256,
+cleans expired sessions, admits only the transport/model capability
+intersection, renders asynchronous Unicode mosaics, and keeps optional
+terminal preview protocols disabled by default. Free Chat owns picker,
+clipboard, path-paste, slash, chip, image-only submit, asset-card, save, and
+session-ephemeral behavior; Research and workflow composers remain unchanged.
+
+Codex App Server, OpenCode SSE, Cursor stream-json, and Claude stream-json
+helpers now cover ordered image input, explicit native/degraded failures,
+model/tool output normalization, turn-scoped tool-written image detection,
+session materialization, and hash dedupe. Tests use fake processes, fake SSE,
+tiny image fixtures, and temporary directories only; image bytes and secrets
+are not logged.
+
+**Validation**: `gofmt`, `go test ./...`, focused adapter/media/TUI tests, and
+strict OpenSpec validation are the required handoff checks. No real provider
+account is used.
+
+## 2026-09-10 — C14 QA regression hardening
+
+**Change**: Corrected the C14 loop-back regressions. Capability admission now
+returns validated attachment chips to the Free Chat composer when a model
+rejects images. External source paths consult the selected harness permission
+profile before media materialization. Streamed and final assets are owned by
+the producing transcript turn, so cards render after that turn's response
+instead of at a global transcript tail. Asset saves now prefill the Downloads
+directory with the original name and require an explicit overwrite choice.
+The Claude Unix process file was also normalized with `gofmt`.
+
+**Validation**: Added focused TUI regressions; `go test ./...`,
+`go test -race ./...`, `go vet ./...`, strict OpenSpec validation, `gofmt`,
+and `git diff --check` passed. No image bytes or sensitive paths were logged.

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	claudeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/claude"
@@ -19,6 +20,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
@@ -108,11 +110,38 @@ type model struct {
 	nextUserOrigin           string // Telegram origin applied to the next user+agent pair
 	chatInputFocused         bool
 
+	// Free Chat multimodal state. Workers exchange only metadata and paths
+	// through Bubble Tea messages; they never mutate these fields directly.
+	attachments               []tuiAttachment
+	attachmentPicker          filepicker.Model
+	attachmentPickerActive    bool
+	mediaSessionID            string
+	attachmentTurnID          string
+	attachmentFocus           bool
+	attachmentCursor          int
+	assets                    []harness.Asset
+	assetCursor               int
+	assetFocus                bool
+	assetMosaics              map[string]media.MosaicResult
+	assetMosaicPending        map[string]bool
+	assetSavePending          bool
+	assetSaveOverwritePending bool
+	assetSaveSource           string
+	assetSaveInput            string
+	assetSaveInputDirty       bool
+	pendingExecuteAttachments []harness.Attachment
+	mediaRegistry             *media.Registry
+
 	// Chat panes: composer scroll + linear transcript scroll/follow.
 	inputScrollOffset      int
 	transcriptScrollOffset int
 	transcriptFollowBottom bool // auto-stick transcript to latest lines while streaming
 	waitAnimFrame          int
+	// transcriptLayout is heap-backed so View() value copies can reuse the
+	// laid-out rows. Rebuilding every keystroke/timer tick walks the full
+	// session history (hours of /hero-start output) and freezes the composer.
+	transcriptLayout *transcriptLayoutCache
+	transcriptGen    uint64
 
 	// Chat OpenCode-style controls.
 	chatMode                      string // harness.ModeBuild | harness.ModePlan
@@ -276,11 +305,13 @@ func newModel(svc *cycle.Service) model {
 		agentMsgIndex:             -1,
 		thinkingMsgIndex:          -1,
 		transcriptFollowBottom:    true,
+		transcriptLayout:          &transcriptLayoutCache{},
 		chatInputFocused:          true,
 		sessionTimer:              sessionTimerState{suppressed: true},
 		harnessPermissionRequests: make(map[string]pendingHarnessPermission),
 		lifecycleEventIDs:         make(map[int64]struct{}),
 	}
+	m.mediaSessionID, m.attachmentTurnID = newMultimodalState()
 	projectDir := ""
 	if svc != nil {
 		projectDir = svc.ProjectDir
@@ -367,7 +398,7 @@ func (m model) Init() tea.Cmd {
 	// Timer ownership is established by Update paths after the model state is
 	// installed. Init cannot persist ensureTimerLoop's mutation, so starting a
 	// tick here could create a second loop when the first refresh also starts it.
-	return m.refreshCmd()
+	return tea.Batch(m.refreshCmd(), mediaStartupCleanupCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -393,6 +424,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.rebuildOutputLines()
 		}
 		if m.screen == screenConversation {
+			m.bumpTranscriptLayout()
 			m = m.preserveTranscriptFollowOnResize()
 			m = m.ensureInputCaretVisible()
 		}
@@ -528,6 +560,41 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.applyModelSelection(pending.modelSlug, pending.harnessID, true, msg.summaries)
 		}
 		slog.Debug("tui model props refresh done", "harnesses", len(msg.summaries))
+		return m, nil
+
+	case attachmentMaterializedMsg:
+		m = m.handleAttachmentMaterialized(msg)
+		return m, nil
+
+	case media.MosaicMsg:
+		m = m.handleMosaicMsg(msg)
+		return m, nil
+
+	case assetActionMsg:
+		if msg.overwriteRequired {
+			m.assetSaveOverwritePending = true
+			m = m.setStatusWarning("asset", "destination exists; press y to overwrite or n to choose another")
+			return m, nil
+		}
+		if msg.clearSave {
+			m.assetSavePending = false
+			m.assetSaveOverwritePending = false
+			m.assetSaveSource = ""
+			m.assetSaveInput = ""
+			m.assetSaveInputDirty = false
+		}
+		if msg.err != nil {
+			m = m.setStatusWarning("asset", firstStatusLine(msg.err.Error()))
+		} else if msg.status != "" {
+			m = m.setStatusResult(true, "asset", msg.status)
+		}
+		return m, nil
+
+	case mediaCleanupMsg:
+		if msg.err != nil {
+			m = m.setStatusWarning("media", "session asset cleanup failed")
+			slog.Error("tui media session cleanup failed", "error", msg.err)
+		}
 		return m, nil
 
 	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg:

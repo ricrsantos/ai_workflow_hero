@@ -2,12 +2,14 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
@@ -211,6 +213,55 @@ func SetConversationInput(m model, input string) model {
 	m.inputVerticalColumn = 0
 	m.inputVerticalColumnSet = false
 	m.chatInputFocused = true
+	return m
+}
+
+// SetAttachmentsForTest seeds validated attachment chips without touching the
+// filesystem. It is intended for deterministic composer and handoff tests.
+func SetAttachmentsForTest(m model, attachments []harness.Attachment) model {
+	m.attachments = make([]tuiAttachment, 0, len(attachments))
+	for i, attachment := range attachments {
+		name := attachment.Name
+		if name == "" {
+			name = "image"
+		}
+		m.attachments = append(m.attachments, tuiAttachment{
+			token:      fmt.Sprintf("test-attachment-%d", i),
+			name:       name,
+			attachment: attachment,
+		})
+	}
+	m.attachmentCursor = 0
+	return m
+}
+
+// AttachmentsForTest returns the materialized attachment references currently
+// held by the composer.
+func AttachmentsForTest(m model) []harness.Attachment {
+	attachments := make([]harness.Attachment, 0, len(m.attachments))
+	for _, chip := range m.attachments {
+		if !chip.pending && chip.err == "" {
+			attachments = append(attachments, chip.attachment)
+		}
+	}
+	return attachments
+}
+
+// SetMediaRegistryForTest injects capability admission data for a TUI test.
+func SetMediaRegistryForTest(m model, registry *media.Registry) model {
+	m.mediaRegistry = registry
+	return m
+}
+
+// AssetsForTest returns the deduplicated asset cards known to the transcript.
+func AssetsForTest(m model) []harness.Asset {
+	return append([]harness.Asset(nil), m.assets...)
+}
+
+// SetAssetFocusForTest selects the asset card action surface.
+func SetAssetFocusForTest(m model, focused bool) model {
+	m.assetFocus = focused
+	m.chatInputFocused = !focused
 	return m
 }
 

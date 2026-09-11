@@ -60,6 +60,10 @@ type ExecuteRequest struct {
 	// PermissionProfile is the persisted project-scoped approval preset. Each
 	// adapter maps this normalized value to its native permission mechanism.
 	PermissionProfile PermissionProfile
+	// Attachments are validated, materialized image references. Adapters own
+	// translation to their native input protocol and must not silently drop
+	// them.
+	Attachments []Attachment
 	// OnStreamDelta receives live stream events when Stream is true (optional).
 	OnStreamDelta func(delta StreamDelta)
 	// OnPermissionRequest blocks until the user approves or denies a harness
@@ -80,6 +84,7 @@ type ExecuteRequest struct {
 func NormalizeExecuteRequest(req ExecuteRequest) ExecuteRequest {
 	req.Properties = NormalizeProperties(req.Properties)
 	req.PermissionProfile = NormalizePermissionProfile(req.PermissionProfile)
+	req.Attachments = append([]Attachment(nil), req.Attachments...)
 	return req
 }
 
@@ -173,6 +178,9 @@ type ExecutionResult struct {
 	// EffectiveProperties contains optional runtime-authoritative native
 	// properties. Not every harness reports these in its stream.
 	EffectiveProperties map[string]string
+	// Assets are image outputs from this turn. Consumers repair partial stream
+	// loss by merging them with StreamKindAsset deltas by content hash.
+	Assets []Asset
 }
 
 // ExecutionStatus reports session/execution state.

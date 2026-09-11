@@ -549,6 +549,16 @@ func (m model) footerHints() string {
 		}
 		return "tab navbar · ↑↓ navigate · enter " + enter + " · esc chat · alt+q quit"
 	}
+	if m.screen == screenConversation && m.freeChatMode {
+		hints := fixedFooterHints + " · alt+a attach · alt+v clipboard"
+		if len(m.attachments) > 0 {
+			hints += " · alt+c chips"
+		}
+		if len(m.assets) > 0 {
+			hints += " · alt+g cards · enter/o/c/a/s asset"
+		}
+		return hints
+	}
 	return fixedFooterHints
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 )
 
 const adapterName = "cursor"
@@ -20,8 +21,11 @@ const adapterName = "cursor"
 type Adapter struct {
 	ProjectDir string
 	Logger     *slog.Logger
-	LookPath   LookPathFunc
-	Runner     CommandRunner
+	// MediaCapability is the admitted harness/model file-reference capability.
+	// A zero value fails closed for attachment-bearing turns.
+	MediaCapability harness.MediaCapability
+	LookPath        LookPathFunc
+	Runner          CommandRunner
 	// Pusher attempts dispatch when the agent CLI is available. When nil, Dispatch
 	// uses the default CLI Execute path (design D3).
 	Pusher func(ctx context.Context, agentPath string, req harness.DispatchRequest) (harness.DispatchResult, error)
@@ -164,9 +168,6 @@ func (a *Adapter) ResumeSession(_ context.Context, sessionID string) error {
 func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*harness.ExecutionResult, error) {
 	req = harness.NormalizeExecuteRequest(req)
 	prompt := strings.TrimSpace(req.Prompt)
-	if prompt == "" {
-		return nil, fmt.Errorf("execute prompt is required")
-	}
 	spec, err := ResolveAgentCLI(a.LookPath)
 	if err != nil {
 		return nil, err
@@ -175,6 +176,18 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	dir := req.ProjectDir
 	if dir == "" {
 		dir = a.ProjectDir
+	}
+	if len(req.Attachments) > 0 {
+		prompt, err = ComposeCursorFileReferencePrompt(prompt, req.Attachments, CursorFileReferenceOptions{
+			Model:      req.Model,
+			Capability: a.MediaCapability,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	if prompt == "" {
+		return nil, fmt.Errorf("execute prompt is required")
 	}
 
 	sessionID := strings.TrimSpace(req.SessionID)
@@ -234,7 +247,14 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	a.log().Info("cursor agent execute start", "format", format, "stage", req.StageName, "resume", sessionID != "", "stream", req.Stream)
 	start := time.Now()
 	runner := a.runner()
-
+	var imageWatch *CursorWorkspaceImageWatch
+	if dir != "" {
+		imageWatch, err = NewCursorWorkspaceImageWatch(dir)
+		if err != nil {
+			a.log().Debug("cursor image watch unavailable", "error", err)
+			imageWatch = nil
+		}
+	}
 	var (
 		parsed *harness.ExecutionResult
 		res    RunResult
@@ -305,9 +325,62 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	if parsed.SessionID == "" {
 		parsed.SessionID = sessionID
 	}
+	var assetStore *media.Store
+	if dir != "" {
+		assetStore = newCursorAssetStore(parsedSessionKey(parsed.SessionID, trackID), dir, a.log())
+	}
+	if imageWatch != nil {
+		var toolAssets []harness.Asset
+		var watchErr error
+		if len(res.ToolImagePaths) > 0 {
+			toolAssets, watchErr = imageWatch.FinishTurnPaths(parsed.SessionID, trackID, res.ToolImagePaths)
+		} else {
+			toolAssets, watchErr = imageWatch.FinishTurn(parsed.SessionID, trackID, res.Stdout)
+		}
+		if watchErr != nil {
+			a.log().Debug("cursor tool image scan failed", "error", watchErr)
+		} else if len(toolAssets) > 0 {
+			if assetStore != nil {
+				for index, asset := range toolAssets {
+					if materialized, materializeErr := assetStore.MaterializeAsset(context.Background(), asset); materializeErr == nil {
+						toolAssets[index] = materialized
+					}
+				}
+			}
+			parsed.Assets = harness.RepairAssets(parsed.Assets, toolAssets)
+			if req.OnStreamDelta != nil {
+				for _, asset := range toolAssets {
+					assetCopy := asset
+					req.OnStreamDelta(harness.StreamDelta{Kind: harness.StreamKindAsset, Asset: &assetCopy, SessionID: asset.SessionID, Metadata: map[string]string{"source": string(asset.Source)}})
+				}
+			}
+		}
+	}
 	a.rememberSession(parsed.SessionID, req, harness.StatusCompleted, "ok")
 	a.log().Info("cursor agent execute done", "session_id", parsed.SessionID, "duration_ms", parsed.Duration.Milliseconds())
 	return parsed, nil
+}
+
+func parsedSessionKey(sessionID, pendingID string) string {
+	if strings.TrimSpace(sessionID) != "" {
+		return strings.TrimSpace(sessionID)
+	}
+	return strings.TrimSpace(pendingID)
+}
+
+func newCursorAssetStore(sessionID, workspace string, logger *slog.Logger) *media.Store {
+	assetStore, err := media.New(media.StoreOptions{
+		SessionID:          sessionID,
+		Workspace:          workspace,
+		AllowExternalPaths: true,
+	})
+	if err != nil {
+		if logger != nil {
+			logger.Debug("cursor output asset store unavailable", "error", err)
+		}
+		return nil
+	}
+	return assetStore
 }
 
 // executeStreamLive pipes CLI stdout into ParseStreamJSON while the process runs
@@ -325,9 +398,24 @@ func (a *Adapter) executeStreamLive(
 		err error
 	}
 	parsedCh := make(chan parseOut, 1)
+	var toolPaths []string
 	opts := StreamParseOptions{
 		OnDelta:             req.OnStreamDelta,
 		OnPermissionRequest: req.OnPermissionRequest,
+	}
+	opts.OnRaw = func(raw []byte) {
+		for _, candidate := range ExtractCursorToolImagePaths(raw) {
+			seen := false
+			for _, current := range toolPaths {
+				if current == candidate {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				toolPaths = append(toolPaths, candidate)
+			}
+		}
 	}
 	go func() {
 		res, err := ParseStreamJSONWithOptions(ctx, pr, opts)
@@ -340,6 +428,7 @@ func (a *Adapter) executeStreamLive(
 	)
 	if sr, ok := runner.(StreamingCommandRunner); ok {
 		runRes, runErr = sr.RunStreaming(ctx, dir, path, args, pw)
+		runRes.ToolImagePaths = toolPaths
 	} else {
 		// Fallback: buffer then feed the parser (deltas still fire, but only after exit).
 		runRes, runErr = runner.Run(ctx, dir, path, args)
@@ -347,6 +436,7 @@ func (a *Adapter) executeStreamLive(
 			_, _ = pw.Write(runRes.Stdout)
 		}
 	}
+	runRes.ToolImagePaths = append([]string(nil), toolPaths...)
 	_ = pw.Close()
 	out := <-parsedCh
 

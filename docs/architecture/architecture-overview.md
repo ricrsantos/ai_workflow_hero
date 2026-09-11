@@ -539,6 +539,40 @@ Both **Cursor chat** and **Hero TUI** read and write the same SQLite store when 
 
 Parity between TUI and chat is **intentional but not identical** — see [idea note on command alignment](../idea/commands_alignments/comparation.md) for a command-level matrix (non-normative).
 
+### Level 4 — TUI multimodal media flow (C14)
+
+```text
+Free Chat input
+    │  picker · clipboard · path paste · slash command
+    ▼
+internal/tui ── immutable Attachment refs ──► internal/conversation
+    │                                           │
+    │ media.Validate + media.Store              │ ExecuteRequest
+    ▼                                           ▼
+session assets (0600, SHA-256, manifest)   harness adapter admission
+                                                │
+                    ┌─────────────────────────┼─────────────────────────┐
+                    ▼                         ▼                         ▼
+             Codex localImage          OpenCode file/data          Cursor/Claude
+             App Server schema          URI parts / SSE             native or file ref
+                    │                         │                         │
+                    └─────────────── StreamDelta.Asset ────────────────┘
+                                                │
+                                  final ExecutionResult.Assets repair
+                                                ▼
+                         TUI cards → mosaic / open / copy / attach / save
+```
+
+`internal/harness` owns the provider-neutral `Attachment`, `Asset`,
+`MediaKind`, `MediaCapability`, and asset-repair contract. `internal/media`
+owns validation, session-scoped storage, retention, capability admission,
+Unicode mosaic rendering, and opt-in terminal preview helpers. Adapter output
+paths are copied into the session store before they reach the TUI; workers send
+immutable messages and never mutate Bubble Tea maps directly. Tool-written
+images are correlated within a turn and deduplicated by content hash. C14
+attachments are enabled only in Free Chat; Research and workflow-stage
+composers ignore the attachment keymap and slash commands.
+
 ---
 
 ## External dependencies
@@ -633,10 +667,14 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/telegram/vault` | OS credential vault abstraction (token + authorized chat id) with in-memory fake |
 | `internal/telegram/daemon` | Bot API ownership, pairing, addressed routing, durable queue, suffix allocator, SQLite store |
 | `internal/lifecycle` | Private per-TUI Unix relay for lifecycle events emitted by CLI-as-API child processes |
-| `internal/harness` | `HarnessAdapter` interface, `StreamDelta` normalization, marker detection |
-| `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import, NDJSON parse |
-| `internal/adapters/opencode` | OpenCode serve adapter: HTTP+SSE, ResumeSession, idle/gone SSE probe, serve lifecycle (PID registry, `exec.Command` not Execute-scoped), orphan reap, C5 properties |
-| `internal/adapters/codex` | Codex app-server adapter (stdio JSON-RPC, thread/turn, mid-turn reconnect+resume, registry, auth, C5 properties, stream map, CheckHealth, ResetAppServer, PrepareHeroStart) |
+| `internal/harness` | `HarnessAdapter` interface, `StreamDelta` normalization, marker detection, multimodal references/capabilities |
+| `internal/media` | Session asset storage/validation/retention, capability admission, mosaic, optional terminal preview |
+| `internal/conversation` | Transport-neutral input classification, attachment handoff, session routing |
+| `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import, NDJSON parse, file references, tool-image watch |
+| `internal/adapters/opencode` | OpenCode serve adapter: HTTP+SSE, ResumeSession, idle/gone SSE probe, serve lifecycle (PID registry, `exec.Command` not Execute-scoped), orphan reap, C5 properties, file/image parts and tool-image correlation |
+| `internal/adapters/codex` | Codex app-server adapter (stdio JSON-RPC, thread/turn, mid-turn reconnect+resume, registry, auth, C5 properties, stream map, CheckHealth, ResetAppServer, PrepareHeroStart, image schema/input/output normalization) |
+| `internal/adapters/claude` | Claude CLI NDJSON adapter, stream-json image spike/native/degraded input, tool-result and workspace image detection |
+| `internal/tui` | Bubble Tea terminal UI, Free Chat attachment chips, asset cards, async previews, save actions |
 | `internal/harnessmgr` | Adapter registry (cursor + opencode + codex), fallback chain, boot ListModels skip for lazy children |
 | `internal/tui` | Bubble Tea terminal UI |
 | `internal/todos` | `## Pending` section parser in `current-state.md` |

@@ -213,6 +213,10 @@ func ParseJSONResult(data []byte) (*harness.ExecutionResult, error) {
 // StreamParseOptions configures ParseStreamJSONWithOptions.
 type StreamParseOptions struct {
 	OnDelta func(harness.StreamDelta)
+	// OnRaw receives one bounded, already-trimmed NDJSON line. It is intended
+	// for turn-scoped structured path extraction; callers must not retain raw
+	// provider payloads.
+	OnRaw func([]byte)
 	// OnPermissionRequest is invoked for permission_request NDJSON events. Unlike
 	// OpenCode, Cursor headless mode resolves permissions via --force and
 	// --approve-mcps; stream-json has no reply channel, so approval in the TUI
@@ -282,6 +286,9 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 		line := bytes.TrimSpace(sc.Bytes())
 		if len(line) == 0 {
 			continue
+		}
+		if opts.OnRaw != nil {
+			opts.OnRaw(append([]byte(nil), line...))
 		}
 		var ev cliStreamEvent
 		if err := json.Unmarshal(line, &ev); err != nil {

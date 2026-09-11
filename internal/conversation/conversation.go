@@ -14,6 +14,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
 // Origin identifies where a conversation turn came from.
@@ -60,6 +62,22 @@ type Input struct {
 	// Address is the allocated instance address for Telegram routing (e.g.
 	// "ai_workflow_2"). Empty for local turns.
 	Address string
+	// Attachments are optional materialized image references. An image-only
+	// input is valid in Free Chat; the text field may be empty in that case.
+	Attachments []harness.Attachment
+}
+
+// HasContent reports whether the turn contains text or attachments.
+func (in Input) HasContent() bool {
+	return strings.TrimSpace(in.Text) != "" || len(in.Attachments) > 0
+}
+
+// Validate accepts image-only turns while rejecting completely empty input.
+func (in Input) Validate() error {
+	if !in.HasContent() {
+		return nil
+	}
+	return nil
 }
 
 // Dispatch is the result of classifying an Input.
@@ -195,6 +213,9 @@ func (s *Service) Submit(ctx context.Context, in Input) (Dispatch, Result, error
 // sole transport-neutral route into that dispatcher.
 func (s *Service) SubmitWith(ctx context.Context, in Input, dispatcher Dispatcher) (Dispatch, Result, error) {
 	d := ClassifyInput(in.Text)
+	if strings.TrimSpace(in.Text) == "" && len(in.Attachments) > 0 {
+		d = Dispatch{Kind: KindPlain, Argument: ""}
+	}
 	if dispatcher == nil {
 		return d, Result{}, nil
 	}

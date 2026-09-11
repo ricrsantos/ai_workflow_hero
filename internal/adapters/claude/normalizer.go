@@ -28,10 +28,36 @@ type resultAssembler struct {
 	completed       bool
 	unknowns        int
 	debug           bool
+	toolPaths       []string
+	toolPathSet     map[string]struct{}
 }
 
 func newResultAssembler(debug bool) *resultAssembler {
-	return &resultAssembler{properties: make(map[string]string), debug: debug}
+	return &resultAssembler{
+		properties:  make(map[string]string),
+		debug:       debug,
+		toolPathSet: make(map[string]struct{}),
+	}
+}
+
+func (a *resultAssembler) noteToolPaths(paths []string) {
+	if a == nil {
+		return
+	}
+	if a.toolPathSet == nil {
+		a.toolPathSet = make(map[string]struct{})
+	}
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, exists := a.toolPathSet[path]; exists {
+			continue
+		}
+		a.toolPathSet[path] = struct{}{}
+		a.toolPaths = append(a.toolPaths, path)
+	}
 }
 
 func decodeRawEvent(line int, raw []byte) (RawEvent, error) {

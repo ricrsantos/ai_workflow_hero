@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -362,6 +363,12 @@ func (a *Adapter) handshake(ctx context.Context, rpc *rpcConn) error {
 	if err := rpc.Call(ctx, "initialize", params, &result); err != nil {
 		return fmt.Errorf("initialize: %w", err)
 	}
+	// Missing schema data remains a degraded zero capability. Attachment turns
+	// therefore fail closed before turn/start instead of becoming text-only.
+	raw, _ := json.Marshal(result)
+	a.mu.Lock()
+	a.multimodalSchema = ProbeCodexAppServerSchema(raw)
+	a.mu.Unlock()
 	if err := rpc.Notify("initialized", map[string]any{}); err != nil {
 		return fmt.Errorf("initialized: %w", err)
 	}

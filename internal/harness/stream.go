@@ -17,6 +17,7 @@ const (
 	StreamKindQuestion   StreamKind = "question"
 	StreamKindActivity   StreamKind = "activity"
 	StreamKindSession    StreamKind = "session"
+	StreamKindAsset      StreamKind = "asset"
 )
 
 // StreamPhase marks lifecycle events on StreamDelta.
@@ -43,6 +44,8 @@ type StreamDelta struct {
 	HarnessType string // raw harness event type (permission.asked, tool_call, …)
 	SessionID   string
 	Metadata    map[string]string
+	// Asset carries an immutable image reference for StreamKindAsset events.
+	Asset *Asset
 }
 
 // PermissionRequest is a harness-native approval prompt (tool/shell access).
@@ -68,11 +71,11 @@ type QuestionOption struct {
 
 // QuestionItem is one question in a multi-question harness prompt.
 type QuestionItem struct {
-	Header    string
-	Question  string
-	Options   []QuestionOption
-	Multiple  bool
-	Custom    bool
+	Header   string
+	Question string
+	Options  []QuestionOption
+	Multiple bool
+	Custom   bool
 }
 
 // QuestionRequest is a harness-native interactive question (OpenCode question.asked).

@@ -36,9 +36,10 @@ type CommandSpec struct {
 
 // RunResult is the captured stdout/stderr of a CLI invocation.
 type RunResult struct {
-	Stdout   []byte
-	Stderr   []byte
-	ExitCode int
+	Stdout         []byte
+	Stderr         []byte
+	ExitCode       int
+	ToolImagePaths []string
 }
 
 // CommandRunner runs an external process. Injectable for unit tests (design D3).

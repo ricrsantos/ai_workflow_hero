@@ -21,6 +21,7 @@ import (
 
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 	"gopkg.in/yaml.v3"
 )
 
@@ -80,6 +81,12 @@ type Adapter struct {
 	// in tests and avoid touching the Claude CLI or credentials.
 	CatalogFS       fs.FS
 	ProjectReadFile func(string) ([]byte, error)
+	// MediaCapability is populated by the capability registry for attachment
+	// turns. Zero means unknown and therefore fails closed.
+	MediaCapability harness.MediaCapability
+	// ImageSpike records the account-free native stream-json probe. Native
+	// stdin is used only when this result is explicitly passing.
+	ImageSpike ClaudeImageSpikeResult
 
 	mu       sync.Mutex
 	sessions map[string]*sessionState
@@ -204,8 +211,25 @@ func (a *Adapter) ResumeSession(_ context.Context, sessionID string) error {
 // is never resent into a new Claude session.
 func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*harness.ExecutionResult, error) {
 	req = harness.NormalizeExecuteRequest(req)
-	prompt := strings.TrimSpace(req.Prompt)
-	if prompt == "" {
+	prompt := req.Prompt
+	var nativeInput []byte
+	nativeInputMode := false
+	if len(req.Attachments) > 0 {
+		plan, planErr := BuildClaudeAttachmentPlan(prompt, req.Attachments, ClaudeAttachmentOptions{
+			WorkingDir: dirOrDefault(req.ProjectDir, a.ProjectDir),
+			Model:      req.Model,
+			Capability: a.MediaCapability,
+			Spike:      a.ImageSpike,
+		})
+		if planErr != nil {
+			return nil, planErr
+		}
+		prompt = plan.Prompt
+		nativeInput = plan.Stdin
+		nativeInputMode = plan.Mode == ClaudeImageTransportNative
+	}
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" && !nativeInputMode {
 		return nil, errors.New("Claude execute prompt is required")
 	}
 	path, err := a.cliPath()
@@ -226,6 +250,14 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	dir := strings.TrimSpace(req.ProjectDir)
 	if dir == "" {
 		dir = a.ProjectDir
+	}
+	var imageWatch *ClaudeWorkspaceImageWatch
+	if strings.TrimSpace(dir) != "" {
+		imageWatch, err = NewClaudeWorkspaceImageWatch(dir)
+		if err != nil {
+			imageWatch = nil
+			a.log().Debug("claude workspace image watch unavailable", "error", err)
+		}
 	}
 	trackID := strings.TrimSpace(req.SessionID)
 	if isForeignClaudeSessionID(trackID) {
@@ -276,7 +308,9 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 			invocation.Args = append(invocation.Args, "--mcp-config", bridgeConfigPath, "--strict-mcp-config")
 		}
 	}
-	invocation.Args = append(invocation.Args, prompt)
+	if !nativeInputMode {
+		invocation.Args = append(invocation.Args, prompt)
+	}
 	launcher := a.ProcessLauncher
 	if launcher == nil {
 		launcher = execProcessLauncher{}
@@ -301,6 +335,20 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		}
 	}()
 	a.log().Info("claude turn started", "pid", process.PID(), "stage", req.StageName, "resume", req.SessionID != "")
+	if nativeInputMode {
+		stdin, ok := process.(interface{ Stdin() io.WriteCloser })
+		if !ok {
+			_ = process.Kill()
+			return nil, errors.New("Claude native image input was selected but the process does not expose stdin; native attachment send was aborted")
+		}
+		if _, writeErr := stdin.Stdin().Write(nativeInput); writeErr != nil {
+			_ = stdin.Stdin().Close()
+			return nil, fmt.Errorf("write Claude native image input: %w", writeErr)
+		}
+		if closeErr := stdin.Stdin().Close(); closeErr != nil {
+			return nil, fmt.Errorf("close Claude native image input: %w", closeErr)
+		}
+	}
 	if bridge != nil {
 		done := make(chan error, 1)
 		bridgeDone = done
@@ -337,6 +385,35 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		a.setFailed(trackID, err.Error())
 		return nil, err
 	}
+	if imageWatch != nil {
+		assets, watchErr := imageWatch.FinishTurnPaths(result.SessionID, trackID, assembler.toolPaths)
+		if watchErr != nil {
+			a.log().Debug("claude workspace image scan failed", "error", watchErr)
+		} else {
+			assetStore := newClaudeAssetStore(claudeSessionKey(result.SessionID, trackID), dir, a.log())
+			if assetStore != nil {
+				for index, asset := range assets {
+					if materialized, materializeErr := assetStore.MaterializeAsset(context.Background(), asset); materializeErr == nil {
+						assets[index] = materialized
+					}
+				}
+			}
+			result.Assets = harness.RepairAssets(result.Assets, assets)
+			if req.Stream && req.OnStreamDelta != nil {
+				for _, asset := range assets {
+					assetCopy := asset
+					req.OnStreamDelta(harness.StreamDelta{
+						Kind:        harness.StreamKindAsset,
+						HarnessType: "claude.tool_asset",
+						SessionID:   asset.SessionID,
+						Phase:       harness.StreamPhaseCompleted,
+						Metadata:    map[string]string{"source": string(asset.Source)},
+						Asset:       &assetCopy,
+					})
+				}
+			}
+		}
+	}
 	if result.SessionID != "" {
 		a.setCompleted(result.SessionID)
 	} else {
@@ -346,10 +423,39 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	return result, nil
 }
 
+func newClaudeAssetStore(sessionID, workspace string, logger *slog.Logger) *media.Store {
+	assetStore, err := media.New(media.StoreOptions{
+		SessionID:          sessionID,
+		Workspace:          workspace,
+		AllowExternalPaths: true,
+	})
+	if err != nil {
+		if logger != nil {
+			logger.Debug("claude output asset store unavailable", "error", err)
+		}
+		return nil
+	}
+	return assetStore
+}
+
+func claudeSessionKey(sessionID, turnID string) string {
+	if strings.TrimSpace(sessionID) != "" {
+		return strings.TrimSpace(sessionID)
+	}
+	return strings.TrimSpace(turnID)
+}
+
 func isForeignClaudeSessionID(sessionID string) bool {
 	sessionID = strings.ToLower(strings.TrimSpace(sessionID))
 	return strings.HasPrefix(sessionID, "thr_") || strings.HasPrefix(sessionID, "thread_") ||
 		strings.HasPrefix(sessionID, "opencode:") || strings.HasPrefix(sessionID, "cursor:")
+}
+
+func dirOrDefault(dir, fallback string) string {
+	if strings.TrimSpace(dir) != "" {
+		return strings.TrimSpace(dir)
+	}
+	return strings.TrimSpace(fallback)
 }
 
 func foreignHarnessName(sessionID string) string {
@@ -444,6 +550,7 @@ func (a *Adapter) consume(ctx context.Context, r io.Reader, req harness.ExecuteR
 		if err != nil {
 			return err
 		}
+		assembler.noteToolPaths(ExtractClaudeToolResultImagePaths(raw))
 		deltas, err := assembler.consume(event)
 		if err != nil {
 			return err

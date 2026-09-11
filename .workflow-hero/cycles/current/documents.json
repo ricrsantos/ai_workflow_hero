@@ -1,0 +1,25 @@
+{
+  "documents": [
+    {
+      "id": "PRD-C14-001",
+      "type": "PRD",
+      "path": "docs/product/PRD-C14-001-tui-multimodal-images.md",
+      "title": "Multimodal Image Support for Hero TUI",
+      "cycle": "C14"
+    },
+    {
+      "id": "ADR-C14-002",
+      "type": "ADR",
+      "path": "docs/architecture/ADR-C14-002-tui-multimodal-images.md",
+      "title": "Multimodal Image Support ADRs (ADR-077–082)",
+      "cycle": "C14"
+    },
+    {
+      "id": "UI-C14-001",
+      "type": "UI",
+      "path": "docs/product/UI-C14-001-tui-multimodal-images.md",
+      "title": "Multimodal Image Support TUI UX",
+      "cycle": "C14"
+    }
+  ]
+}

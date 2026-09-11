@@ -51,7 +51,7 @@ func TestWarningDeltaUnknownEvent(t *testing.T) {
 	a := NewAdapter(t.TempDir(), nil)
 	var saw harness.StreamDelta
 	out := a.handleNotification(context.Background(), "totally/unknown", []byte(`{"x":1,"secret":"raw-json"}`), "thr", harness.ExecuteRequest{
-		Debug: true,
+		Debug:         true,
 		OnStreamDelta: func(d harness.StreamDelta) { saw = d },
 	}, nil, newTurnStreamState())
 	if out.done || out.err != nil {
@@ -72,7 +72,7 @@ func TestWarningDeltaUnknownEventSuppressedWithoutDebug(t *testing.T) {
 	a := NewAdapter(t.TempDir(), nil)
 	var n int
 	out := a.handleNotification(context.Background(), "mcpServer/startupStatus/updated", []byte(`{}`), "thr", harness.ExecuteRequest{
-		Debug: false,
+		Debug:         false,
 		OnStreamDelta: func(d harness.StreamDelta) { n++ },
 	}, nil, newTurnStreamState())
 	if out.done || out.err != nil {

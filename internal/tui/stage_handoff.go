@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
@@ -20,6 +21,8 @@ type convExecute struct {
 	HarnessID       string
 	Model           string
 	Prompt          string
+	Attachments     []harness.Attachment
+	AttachmentChips []tuiAttachment
 	StageName       string
 	Wave            int
 	UsageGeneration int64

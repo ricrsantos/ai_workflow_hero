@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 )
 
 // streamState tracks incremental message reconstruction across SSE events.
@@ -29,6 +30,8 @@ type streamState struct {
 	usage                harness.Usage
 	stepUsageSeen        bool
 	stepUsageIDs         map[string]struct{}
+	assetNormalizer      *OpenCodeAssetNormalizer
+	assetStore           *media.Store
 }
 
 func newStreamState() *streamState {
@@ -117,6 +120,12 @@ var opencodeDebugOnlyActivities = map[string]struct{}{
 }
 
 func (a *Adapter) processSSEEvent(ctx context.Context, evt map[string]any, sessionID string, state *streamState, req harness.ExecuteRequest, textBuf *strings.Builder) streamOutcome {
+	if state.assetNormalizer == nil {
+		state.assetNormalizer = NewOpenCodeAssetNormalizer(OpenCodeAssetNormalizerOptions{
+			SessionID:    sessionID,
+			WorkspaceDir: req.ProjectDir,
+		})
+	}
 	h := &streamHandler{
 		adapter:   a,
 		ctx:       ctx,
@@ -137,7 +146,55 @@ func (a *Adapter) processSSEEvent(ctx context.Context, evt map[string]any, sessi
 			}
 		},
 	}
+	if result, err := state.assetNormalizer.ConsumeSSEEvent(evt); err != nil {
+		return streamOutcome{err: fmt.Errorf("normalize OpenCode image asset: %w", err)}
+	} else {
+		result = state.materializeAssetResult(result)
+		for _, delta := range result.Deltas {
+			if req.OnStreamDelta != nil {
+				req.OnStreamDelta(delta)
+			}
+		}
+	}
 	return h.handle(evt)
+}
+
+func (s *streamState) materializeAssetResult(result OpenCodeAssetResult) OpenCodeAssetResult {
+	if s == nil || s.assetStore == nil || len(result.Assets) == 0 {
+		return result
+	}
+	for index, asset := range result.Assets {
+		if strings.TrimSpace(asset.Path) == "" {
+			continue
+		}
+		materialized, err := s.assetStore.MaterializeAsset(context.Background(), asset)
+		if err != nil {
+			continue
+		}
+		result.Assets[index] = materialized
+		for normalizerIndex, current := range s.assetNormalizer.assets {
+			if len(openCodeAssetKeys(current)) == 0 || !openCodeAssetIdentityMatches(current, asset) {
+				continue
+			}
+			s.assetNormalizer.assets[normalizerIndex] = materialized
+			break
+		}
+		if index < len(result.Deltas) {
+			assetCopy := materialized
+			result.Deltas[index].Asset = &assetCopy
+			result.Deltas[index].SessionID = materialized.SessionID
+		}
+	}
+	return result
+}
+
+func openCodeAssetIdentityMatches(left, right harness.Asset) bool {
+	leftHash := strings.TrimSpace(harness.ContentHash(left))
+	rightHash := strings.TrimSpace(harness.ContentHash(right))
+	if leftHash != "" && rightHash != "" {
+		return strings.EqualFold(leftHash, rightHash)
+	}
+	return strings.TrimSpace(left.Path) == strings.TrimSpace(right.Path)
 }
 
 func (h *streamHandler) handle(evt map[string]any) streamOutcome {

@@ -289,6 +289,30 @@
       "title": "Telegram Plugin Terminal UX"
     },
     {
+      "category": "PRD",
+      "cycle": "C14",
+      "seq": 2,
+      "slug": "tui-multimodal-images",
+      "path": "docs/product/PRD-C14-001-tui-multimodal-images.md",
+      "title": "TUI Free Chat Multimodal Images"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C14",
+      "seq": 2,
+      "slug": "tui-multimodal-images",
+      "path": "docs/architecture/ADR-C14-002-tui-multimodal-images.md",
+      "title": "TUI Multimodal Images (ADR-077–082)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C14",
+      "seq": 2,
+      "slug": "tui-multimodal-images",
+      "path": "docs/product/UI-C14-001-tui-multimodal-images.md",
+      "title": "TUI Multimodal Images"
+    },
+    {
       "category": "DEPLOY",
       "cycle": "C09",
       "seq": 0,

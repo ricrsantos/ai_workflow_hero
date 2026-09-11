@@ -46,29 +46,38 @@ func (execProcessLauncher) Start(_ context.Context, path string, invocation Invo
 	if invocation.StartNewProcessGroup {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("Claude stdin pipe: %w", err)
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		_ = stdin.Close()
 		return nil, fmt.Errorf("Claude stdout pipe: %w", err)
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		_ = stdin.Close()
 		return nil, fmt.Errorf("Claude stderr pipe: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
 		return nil, err
 	}
-	return &execProcess{cmd: cmd, stdout: stdout, stderr: stderr}, nil
+	return &execProcess{cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderr}, nil
 }
 
 type execProcess struct {
 	cmd    *exec.Cmd
+	stdin  io.WriteCloser
 	stdout io.ReadCloser
 	stderr io.ReadCloser
 }
 
-func (p *execProcess) Stdout() io.Reader { return p.stdout }
-func (p *execProcess) Stderr() io.Reader { return p.stderr }
-func (p *execProcess) Wait() error       { return p.cmd.Wait() }
+func (p *execProcess) Stdout() io.Reader     { return p.stdout }
+func (p *execProcess) Stderr() io.Reader     { return p.stderr }
+func (p *execProcess) Stdin() io.WriteCloser { return p.stdin }
+func (p *execProcess) Wait() error           { return p.cmd.Wait() }
 func (p *execProcess) PID() int {
 	if p.cmd.Process == nil {
 		return 0

@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	connectionReconnectAttempts = 5
-	connectionReconnectDelay    = 500 * time.Millisecond
+	connectionReconnectAttempts  = 5
+	connectionReconnectDelay     = 500 * time.Millisecond
 	interruptedTurnContinueLimit = 2
 
 	interruptedTurnContinuePrompt = "The Codex app-server process restarted and interrupted your in-progress turn. Continue the current task from the last completed step. Do not repeat work that is already done. Retry only an interrupted tool if it is still required, then finish."

@@ -93,22 +93,22 @@ Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `�
 - `scripts/release.sh` + `build_dev.sh` + contract tests; latest release **3.2.0** (ships `hero-telegram-daemon` per platform; plugin install downloads from GitHub Releases); both scripts install linux/amd64 `hero` to `/home/ricardo/installable/hero/hero` and refresh the local Telegram plugin daemon + manifest; integration tests include C6 Codex path, C9 Telegram lock, and C13 Claude adapter.
 - **Development update tooling**: `scripts/build_update.sh` builds `./cmd/hero` and `./cmd/hero-telegram-daemon` for the host target; `scripts/hero-update.sh`, `scripts/install_update_dev.sh`, `scripts/uninstall_update_dev.sh`, and `scripts/systemd/` provide the guarded systemd user timer flow, coupled atomic artifact replacement, bounded restart notification, stale-process recovery, and cleanup. Uninstall preserves `hero` and `hero.previous`.
 - Test strategy and build-artifact policy in [docs/testing/TESTING.md](docs/testing/TESTING.md); repository-root binaries are prohibited, temporary test binaries belong under `./temp/` and must be removed after the run; `/hero`, `/hero-telegram-daemon`, and `/temp/` are ignored; the OpenCode step-usage test preserves event order; bilingual README.
+- **C14 multimodal images**: Free Chat now materializes validated image attachments into session-scoped XDG data, carries immutable `harness.Attachment`/`Asset` references through conversation and adapter boundaries, intersects transport/model capabilities with fail-closed admission, and renders asynchronous asset cards with Unicode mosaic, open/copy/attach/save actions. Codex, OpenCode, Cursor, and Claude implement native or labeled file-reference input paths plus output/tool-written image normalization and SHA-256 dedupe. Advanced Kitty/Sixel/iTerm2 previews are explicit opt-in; image bytes never enter Bubble Tea model state.
 
 ## Pending Features
 
-- **TUI multimodal images** — Direction selected for a future cycle: introduce a
-  shared typed attachment/asset contract across `internal/conversation`,
-  `internal/harness`, adapters, and the TUI; translate it natively per harness,
-  fail explicitly on unsupported capabilities, and keep terminal presentation
-  usable through asset cards plus optional previews. The non-normative PT-BR
-  proposal is `docs/idea/tobe/tui-imagens-multimodais.md`; implementation still
-  requires PRD/UI/ADR/OpenSpec decisions.
 - **Windows CLI** — out of scope for Hero 2.0; planned for a future major (PRD §7; DEPLOY.md).
 - **CI/CD release automation and GPG-signed artifacts** — no GitHub Actions / GoReleaser pipeline in 2.0; manual `scripts/release.sh` only (ADR-010; PRD §7).
 - **Claude Code adapter** — C13 landed protocol/version validation, supervised NDJSON turns, stream normalization, native session metadata, SIGINT-first cancellation, live constrained ask bridge, native catalog, `.claude/`/marked `CLAUDE.md` projection, PrepareHeroStart managed-frontmatter sync, install lifecycle, TUI/Doctor/Status/Telegram, and four-harness acceptance coverage. VS Code and other harnesses remain deferred.
 - **Post-1.0 deferred D2–D13** — e.g. external integrations, notification manager, daemon/RPC `hero serve`, full event bus (PRD-C01-001 §4).
+- **Loop-back findings handoff** — persist QA/Judge/Browser UI/E2E findings in `hero.db`, assign `find-*` on Implementation waves, `/hero-add-todo` to defer on Escalated, and show the ping-pong on Status. Idea: `docs/idea/tobe/loopback-findings-handoff.md` (not C14).
 
 ## Recent Decisions
+
+- **2026-09-11 — Chat transcript layout cache**: Conversation `View` no longer rebuilds the full session history on every composer keystroke or 1s timer tick. Laid-out rows live in a heap-backed cache so long `/hero-start` sessions stay responsive.
+
+- **2026-09-10 — C14 multimodal implementation**: Added the shared image contract, XDG session asset store with validation/dedupe/retention, explicit capability admission, Free Chat-only attachment UX, asynchronous asset cards/mosaic, optional terminal preview helpers, and fixture-backed Codex/OpenCode/Cursor/Claude input/output/tool-image paths. Validation is provider-account-free; `go test ./...` passes. OpenSpec strict validation remains the final handoff gate.
+- **2026-09-10 — C14 QA regression hardening**: Capability admission failures restore validated composer chips; external attachment materialization follows the active harness file-permission profile; output assets remain attached to their producing transcript turn; save dialogs default to `Downloads/<original-name>` and require explicit overwrite confirmation. Full tests, race tests, vet, and strict OpenSpec validation pass.
 
 - **2026-09-10 — Context bar occupancy vs billed tokens**: The Chat bar uses only adapter `ContextTokens` from the last model call. Cursor/Claude `result.usage` stays billed for Costs and is occupancy only on single-call (no-tool) turns. Inclusive cache is not added twice. Missing occupancy falls back to chars÷4 of that session's transcript.
 

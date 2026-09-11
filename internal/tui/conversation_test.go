@@ -24,25 +24,26 @@ type streamingCall struct {
 }
 
 type streamingHarness struct {
-	mu            sync.Mutex
-	deltas        []string
-	events        []harness.StreamDelta
-	sessionIDs    []string
-	executeCount  int
-	sessionID     string
-	cancelCalled  bool
-	lastCancelSID string
-	lastPrompt    string
-	lastSessionID string
-	lastModel     string
-	lastMode      string
-	lastStageName string
-	lastAgentName string
-	lastProps     map[string]string
-	err           error
-	release       chan struct{}
-	skipRelease   int // wait on release only after this many Executes
-	calls         []streamingCall
+	mu              sync.Mutex
+	deltas          []string
+	events          []harness.StreamDelta
+	sessionIDs      []string
+	executeCount    int
+	sessionID       string
+	cancelCalled    bool
+	lastCancelSID   string
+	lastPrompt      string
+	lastSessionID   string
+	lastModel       string
+	lastMode        string
+	lastStageName   string
+	lastAgentName   string
+	lastProps       map[string]string
+	lastAttachments []harness.Attachment
+	err             error
+	release         chan struct{}
+	skipRelease     int // wait on release only after this many Executes
+	calls           []streamingCall
 }
 
 func (h *streamingHarness) Name() string                      { return "streaming" }
@@ -60,6 +61,7 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 	h.lastStageName = req.StageName
 	h.lastAgentName = req.AgentName
 	h.lastProps = harness.CloneProperties(req.Properties)
+	h.lastAttachments = append([]harness.Attachment(nil), req.Attachments...)
 	h.executeCount++
 	h.calls = append(h.calls, streamingCall{
 		Agent:     req.AgentName,
@@ -161,6 +163,12 @@ func (h *streamingHarness) LastAgentName() string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.lastAgentName
+}
+
+func (h *streamingHarness) LastAttachments() []harness.Attachment {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]harness.Attachment(nil), h.lastAttachments...)
 }
 
 func (h *streamingHarness) CancelCalled() bool {
@@ -1036,6 +1044,47 @@ func TestDeliverStreamDeltaTextBlocksUntilAccepted(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("deliverStreamDelta did not return")
+	}
+}
+
+func TestTranscriptLayoutCacheReusedAcrossViews(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m.transcript = []convMessage{{
+		role:    convRoleAgent,
+		content: strings.Repeat("word ", 4000),
+	}}
+	width := m.transcriptTextWidth()
+	first := m.transcriptContentLines(width)
+	if m.transcriptLayout == nil || !m.transcriptLayout.ready {
+		t.Fatal("layout cache should be populated")
+	}
+	cache := m.transcriptLayout
+	second := m.transcriptContentLines(width)
+	if m.transcriptLayout != cache {
+		t.Fatal("layout pointer must remain shared across View copies")
+	}
+	if !m.transcriptLayout.ready || m.transcriptLayout.gen != m.transcriptGen {
+		t.Fatal("second paint should hit the layout cache")
+	}
+	if len(first) != len(second) || len(first) < 10 {
+		t.Fatalf("cached rows=%d then %d", len(first), len(second))
+	}
+}
+
+func TestTranscriptVisibleLinesDoesNotScanHistory(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	empty := m.transcriptVisibleLines(m.contentAreaHeight())
+	m.transcript = []convMessage{{
+		role:    convRoleAgent,
+		content: strings.Repeat("word ", 8000),
+	}}
+	full := m.transcriptVisibleLines(m.contentAreaHeight())
+	if empty != full {
+		t.Fatalf("visible transcript rows must not depend on history length: empty=%d full=%d", empty, full)
 	}
 }
 

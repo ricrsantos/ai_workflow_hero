@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -159,9 +160,12 @@ type ServeURLResolver func(handle ProcessHandle) (baseURL string, port int, err 
 
 // Adapter implements harness.HarnessAdapter via opencode serve HTTP API (ADR-035).
 type Adapter struct {
-	ProjectDir      string
-	Store           *store.Store
-	Logger          *slog.Logger
+	ProjectDir string
+	Store      *store.Store
+	Logger     *slog.Logger
+	// MediaCapability is populated by model/provider discovery. A zero value
+	// keeps attachment turns fail-closed when OpenCode metadata is unknown.
+	MediaCapability harness.MediaCapability
 	LookPath        LookPathFunc
 	Runner          ProcessRunner
 	HTTP            HTTPDoer
@@ -290,6 +294,9 @@ func (a *Adapter) ResumeSession(ctx context.Context, sessionID string) error {
 // Execute implements harness.HarnessAdapter.
 func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*harness.ExecutionResult, error) {
 	req = harness.NormalizeExecuteRequest(req)
+	if len(req.Attachments) > 0 && !a.MediaCapability.SupportsImageInput("") {
+		return nil, fmt.Errorf("OpenCode model %q (%s) does not support image input; remove the attachments or select a capable model", strings.TrimSpace(req.Model), adapterName)
+	}
 	ctx = withPermissionProfile(ctx, req.PermissionProfile)
 	if err := a.ensureServeWithProfile(ctx, req.PermissionProfile); err != nil {
 		return nil, err
@@ -340,7 +347,16 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 	}()
 
 	start := time.Now()
-	body := executePromptBody(req, req.Prompt)
+	var body []byte
+	var err error
+	if len(req.Attachments) > 0 {
+		body, err = BuildOpenCodePromptBody(req, req.Prompt, OpenCodeInputOptions{})
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		body = executePromptBody(req, req.Prompt)
+	}
 
 	if req.Stream && req.OnStreamDelta != nil {
 		return a.executeStream(runCtx, sessionID, body, req, start)
@@ -358,6 +374,8 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		return nil, err
 	}
 	text := extractText(msgResp.Parts)
+	assets := normalizeOpenCodeMessageParts(msgResp.Parts, sessionID, req.ProjectDir)
+	assets = materializeOpenCodeAssets(assets, newOpenCodeAssetStore(sessionID, req.ProjectDir, a.log()))
 	return &harness.ExecutionResult{
 		SessionID:  sessionID,
 		Output:     text,
@@ -365,6 +383,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		Usage:      extractOpenCodeUsage(msgResp.Info),
 		Duration:   time.Since(start),
 		StreamDone: true,
+		Assets:     assets,
 	}, nil
 }
 
@@ -389,6 +408,11 @@ func (a *Adapter) executeStream(ctx context.Context, sessionID string, body []by
 
 	var buf strings.Builder
 	state := newStreamState()
+	state.assetStore = newOpenCodeAssetStore(sessionID, req.ProjectDir, a.log())
+	state.assetNormalizer = NewOpenCodeAssetNormalizer(OpenCodeAssetNormalizerOptions{
+		SessionID:    sessionID,
+		WorkspaceDir: req.ProjectDir,
+	})
 	if err := a.readExecuteSSE(ctx, sessionID, req.ProjectDir, req, state, &buf, events); err != nil {
 		return nil, err
 	}
@@ -400,7 +424,39 @@ func (a *Adapter) executeStream(ctx context.Context, sessionID string, body []by
 		Usage:      state.usage,
 		Duration:   time.Since(start),
 		StreamDone: true,
+		Assets:     state.assetNormalizer.FinalAssets(),
 	}, nil
+}
+
+func newOpenCodeAssetStore(sessionID, workspace string, logger *slog.Logger) *media.Store {
+	assetStore, err := media.New(media.StoreOptions{
+		SessionID:          sessionID,
+		Workspace:          workspace,
+		AllowExternalPaths: true,
+	})
+	if err != nil {
+		if logger != nil {
+			logger.Debug("opencode output asset store unavailable", "error", err)
+		}
+		return nil
+	}
+	return assetStore
+}
+
+func materializeOpenCodeAssets(assets []harness.Asset, assetStore *media.Store) []harness.Asset {
+	if assetStore == nil {
+		return assets
+	}
+	result := append([]harness.Asset(nil), assets...)
+	for index, asset := range result {
+		if strings.TrimSpace(asset.Path) == "" {
+			continue
+		}
+		if materialized, err := assetStore.MaterializeAsset(context.Background(), asset); err == nil {
+			result[index] = materialized
+		}
+	}
+	return result
 }
 
 // Cancel implements harness.HarnessAdapter.
@@ -902,8 +958,54 @@ type messageResponse struct {
 }
 
 type part struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string `json:"type"`
+	Text     string `json:"text"`
+	MIME     string `json:"mime,omitempty"`
+	URL      string `json:"url,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	Data     string `json:"data,omitempty"`
+}
+
+// normalizeOpenCodeMessageParts applies the same asset normalization to the
+// non-streaming /message response that the SSE path uses. Keeping both paths
+// on one normalizer prevents a final response from losing file/image parts or
+// returning a different deduplication result than the streaming path.
+func normalizeOpenCodeMessageParts(parts []part, sessionID, workspaceDir string) []harness.Asset {
+	if len(parts) == 0 {
+		return nil
+	}
+	events := make([]map[string]any, 0, len(parts))
+	for _, item := range parts {
+		partMap := map[string]any{"type": item.Type}
+		if item.MIME != "" {
+			partMap["mime"] = item.MIME
+		}
+		if item.URL != "" {
+			partMap["url"] = item.URL
+		}
+		if item.Path != "" {
+			partMap["path"] = item.Path
+		}
+		if item.Filename != "" {
+			partMap["filename"] = item.Filename
+		}
+		if item.Data != "" {
+			partMap["data"] = item.Data
+		}
+		events = append(events, map[string]any{
+			"type":       "message.part.updated",
+			"properties": map[string]any{"part": partMap},
+		})
+	}
+	result, err := NormalizeOpenCodeSSEEvents(events, OpenCodeAssetNormalizerOptions{
+		SessionID:    sessionID,
+		WorkspaceDir: workspaceDir,
+	})
+	if err != nil {
+		return nil
+	}
+	return result.Assets
 }
 
 type providersResponse struct {

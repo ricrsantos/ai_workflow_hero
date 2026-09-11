@@ -43,7 +43,6 @@
   "chat_verbosity": "debug",
   "telegram": {
     "project_abbrev": "aiwkhero",
-    "auto_report_minutes": 5,
     "always_send": true
   },
   "model_properties": {

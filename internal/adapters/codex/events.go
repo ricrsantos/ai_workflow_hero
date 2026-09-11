@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 )
 
 type streamOutcome struct {
@@ -21,6 +23,8 @@ type turnStreamState struct {
 	authoritativeText map[string]string
 	agentTextOrder    []string
 	lastAgentKey      string
+	assets            []harness.Asset
+	assetStore        *media.Store
 }
 
 func newTurnStreamState() *turnStreamState {
@@ -305,6 +309,7 @@ func (a *Adapter) handleNotification(ctx context.Context, method string, raw jso
 		return streamOutcome{}
 
 	case "turn/completed":
+		st.emitAssetsFromPayload(method, params, sessionID, req.ProjectDir)
 		status := ""
 		var turnErr error
 		var turn map[string]any
@@ -473,6 +478,7 @@ func (a *Adapter) handleItemLifecycle(method string, params map[string]any, sess
 		return streamOutcome{}
 	}
 	itemType := stringField(item, "type")
+	st.emitAssetsFromPayloadWithEmitter(method, item, sessionID, req.ProjectDir, emit)
 	switch itemType {
 	case "agentMessage":
 		if method == "item/completed" {
@@ -558,6 +564,68 @@ func (a *Adapter) handleItemLifecycle(method string, params map[string]any, sess
 		}
 	}
 	return streamOutcome{}
+}
+
+func (st *turnStreamState) emitAssetsFromPayload(method string, payload map[string]any, sessionID, baseDir string) {
+	st.emitAssetsFromPayloadWithEmitter(method, payload, sessionID, baseDir, nil)
+}
+
+func (st *turnStreamState) emitAssetsFromPayloadWithEmitter(method string, payload map[string]any, sessionID, baseDir string, emit func(harness.StreamDelta)) {
+	if st == nil || payload == nil {
+		return
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	batch, err := NormalizeCodexNotification(method, raw, sessionID, stringField(payload, "turnId", "turn_id"), baseDir)
+	if err != nil {
+		return
+	}
+	previous := append([]harness.Asset(nil), st.assets...)
+	normalized := make([]harness.Asset, 0, len(batch.Assets))
+	for _, asset := range batch.Assets {
+		if st.assetStore != nil && strings.TrimSpace(asset.Path) != "" {
+			if materialized, materializeErr := st.assetStore.MaterializeAsset(context.Background(), asset); materializeErr == nil {
+				asset = materialized
+			}
+		}
+		normalized = append(normalized, asset)
+	}
+	st.assets = RepairCodexAssets(st.assets, normalized)
+	if emit == nil {
+		return
+	}
+	for _, asset := range normalized {
+		index := findCodexAssetIdentity(st.assets, asset)
+		if index < 0 {
+			continue
+		}
+		if previousIndex := findCodexAssetIdentity(previous, asset); previousIndex >= 0 && reflect.DeepEqual(previous[previousIndex], st.assets[index]) {
+			continue
+		}
+		emit(CodexAssetStreamDelta(st.assets[index], method, codexAssetPhase(method, st.assets[index].Status)))
+	}
+}
+
+func assetExistsByIdentity(existing []harness.Asset, candidate harness.Asset) bool {
+	return findCodexAssetIdentity(existing, candidate) >= 0
+}
+
+func findCodexAssetIdentity(existing []harness.Asset, candidate harness.Asset) int {
+	candidateHash := strings.ToLower(strings.TrimSpace(harness.ContentHash(candidate)))
+	for index, current := range existing {
+		if candidateHash != "" && candidateHash == strings.ToLower(strings.TrimSpace(harness.ContentHash(current))) {
+			return index
+		}
+		if candidateHash == "" && candidate.ID != "" && candidate.ID == current.ID {
+			return index
+		}
+		if candidateHash == "" && candidate.Path != "" && candidate.Path == current.Path {
+			return index
+		}
+	}
+	return -1
 }
 
 func (a *Adapter) mapTokenUsage(params map[string]any, sessionID string, debug bool, emit func(harness.StreamDelta)) {

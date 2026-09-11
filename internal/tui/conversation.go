@@ -17,6 +17,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
@@ -48,6 +49,7 @@ var conversationInterruptKey = key.NewBinding(
 type convMessage struct {
 	role        convRole
 	content     string
+	assets      []harness.Asset
 	agentName   string
 	modelSlug   string
 	harnessID   string // agent/session harness for speaker labels (may differ from freechat)
@@ -69,6 +71,19 @@ type convMessage struct {
 	responseLinesWidth   int
 	responseLinesRuntime string
 	responseLinesValid   bool
+}
+
+// transcriptLayoutCache holds the fully painted transcript rows for the current
+// width/runtime. It lives behind a pointer so Bubble Tea View copies share it.
+type transcriptLayoutCache struct {
+	ready     bool
+	gen       uint64
+	msgCount  int
+	rowW      int
+	contentW  int
+	runtime   string
+	livePaint bool
+	lines     []string
 }
 
 type streamDeltaMsg struct {
@@ -504,6 +519,7 @@ func (m model) enterConversation() (model, tea.Cmd) {
 func (m model) resetChatSession() model {
 	m = m.resetAITimer()
 	m.transcript = nil
+	m.bumpTranscriptLayout()
 	m.harnessSessionID = ""
 	m.harnessSessionHarnessID = ""
 	m.freechatSessionID = ""
@@ -520,6 +536,19 @@ func (m model) resetChatSession() model {
 	m.runtimeAgentName = ""
 	m.liveAgents = nil
 	m.executes = nil
+	m = m.clearAttachmentChips()
+	m.pendingExecuteAttachments = nil
+	m.assets = nil
+	m.assetCursor = 0
+	m.assetFocus = false
+	m.assetMosaics = nil
+	m.assetMosaicPending = nil
+	m.assetSavePending = false
+	m.assetSaveOverwritePending = false
+	m.assetSaveSource = ""
+	m.assetSaveInput = ""
+	m.assetSaveInputDirty = false
+	m.attachmentCursor = 0
 	m = m.clearStageHandoffState()
 	m.convError = ""
 	m.streamInterrupted = false
@@ -768,6 +797,14 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 		wave = m.stageHandoffWave
 	}
 	freechat := m.isFreechatTurn()
+	turnAttachments := append([]harness.Attachment(nil), m.pendingExecuteAttachments...)
+	m.pendingExecuteAttachments = nil
+	turnChips := append([]tuiAttachment(nil), m.attachments...)
+	if len(turnAttachments) > 0 {
+		// Keep the validated chip metadata on the execution so capability
+		// admission failures can return it to the composer.
+		m = m.clearAttachmentChips()
+	}
 	occupancyKey := occupancyKeyFreechat
 	if !freechat {
 		occupancyKey = cycleOccupancyKey(stageName, parentName)
@@ -788,7 +825,14 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 	})
 	origin := m.nextUserOrigin
 	m.nextUserOrigin = ""
-	m.transcript = append(m.transcript, convMessage{role: labelRole, content: userLabel, origin: origin, occupancyKey: occupancyKey})
+	displayLabel := userLabel
+	if strings.TrimSpace(displayLabel) == "" && len(turnAttachments) > 0 {
+		displayLabel = "[image attachment]"
+		if len(turnAttachments) != 1 {
+			displayLabel = "[image attachments]"
+		}
+	}
+	m.transcript = append(m.transcript, convMessage{role: labelRole, content: displayLabel, origin: origin, occupancyKey: occupancyKey})
 	m.transcript = append(m.transcript, convMessage{
 		role:         convRoleAgent,
 		content:      "",
@@ -809,6 +853,8 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 		HarnessID:       parentHarness,
 		Model:           parentModel,
 		Prompt:          executePrompt,
+		Attachments:     append([]harness.Attachment(nil), turnAttachments...),
+		AttachmentChips: append([]tuiAttachment(nil), turnChips...),
 		StageName:       stageName,
 		Wave:            wave,
 		UsageGeneration: m.contextUsageGeneration,
@@ -833,6 +879,9 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 
 func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s := msg.String()
+	if m.attachmentPickerActive {
+		return m.handleAttachmentPickerKey(msg)
+	}
 
 	if m.heroStartBootstrapping || m.heroStartPreparing {
 		if key.Matches(msg, conversationInterruptKey) {
@@ -906,6 +955,39 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.chatInputFocused = true
+	if m.assetFocus {
+		if s == "esc" || s == "alt+g" {
+			m.assetFocus = false
+			m.chatInputFocused = true
+			return m, nil
+		}
+		if next, cmd, handled := m.handleAssetKey(msg); handled {
+			return next, cmd
+		}
+	}
+	if m.attachmentFocus {
+		switch s {
+		case "alt+c":
+			m.attachmentFocus = false
+			m.chatInputFocused = true
+			return m, nil
+		case "up":
+			if m.attachmentCursor > 0 {
+				m.attachmentCursor--
+			}
+			return m, nil
+		case "down":
+			if m.attachmentCursor < len(m.attachments)-1 {
+				m.attachmentCursor++
+			}
+			return m, nil
+		case "x", "backspace", "delete":
+			return m.removeAttachment(m.attachmentCursor), nil
+		case "esc":
+			m.attachmentFocus = false
+			return m, nil
+		}
+	}
 
 	// Global shortcuts (modifier+key) work even while typing in chat.
 	// `/` is NOT global here — it stays in the composer (Cursor-style overlay).
@@ -913,6 +995,25 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 	switch s {
+	case "alt+a":
+		return m.openAttachmentPicker()
+	case "alt+v":
+		return m.startClipboardAttachment()
+	case "alt+c":
+		if len(m.attachments) > 0 {
+			m.attachmentFocus = true
+			m.attachmentCursor = minInt(m.attachmentCursor, len(m.attachments)-1)
+			m.assetFocus = false
+			m.chatInputFocused = false
+		}
+		return m, nil
+	case "alt+g":
+		if len(m.assets) > 0 {
+			m.assetFocus = true
+			m.chatInputFocused = false
+			m.attachmentFocus = false
+		}
+		return m, nil
 	case "alt+r":
 		return m.copyChatResponse()
 	case "alt+i":
@@ -922,6 +1023,9 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Recognized slash commands keep their command behavior in the composer:
 	// Enter executes them, while Alt+Enter is reserved for ordinary prompts.
 	if s == "enter" {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(m.input)), "/attach") {
+			return m.submitConversation()
+		}
 		if m.chatSlashCommandInput() {
 			if m.chatSlashOverlayActive() {
 				return m.executeChatSlashCommand()
@@ -972,7 +1076,7 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "alt+enter":
-		if strings.TrimSpace(m.input) == "" {
+		if strings.TrimSpace(m.input) == "" && len(m.attachments) == 0 {
 			return m, nil
 		}
 		if m.chatSlashCommandInput() {
@@ -1034,6 +1138,12 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	default:
+		if msg.Paste && len(msg.Runes) > 0 {
+			pasted := strings.TrimSpace(string(msg.Runes))
+			if isLikelyImagePath(pasted) {
+				return m.queueAttachmentPath(pasted)
+			}
+		}
 		if len(msg.Runes) == 0 || msg.Alt {
 			return m, nil
 		}
@@ -1104,7 +1214,7 @@ func (m model) deleteRuneAtCursor() model {
 
 func (m model) submitConversation() (model, tea.Cmd) {
 	text := strings.TrimSpace(m.input)
-	if text == "" {
+	if text == "" && len(m.attachments) == 0 {
 		if m.awaitingRejectReason {
 			m.convError = "Rejection reason is required."
 		}
@@ -1115,6 +1225,9 @@ func (m model) submitConversation() (model, tea.Cmd) {
 	}
 
 	if m.awaitingRejectReason {
+		if len(m.attachments) > 0 {
+			return m.setStatusWarning("attach", "attachments cannot be added to an approval response"), nil
+		}
 		m = m.clearChatInput()
 		m.awaitingRejectReason = false
 		m.convError = ""
@@ -1125,6 +1238,9 @@ func (m model) submitConversation() (model, tea.Cmd) {
 	// follow-up. TUI Execute would gate on SQLite PendingApproval and fail
 	// while the agent is still asking in Chat.
 	if m.chatFollowUpControlSlash(text) {
+		if len(m.attachments) > 0 {
+			return m.setStatusWarning("attach", "attachments are available for Free Chat turns only"), nil
+		}
 		return m.submitChatFollowUp(text)
 	}
 
@@ -1157,6 +1273,15 @@ func (m model) submitConversation() (model, tea.Cmd) {
 
 	if next, cmd, ok := m.dispatchExactHeroSlash(text); ok {
 		return next, cmd
+	}
+
+	if len(m.attachments) > 0 {
+		ready, err := m.readyAttachments()
+		if err != nil {
+			m.convError = err.Error()
+			return m, nil
+		}
+		m.pendingExecuteAttachments = append([]harness.Attachment(nil), ready...)
 	}
 
 	return m.submitChatFollowUp(text)
@@ -1228,9 +1353,18 @@ func controlSlashFollowUpPrompt(text string) string {
 }
 
 func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
-	lower := strings.ToLower(strings.TrimSpace(text))
+	trimmed := strings.TrimSpace(text)
+	lower := strings.ToLower(trimmed)
 	if m.freeChatMode {
 		switch lower {
+		case "/attach":
+			m = m.clearChatInput()
+			next, cmd := m.openAttachmentPicker()
+			return next, cmd, true
+		case "/attach-clipboard":
+			m = m.clearChatInput()
+			next, cmd := m.startClipboardAttachment()
+			return next, cmd, true
 		case slashModel, "/hero-model":
 			m = m.clearChatInput()
 			next, cmd := m.openModelPicker()
@@ -1252,6 +1386,12 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 			next, cmd := m.beginAction(slashVersion, m.versionCmd())
 			return next, cmd, true
 		default:
+			if strings.HasPrefix(lower, "/attach ") {
+				m = m.clearChatInput()
+				path := strings.TrimSpace(trimmed[len("/attach "):])
+				next, cmd := m.queueAttachmentPath(path)
+				return next, cmd, true
+			}
 			if strings.HasPrefix(lower, "/hero") {
 				m = m.clearChatInput()
 				m = m.setStatusResult(false, lower, "not available in free chat")
@@ -1259,6 +1399,11 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 			}
 			return m, nil, false
 		}
+	}
+	if strings.HasPrefix(lower, "/attach") {
+		m = m.clearChatInput()
+		m = m.setStatusResult(false, "attach", "image attachments are available in Free Chat only")
+		return m, nil, true
 	}
 	switch lower {
 	case "/hero-approve":
@@ -1411,14 +1556,17 @@ func (m model) startConversationExecute(executeID, userText, prompt, origin stri
 	// per-execute field it needs while the model still owns its map; a value-copy
 	// of model otherwise shares the executes map with later Update messages.
 	freechat := m.isFreechatTurn()
+	attachments := []harness.Attachment(nil)
 	if ex, ok := m.executes[executeID]; ok {
 		freechat = ex.Freechat
+		attachments = append(attachments, ex.Attachments...)
 	}
 	input := conversation.Input{
-		Text:       userText,
-		Origin:     conversation.OriginLocal,
-		Mode:       conversation.ModeCycle,
-		ProjectDir: m.executeDir(),
+		Text:        userText,
+		Origin:      conversation.OriginLocal,
+		Mode:        conversation.ModeCycle,
+		ProjectDir:  m.executeDir(),
+		Attachments: attachments,
 	}
 	if m.freeChatMode {
 		input.Mode = conversation.ModeFree
@@ -1433,7 +1581,7 @@ func (m model) startConversationExecute(executeID, userText, prompt, origin stri
 		var harnessID string
 		dispatcher := conversation.DispatcherFunc(func(ctx context.Context, _ conversation.Input) (conversation.Result, error) {
 			var err error
-			execution, harnessID, err = m.executeConversationTurn(ctx, executeID, prompt, freechat, relay)
+			execution, harnessID, err = m.executeConversationTurn(ctx, executeID, prompt, freechat, attachments, relay)
 			return conversation.Result{}, err
 		})
 		if m.convService == nil {
@@ -1450,7 +1598,7 @@ func (m model) startConversationExecute(executeID, userText, prompt, origin stri
 // executeConversationTurn is the TUI edge adapter for one Service-dispatched
 // turn. It resolves a harness and relays its stream; routing into the adapter
 // itself is owned by conversation.Service.
-func (m model) executeConversationTurn(ctx context.Context, executeID, prompt string, freechat bool, relay *conversationStreamRelay) (*harness.ExecutionResult, string, error) {
+func (m model) executeConversationTurn(ctx context.Context, executeID, prompt string, freechat bool, attachments []harness.Attachment, relay *conversationStreamRelay) (*harness.ExecutionResult, string, error) {
 	svc := m.svc
 	stageName := m.conversationStage
 	agentName := m.runtimeAgentName
@@ -1503,7 +1651,8 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 		PermissionProfile: profile,
 		// C5: attach the normalized property projection (freechat for
 		// Chat//hero-new, YAML-derived for workflow commands; ADR-041/042).
-		Properties: resolved.props,
+		Properties:  resolved.props,
+		Attachments: append([]harness.Attachment(nil), attachments...),
 		OnStreamDelta: func(delta harness.StreamDelta) {
 			relay.Enqueue(delta)
 		},
@@ -1545,6 +1694,11 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 		},
 	}
 	req = harness.NormalizeExecuteRequest(req)
+	if len(req.Attachments) > 0 && m.mediaRegistry != nil {
+		if err := m.mediaRegistry.Admit(pair.HarnessID, pair.Model, req); err != nil {
+			return nil, pair.HarnessID, err
+		}
+	}
 	res, err := pair.Adapter.Execute(ctx, req)
 	return res, pair.HarnessID, err
 }
@@ -1553,7 +1707,7 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 // truncates the live transcript mid-sentence under TUI backpressure.
 func streamDeltaMustDeliver(kind harness.StreamKind) bool {
 	switch kind {
-	case harness.StreamKindText, harness.StreamKindThinking, harness.StreamKindWarning, harness.StreamKindSession:
+	case harness.StreamKindText, harness.StreamKindThinking, harness.StreamKindWarning, harness.StreamKindSession, harness.StreamKindAsset:
 		return true
 	default:
 		return false
@@ -1896,6 +2050,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if msg.err != nil {
+			if trackedExecute && executeMeta.Freechat && media.IsAdmissionError(msg.err) {
+				m = m.restoreAttachmentChips(executeMeta.AttachmentChips)
+			}
 			errText := msg.err.Error()
 			m.convError = errText
 			label := "execute"
@@ -1932,6 +2089,13 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.afterExecuteTelegramDrain(replyCmd)
 		}
 		if msg.result != nil {
+			assetTurnIndex := m.agentMsgIndex
+			if trackedExecute {
+				assetTurnIndex = executeMeta.AgentMsgIndex
+			}
+			for _, asset := range msg.result.Assets {
+				m = m.addAssetToTurn(asset, assetTurnIndex)
+			}
 			if nativeModel := strings.TrimSpace(msg.result.NativeModel); nativeModel != "" {
 				// system/init is authoritative for Claude's effective native model.
 				// Replace the configured alias in this completed turn's identity so
@@ -2130,6 +2294,12 @@ func (m model) appendStreamDelta(d harness.StreamDelta) model {
 	if streamDeltaRendersAIChatResponse(d) {
 		m = m.restartAIResponseTimer(time.Now())
 	}
+	if d.Kind == harness.StreamKindAsset {
+		if d.Asset != nil {
+			m = m.addAsset(*d.Asset)
+		}
+		return m
+	}
 	if d.Phase == harness.StreamPhaseStarted {
 		m = m.addLiveAgent(d)
 	}
@@ -2293,7 +2463,7 @@ func streamDeltaRendersAIChatResponse(d harness.StreamDelta) bool {
 		return true
 	}
 	switch d.Kind {
-	case harness.StreamKindPermission, harness.StreamKindQuestion, harness.StreamKindSession:
+	case harness.StreamKindPermission, harness.StreamKindQuestion, harness.StreamKindSession, harness.StreamKindAsset:
 		return false
 	default:
 		return strings.TrimSpace(d.Text) != ""
@@ -2680,6 +2850,11 @@ func (m *model) invalidateResponseCache(index int) {
 	}
 	m.transcript[index].responseLines = nil
 	m.transcript[index].responseLinesValid = false
+	m.bumpTranscriptLayout()
+}
+
+func (m *model) bumpTranscriptLayout() {
+	m.transcriptGen++
 }
 
 func (m model) renderConversation(contentH int) string {
@@ -2729,6 +2904,10 @@ func (m model) buildConversation(transcriptLines int) string {
 	}
 
 	b.WriteString(m.renderChatSlashOverlay())
+	if m.attachmentPickerActive {
+		b.WriteString(m.attachmentPicker.View())
+		b.WriteByte('\n')
+	}
 	b.WriteString(m.renderConversationInput())
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -2841,25 +3020,65 @@ func (m model) transcriptTextWidth() int {
 
 func (m model) transcriptContentLines(contentW int) []string {
 	rowW := m.transcriptRowWidth()
+	out := append([]string(nil), m.ensureTranscriptLayout(contentW, rowW)...)
+	if m.showChatWait() {
+		if len(out) == 0 && (m.streaming || len(m.liveAgents) > 0) {
+			header := m.responseSpeakerHeader()
+			out = []string{chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW)}
+		}
+		out = append(out, m.chatWaitLine(rowW))
+		return out
+	}
+	if len(m.transcript) == 0 && len(out) == 0 {
+		return []string{chatThinBarRow(chatBarMuted, chatInMuted.Render("Submit a message to start an interação."), rowW)}
+	}
+	return out
+}
+
+func (m model) ensureTranscriptLayout(contentW, rowW int) []string {
+	if m.transcriptLayout == nil {
+		m.transcriptLayout = &transcriptLayoutCache{}
+	}
+	c := m.transcriptLayout
+	live := m.streaming || len(m.liveAgents) > 0
+	if c.ready && c.gen == m.transcriptGen && c.msgCount == len(m.transcript) && c.rowW == rowW && c.contentW == contentW && c.runtime == m.runtimeCommandName && c.livePaint == live {
+		return c.lines
+	}
+	c.lines = m.buildTranscriptLayoutLines(contentW, rowW)
+	c.ready = true
+	c.gen = m.transcriptGen
+	c.msgCount = len(m.transcript)
+	c.rowW = rowW
+	c.contentW = contentW
+	c.runtime = m.runtimeCommandName
+	c.livePaint = live
+	return c.lines
+}
+
+func (m model) buildTranscriptLayoutLines(contentW, rowW int) []string {
 	if len(m.transcript) == 0 {
+		var out []string
 		if m.streaming || len(m.liveAgents) > 0 {
 			header := m.responseSpeakerHeader()
-			out := []string{chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW)}
-			if m.showChatWait() {
-				out = append(out, m.chatWaitLine(rowW))
+			out = []string{chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW)}
+		}
+		if cards := m.renderAssetCardLines(contentW); len(cards) > 0 {
+			if len(out) > 0 {
+				out = append(out, "")
 			}
-			return out
+			for _, card := range cards {
+				out = append(out, chatThinBarRow(chatBarMuted, chatInMuted.Render(card), rowW))
+			}
 		}
-		if m.showChatWait() {
-			return []string{m.chatWaitLine(rowW)}
-		}
-		return []string{chatThinBarRow(chatBarMuted, chatInMuted.Render("Submit a message to start an interação."), rowW)}
+		return out
 	}
 
 	var out []string
+	assetOffset := 0
+	hasTurnAssets := false
 	for i := range m.transcript {
 		msg := &m.transcript[i]
-		if msg.role == convRoleAgent && strings.TrimSpace(msg.content) == "" && m.streaming && !msg.failed && !msg.interrupted {
+		if msg.role == convRoleAgent && strings.TrimSpace(msg.content) == "" && len(msg.assets) == 0 && m.streaming && !msg.failed && !msg.interrupted {
 			// Keep a pending agent slot visible (header only) while waiting for text.
 			if i == m.agentMsgIndex {
 				bar, label := m.transcriptMessageChrome(*msg)
@@ -2879,16 +3098,26 @@ func (m model) transcriptContentLines(contentW int) []string {
 		for _, line := range body {
 			out = append(out, chatThinBarRow(bar, line, rowW))
 		}
+		if len(msg.assets) > 0 {
+			hasTurnAssets = true
+			for _, card := range m.renderAssetCardLinesFor(contentW, msg.assets, assetOffset) {
+				out = append(out, chatThinBarRow(bar, chatInMuted.Render(card), rowW))
+			}
+			assetOffset += len(msg.assets)
+		}
 		if i < len(m.transcript)-1 {
 			out = append(out, "")
 		}
 	}
-	if m.showChatWait() {
-		if len(out) == 0 {
-			header := m.responseSpeakerHeader()
-			out = []string{chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW)}
+	if !hasTurnAssets {
+		// Compatibility fallback for an asset received before a transcript turn
+		// exists. Normal execution always renders cards at the owning agent turn.
+		if cards := m.renderAssetCardLines(contentW); len(cards) > 0 {
+			out = append(out, "")
+			for _, card := range cards {
+				out = append(out, chatThinBarRow(chatBarMuted, chatInMuted.Render(card), rowW))
+			}
 		}
-		out = append(out, m.chatWaitLine(rowW))
 	}
 	return out
 }
@@ -2942,12 +3171,37 @@ func (m model) transcriptVisibleLines(contentH int) int {
 	if contentH <= 0 {
 		contentH = m.contentAreaHeight()
 	}
-	base := countContentLines(m.buildConversation(0))
-	n := contentH - base
+	n := contentH - m.conversationChromeHeight()
 	if n < chatTranscriptMinLines {
 		return chatTranscriptMinLines
 	}
 	return n
+}
+
+// conversationChromeHeight is header, error, overlay, picker, composer, and the
+// property/context row. It must not rebuild the transcript; that path used to
+// walk the full session on every keystroke and timer tick.
+func (m model) conversationChromeHeight() int {
+	var b strings.Builder
+	if header := m.renderConversationHeader(); header != "" {
+		b.WriteString(header)
+		b.WriteByte('\n')
+	}
+	if hint := m.renderScrollHintLine(); hint != "" {
+		b.WriteString(hint)
+		b.WriteByte('\n')
+	}
+	if m.convError != "" && !m.latestAgentFailed() {
+		b.WriteByte('\n')
+		b.WriteString(m.renderWrappedConvError())
+	}
+	b.WriteString(m.renderChatSlashOverlay())
+	if m.attachmentPickerActive {
+		b.WriteString(m.attachmentPicker.View())
+		b.WriteByte('\n')
+	}
+	b.WriteString(m.renderConversationInput())
+	return countContentLines(strings.TrimRight(b.String(), "\n"))
 }
 
 func (m model) chatBoxWidth() int {
@@ -3135,7 +3389,8 @@ func (m model) renderConversationInput() string {
 		offset = maxOff
 	}
 
-	rows := make([]string, 0, visible+1)
+	chipLines := m.renderAttachmentChipLines(contentW)
+	rows := make([]string, 0, visible+len(chipLines)+1)
 	for i := 0; i < visible; i++ {
 		idx := offset + i
 		var cell string
@@ -3143,6 +3398,9 @@ func (m model) renderConversationInput() string {
 			cell = lines[idx]
 		}
 		rows = append(rows, chatAccentRow(accent, cell, innerW))
+	}
+	for _, chip := range chipLines {
+		rows = append(rows, chatAccentRow(accent, chip, innerW))
 	}
 
 	statusContent := modeStyle.Render(modeLabel) +

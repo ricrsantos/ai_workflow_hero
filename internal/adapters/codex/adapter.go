@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -75,6 +76,7 @@ type Adapter struct {
 	usageBySession         map[string]harness.Usage
 	usageUSDUnsetBySession map[string]bool
 	turnSlot               chan struct{}
+	multimodalSchema       CodexMultimodalSchema
 	reconnecting           atomic.Bool
 }
 
@@ -111,6 +113,21 @@ func (a *Adapter) log() *slog.Logger {
 		return a.Logger
 	}
 	return slog.Default()
+}
+
+func newCodexAssetStore(sessionID, workspace string, logger *slog.Logger) *media.Store {
+	assetStore, err := media.New(media.StoreOptions{
+		SessionID:          sessionID,
+		Workspace:          workspace,
+		AllowExternalPaths: true,
+	})
+	if err != nil {
+		if logger != nil {
+			logger.Debug("codex output asset store unavailable", "error", err)
+		}
+		return nil
+	}
+	return assetStore
 }
 
 // Name implements harness.HarnessAdapter.
@@ -359,6 +376,17 @@ func (a *Adapter) runTurnOnce(
 		return nil, fmt.Errorf("codex app-server: %w", harness.ErrConnectionClosed)
 	}
 
+	if len(req.Attachments) > 0 {
+		a.mu.Lock()
+		schema := a.multimodalSchema
+		a.mu.Unlock()
+		if _, err := BuildCodexTurnStartInput(schema, req.Attachments, req.Prompt); err != nil {
+			return nil, fmt.Errorf("Codex model %q: %w", strings.TrimSpace(req.Model), err)
+		}
+	}
+	if turnState != nil && turnState.assetStore == nil {
+		turnState.assetStore = newCodexAssetStore(sessionID, req.ProjectDir, a.log())
+	}
 	params := turnStartParams(sessionID, req, a.ProjectDir)
 	a.setStatus(sessionID, harness.StatusRunning, "")
 
@@ -465,6 +493,7 @@ func (a *Adapter) runTurnOnce(
 		Usage:      usage,
 		Duration:   time.Since(start),
 		StreamDone: true,
+		Assets:     harness.MergeAssetsByContentHash(turnState.assets, nil),
 	}, nil
 }
 
@@ -672,6 +701,7 @@ func turnStartParams(threadID string, req harness.ExecuteRequest, projectDir str
 		approvalPolicy = "never"
 		sandboxPolicyType = "dangerFullAccess"
 	}
+	inputs, _ := CodexTurnInputs(req.Attachments, req.Prompt)
 	params := map[string]any{
 		"threadId": threadID,
 		// Codex must emit native requests even for AutoProject: the adapter only
@@ -681,9 +711,7 @@ func turnStartParams(threadID string, req harness.ExecuteRequest, projectDir str
 			"type":          sandboxPolicyType,
 			"networkAccess": true,
 		},
-		"input": []map[string]string{
-			{"type": "text", "text": req.Prompt},
-		},
+		"input": inputs,
 	}
 	cwd := canonicalProjectDir(req.ProjectDir)
 	if cwd == "" {

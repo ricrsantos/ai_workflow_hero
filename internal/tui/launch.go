@@ -21,6 +21,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/lifecycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -110,6 +111,14 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 		})
 	}
 	defer stopManaged()
+	defer func() {
+		cleanup, cleanupErr := media.CleanupExpiredSessions(context.Background(), media.CleanupOptions{})
+		if cleanupErr != nil {
+			slog.Error("tui media shutdown cleanup failed", "error", cleanupErr)
+			return
+		}
+		slog.Info("tui media shutdown cleanup complete", "scanned_sessions", cleanup.ScannedSessions, "removed_sessions", cleanup.RemovedSessions)
+	}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGUSR2)

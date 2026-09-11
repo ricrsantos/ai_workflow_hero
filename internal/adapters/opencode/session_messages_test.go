@@ -26,7 +26,7 @@ func TestExecuteStreamRecoversFromSessionMessages(t *testing.T) {
 		case "/session/sess-recover/message":
 			_ = json.NewEncoder(w).Encode([]sessionMessage{
 				{
-					Info: map[string]any{"role": "assistant", "id": "msg-asst"},
+					Info:  map[string]any{"role": "assistant", "id": "msg-asst"},
 					Parts: []part{{Type: "text", Text: "recovered"}},
 				},
 			})
