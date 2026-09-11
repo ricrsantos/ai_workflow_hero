@@ -4,6 +4,16 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-11 — Telegram `/status` agent state
+
+**Change**: Added an explicit `Agent state: working|idle` line to the
+Telegram `/status` response. The value follows the Chat's live execution,
+agent, and `/hero-start` preflight state; existing cycle, model, timer, and
+context fields remain unchanged. Automatic idle reports remain suppressed.
+
+**Validation**: Added focused TUI coverage for idle, streaming, live-agent,
+and `/hero-start` preflight states. Focused tests and `go test ./...` pass.
+
 ## 2026-09-11 — C14 archived
 
 **Change**: `/hero-archive` ran `openspec archive tui-multimodal-images -y` (merged 18 spec additions; archived as `2026-09-11-tui-multimodal-images`), then Hero archived cycle C14 to `.workflow-hero/cycles/archive/C14-2026-09-11-implementa-o-da-capacidade-de-lidar-com` using store `completed_at` 2026-09-11. No current cycle remains. Metrics for C14 were already in `.workflow-hero/metrics-summary.md` from `/hero-finish` (2101873 tokens, ~$0.5692).

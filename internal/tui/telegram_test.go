@@ -173,6 +173,7 @@ func TestTelegramStatusText(t *testing.T) {
 
 	got := m.telegramStatusText(now)
 	for _, want := range []string{
+		"Agent state: working",
 		"Cycle C7: Telegram status",
 		"Current stage: Implementation (Running, iteration 1/3)",
 		"Agents:\n- orchestration_agent: orchestrator-model\n- generic_agent: worker-model",
@@ -193,7 +194,7 @@ func TestTelegramStatusText(t *testing.T) {
 	m.streaming = true
 	m.liveAgents = []liveAgent{{Model: "free-chat-model", Harness: "cursor"}}
 	got = m.telegramStatusText(now)
-	if !strings.HasPrefix(got, "Waiting for harness\nAgents:\n- harness: free-chat-model\n") {
+	if !strings.HasPrefix(got, "Agent state: working\nWaiting for harness\nAgents:\n- harness: free-chat-model\n") {
 		t.Fatalf("free-chat status=%q", got)
 	}
 	m.liveAgents = nil
@@ -206,6 +207,7 @@ func TestTelegramStatusText(t *testing.T) {
 	m.chatModelSlug = "test-model"
 	got = m.telegramStatusText(now)
 	for _, want := range []string{
+		"Agent state: idle",
 		"idle",
 		"Model: test-model",
 		"Session: 00:02:00",
@@ -216,6 +218,33 @@ func TestTelegramStatusText(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("idle status missing %q: %q", want, got)
 		}
+	}
+}
+
+func TestTelegramStatusAgentStateTracksChatExecution(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		streaming bool
+		live      []liveAgent
+		preflight bool
+		want      string
+	}{
+		{name: "idle", want: "Agent state: idle"},
+		{name: "streaming", streaming: true, want: "Agent state: working"},
+		{name: "live agent", live: []liveAgent{{Name: "worker"}}, want: "Agent state: working"},
+		{name: "hero start preflight", preflight: true, want: "Agent state: working"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewTestModel(nil)
+			m.streaming = tc.streaming
+			m.liveAgents = tc.live
+			m.heroStartBootstrapping = tc.preflight
+
+			got := m.telegramStatusText(time.Now())
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("status=%q want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -545,7 +574,7 @@ func TestTelegramAutoReportSendsNonIdleStatusOncePerInterval(t *testing.T) {
 	if cmd != nil {
 		_ = cmd()
 	}
-	if len(outbound) != 1 || !strings.HasPrefix(outbound[0], "Cycle C3: Active cycle") {
+	if len(outbound) != 1 || !strings.HasPrefix(outbound[0], "Agent state: idle\nCycle C3: Active cycle") {
 		t.Fatalf("active auto-report outbound=%q", outbound)
 	}
 
@@ -569,7 +598,7 @@ func TestTelegramQueuedTurnSendsStatusOnceWhileStreaming(t *testing.T) {
 
 	inbound := telegramInboundMsg{text: "follow up", address: "proj"}
 	next, _ := m.handleTelegramInbound(inbound)
-	if len(outbound) != 1 || !strings.HasPrefix(outbound[0], "Cycle C3:") {
+	if len(outbound) != 1 || !strings.HasPrefix(outbound[0], "Agent state: working\nCycle C3:") {
 		t.Fatalf("queued status=%v", outbound)
 	}
 	if len(next.telegramPendingTurns) != 1 {

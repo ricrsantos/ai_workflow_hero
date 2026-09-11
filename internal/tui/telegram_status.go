@@ -75,16 +75,40 @@ func (m model) telegramStatusTextAt(at time.Time, includeIdle bool) string {
 		at = time.Now()
 	}
 	agents := m.telegramStatusAgentsText()
+	working := m.telegramAgentWorking()
+	var status string
 	if m.hasActiveCycle() {
-		return telegramCycleStatusText(m.status, agents, m.telegramTimerAndContextText(at))
+		status = telegramCycleStatusText(m.status, agents, m.telegramTimerAndContextText(at))
+	} else if working {
+		status = telegramStatusWithAgents("Waiting for harness", agents, m.telegramTimerAndContextText(at))
+	} else {
+		if !includeIdle {
+			return ""
+		}
+		status = m.telegramIdleStatusText(at)
 	}
-	if m.streaming {
-		return telegramStatusWithAgents("Waiting for harness", agents, m.telegramTimerAndContextText(at))
+	return telegramStatusWithAgentState(m.telegramAgentState(), status)
+}
+
+// telegramAgentWorking reports whether Chat is currently occupied by an
+// agent execution or by the asynchronous /hero-start preflight.
+func (m model) telegramAgentWorking() bool {
+	return m.streaming || len(m.liveAgents) > 0 || m.heroStartBootstrapping || m.heroStartPreparing
+}
+
+func (m model) telegramAgentState() string {
+	if m.telegramAgentWorking() {
+		return "working"
 	}
-	if !includeIdle {
+	return "idle"
+}
+
+func telegramStatusWithAgentState(agentState, status string) string {
+	status = strings.TrimSpace(status)
+	if status == "" {
 		return ""
 	}
-	return m.telegramIdleStatusText(at)
+	return "Agent state: " + strings.TrimSpace(agentState) + "\n" + status
 }
 
 // telegramIdleStatusText keeps the manual idle response useful without
