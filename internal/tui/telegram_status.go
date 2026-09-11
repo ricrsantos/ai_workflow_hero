@@ -108,7 +108,12 @@ func telegramStatusWithAgentState(agentState, status string) string {
 	if status == "" {
 		return ""
 	}
-	return "Agent state: " + strings.TrimSpace(agentState) + "\n" + status
+	stateLine := "Agent state: " + strings.TrimSpace(agentState)
+	firstLine, remainder, hasRemainder := strings.Cut(status, "\n")
+	if !hasRemainder {
+		return status + "\n" + stateLine
+	}
+	return firstLine + "\n" + stateLine + "\n" + remainder
 }
 
 // telegramIdleStatusText keeps the manual idle response useful without

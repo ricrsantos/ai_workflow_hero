@@ -4,6 +4,19 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-11 — Telegram `/status` line order
+
+**Problem**: The daemon prefixes outbound text with the instance address. The
+new `Agent state` line was emitted first, so idle replies began with
+`aiwkhero: Agent state: idle` and then repeated `idle` on the next line.
+
+**Change**: `internal/tui/telegram_status.go` now keeps the primary status
+headline first and inserts `Agent state` as the second line. This produces
+`aiwkhero: idle` followed by `Agent state: idle`, with the same ordering for
+cycle and active free-chat responses.
+
+**Validation**: Focused Telegram status tests and `go test ./...` pass.
+
 ## 2026-09-11 — Telegram `/status` agent state
 
 **Change**: Added an explicit `Agent state: working|idle` line to the

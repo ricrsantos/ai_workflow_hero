@@ -172,8 +172,10 @@ func TestTelegramStatusText(t *testing.T) {
 	}
 
 	got := m.telegramStatusText(now)
+	if !strings.HasPrefix(got, "Cycle C7: Telegram status\nAgent state: working\n") {
+		t.Fatalf("cycle status order=%q", got)
+	}
 	for _, want := range []string{
-		"Agent state: working",
 		"Cycle C7: Telegram status",
 		"Current stage: Implementation (Running, iteration 1/3)",
 		"Agents:\n- orchestration_agent: orchestrator-model\n- generic_agent: worker-model",
@@ -194,7 +196,7 @@ func TestTelegramStatusText(t *testing.T) {
 	m.streaming = true
 	m.liveAgents = []liveAgent{{Model: "free-chat-model", Harness: "cursor"}}
 	got = m.telegramStatusText(now)
-	if !strings.HasPrefix(got, "Agent state: working\nWaiting for harness\nAgents:\n- harness: free-chat-model\n") {
+	if !strings.HasPrefix(got, "Waiting for harness\nAgent state: working\nAgents:\n- harness: free-chat-model\n") {
 		t.Fatalf("free-chat status=%q", got)
 	}
 	m.liveAgents = nil
@@ -206,8 +208,10 @@ func TestTelegramStatusText(t *testing.T) {
 	m.streaming = false
 	m.chatModelSlug = "test-model"
 	got = m.telegramStatusText(now)
+	if !strings.HasPrefix(got, "idle\nAgent state: idle\nModel: test-model\n") {
+		t.Fatalf("idle status order=%q", got)
+	}
 	for _, want := range []string{
-		"Agent state: idle",
 		"idle",
 		"Model: test-model",
 		"Session: 00:02:00",
@@ -574,7 +578,7 @@ func TestTelegramAutoReportSendsNonIdleStatusOncePerInterval(t *testing.T) {
 	if cmd != nil {
 		_ = cmd()
 	}
-	if len(outbound) != 1 || !strings.HasPrefix(outbound[0], "Agent state: idle\nCycle C3: Active cycle") {
+	if len(outbound) != 1 || !strings.HasPrefix(outbound[0], "Cycle C3: Active cycle\nAgent state: idle") {
 		t.Fatalf("active auto-report outbound=%q", outbound)
 	}
 
@@ -598,7 +602,7 @@ func TestTelegramQueuedTurnSendsStatusOnceWhileStreaming(t *testing.T) {
 
 	inbound := telegramInboundMsg{text: "follow up", address: "proj"}
 	next, _ := m.handleTelegramInbound(inbound)
-	if len(outbound) != 1 || !strings.HasPrefix(outbound[0], "Agent state: working\nCycle C3:") {
+	if len(outbound) != 1 || !strings.HasPrefix(outbound[0], "Cycle C3: Active cycle\nAgent state: working") {
 		t.Fatalf("queued status=%v", outbound)
 	}
 	if len(next.telegramPendingTurns) != 1 {
