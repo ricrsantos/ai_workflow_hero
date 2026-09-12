@@ -288,11 +288,15 @@ func (m model) handleTimerTick(msg timerTickMsg) (model, tea.Cmd) {
 		}
 	}
 	reportCmd := m.maybeTelegramAutoReport(at)
+	var progressCmd tea.Cmd
+	if m.shouldWatchStageProgress() {
+		m, progressCmd = m.ensureStageProgress()
+	}
 	if !m.hasTimerWork() {
 		m.invalidateTimerLoop()
-		return m, combineTimerCmds(saveCmd, reportCmd)
+		return m, combineTimerCmds(saveCmd, reportCmd, progressCmd)
 	}
-	return m, combineTimerCmds(saveCmd, reportCmd, timerTickCmd(m.timerGeneration))
+	return m, combineTimerCmds(saveCmd, reportCmd, progressCmd, timerTickCmd(m.timerGeneration))
 }
 
 func parseCycleTimerTime(raw string) (time.Time, bool) {

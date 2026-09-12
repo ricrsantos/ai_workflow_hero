@@ -94,7 +94,9 @@ func tuiHeroStartContinueAfterSchedulerFailedValidationPreamble(stageName string
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ✗).\n" +
 		"- Do NOT run `hero stage close`, `hero stage loop-back`, or any gap-file / current-state.md mutation for this failure. The scheduler already persisted findings and loop-back.\n" +
 		"- Do NOT re-run the validation stage agent. Summarize the Chat handoff copy below for the user.\n" +
-		"- Implementation is waiting; tell the user to run /hero-start in the Hero TUI when ready for the next Implementation wave.\n" +
+		"- Do NOT ask the user to run /hero-start. The TUI starts Implementation and Executes named stage agents.\n" +
+		"- If hero status shows Implementation Escalated, list /hero-continue /hero-add-todo /hero-cancel /hero-finish and STOP. Do not call hero stage start.\n" +
+		"- You MAY call `hero stage start --name implementation` if it is still Waiting, then STOP immediately. If it is already Running, STOP immediately.\n" +
 		"- Do NOT dispatch Task for stage agents. The TUI Executes named stage agents.\n\n" +
 		"---\n\n"
 }

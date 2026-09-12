@@ -4,6 +4,14 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-11 — TUI scheduler never-idle after loop-back
+
+**Defect**: C15 persisted findings and loop-back, but `resumeOrchestratorAfterStageHandoff` set `stageHandoffInterventionRequired` whenever `Complete` was false. After QA/Judge fail, if the orchestrator called `hero stage start` and STOPped, Implementation was Running with no Execute. `/hero-start` was the only recovery. Other idle paths (Escalated, PendingApproval, StartStage budget, orch Execute error, silent `startStageAgentSessions` when not Running) also returned without launching or asking.
+
+**Fix**: `ensureStageProgress` (`internal/tui/stage_progress.go`) is the idle gate. Scheduler-handled loop-back clears intervention and `stageHandoffDoneKey`. Waiting/Running (new iteration) dispatches named agents; matching `doneKey` without intervention does not redispatch (avoids a planning loop); matching `doneKey` with intervention posts `/hero-start` (or `/hero-back` for Judge). Escalated/PendingApproval/start failure post CTAs. `EventStageStarted`/`EventApprovalRequired` while idle re-enter the gate. Orchestrator Execute errors always call `maybeHandoffAfterExecute`. User cancel holds auto-dispatch until `/hero-start`. Loop-back preamble no longer asks for `/hero-start`.
+
+**Validation**: `go test ./internal/tui/ -count=1`; `go test ./...` green.
+
 ## 2026-09-11 — C15 finished via /hero-finish
 
 **Outcome**: Cycle C15 (`loopback-findings-handoff`) completed with all enabled stages done: Research 1/3, Planning 1/3, Implementation 3/4 (two QA loop-backs), QA 3/3 (one `/hero-continue` after iteration budget), Judge 1/3. Browser UI Validation and QA End-to-End stayed skipped (disabled; native scope). `hero finish` recorded `completed_at` in SQLite. OpenSpec change `loopback-findings-handoff` remains linked until `/hero-archive`.

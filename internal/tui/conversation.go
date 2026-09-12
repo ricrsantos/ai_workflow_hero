@@ -549,6 +549,7 @@ func (m model) resetChatSession() model {
 	m.assetSaveInputDirty = false
 	m.attachmentCursor = 0
 	m = m.clearStageHandoffState()
+	m.stageProgressHoldUntilStart = false
 	m.convError = ""
 	m.streamInterrupted = false
 	m.agentMsgIndex = -1
@@ -588,6 +589,7 @@ func (m model) clearStageHandoffState() model {
 	m.stageHandoffPreparationError = ""
 	m.stageHandoffInterventionRequired = false
 	m.stageHandoffDoneKey = ""
+	m.stageProgressCTAKey = ""
 	return m
 }
 
@@ -686,6 +688,8 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 		// stage Running for intervention.
 		m.stageHandoffInterventionRequired = false
 		m.stageHandoffDoneKey = ""
+		m.stageProgressHoldUntilStart = false
+		m.stageProgressCTAKey = ""
 	}
 
 	var executePrompt string
@@ -2112,11 +2116,13 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if siblingsRemain && m.convStreamCh != nil {
 				return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), replyCmd)
 			}
-			if !siblingsRemain && m.stageHandoffLive {
+			if !siblingsRemain {
 				next, handoffCmd := m.maybeHandoffAfterExecute()
 				if handoffCmd != nil {
 					return next.afterExecuteTelegramDrain(combineTimerCmds(next.refreshCmd(), handoffCmd, replyCmd, next.ensureTimerLoop()))
 				}
+				next = next.completeBusyExecuteStatus(false, firstStatusLine(errText))
+				return next.afterExecuteTelegramDrain(combineTimerCmds(replyCmd, next.ensureTimerLoop()))
 			}
 			return m.afterExecuteTelegramDrain(replyCmd)
 		}
@@ -2270,6 +2276,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.liveAgents = nil
 		m.executes = nil
 		m = m.clearStageHandoffState()
+		m.stageProgressHoldUntilStart = m.orchestrationLive
 		m.confirmPending = false
 		m.confirmMsg = ""
 		m = m.clearHarnessPermission()
@@ -2280,6 +2287,10 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m = m.completeBusyExecuteStatus(false, "cancelled")
 		slog.Info("tui conversation interrupted")
+		if m.orchestrationLive {
+			next, progressCmd := m.ensureStageProgress()
+			return next.afterExecuteTelegramDrain(combineTimerCmds(progressCmd, next.ensureTimerLoop()))
+		}
 		return m.afterExecuteTelegramDrain(m.ensureTimerLoop())
 	}
 	return m, nil

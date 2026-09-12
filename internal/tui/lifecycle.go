@@ -27,9 +27,6 @@ func relayLifecycleEvents(p *tea.Program, events <-chan conversation.Event) {
 }
 
 func (m model) handleLifecycleEvent(event conversation.Event) (model, tea.Cmd) {
-	if m.telegram == nil {
-		return m, nil
-	}
 	if event.EventID > 0 {
 		if m.lifecycleEventIDs == nil {
 			m.lifecycleEventIDs = make(map[int64]struct{})
@@ -39,16 +36,26 @@ func (m model) handleLifecycleEvent(event conversation.Event) (model, tea.Cmd) {
 		}
 		m.lifecycleEventIDs[event.EventID] = struct{}{}
 	}
+	var progressCmd tea.Cmd
+	switch event.Kind {
+	case conversation.EventStageStarted, conversation.EventApprovalRequired:
+		if len(m.executes) == 0 && !m.streaming {
+			m, progressCmd = m.ensureStageProgress()
+		}
+	}
+	if m.telegram == nil {
+		return m, progressCmd
+	}
 	text := formatTelegramEvent(event)
 	if text == "" {
-		return m, nil
+		return m, progressCmd
 	}
 	if !m.telegram.connected || !m.telegram.paired {
 		m.pendingLifecycleEvents = append(m.pendingLifecycleEvents, event)
 		slog.Debug("queued lifecycle event until Telegram is ready", "kind", event.Kind, "event_id", event.EventID)
-		return m, nil
+		return m, progressCmd
 	}
-	return m, m.telegramOutboundCmd(text)
+	return m, combineTimerCmds(progressCmd, m.telegramOutboundCmd(text))
 }
 
 func (m model) flushPendingLifecycleEvents() (model, tea.Cmd) {

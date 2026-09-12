@@ -158,6 +158,18 @@ func TestTUIHeroStartContinueAfterStagePreamble(t *testing.T) {
 	}
 }
 
+func TestTUISchedulerFailedValidationPreambleDoesNotAskHeroStart(t *testing.T) {
+	got := tuiHeroStartContinueAfterSchedulerFailedValidationPreamble("qa")
+	for _, want := range []string{"Do NOT ask the user to run /hero-start", "hero stage start", "Escalated", "/hero-continue"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("scheduler-failed preamble missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "tell the user to run /hero-start") {
+		t.Fatalf("scheduler-failed preamble still asks for /hero-start: %q", got)
+	}
+}
+
 func TestTUIIncompleteStagePreambleExplainsExplicitRetry(t *testing.T) {
 	got := tuiHeroStartContinueAfterIncompleteStagePreamble("implementation", "report invalid")
 	for _, want := range []string{"Keep the stage Running", "Do NOT close", "/hero-start", "report invalid"} {

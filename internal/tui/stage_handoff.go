@@ -117,27 +117,11 @@ func (m model) maybeHandoffAfterExecute() (model, tea.Cmd) {
 		m = m.applyAgentRuntimePair(agentDiscover, "")
 		m = m.bindSessionToRuntimeHarness()
 	}
-	if agent == agentOrchestration && !m.researchLive && !m.stageHandoffLive {
-		if m.stageHandoffInterventionRequired && len(m.waitingNamedStageAgents()) == 0 {
-			return m, nil
-		}
-		if agents := m.runningStageAgents(); len(agents) > 0 {
-			if key := m.runningStageHandoffKey(); key != "" && key == m.stageHandoffDoneKey {
-				return m, nil
-			}
-			return m.startStageAgentSessions(agents)
-		}
-		if agents := m.waitingNamedStageAgents(); len(agents) > 0 {
-			if err := m.startWaitingActiveStage(); err != nil {
-				slog.Error("tui start waiting stage after orchestrator failed", "error", err)
-				m.convError = err.Error()
-				return m, nil
-			}
-			return m.startStageAgentSessions(agents)
-		}
-	}
 	if m.stageHandoffLive && agent != agentOrchestration && len(m.executes) == 0 {
 		return m.resumeOrchestratorAfterStageHandoff()
+	}
+	if !m.researchLive && !m.stageHandoffLive && (agent == agentOrchestration || agent == "") {
+		return m.ensureStageProgress()
 	}
 	return m, nil
 }
@@ -282,13 +266,13 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 		// an orphaned agent.
 		m.convError = fmt.Sprintf("resolve active stage: %v", err)
 		m.stageHandoffInterventionRequired = true
-		return m, nil
+		return m.emitSchedulerCTA(schedulerCTAStartFailed, store.Stage{Name: "cycle"}, err.Error())
 	}
 	// Escalated is a terminal control state until /hero-continue grants
 	// iterations and the engine moves the stage back to Waiting. Never let a
 	// stale TUI handoff launch an agent directly from Escalated.
 	if st.Status != store.StageRunning {
-		return m, nil
+		return m.progressCTAForStage(st)
 	}
 	stage := strings.TrimSpace(st.Name)
 	if stage == stageImplementation {
@@ -320,7 +304,7 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	if stage == "" {
 		m.convError = "resolve active stage: active stage has an empty name"
 		m.stageHandoffInterventionRequired = true
-		return m, nil
+		return m.emitSchedulerCTA(schedulerCTAStartFailed, st, "active stage has an empty name")
 	}
 	if m.stageHandoffStage != stage {
 		m.stageHandoffWave = 0
@@ -399,6 +383,8 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 
 	m.stageHandoffLive = true
 	m.stageHandoffInterventionRequired = false
+	m.stageProgressHoldUntilStart = false
+	m.stageProgressCTAKey = ""
 	m.stageHandoffStage = stage
 	m.stageHandoffOutputs = nil
 	m.stageHandoffPreparationError = ""
@@ -1089,7 +1075,12 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	m.stageHandoffAssignments = nil
 	m.stageHandoffExpectedAgents = nil
 	m.stageHandoffPreparationError = ""
-	m.stageHandoffInterventionRequired = !decision.Complete
+	m.stageHandoffInterventionRequired = !decision.Complete && !decision.SchedulerHandledFailure
+	if decision.SchedulerHandledFailure {
+		// Loop-back already moved Implementation to Waiting. This is a fresh
+		// wave, not a completion-gate retry of the validation stage.
+		m.stageHandoffDoneKey = ""
+	}
 	m = m.restoreOrchestratorSession()
 	m = m.withRuntimeAgent(agentOrchestration)
 	m.runtimeCommandName = "start"

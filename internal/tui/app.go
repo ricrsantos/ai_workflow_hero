@@ -187,6 +187,8 @@ type model struct {
 	stageHandoffPreparationError     string
 	stageHandoffInterventionRequired bool
 	stageHandoffDoneKey              string // "stage:iteration" already TUI-executed this session
+	stageProgressCTAKey              string // last idle CTA; de-dupes watchdog/lifecycle repeats
+	stageProgressHoldUntilStart      bool   // user cancelled; do not auto-redispatch until /hero-start
 
 	// C5 model properties (ADR-042).
 	propsSvc             *modelprops.Service
