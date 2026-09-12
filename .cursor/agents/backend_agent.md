@@ -43,7 +43,7 @@ When implementing or changing backend code, add structured application logs. Do 
 - If context is insufficient for a specific gap, invoke `context_agent` via Task (file pointers only); do not paste large file contents.
 - **Do not** parallelize when tasks touch the same files, when a contract is not yet defined, or when one task blocks another.
 - After fan-out completes: consolidate results, run tests once, return a **single** Output Format JSON covering all completed tasks.
-- Nested children do not need their own metrics block; include total estimated `input_chars` / `output_chars` for this whole invocation (including children) in your `metrics`.
+- Nested children do not emit a C15 report. Fold their estimated `input_chars` / `output_chars` into the orchestrator-side metrics estimate — never inside this agent's C15 JSON.
 
 ## Rules
 
@@ -64,14 +64,14 @@ Activated when `workflow-config.yml → scope.backend: true`.
 
 The orchestrator applies **Model Resolution** (see `orchestration_agent`): the Task tool `model` parameter must come from `workflow-config.yml` → `agents.backend_agent`. This agent uses whatever model is passed in the Task invocation. For **nested generic Task fan-out**, resolve `agents.backend_agent.subagent` (`same_of_agent: true` or missing → reuse this agent's model; `same_of_agent: false` → use `subagent.model` + kebab rules / `fallback_model`). Named Hero agents (e.g. `context_agent`) always use their own top-level block (`agents.context_agent`), not this agent's `subagent`. Do not inherit the main orchestrator session model. Prefer nested fan-out when the configured subagent model is cheaper.
 
-## Metrics (required in every completion report)
+## Metrics (orchestrator only)
 
 Estimate character usage for this invocation:
 
 - `input_chars` ≈ size of the effective prompt + files read
 - `output_chars` ≈ size of the response + code/artifacts written
 
-The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
+The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`, then persists via CLI (`--metrics-json`). Do **not** add a `metrics` object to the C15 JSON report.
 
 ## Task ownership
 
@@ -103,6 +103,32 @@ The report `status` MUST be exactly one of `complete`, `partial`, or `blocked`:
 - `tasks_completed` and `tasks_remaining` MUST contain only IDs from the explicit assignment. `completed_tasks_verified` is true only when every ID in `tasks_completed` is verified; `task_ownership_respected` is false if any task was outside this agent's ownership.
 
 A green test subset does not make an incomplete assignment complete. Never claim `complete` merely because the tests you chose passed.
+## C15 assignment IDs (PRD-C15-001 §6.5)
+
+Your explicit assignment may contain `task-*` IDs, `find-*` IDs, or both. `tasks_completed` and `tasks_remaining` must list only IDs from **your** assignment, be disjoint, and together cover every assigned ID exactly once.
+
+A verification wave with **no** assigned IDs accepts only empty arrays in both fields.
+
+Include verified `find-*` IDs in `tasks_completed` when you fixed that finding.
+
+## C15 report contract (PRD-C15-001 §6)
+
+Emit **one JSON object** as your entire completion output and **stop**. The orchestrator or TUI scheduler validates the report and persists findings, stage transitions, OpenSpec checkboxes, and loop-back.
+
+**Never** mutate operational state yourself:
+- do **not** call `hero stage close`, `hero stage loop-back`, or any other stage/cycle transition CLI;
+- do **not** edit OpenSpec `tasks.md` checkboxes or write gap files (`qa-gaps.md`, `judge-gaps.md`, etc.);
+- do **not** edit `context/current-state.md`;
+- do **not** invent new `find-*` IDs — only set `reopen_id` when reopening an existing `done` finding ID supplied in your context.
+- `reopen_id` is valid only when this failure's `file`, `requirement`, and `acceptance_criteria` match that finding's stored contract. Issue wording may differ and is audit-only; it does **not** replace the Implementation assignment.
+- If the residual is a different file, requirement, or acceptance criterion, omit `reopen_id` so Hero allocates a new `find-*` ID. Do not reuse an ID to describe a new defect.
+
+Allowed top-level fields only: `stage`, `agent`, `status`, `tasks_completed`, `tasks_remaining`, `files_changed`, `acceptance_gates`, `tests_passed`, `blocker`, `next_action`, `summary`.
+
+`status` must be `complete`, `partial`, or `blocked` — never `passed` or `failed`. Do **not** emit `failures`, `metrics`, or any other unknown field (`unknown_field` rejects the report and persists nothing).
+
+Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
+
 ## Output Format
 
 The implementation report MUST be valid JSON and MUST include the completion contract fields below. Keep `tasks_completed` and `tasks_remaining` as task-ID arrays.
@@ -112,7 +138,7 @@ The implementation report MUST be valid JSON and MUST include the completion con
   "stage": "implementation",
   "agent": "backend_agent",
   "status": "complete",
-  "tasks_completed": ["task-1"],
+  "tasks_completed": ["task-1", "find-qa-1"],
   "tasks_remaining": [],
   "files_changed": ["path/to/file"],
   "acceptance_gates": {
@@ -123,7 +149,38 @@ The implementation report MUST be valid JSON and MUST include the completion con
   "tests_passed": true,
   "blocker": null,
   "next_action": null,
-  "summary": "Implemented and verified all assigned tasks.",
+  "summary": "Implemented and verified all assigned tasks."
+}
+```
+
+For `partial` or `blocked` reports, set `status` accordingly, list all unfinished assigned task IDs in `tasks_remaining`, set any unmet `acceptance_gates` values to `false`, and provide non-empty `blocker` and `next_action` strings. Do not use `complete` while any assigned task remains. Never claim that an unassigned or differently owned task was completed.
+
+### Empty verification wave example
+
+```json
+{
+  "stage": "implementation",
+  "agent": "backend_agent",
+  "status": "complete",
+  "tasks_completed": [],
+  "tasks_remaining": [],
+  "files_changed": [],
+  "acceptance_gates": {
+    "completed_tasks_verified": true,
+    "task_ownership_respected": true,
+    "required_tests_passed": true
+  },
+  "tests_passed": true,
+  "blocker": null,
+  "next_action": null,
+  "summary": "Verification wave: no assigned task or finding IDs."
+}
+```
+
+Example orchestrator-side metrics payload (never include inside the C15 JSON object):
+
+```json
+{
   "metrics": {
     "model": "<id>",
     "input_chars": 0,
@@ -131,5 +188,3 @@ The implementation report MUST be valid JSON and MUST include the completion con
   }
 }
 ```
-
-For `partial` or `blocked` reports, set `status` accordingly, list all unfinished assigned task IDs in `tasks_remaining`, set any unmet `acceptance_gates` values to `false`, and provide non-empty `blocker` and `next_action` strings. Do not use `complete` while any assigned task remains. Never claim that an unassigned or differently owned task was completed.

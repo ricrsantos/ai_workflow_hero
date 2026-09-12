@@ -32,6 +32,24 @@ Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_fiel
 Estimate character usage for this invocation (`input_chars`, `output_chars`). The orchestrator persists metrics via CLI — do **not** add a `metrics` object to the C15 JSON report above.
 """.strip()
 
+IMPL_C15_PROHIBITION = """
+## C15 report contract (PRD-C15-001 §6)
+
+Emit **one JSON object** as your entire completion output and **stop**. The orchestrator or TUI scheduler validates the report and persists findings, stage transitions, OpenSpec checkboxes, and loop-back.
+
+**Never** mutate operational state yourself:
+- do **not** call `hero stage close`, `hero stage loop-back`, or any other stage/cycle transition CLI;
+- do **not** edit OpenSpec `tasks.md` checkboxes or write gap files (`qa-gaps.md`, `judge-gaps.md`, etc.);
+- do **not** edit `context/current-state.md`;
+- do **not** invent new `find-*` IDs — only set `reopen_id` when reopening an existing `done` finding ID supplied in your context.
+
+Allowed top-level fields only: `stage`, `agent`, `status`, `tasks_completed`, `tasks_remaining`, `files_changed`, `acceptance_gates`, `tests_passed`, `blocker`, `next_action`, `summary`.
+
+`status` must be `complete`, `partial`, or `blocked` — never `passed` or `failed`. Do **not** emit `failures`, `metrics`, or any other unknown field (`unknown_field` rejects the report and persists nothing).
+
+Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
+""".strip()
+
 JUDGE_BODY = """# judge_agent — SDD Coverage Judge Agent
 
 ## Role
@@ -259,7 +277,7 @@ A verification wave with **no** assigned IDs accepts only empty arrays in both f
 
 Include verified `find-*` IDs in `tasks_completed` when you fixed that finding.
 
-""" + C15_PROHIBITION
+""" + IMPL_C15_PROHIBITION
     text = text.replace(
         "A green test subset does not make an incomplete assignment complete. Never claim `complete` merely because the tests you chose passed.\n## Output Format",
         "A green test subset does not make an incomplete assignment complete. Never claim `complete` merely because the tests you chose passed."

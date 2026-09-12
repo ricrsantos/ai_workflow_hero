@@ -75,13 +75,20 @@ func TestFreeChatModeHidesEtapaHintAndNav(t *testing.T) {
 	if !strings.Contains(view, "Settings") {
 		t.Fatalf("free chat navbar should include Settings:\n%s", view)
 	}
-	if !strings.Contains(stripANSI(view), "alt+1-2") {
+	if !strings.Contains(stripANSI(view), "alt+1-3") {
 		t.Fatalf("free chat navbar should use the numbered range label:\n%s", view)
+	}
+	if !strings.Contains(view, "History") {
+		t.Fatalf("free chat navbar should include History:\n%s", view)
 	}
 
 	next, _ := HandleTestKey(m, "alt+2")
+	if CurrentScreen(next) != ScreenHistory {
+		t.Fatalf("alt+2 must open History in free chat, got %v", CurrentScreen(next))
+	}
+	next, _ = HandleTestKey(m, "alt+3")
 	if CurrentScreen(next) != ScreenSettings {
-		t.Fatalf("alt+2 must open Settings in free chat, got %v", CurrentScreen(next))
+		t.Fatalf("alt+3 must open Settings in free chat, got %v", CurrentScreen(next))
 	}
 }
 

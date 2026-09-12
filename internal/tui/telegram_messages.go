@@ -97,14 +97,18 @@ func (m model) handleTelegramMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.handleTelegramEvent(msg)
 		m, notificationCmd := m.flushPendingTelegramNotifications()
 		if m.restartRequested {
-			restartCmds := []tea.Cmd{tea.Quit}
+			var restartCmd tea.Cmd
 			if m.streaming {
-				restartCmds = append(restartCmds, m.cancelStreamCmd())
+				m.pendingQuitAfterInterrupt = true
+				restartCmd = m.cancelStreamCmd()
+			} else {
+				restartCmd = tea.Quit
 			}
-			return m, combineTimerCmds(append([]tea.Cmd{
+			return m, combineTimerCmds(
 				notificationCmd,
 				m.telegramOutboundCmd("Hero update installed; restarting this TUI."),
-			}, restartCmds...)...)
+				restartCmd,
+			)
 		}
 		return m, notificationCmd
 
@@ -454,9 +458,14 @@ func (m model) submitRemoteTurn(text, origin string) (model, tea.Cmd) {
 		}
 	}
 	m.runtimeCommandName = ""
-	m = m.syncConversationContext()
-	m = m.beginConversationExecute(text, controlSlashFollowUpPrompt(text))
-	return m, combineTimerCmds(m.conversationExecuteCmds(), m.telegramOutboundCmd(m.telegramAutoReportText(time.Now())))
+	if !m.conversationContextIOAsync() {
+		m = m.syncConversationContext()
+		m = m.beginConversationExecute(text, controlSlashFollowUpPrompt(text))
+		return m, combineTimerCmds(m.conversationExecuteCmds(), m.telegramOutboundCmd(m.telegramAutoReportText(time.Now())))
+	}
+	m.pendingChatFollowUp = &pendingChatFollowUpState{text: text, telegram: true}
+	m, seq := m.nextConversationContextSync()
+	return m, m.syncConversationContextCmd(seq, syncContextFollowUp)
 }
 
 // enqueueTelegramPendingTurn defers one remote turn until the active Execute

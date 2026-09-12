@@ -23,6 +23,7 @@ const (
 	ScreenConfig       = screenConfig
 	ScreenSettings     = screenSettings
 	ScreenConversation = screenConversation
+	ScreenHistory      = screenHistory
 	ScreenPalette      = screenPalette
 	ScreenOutput       = screenOutput
 )
@@ -740,4 +741,31 @@ func ExecuteDoneMsgForTest(err error) tea.Msg {
 // ExecuteDoneResultForTest builds an executeDoneMsg with a harness result.
 func ExecuteDoneResultForTest(res *harness.ExecutionResult, err error) tea.Msg {
 	return executeDoneMsg{result: res, err: err}
+}
+
+// FlushSessionPersistForTest runs queued session/cycle persistence cmds synchronously.
+func FlushSessionPersistForTest(m model) model {
+	for {
+		var cmd tea.Cmd
+		m, cmd = m.drainSessionPersistCmd()
+		if cmd == nil {
+			return m
+		}
+		msg := cmd()
+		if msg == nil {
+			continue
+		}
+		next, follow := m.handleConversationMsg(msg)
+		if nm, ok := next.(model); ok {
+			m = nm
+		}
+		if follow != nil {
+			if inner := follow(); inner != nil {
+				next2, _ := m.handleConversationMsg(inner)
+				if nm, ok := next2.(model); ok {
+					m = nm
+				}
+			}
+		}
+	}
 }

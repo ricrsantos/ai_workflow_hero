@@ -11,6 +11,13 @@ last_updated: 2026-09-07
 currency: usd
 unit: per_1m_tokens
 
+# Claude uses the explicitly labeled degraded file-reference path in this
+# cycle. The adapter still verifies the selected native selector locally.
+media:
+  image_input_file_reference: true
+  image_output_file: true
+  max_attachment_bytes: 20971520
+
 models:
   sonnet: &standard
     context_window: 200000

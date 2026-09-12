@@ -270,6 +270,15 @@ func drainConversationStream(t *testing.T, m model, cmd tea.Cmd) model {
 			t.Fatal("streaming stalled without follow-up cmd")
 		}
 	}
+	for cmd != nil {
+		msg := runConversationCmd(cmd)
+		if msg == nil {
+			break
+		}
+		next2, nextCmd := next.Update(msg)
+		next = next2.(model)
+		cmd = nextCmd
+	}
 	return next
 }
 
@@ -322,7 +331,7 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 			case tea.BatchMsg:
 				if got := runConversationCmd(func() tea.Msg { return inner }); got != nil {
 					switch got.(type) {
-					case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, executePairMsg:
+					case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, executePairMsg, heroSessionBoundMsg:
 						return got
 					default:
 						if found == nil {
@@ -332,7 +341,7 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 				}
 			case convWaitTickMsg, statusTickMsg, harnessHealthProbeMsg:
 				continue
-			case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, executePairMsg:
+			case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, executePairMsg, heroSessionBoundMsg:
 				return inner
 			case refreshDataMsg:
 				if found == nil {
@@ -568,7 +577,7 @@ func TestConversationPersistsSessionFromBoundDeltaBeforeExecuteDone(t *testing.T
 	_ = drainConversationStream(t, next, cmd)
 }
 
-func TestHealthFailedCancelsStream(t *testing.T) {
+func TestHealthFailedDoesNotCancelStream(t *testing.T) {
 	m, h, _ := newConversationTestModel(t)
 	h.deltas = []string{"partial"}
 	h.release = make(chan struct{})
@@ -583,20 +592,26 @@ func TestHealthFailedCancelsStream(t *testing.T) {
 		t.Fatal("expected streaming")
 	}
 
-	next, cancelCmd := next.handleHarnessHealthResult(harnessHealthResultMsg{
+	next, healthCmd := next.handleHarnessHealthResult(harnessHealthResultMsg{
 		status: harness.HealthFailed,
 		health: harness.HarnessHealth{ProcessAlive: false, Details: "Harness process is not running."},
 	})
+	if healthCmd != nil {
+		t.Fatal("health path must not cancel Execute")
+	}
+	if h.CancelCalled() {
+		t.Fatal("HealthFailed must not call harness Cancel")
+	}
+	if !IsConversationStreaming(next) {
+		t.Fatal("expected stream to remain active after HealthFailed")
+	}
+
+	close(h.release)
+	next, cancelCmd := CancelConversationStreamForTest(next)
 	if cancelCmd != nil {
 		cancelMsg := cancelCmd()
 		next2, _ := next.Update(cancelMsg)
-		next = next2.(model)
-	}
-	if !h.CancelCalled() {
-		t.Fatal("expected Cancel on HealthFailed")
-	}
-	if IsConversationStreaming(next) {
-		t.Fatal("expected streaming stopped after HealthFailed")
+		_ = next2
 	}
 }
 
@@ -650,7 +665,7 @@ func TestConversationResponsePaneLayout(t *testing.T) {
 	if !strings.Contains(view, "↑↓ scroll") {
 		t.Fatalf("expected scroll hint: %q", view)
 	}
-	if !strings.Contains(view, "alt+q quit") && !strings.Contains(view, "alt+1-6") {
+	if !strings.Contains(view, "alt+q quit") && !strings.Contains(view, "alt+1-7") {
 		t.Fatalf("expected footer menu visible: %q", view)
 	}
 	// Stage hint moved to status bar under ready (not in the chat header).
@@ -1391,12 +1406,12 @@ func TestConversationFocusCaretNoBlinkPipe(t *testing.T) {
 func TestConversationScreenNavFromEmptyInput(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
-	next, _ := HandleTestKey(m, "alt+2")
+	next, _ := HandleTestKey(m, "alt+3")
 	if CurrentScreen(next) != ScreenStatus {
 		t.Fatalf("screen = %v, want Status", CurrentScreen(next))
 	}
 	m = EnterConversationForTest(m)
-	next, _ = HandleTestKey(m, "alt+5")
+	next, _ = HandleTestKey(m, "alt+6")
 	if CurrentScreen(next) != ScreenEvents {
 		t.Fatalf("screen = %v, want Events", CurrentScreen(next))
 	}
@@ -3493,7 +3508,7 @@ func TestResetChatSessionClearsStageHandoffState(t *testing.T) {
 	m.stageHandoffInterventionRequired = true
 	m.stageHandoffDoneKey = "implementation:4"
 
-	got := m.resetChatSession()
+	got, _ := m.resetChatSession()
 	assertStageHandoffStateCleared(t, got)
 }
 
@@ -4424,6 +4439,7 @@ func TestStageAgentOpenCodeSessionDoesNotReplaceOrchestrator(t *testing.T) {
 	m.runtimeAgentName = agentOrchestration
 	m.runtimeHarnessID = "cursor"
 	m = m.persistHarnessSession("11111111-1111-4111-8111-111111111111", "cursor")
+	m = FlushSessionPersistForTest(m)
 	if OrchestrationSessionIDForTest(m) != "11111111-1111-4111-8111-111111111111" {
 		t.Fatalf("orch session=%q", OrchestrationSessionIDForTest(m))
 	}
@@ -4434,10 +4450,16 @@ func TestStageAgentOpenCodeSessionDoesNotReplaceOrchestrator(t *testing.T) {
 	m.executes = map[string]convExecute{
 		"ex-qa": {ID: "ex-qa", AgentName: "qa_agent", HarnessID: "opencode", StageName: stageResearch},
 	}
-	next, _ := m.Update(streamDeltaMsg{
+	next, cmd := m.Update(streamDeltaMsg{
 		executeID: "ex-qa",
 		delta:     harness.StreamDelta{SessionID: "ses_f810a8dc9ffeO6nD2Xb69Dnunp"},
 	})
+	if cmd != nil {
+		if msg := runConversationCmd(cmd); msg != nil {
+			next2, _ := next.(model).handleConversationMsg(msg)
+			next = next2
+		}
+	}
 	got := next.(model)
 	if OrchestrationSessionIDForTest(got) != "11111111-1111-4111-8111-111111111111" {
 		t.Fatalf("qa stream leaked into orch session: %q", OrchestrationSessionIDForTest(got))

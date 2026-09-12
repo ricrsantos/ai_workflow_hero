@@ -17,7 +17,7 @@ Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning
 | CLI | Cobra + `internal/common/clierr` |
 | TUI | Bubble Tea + lipgloss + huh (install prompts) |
 | Assets | `assets.FS` (`embed.FS`) |
-| Operational store | SQLite at `.workflow-hero/hero.db` (schema **v11**; C15 findings/ToDo tables + cycle disposition; v10 orchestrator session pair on `cycles`, stage-agent sessions on `stages`) |
+| Operational store | SQLite at `.workflow-hero/hero.db` (schema **v13**; v12 C16 `sessions`/`session_events`/`session_assets`/`session_leases`/`session_delete_ops` + v13 `session_delete_op_managed_paths`; v11 C15 findings/ToDo + cycle disposition; v10 orchestrator session pair on `cycles`, stage-agent sessions on `stages`) |
 | SDD | OpenSpec (external CLI; coupled at archive) |
 | V1 harness | Cursor Agent CLI (`cursor-agent` / `cursor agent`) |
 | Platforms | Linux/macOS `amd64` / `arm64` |
@@ -202,9 +202,9 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / a project `.wor
               │
     ┌─────────┼─────────┬──────────┬──────────┬──────────────┐
     │         │         │          │          │              │
-  Chat    Status   Artifacts   Costs     Events    Config (active cycle)
-    │         │         │          │          │              │
-    └─────────┴─────────┴──────────┴──────────┘              │
+  Chat   History*  Status   Artifacts   Costs   Events   Settings   Config
+    │       │          │         │        │       │         │         │
+    └───────┴──────────┴─────────┴────────┴───────┴─────────┘         │
               │                                              │
          cycle.Service (read / mutate views)           HarnessAdapter
               │                                    Execute · Cancel · Stream
@@ -214,7 +214,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / a project `.wor
          hero.db mutations                              cursor-agent CLI
 ```
 
-**Screens** (`alt+1` … `alt+5`): Chat, Status, Artifacts, Costs, Events. With an active project cycle, Config is appended as `alt+6`; when it is hidden, `alt+6` is a no-op. Ctrl aliases are not part of the TUI keymap. Tab switches shell focus between the active screen and navbar; while the navbar owns focus, Up/Down move its independent luminous cursor and Enter activates the selected screen, while `>` continues to identify the active screen. The navbar footer shows only `alt+1-5` or `alt+1-6` accordingly. Approvals are handled in Chat via `/hero-approve` / `/hero-reject` (no separate Approvals screen). `hero chat` shows Chat only. Config is unavailable without an active cycle.
+**Current screens:** Chat, **History** (C16 shipped), Status, Artifacts, Costs, Events, Settings, with Config appended for an active cycle. History sits immediately after Chat and is available without an active cycle; visible Alt shortcuts follow the resulting order. Standalone `hero chat` exposes Chat, History, Settings. Ctrl aliases remain outside the TUI keymap. Tab switches shell focus between the active screen and navbar; while the navbar owns focus, Up/Down move its independent luminous cursor and Enter activates the selected screen, while `>` continues to identify the active screen. Approvals remain in Chat. Config remains unavailable without an active cycle.
 
 **TUI modules** (selected):
 
@@ -222,6 +222,7 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / a project `.wor
 |---|---|
 | `app.go` / `screens.go` | Bubble Tea model, screen routing, keybindings |
 | `conversation.go` | Chat transcript, multiplexed harness Executes, Execute lifecycle |
+| `history_*` (C16 shipped) | Async History child model: active/archive list, detail, search, import/fork/delete dialogs, and bounded transcript paging |
 | `research_session.go` | Dedicated `discover_agent` session during Research; injects active `docs/idea` paths via `ideadocs` |
 | `stage_handoff.go` | TUI-direct Execute of named stage agents; Implementation checklist/report gate and bounded progress waves |
 | `herocmd.go` | `/hero-*` slash dispatch and orchestrator prompt assembly |
@@ -250,6 +251,7 @@ QA / Judge / Browser UI / E2E JSON
                  ▼
 Implementation scheduler assignment
    unchecked OpenSpec task-*  ∪  open/reopened find-*
+   (frozen file/requirement/issue/acceptance + occurrence history)
                  │ validated report
           ┌──────┴──────────┐
           ▼                 ▼
@@ -275,7 +277,7 @@ TUI Status sidebar and Telegram `/status` text still omit the additive C15 table
 
 - **Go owns the state machine**; TUI reads and mutates via `cycle.Service`.
 - **Harness conversations** use `HarnessAdapter.Execute` with streaming (`stream-json`), not IDE chat injection (ADR-026).
-- **Dual OpenCode-style panes** on Chat: composer + response area. Session IDs are slot-scoped: orchestrator pair on `cycles.orchestration_session_id`/`orchestration_harness_id` (schema v10); named stage agents on `stages.harness_session_id`/`harness_id`; freechat stays in TUI memory. A session is never resumed through a different harness.
+- **Dual OpenCode-style panes** on Chat: composer + response area. Orchestrator pair on `cycles.orchestration_session_id`/`orchestration_harness_id` (schema v10) and stage-agent `harness_session_id`/`harness_id` remain compatibility projections. **C16 shipped:** durable Hero session aggregates (`sessions` + `session_events`) are the conversation source of truth for History/Chat persist-restore while retaining those projections. A session is never resumed through a different harness.
 - **Orchestrator vs Research**: TUI Execute for control slashes uses `agents.orchestration_agent` from `workflow-config.yml`; Research uses a separate `discover_agent` session (`research_session.go`); Cursor IDE chat keeps grilling in the orchestrator session.
 - **TUI-direct stage Execute (C8 + ADR-075)**: after ORCH starts a stage and STOPs, the TUI Executes named stage agents on their YAML harness+model pair (`stage_handoff.go`, `stage_progress.go`). Nested Task fan-out stays inside the parent harness; generic Tasks chip `TASK`. Implementation may run BACK/FRNT/GEN concurrently. For a linked OpenSpec change, the TUI validates canonical ownership, injects only each agent's ordered unchecked task blocks, and persists assignment audits with ordered `task_ids` per agent/wave plus raw result audits. It permits close only after valid complete reports, passing gates, and a scheduler reread with an empty checklist; progress may start a bounded fresh wave without advancing the stage iteration. If Implementation starts/restarts already empty, one verification wave may collect reports/gates; after a wave clears all pending tasks, no empty wave is redispatched. `Escalated` never executes before `/hero-continue`. Idle Running/Waiting/Escalated/PendingApproval with no Execute either launches the named agents or posts a deterministic Hero CTA (`/hero-start`, `/hero-continue`, `/hero-approve`); C15 scheduler-handled loop-back clears intervention so Implementation is not left Running with a stopped agent. `EventStageStarted` while idle re-enters the same gate. Cursor IDE Runtime still uses Task for every subagent (ADR-005 / ADR-054 / ADR-075).
 - **Boot** validates harness availability (`IsAvailable`); may prompt for harness selection when `cli.tools` is empty (ADR-027).
@@ -284,6 +286,27 @@ TUI Status sidebar and Telegram `/status` text still omit the additive C15 table
 - **Cycle Config (C7)**: the TUI edits only managed YAML nodes; the latest file supplies unmanaged comments/unknown keys during Save. Successful Save calls cycle sync; completed stages remain protected, and a changed failed stage can be explicitly requeued through `cycle.Service.RetryFailedStage`.
 - **Telegram Cycle Config**: Telegram `/hero-config` edits the same managed `workflow-config.yml` projection in an address-scoped in-memory draft. The shared Config persistence helper validates enabled harnesses, atomically writes the latest-file merge, and calls `cycle.Service.SyncCycleConfig`; `/hero-config-show` reads the canonical file or renders the active draft. Cycle-agent review derives its queue from `ManagedConfig.RequiredAgentNames`, so enabled stages/scopes control both prompts and summary rows; each named agent queues parent model review followed by nested subagent review, while a dedicated subagent is constrained to the parent's harness. The existing numbered Telegram `/model` state machine commits to the draft and never writes free-chat `hero.json`.
 - **Shared TUI timers**: one second tick drives the blue bottom-navbar `Session`, `AI wk`, and `AI rp` values. `Session` starts at zero on TUI boot, persists active cycle seconds in `cycles.session_duration_seconds` for explicit `/hero-start`/`/hero-resume` recovery, stops at a terminal cycle state, and resets on `/hero-new`, archive, or an ordinary first chat prompt before a cycle session is restored. `AI wk` measures a live Execute; process-local `AI rp` starts on the first harness response and restarts on every later response-content event, even when the active detail profile filters it from Chat, exposing the elapsed response gap.
+
+### C16 shipped — durable session-history flow
+
+```text
+TUI / Telegram input
+        │
+        ▼
+conversation session service ── acquire/heartbeat lease ──► session_leases
+        │
+        ├─ create/update aggregate ─────────────────────────► sessions
+        ├─ append ordered visible event ────────────────────► session_events
+        ├─ register managed/external asset reference ───────► session_assets
+        └─ exact harness/model resume ──────────────────────► HarnessAdapter
+                         │ unavailable
+                         ▼
+                 confirmed context fork
+
+History child model ── async page/search/archive/delete ──► same service/store
+```
+
+C16 is implemented on schema v12 (ADR-091–098). Hero session identity is independent of the provider ID; cycle/stage/agent fields are attribution rather than ownership. The old `conversation` table remains cycle audit data. Optional adapter capabilities provide confirmed remote-history import and best-effort native deletion. Persistent C14 asset directories are exempt from age-only cleanup until their session is deleted; original user files are never unlinked.
 
 ---
 
@@ -356,7 +379,7 @@ Agents: `orchestration_agent`, `discover_agent`, `planning_agent`, `context_agen
   context/ · openspec/ · docs/ · AGENTS.md  (project knowledge, not SoT)   │
 ```
 
-**SQLite** (`internal/store`) holds cycles, stages, events, metrics, artifact metadata, harness session references per stage where persisted, and the accumulated active cycle Session timer seconds.
+**SQLite** (`internal/store`) holds cycles, stages, events, metrics, artifact metadata, harness session references, the accumulated active-cycle timer, and (schema v12 / C16) durable session aggregates, ordered normalized transcript events, asset references, continuation leases, and delete-op recovery — without repurposing cycle audit `conversation` rows.
 
 ### Telegram plugin (C09, landed)
 
@@ -510,18 +533,18 @@ Legacy cycle markdown (`workflow.md`, `metrics.md`) is **not** operational sourc
      ▼           ▼                  ▼                 ▼
  healthy    suspected_hang     degraded          failed
               │                  │                 │
-              │ warn only        │ warn only       │ auto-cancel Execute
-              │ (busy tools OK)  │                 │ (process/session dead)
+              │ warn only        │ warn only       │ warn only
+              │ (busy tools OK)  │                 │ (never cancel Execute)
               └──────────────────┴─────────────────┘
 ```
 
 - Stall timeouts: Cursor 5m, OpenCode/Codex **3m** (`internal/harness/health.go`).
 - Permission and question callbacks pause the watchdog while the TUI waits for
   the user; that expected wait is excluded from the inactivity window.
-- `HealthFailed` (process dead or OpenCode session 404) ends the stream (`cancelStreamCmd`); `HealthSuspected` stays warn-only while the session is still `busy`.
-- OpenCode health: `GET /global/health` + read-only `GET /session/{id}` (no `ensureServe`); Cursor: `HasInFlight()` + session status.
+- `degraded`, `suspected_hang`, and `failed` are warn-only (`cancelStreamCmd` is never taken from the health path). Cursor completed/idle/cancelled known sessions stay alive so a probe racing `executeDone` does not flash a false failed warning. TUI probes are generation-scoped.
+- OpenCode health: `GET /global/health` + read-only `GET /session/{id}` (no `ensureServe`); Cursor: `HasInFlight()` + session status (terminal success is not `HealthFailed`).
 - OpenCode Execute: `ResumeSession` before `prompt_async`; `session.bound` persists the id before SSE; idle/gone probes close a silent `GET /event`; `Cancel("")` cancels every in-flight `runCtx`. Serve is started with `exec.Command` (not `CommandContext(runCtx)`) so recovery survives Cancel. After SSE disconnect, if `opencode serve` was restarted, Execute inspects the last assistant message: a completed turn with text is recovered from `/session/{id}/message`; a dead/incomplete turn (stuck `running` tool, missing `time.completed`) is aborted and continued on the same session with a short continuation prompt (not the original task text). A plain SSE blip while the same serve is still up does not re-prompt. Disconnect/reconnect UX uses shared `harness.ConnectionClosedDelta` / `ConnectionReconnectedDelta`. C5 thinking (`th`) is sent as `{type: disabled|enabled}` (DeepSeek V4 / Console Go `ThinkingOptions`); agent frontmatter is synced to the same object. Nested `session.error` payloads unwrap `error.message` for the TUI.
-- Codex Execute: mid-turn `app-server` stdio drop clears the dead RPC (preserving Cancel maps), restarts the child, `thread/resume`s the in-progress session, emits the same connection lifecycle deltas, and continues with a short continuation prompt (bounded attempts). `CheckHealth` reports reconnecting as degraded (not failed) so the TUI watchdog does not auto-cancel.
+- Codex Execute: mid-turn `app-server` stdio drop clears the dead RPC (preserving Cancel maps), restarts the child, `thread/resume`s the in-progress session, emits the same connection lifecycle deltas, and continues with a short continuation prompt (bounded attempts). `CheckHealth` reports reconnecting as degraded (not failed) so the TUI health path does not flash a failed-process warning.
 - Cursor Execute: retries transport/process disconnects (`IsTransportFailure`) with the same `SessionID`, in addition to API `IsRetriableFailure`.
 - Empty successful Execute → TUI warning (`convRoleWarning`); not applied to Cursor IDE chat Runtime.
 
@@ -540,12 +563,12 @@ Conversation now has a shared core (`internal/conversation`) plus three surfaces
 
 | Layer | Where | Lifetime |
 |---|---|---|
-| **Conversation service** | `internal/conversation` — transport-neutral `Service`, `Input`/`Dispatch` routing, per-turn dispatcher boundary, and `Notifier` lifecycle events (ADR-061). The TUI and Telegram ingress both route turns through it; Bubble Tea renders the results | Process lifetime |
-| **TUI Chat UI** | `internal/tui/conversation.go` + `stage_handoff.go` — transcript in memory; one or more tagged Executes multiplexed on one channel; stage assignments/results audited in SQLite | Process lifetime for display; audit records follow cycle lifetime; optional resume via harness session id |
+| **Conversation service** | `internal/conversation` — transport-neutral `Service`, Bubble-Tea-free `SessionService` (create/append/lease/fork/import/delete), `Input`/`Dispatch` routing, and `Notifier` lifecycle events (ADR-061/093). The TUI and Telegram ingress both route turns through it; Bubble Tea renders the results | Process lifetime + durable Hero sessions |
+| **TUI Chat / History** | `internal/tui/conversation.go`, `chat_session*.go`, `history_screen.go` — live transcript plus async History; Executes multiplexed on one channel; stage assignments/results audited in SQLite | Display is process-lifetime; durable transcript SoT is schema-v12 `sessions`/`session_events` |
 | **IDE Runtime** | Cursor chat + Task sessions | IDE session / Task isolation (ADR-005) |
-| **SQLite `conversation` table** | `internal/store` | Persisted messages; **not** wired as the TUI chat transcript SoT in V1 |
+| **SQLite audit `conversation`** | `internal/store` | Cycle audit messages only; **not** the TUI chat transcript SoT (C16) |
 
-**Free chat** (no active dispatchable stage): TUI sets `conversationStage == ""`; harness session may exist only in TUI memory until the user starts a cycle-bound stage.
+**Free chat** (no active dispatchable stage): TUI sets `conversationStage == ""`; Hero session rows persist on first accepted turn; `/new-chat` releases the lease and opens an empty unpersisted surface while keeping prior rows in History.
 
 ---
 

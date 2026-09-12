@@ -138,8 +138,8 @@ func (w *Watchdog) Evaluate(now time.Time, probe HarnessHealth, stallTimeout tim
 
 func isActivityDelta(d StreamDelta) bool {
 	if IsConnectionLifecycleDelta(d) {
-		// Reconnect progress must keep the hang watchdog from cancelling the
-		// Execute while the adapter restarts transport.
+		// Reconnect progress must not look like a stall while the adapter
+		// restarts transport.
 		return true
 	}
 	switch d.Kind {

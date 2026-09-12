@@ -1,12 +1,16 @@
 package common_test
 
 import (
+	"encoding/json"
 	"io/fs"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 )
+
+var jsonFenceRE = regexp.MustCompile("(?is)```json\\s*\\n(.*?)```")
 
 // TestRuntimeAssets_StageOrder verifies the stage order keywords appear in at least
 // one command/agent asset. This validates ADR-011 semantics are present in stubs.
@@ -91,10 +95,16 @@ func TestRuntimeAssets_ImplementationCompletionContractParity(t *testing.T) {
 				`"acceptance_gates": {`,
 				`"tests_passed": true`,
 				`status: "blocked"`,
+				"Allowed top-level fields only:",
+				"**not** add a `metrics` object",
+				"`complete`, `partial`, or `blocked`",
 			} {
 				if !strings.Contains(body, required) {
 					t.Errorf("%s missing completion contract %q", path, required)
 				}
+			}
+			if strings.Contains(body, "On success (`status`: `passed`)") {
+				t.Errorf("%s still uses validation-agent success status in the Implementation contract", path)
 			}
 		}
 
@@ -381,11 +391,40 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 		t.Error("hero-approve.md must not instruct writing metrics.md")
 	}
 
-	taskAgents := []string{
-		"discover_agent", "planning_agent", "backend_agent", "frontend_agent",
-		"generic_agent", "qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent", "context_agent",
+	c15Agents := []string{
+		"backend_agent", "frontend_agent", "generic_agent",
+		"qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent",
 	}
-	for _, agent := range taskAgents {
+	for _, agent := range c15Agents {
+		path := "cursor/agents/" + agent + ".md"
+		data, err := fs.ReadFile(assets.FS, path)
+		if err != nil {
+			t.Errorf("read %s: %v", path, err)
+			continue
+		}
+		content := string(data)
+		if !strings.Contains(content, "**not** add a `metrics` object") {
+			t.Errorf("%s must forbid a metrics object inside the C15 JSON report", path)
+		}
+		if !strings.Contains(content, "input_chars") {
+			t.Errorf("%s missing input_chars", path)
+		}
+		for i, raw := range jsonFences(content) {
+			var obj map[string]json.RawMessage
+			if json.Unmarshal(raw, &obj) != nil {
+				continue
+			}
+			if _, hasStatus := obj["status"]; !hasStatus {
+				continue
+			}
+			if _, hasMetrics := obj["metrics"]; hasMetrics {
+				t.Errorf("%s JSON fence %d includes forbidden top-level metrics", path, i+1)
+			}
+		}
+	}
+
+	legacyMetricsAgents := []string{"discover_agent", "planning_agent", "context_agent"}
+	for _, agent := range legacyMetricsAgents {
 		path := "cursor/agents/" + agent + ".md"
 		data, err := fs.ReadFile(assets.FS, path)
 		if err != nil {
@@ -1150,4 +1189,13 @@ func loadAllAssetContent(t *testing.T, dirPrefix string) string {
 		t.Fatalf("walk assets: %v", err)
 	}
 	return sb.String()
+}
+
+func jsonFences(md string) [][]byte {
+	matches := jsonFenceRE.FindAllStringSubmatch(md, -1)
+	out := make([][]byte, 0, len(matches))
+	for _, m := range matches {
+		out = append(out, []byte(strings.TrimSpace(m[1])))
+	}
+	return out
 }

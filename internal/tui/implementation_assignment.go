@@ -449,7 +449,7 @@ func firstImplementationTaskID(ids []string) string {
 // actionable findings per active agent. Task order follows OpenSpec; findings
 // follow stable store order (created_at, id). A finding owner outside the
 // active Implementation scope fails the whole plan before Execute.
-func mergeImplementationAssignment(plan implementationTaskPlan, findings []store.Finding, activeAgents []string) (map[string][]implementationTaskBlock, []string) {
+func mergeImplementationAssignment(plan implementationTaskPlan, findings []store.Finding, activeAgents []string, occsByID map[string][]store.FindingOccurrence) (map[string][]implementationTaskBlock, []string) {
 	byAgent := make(map[string][]implementationTaskBlock, len(activeAgents))
 	for _, agent := range activeAgents {
 		byAgent[agent] = append([]implementationTaskBlock(nil), plan.ByAgent[agent]...)
@@ -471,7 +471,7 @@ func mergeImplementationAssignment(plan implementationTaskPlan, findings []store
 			errs = append(errs, fmt.Sprintf("finding %q owner %q is not in active implementation scope", finding.ID, owner))
 			continue
 		}
-		byAgent[owner] = append(byAgent[owner], implementationFindingBlock(finding))
+		byAgent[owner] = append(byAgent[owner], implementationFindingBlock(finding, occsByID[finding.ID]))
 	}
 	if len(errs) > 0 {
 		return nil, errs
@@ -479,7 +479,7 @@ func mergeImplementationAssignment(plan implementationTaskPlan, findings []store
 	return byAgent, nil
 }
 
-func implementationFindingBlock(finding store.Finding) implementationTaskBlock {
+func implementationFindingBlock(finding store.Finding, occs []store.FindingOccurrence) implementationTaskBlock {
 	var b strings.Builder
 	fmt.Fprintf(&b, "- [ ] %s · finding · %s\n", finding.ID, finding.SourceStage)
 	if file := strings.TrimSpace(finding.File); file != "" {
@@ -490,6 +490,21 @@ func implementationFindingBlock(finding store.Finding) implementationTaskBlock {
 	}
 	fmt.Fprintf(&b, "  Issue: %s\n", strings.TrimSpace(finding.Issue))
 	fmt.Fprintf(&b, "  Acceptance: %s\n", strings.TrimSpace(finding.AcceptanceCriteria))
+	fmt.Fprintf(&b, "  Contract: frozen — reopen this ID only for the same file, requirement, and acceptance; a different residual is a new find-* ID.\n")
+	if len(occs) > 0 {
+		b.WriteString("  History:\n")
+		for _, o := range occs {
+			issue := strings.TrimSpace(o.Issue)
+			if len(issue) > 160 {
+				issue = issue[:157] + "..."
+			}
+			if issue == "" {
+				fmt.Fprintf(&b, "    r%d %s\n", o.Round, o.Kind)
+				continue
+			}
+			fmt.Fprintf(&b, "    r%d %s: %s\n", o.Round, o.Kind, issue)
+		}
+	}
 	return implementationTaskBlock{
 		ID:      finding.ID,
 		Owner:   finding.Owner,
@@ -566,7 +581,7 @@ func validateImplementationAssignmentUnion(completed, remaining, assignment []st
 	return nil
 }
 
-func buildImplementationStageDispatch(checklist implementationChecklist, activeAgents []string, findings []store.Finding) ([]string, map[string][]implementationTaskBlock, []string, string) {
+func buildImplementationStageDispatch(checklist implementationChecklist, activeAgents []string, findings []store.Finding, occsByID map[string][]store.FindingOccurrence) ([]string, map[string][]implementationTaskBlock, []string, string) {
 	if !checklist.Linked {
 		return nil, nil, nil, "active cycle has no linked OpenSpec tasks.md"
 	}
@@ -580,7 +595,7 @@ func buildImplementationStageDispatch(checklist implementationChecklist, activeA
 		}
 		return nil, nil, nil, "implementation task ownership plan is invalid: " + strings.Join(plan.Errors, "; ")
 	}
-	byAgent, mergeErrors := mergeImplementationAssignment(plan, findings, activeAgents)
+	byAgent, mergeErrors := mergeImplementationAssignment(plan, findings, activeAgents, occsByID)
 	if len(mergeErrors) > 0 {
 		return nil, nil, nil, "implementation assignment union is invalid: " + strings.Join(mergeErrors, "; ")
 	}

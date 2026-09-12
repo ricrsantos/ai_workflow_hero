@@ -20,9 +20,10 @@ const (
 type harnessHealthProbeMsg struct{}
 
 type harnessHealthResultMsg struct {
-	health harness.HarnessHealth
-	status harness.HealthStatus
-	err    error
+	health     harness.HarnessHealth
+	status     harness.HealthStatus
+	err        error
+	generation int64
 }
 
 func harnessHealthProbeCmd() tea.Cmd {
@@ -37,6 +38,7 @@ func (m model) harnessHealthCheckCmd() tea.Cmd {
 	stall := harness.StallTimeoutForHarness(harnessID)
 	watchdog := m.harnessWatchdog
 	adapter := m.harnessAdapter()
+	generation := m.harnessHealthGeneration
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), healthProbeTimeout)
 		defer cancel()
@@ -55,7 +57,7 @@ func (m model) harnessHealthCheckCmd() tea.Cmd {
 		if err != nil && status == harness.HealthHealthy {
 			status = harness.HealthDegraded
 		}
-		return harnessHealthResultMsg{health: probe, status: status, err: err}
+		return harnessHealthResultMsg{health: probe, status: status, err: err, generation: generation}
 	}
 }
 
@@ -64,6 +66,7 @@ func (m model) resetHarnessWatchdog(executePrompt string) model {
 	m.harnessHealthStatus = harness.HealthHealthy
 	m.harnessHealthInFlight = false
 	m.harnessReconnecting = false
+	m.harnessHealthGeneration++
 	m.lastExecutePrompt = executePrompt
 	return m
 }
@@ -107,6 +110,11 @@ func (m model) handleHarnessHealthResult(msg harnessHealthResultMsg) (model, tea
 	if !m.streaming {
 		return m, nil
 	}
+	// A probe dispatched for a previous Execute can finish after handoff
+	// starts the next turn. Generation 0 is a test injection wildcard.
+	if msg.generation != 0 && msg.generation != m.harnessHealthGeneration {
+		return m, nil
+	}
 	if m.harnessWaitingForResponse() {
 		m = m.clearHarnessHealthWarnings()
 		return m, nil
@@ -116,8 +124,9 @@ func (m model) handleHarnessHealthResult(msg harnessHealthResultMsg) (model, tea
 
 	switch msg.status {
 	case harness.HealthFailed:
+		// Observational only: never cancel, restart, or otherwise act on a
+		// health result (openspec/specs/harness-adapter; AGENTS.md).
 		if m.harnessReconnecting {
-			// Adapter is recovering transport; do not cancel the live Execute.
 			if prev != harness.HealthFailed && prev != harness.HealthDegraded {
 				warn := "Harness connection dropped; reconnecting…"
 				if d := strings.TrimSpace(msg.health.Details); d != "" {
@@ -137,9 +146,6 @@ func (m model) handleHarnessHealthResult(msg harnessHealthResultMsg) (model, tea
 			warn = warn + " " + harnessFailedWarnHint
 			m.insertBeforeAgent(convMessage{role: convRoleWarning, content: "WARNING: " + warn})
 			m = m.setStatusWarning("execute", warn)
-		}
-		if m.streaming {
-			return m, m.cancelStreamCmd()
 		}
 		return m, nil
 

@@ -19,6 +19,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/media"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 // tuiAttachment is UI-only state. The image bytes stay in the media store;
@@ -51,12 +52,43 @@ type mediaCleanupMsg struct {
 }
 
 func newMultimodalState() (string, string) {
-	return uuid.NewString(), uuid.NewString()
+	return "", uuid.NewString()
 }
 
-func mediaStartupCleanupCmd() tea.Cmd {
+// durableMediaSessionID returns the Hero session id used for on-disk media paths.
+// It prefers the bound Hero chat session; otherwise it allocates a provisional
+// id once into mediaSessionID so first-turn SQLite creation can reuse it.
+func (m *model) durableMediaSessionID() string {
+	if hero := strings.TrimSpace(m.heroChatSessionID); hero != "" {
+		return hero
+	}
+	if provisional := strings.TrimSpace(m.mediaSessionID); provisional != "" {
+		return provisional
+	}
+	id, err := store.NewSessionID()
+	if err != nil {
+		id = uuid.NewString()
+	}
+	m.mediaSessionID = id
+	return id
+}
+
+func (m *model) syncMediaSessionFromHero() {
+	if id := strings.TrimSpace(m.heroChatSessionID); id != "" {
+		m.mediaSessionID = id
+	}
+}
+
+func (m model) mediaStartupCleanupCmd() tea.Cmd {
+	opts := media.CleanupOptions{}
+	if m.svc != nil && m.svc.Store != nil {
+		st := m.svc.Store
+		opts = media.CleanupOptionsFromRegistered("", func(context.Context) ([]string, error) {
+			return st.ListRegisteredSessionIDs()
+		})
+	}
 	return func() tea.Msg {
-		_, err := media.CleanupExpiredSessions(context.Background(), media.CleanupOptions{})
+		_, err := media.CleanupExpiredSessions(context.Background(), opts)
 		return mediaCleanupMsg{err: err}
 	}
 }
@@ -157,11 +189,13 @@ func (m model) queueAttachmentPath(path string) (model, tea.Cmd) {
 		},
 		pending: true,
 	})
-	return m, m.materializeAttachmentCmd(token, path, name)
+	pm := &m
+	sessionID := pm.durableMediaSessionID()
+	return *pm, m.materializeAttachmentCmd(token, path, name, sessionID)
 }
 
-func (m model) materializeAttachmentCmd(token, sourcePath, name string) tea.Cmd {
-	sessionID := strings.TrimSpace(m.mediaSessionID)
+func (m model) materializeAttachmentCmd(token, sourcePath, name, sessionID string) tea.Cmd {
+	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		sessionID = uuid.NewString()
 	}
@@ -233,11 +267,12 @@ func (m model) startClipboardAttachment() (model, tea.Cmd) {
 		},
 		pending: true,
 	})
-	sessionID := m.mediaSessionID
-	turnID := m.attachmentTurnID
-	workspace := m.executeDir()
-	allowExternal := m.allowExternalAttachmentPaths()
-	return m, func() tea.Msg {
+	pm := &m
+	sessionID := pm.durableMediaSessionID()
+	turnID := pm.attachmentTurnID
+	workspace := pm.executeDir()
+	allowExternal := pm.allowExternalAttachmentPaths()
+	return *pm, func() tea.Msg {
 		data, err := readNativeClipboardPNG(context.Background())
 		if err != nil {
 			return attachmentMaterializedMsg{token: token, err: safeAttachmentError(err)}

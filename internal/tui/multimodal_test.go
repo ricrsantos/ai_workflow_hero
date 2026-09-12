@@ -1,15 +1,134 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 )
+
+func TestDurableMediaPathsUseHeroSessionIDAndSurviveRetention(t *testing.T) {
+	dataHome := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	svc, h := newConversationTestService(t)
+	m := newModel(svc)
+	m.freeChatMode = true
+	m = EnterConversationForTest(m)
+	m = SetChatHarnessIDForTest(m, "streaming")
+	m = SetChatModelSlugForTest(m, "vision")
+	path := writeAcceptancePNG(t, t.TempDir(), "retention.png")
+	m, cmd := m.queueAttachmentPath(path)
+	msg, ok := cmd().(attachmentMaterializedMsg)
+	if !ok || msg.err != nil {
+		t.Fatalf("materialization=%T %+v", msg, msg)
+	}
+	m = m.handleAttachmentMaterialized(msg)
+	provisional := strings.TrimSpace(m.mediaSessionID)
+	if provisional == "" {
+		t.Fatal("attachment should allocate provisional media session id")
+	}
+	mediaDir := filepath.Join(dataHome, "hero", "sessions", provisional)
+	if !strings.HasPrefix(msg.attachment.Path, mediaDir) {
+		t.Fatalf("attachment path=%q want under %q", msg.attachment.Path, mediaDir)
+	}
+	m = SetConversationInput(m, "keep media")
+	m, cmd = SubmitConversationForTest(m)
+	if cmd == nil {
+		t.Fatal("submit did not start execute")
+	}
+	m = drainConversationStream(t, m, cmd)
+	heroID := strings.TrimSpace(m.heroChatSessionID)
+	if heroID == "" {
+		t.Fatal("expected hero chat session after first turn")
+	}
+	if heroID != provisional {
+		t.Fatalf("hero session %q != provisional media session %q", heroID, provisional)
+	}
+	if len(h.LastAttachments()) != 1 {
+		t.Fatalf("attachments=%v", h.LastAttachments())
+	}
+	ids, err := svc.Store.ListRegisteredSessionIDs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(ids, heroID) {
+		t.Fatalf("registered ids=%v missing hero %q", ids, heroID)
+	}
+	now := time.Now()
+	oldTime := now.Add(-8 * 24 * time.Hour)
+	if err := os.Chtimes(mediaDir, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	orphan := filepath.Join(dataHome, "hero", "sessions", "orphan-media-run")
+	if err := os.MkdirAll(filepath.Join(orphan, "assets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(orphan, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	result, err := media.CleanupExpiredSessions(context.Background(), media.CleanupOptionsFromRegistered(dataHome, func(context.Context) ([]string, error) {
+		return svc.Store.ListRegisteredSessionIDs()
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RemovedSessions < 1 {
+		t.Fatalf("cleanup=%+v want orphan removed", result)
+	}
+	if _, err := os.Stat(mediaDir); err != nil {
+		t.Fatalf("registered hero media dir removed: %v", err)
+	}
+	if _, err := os.Stat(orphan); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("orphan media dir still exists: %v", err)
+	}
+}
+
+func TestNewChatRotatesMediaSessionDirectory(t *testing.T) {
+	dataHome := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	svc, _ := newConversationTestService(t)
+	m := newModel(svc)
+	m.freeChatMode = true
+	m = EnterConversationForTest(m)
+	path := writeAcceptancePNG(t, t.TempDir(), "first.png")
+	m, cmd := m.queueAttachmentPath(path)
+	msg, ok := cmd().(attachmentMaterializedMsg)
+	if !ok || msg.err != nil {
+		t.Fatalf("materialization=%T %+v", msg, msg)
+	}
+	m = m.handleAttachmentMaterialized(msg)
+	firstID := strings.TrimSpace(m.mediaSessionID)
+	next, _ := RunPaletteItemForTest(m, "/new-chat")
+	if strings.TrimSpace(next.mediaSessionID) != "" {
+		t.Fatalf("new-chat should clear media session id, got %q", next.mediaSessionID)
+	}
+	path2 := writeAcceptancePNG(t, t.TempDir(), "second.png")
+	next, cmd = next.queueAttachmentPath(path2)
+	msg2, ok := cmd().(attachmentMaterializedMsg)
+	if !ok || msg2.err != nil {
+		t.Fatalf("second materialization=%T %+v", msg2, msg2)
+	}
+	secondID := strings.TrimSpace(next.mediaSessionID)
+	if firstID == "" || secondID == "" || firstID == secondID {
+		t.Fatalf("media session ids first=%q second=%q", firstID, secondID)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
 
 func TestFreeChatAttachmentShortcutsAndSlashBoundary(t *testing.T) {
 	free := EnterConversationForTest(NewTestModel(nil))
@@ -138,14 +257,14 @@ func TestStreamAssetUsesProducingExecuteTurn(t *testing.T) {
 		"second": {ID: "second", AgentMsgIndex: 3},
 	}
 	m.agentMsgIndex = 3
-	m = m.applyStreamDelta(streamDeltaMsg{
+	(&m).applyStreamDelta(streamDeltaMsg{
 		executeID: "first",
 		delta: harness.StreamDelta{
 			Kind:  harness.StreamKindAsset,
 			Asset: &harness.Asset{Attachment: harness.Attachment{Name: "first-stream.png", ContentHash: "first-stream"}},
 		},
 	})
-	m = m.applyStreamDelta(streamDeltaMsg{
+	(&m).applyStreamDelta(streamDeltaMsg{
 		executeID: "second",
 		delta: harness.StreamDelta{
 			Kind:  harness.StreamKindAsset,

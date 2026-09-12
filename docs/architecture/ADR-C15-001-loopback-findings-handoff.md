@@ -87,13 +87,28 @@ The Go scheduler/service is the only status writer. Agents may suggest
 `reopen_id`; they never allocate arbitrary IDs or mutate records. Optional
 read-only markdown evidence may exist, but it cannot drive scheduling.
 
-Deduplication is deterministic, not semantic. A valid `reopen_id` wins.
+Deduplication is deterministic, not semantic. A valid `reopen_id` wins only
+when the report's canonical file, requirement, and acceptance criteria match
+the stored finding contract. Otherwise the decoder rejects `unknown_reopen_id`
+and the agent must omit `reopen_id` so a new ID is allocated. Reopen,
+rediscovery, done, and deferral never overwrite the stored issue, file,
+requirement, or acceptance criterion; issue snapshots belong on
+`finding_occurrences`. Implementation assignments always show the frozen
+contract plus occurrence history.
+
 Otherwise canonicalize path/requirement and normalize the acceptance criterion
 with documented mechanical rules before hashing it with cycle, source, and
 owner. Issue prose is retained but not used for fuzzy matching. Exact
 rediscovery of `done` yields `reopened`; exact rediscovery of `open`/`reopened`
 appends an occurrence; no match creates a new finding. A deferred finding in the
 same cycle records later recurrence as a warning and is not reopened.
+
+### Amendment (2026-09-12)
+
+C16 loop-back showed that `reopen_id` without a contract match let QA rewrite
+issue and acceptance under the same ID, so Implementation patched a moving
+target. The freeze above is mandatory: same ID means same file + requirement +
+acceptance. A new residual is a new `find-*` ID.
 
 ### Consequences
 

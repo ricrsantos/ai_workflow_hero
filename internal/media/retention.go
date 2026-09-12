@@ -17,6 +17,10 @@ type CleanupOptions struct {
 	Retention time.Duration
 	Now       func() time.Time
 	Logger    *slog.Logger
+	// Registered lists Hero session IDs that must survive age-based cleanup.
+	// When ListRegistered is set it is called once per cleanup run (after Registered).
+	Registered     RegisteredSessionIDs
+	ListRegistered func() (RegisteredSessionIDs, error)
 }
 
 // CleanupResult reports cleanup counts without returning session paths.
@@ -26,9 +30,11 @@ type CleanupResult struct {
 	RetainedSessions int
 }
 
-// CleanupExpiredSessions removes session directories older than Retention.
-// It never follows a symlink at the session-directory level and reports only
-// counts, so callers cannot accidentally log sensitive asset paths.
+// CleanupExpiredSessions removes unregistered session directories older than
+// Retention. Registered Hero session IDs are never age-deleted. It never
+// follows a symlink at the session-directory level and reports only counts, so
+// callers cannot accidentally log sensitive asset paths. User external_source
+// paths are not referenced by this cleanup.
 func CleanupExpiredSessions(ctx context.Context, options CleanupOptions) (CleanupResult, error) {
 	ctx = nonNilContext(ctx)
 	if err := ctx.Err(); err != nil {
@@ -71,6 +77,23 @@ func CleanupExpiredSessions(ctx context.Context, options CleanupOptions) (Cleanu
 		return CleanupResult{}, wrapFilesystemError("reading media sessions", err)
 	}
 
+	registered := options.Registered
+	if options.ListRegistered != nil {
+		listed, err := options.ListRegistered()
+		if err != nil {
+			return CleanupResult{}, fmt.Errorf("listing registered media sessions: %w", err)
+		}
+		if len(listed) > 0 {
+			if len(registered) == 0 {
+				registered = listed
+			} else {
+				for id := range listed {
+					registered[id] = struct{}{}
+				}
+			}
+		}
+	}
+
 	cutoff := now().Add(-retention)
 	var result CleanupResult
 	for _, entry := range entries {
@@ -93,6 +116,10 @@ func CleanupExpiredSessions(ctx context.Context, options CleanupOptions) (Cleanu
 			continue
 		}
 		if !isWithinDirectory(sessionsRoot, sessionPath) {
+			continue
+		}
+		if registered.Contains(entry.Name()) {
+			result.RetainedSessions++
 			continue
 		}
 		if info.ModTime().Before(cutoff) {
@@ -118,10 +145,12 @@ func CleanupExpiredSessions(ctx context.Context, options CleanupOptions) (Cleanu
 // configured retention period.
 func (s *Store) CleanupExpired(ctx context.Context) (CleanupResult, error) {
 	return CleanupExpiredSessions(ctx, CleanupOptions{
-		DataHome:  s.dataHome,
-		Retention: s.retention,
-		Now:       s.now,
-		Logger:    s.logger,
+		DataHome:       s.dataHome,
+		Retention:      s.retention,
+		Now:            s.now,
+		Logger:         s.logger,
+		Registered:     s.registeredSessionIDs,
+		ListRegistered: s.listRegistered,
 	})
 }
 

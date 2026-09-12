@@ -112,7 +112,14 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 	}
 	defer stopManaged()
 	defer func() {
-		cleanup, cleanupErr := media.CleanupExpiredSessions(context.Background(), media.CleanupOptions{})
+		opts := media.CleanupOptions{}
+		if svc != nil && svc.Store != nil {
+			st := svc.Store
+			opts = media.CleanupOptionsFromRegistered("", func(context.Context) ([]string, error) {
+				return st.ListRegisteredSessionIDs()
+			})
+		}
+		cleanup, cleanupErr := media.CleanupExpiredSessions(context.Background(), opts)
 		if cleanupErr != nil {
 			slog.Error("tui media shutdown cleanup failed", "error", cleanupErr)
 			return

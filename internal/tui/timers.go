@@ -57,7 +57,8 @@ func timerTickCmd(generation uint64) tea.Cmd {
 }
 
 func (m model) hasTimerWork() bool {
-	return m.sessionTimer.running || m.aiTimer.running || m.aiResponseTimer.running || m.telegramAutoReportEnabled()
+	return m.sessionTimer.running || m.aiTimer.running || m.aiResponseTimer.running || m.telegramAutoReportEnabled() ||
+		strings.TrimSpace(m.heroLeasedSessionID) != ""
 }
 
 func (m *model) ensureTimerLoop() tea.Cmd {
@@ -292,11 +293,18 @@ func (m model) handleTimerTick(msg timerTickMsg) (model, tea.Cmd) {
 	if m.shouldWatchStageProgress() {
 		m, progressCmd = m.ensureStageProgress()
 	}
+	var leaseCmd tea.Cmd
+	if id := strings.TrimSpace(m.heroLeasedSessionID); id != "" {
+		if m.heroLeaseNextHeartbeat.IsZero() || !at.Before(m.heroLeaseNextHeartbeat) {
+			m.heroLeaseNextHeartbeat = at.Add(sessionLeaseHeartbeatInterval)
+			leaseCmd = m.sessionLeaseHeartbeatTickCmd(id)
+		}
+	}
 	if !m.hasTimerWork() {
 		m.invalidateTimerLoop()
-		return m, combineTimerCmds(saveCmd, reportCmd, progressCmd)
+		return m, combineTimerCmds(saveCmd, reportCmd, progressCmd, leaseCmd)
 	}
-	return m, combineTimerCmds(saveCmd, reportCmd, progressCmd, timerTickCmd(m.timerGeneration))
+	return m, combineTimerCmds(saveCmd, reportCmd, progressCmd, leaseCmd, timerTickCmd(m.timerGeneration))
 }
 
 func parseCycleTimerTime(raw string) (time.Time, bool) {

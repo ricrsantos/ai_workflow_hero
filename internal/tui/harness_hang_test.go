@@ -54,6 +54,71 @@ func TestHarnessHealthSkipsExpectedHarnessResponse(t *testing.T) {
 	}
 }
 
+func TestHealthFailedWarnsWithoutCancel(t *testing.T) {
+	m := NewTestModel(nil)
+	m.streaming = true
+	before := len(m.transcript)
+
+	next, cmd := m.handleHarnessHealthResult(harnessHealthResultMsg{
+		status: harness.HealthFailed,
+		health: harness.HarnessHealth{ProcessAlive: false, SessionAlive: false, Details: "session idle"},
+	})
+	if cmd != nil {
+		t.Fatal("health path must not return cancelStreamCmd")
+	}
+	if !next.streaming {
+		t.Fatal("HealthFailed must leave the stream running")
+	}
+	if next.harnessHealthStatus != harness.HealthFailed {
+		t.Fatalf("status=%q want failed", next.harnessHealthStatus)
+	}
+	if len(next.transcript) <= before {
+		t.Fatal("expected a HealthFailed warning in the transcript")
+	}
+}
+
+func TestHealthFailedWhileReconnectingDoesNotCancel(t *testing.T) {
+	m := NewTestModel(nil)
+	m.streaming = true
+	m.harnessReconnecting = true
+
+	next, cmd := m.handleHarnessHealthResult(harnessHealthResultMsg{
+		status: harness.HealthFailed,
+		health: harness.HarnessHealth{ProcessAlive: false, Details: "connection closed"},
+	})
+	if cmd != nil {
+		t.Fatal("reconnecting HealthFailed must not cancel Execute")
+	}
+	if !next.streaming {
+		t.Fatal("stream must remain active while reconnecting")
+	}
+	if next.harnessHealthStatus != harness.HealthDegraded {
+		t.Fatalf("status=%q want degraded while reconnecting", next.harnessHealthStatus)
+	}
+}
+
+func TestStaleHealthProbeDoesNotCancelNextExecute(t *testing.T) {
+	m := NewTestModel(nil)
+	m.streaming = true
+	m.harnessHealthGeneration = 2
+	beforeTranscript := len(m.transcript)
+
+	next, cmd := m.handleHarnessHealthResult(harnessHealthResultMsg{
+		generation: 1,
+		status:     harness.HealthFailed,
+		health:     harness.HarnessHealth{Details: "session idle", ProcessAlive: false, SessionAlive: false},
+	})
+	if cmd != nil {
+		t.Fatal("stale HealthFailed must not cancel the next Execute")
+	}
+	if !next.streaming {
+		t.Fatal("stale probe must leave the current stream running")
+	}
+	if len(next.transcript) != beforeTranscript {
+		t.Fatalf("stale probe must not insert a warning, got %d extra rows", len(next.transcript)-beforeTranscript)
+	}
+}
+
 func TestHarnessPermissionPausesWatchdogUntilResponse(t *testing.T) {
 	m := NewTestModel(nil)
 	m.harnessWatchdog.Reset(time.Now())

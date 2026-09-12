@@ -195,6 +195,9 @@ type StoreOptions struct {
 	Retention          time.Duration
 	Now                func() time.Time
 	Logger             *slog.Logger
+	// RegisteredSessionIDs protects durable Hero session dirs during cleanup.
+	RegisteredSessionIDs RegisteredSessionIDs
+	ListRegistered       func() (RegisteredSessionIDs, error)
 }
 
 // Store materializes validated images for one session. A Store is safe for
@@ -203,19 +206,21 @@ type StoreOptions struct {
 type Store struct {
 	mu sync.Mutex
 
-	dataHome           string
-	sessionsRoot       string
-	sessionDir         string
-	assetsDir          string
-	manifestPath       string
-	sessionID          string
-	workspace          string
-	allowExternalPaths bool
-	limits             Limits
-	retention          time.Duration
-	now                func() time.Time
-	logger             *slog.Logger
-	manifest           Manifest
+	dataHome             string
+	sessionsRoot         string
+	sessionDir           string
+	assetsDir            string
+	manifestPath         string
+	sessionID            string
+	workspace            string
+	allowExternalPaths   bool
+	limits               Limits
+	retention            time.Duration
+	now                  func() time.Time
+	logger               *slog.Logger
+	registeredSessionIDs RegisteredSessionIDs
+	listRegistered       func() (RegisteredSessionIDs, error)
+	manifest             Manifest
 }
 
 // NewStore creates a session store. The variadic options preserve a concise
@@ -259,19 +264,21 @@ func New(options StoreOptions) (*Store, error) {
 	}
 
 	store := &Store{
-		dataHome:           dataHome,
-		sessionsRoot:       filepath.Join(dataHome, "hero", "sessions"),
-		sessionDir:         filepath.Join(dataHome, "hero", "sessions", sessionID),
-		assetsDir:          filepath.Join(dataHome, "hero", "sessions", sessionID, "assets"),
-		manifestPath:       filepath.Join(dataHome, "hero", "sessions", sessionID, "manifest.json"),
-		sessionID:          sessionID,
-		workspace:          strings.TrimSpace(options.Workspace),
-		allowExternalPaths: options.AllowExternalPaths,
-		limits:             normalizeLimits(options.Limits),
-		retention:          retention,
-		now:                now,
-		logger:             options.Logger,
-		manifest:           Manifest{Version: manifestVersion, SessionID: sessionID},
+		dataHome:             dataHome,
+		sessionsRoot:         filepath.Join(dataHome, "hero", "sessions"),
+		sessionDir:           filepath.Join(dataHome, "hero", "sessions", sessionID),
+		assetsDir:            filepath.Join(dataHome, "hero", "sessions", sessionID, "assets"),
+		manifestPath:         filepath.Join(dataHome, "hero", "sessions", sessionID, "manifest.json"),
+		sessionID:            sessionID,
+		workspace:            strings.TrimSpace(options.Workspace),
+		allowExternalPaths:   options.AllowExternalPaths,
+		limits:               normalizeLimits(options.Limits),
+		retention:            retention,
+		now:                  now,
+		logger:               options.Logger,
+		registeredSessionIDs: options.RegisteredSessionIDs,
+		listRegistered:       options.ListRegistered,
+		manifest:             Manifest{Version: manifestVersion, SessionID: sessionID},
 	}
 	if err := store.ensureLayout(); err != nil {
 		return nil, err

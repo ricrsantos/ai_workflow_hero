@@ -277,6 +277,22 @@ hero update-models
 
 ---
 
+
+## 10.1 Escalation triage and deferred ToDos (C15)
+
+When a validation loop hits **Escalated** (iteration limit), you choose what still blocks the cycle:
+
+| Command | Purpose |
+|---------|---------|
+| `/hero-continue [N]` | Grant extra iterations for remaining open findings and unchecked OpenSpec tasks |
+| `/hero-add-todo [id...]` | Defer selected open/reopened findings to durable project ToDos (TUI checklist when IDs omitted) |
+| `/hero-finish` | Emergency finish — strong confirmation when findings remain; does **not** auto-create deferred ToDos |
+| `/hero-cancel` | Cancel with rollback semantics unchanged |
+
+Partial deferral keeps the loop Escalated until blockers are gone. Deferring **every** blocker closes the cycle with disposition **`completed_with_deferred_todos`** (no empty Implementation wave; downstream validation stages skipped).
+
+At **Research** startup, pending ToDos are offered for adoption into the new cycle (see PRD-C15-001 §9.3). Use **`/hero-complete-todo <id>`** with a resolution note to mark pending items resolved when fixed outside Hero. **`/hero-todos`** stays read-only.
+
 ## 10. Runtime commands (Cursor chat)
 
 | Command | Purpose |
@@ -287,6 +303,8 @@ hero update-models
 | `/hero-reject` | Reject and re-run current stage |
 | `/hero-cancel` | Cancel stage and restore git checkpoint |
 | `/hero-continue` | Grant extra iterations after escalation |
+| `/hero-add-todo` | Defer Escalated findings to project ToDos |
+| `/hero-complete-todo` | Manually resolve pending ToDos with a note |
 | `/hero-back` | Reopen Planning after SDD ambiguity |
 | `/hero-finish` | Finish the cycle via `hero finish` (records `completed_at` in SQLite) |
 | `/hero-archive` | Archive the active or completed-awaiting-archive cycle via `hero cycle archive` (folder date from store `completed_at`) |
@@ -554,7 +572,7 @@ Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`
 
 ## 10. Comandos Runtime (chat do Cursor)
 
-`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-continue`, `/hero-back`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-cycles`, `/hero-todos`, `/hero-model`, `/hero-help` — ver tabela da §10 (inglês).
+`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-continue`, `/hero-back`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-cycles`, `/hero-todos`, `/hero-add-todo`, `/hero-complete-todo`, `/hero-model`, `/hero-help` — ver tabela da §10 (inglês).
 
 **TUI Chat** (`hero tui`): a linha sob o painel verde mostra `[fs-<valor>] [th-<valor>] [ef-<valor>]` junto do scroll e da barra de contexto, inclusive no Chat vazio após selecionar o modelo. Valores freechat validados ficam verdes; `false`, `na`, indisponíveis e valores vindos do YAML do workflow ficam cinza. Catálogo ausente, cache antigo e escolhas invalidadas usam aviso amarelo. A barra de contexto usa a ocupação da janela da sessão visível: o prompt da última chamada ao modelo (input sem cache mais cache read/write) mais o output daquele turno, versus o `context_window` em `.workflow-hero/models/*.yml`. Freechat e agentes de ciclo têm sessões separadas; o Chat ordinário com ciclo ativo não herda a janela do agente da etapa. Sem ocupação da última chamada (incluindo quando o harness só reporta o gasto faturado do run), a ocupação é chars÷4 do transcript daquela sessão. Costs do ciclo continuam sendo soma faturada. A barra permanece oculta quando o modelo não tem janela; `/new-chat` e um `/harness-reset` bem-sucedido limpam o valor. `/hero-model` não altera `agents.*` nem `fallback_model` em `workflow-config.yml`.
 

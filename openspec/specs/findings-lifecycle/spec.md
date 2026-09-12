@@ -6,7 +6,7 @@ Scheduler-owned validation findings with stable IDs, deterministic fingerprints,
 ## Requirements
 
 ### Requirement: Findings SHALL use stable per-cycle source-namespace IDs
-Hero SHALL allocate user-facing finding IDs in the namespaces `find-qa-N`, `find-judge-N`, `find-bui-N`, and `find-e2e-N` when a valid failure entry omits an ID. Agents MUST NOT invent IDs. An agent MAY supply `reopen_id` only for an existing `done` finding in the same cycle with the same source stage and owner (PRD-C15-001 §5.1; ADR-083).
+Hero SHALL allocate user-facing finding IDs in the namespaces `find-qa-N`, `find-judge-N`, `find-bui-N`, and `find-e2e-N` when a valid failure entry omits an ID. Agents MUST NOT invent IDs. An agent MAY supply `reopen_id` only for an existing `done` finding in the same cycle with the same source stage, owner, canonical file, requirement, and acceptance criteria (PRD-C15-001 §5.1; ADR-083).
 
 #### Scenario: Scheduler allocates the next QA ID
 - **WHEN** a valid QA failure entry omits an ID and the cycle already has `find-qa-1`
@@ -16,12 +16,16 @@ Hero SHALL allocate user-facing finding IDs in the namespaces `find-qa-N`, `find
 - **WHEN** a report supplies `reopen_id=find-qa-1` but that finding is not `done` in the same cycle with matching source and owner
 - **THEN** the report is rejected with `unknown_reopen_id` and no finding or stage change is persisted
 
+#### Scenario: reopen_id with a different acceptance is rejected
+- **WHEN** a report supplies `reopen_id=find-qa-1` for a `done` finding whose stored acceptance (or file/requirement) differs from the report
+- **THEN** the report is rejected with `unknown_reopen_id` and Hero does not mutate that finding; the agent must omit `reopen_id` so a new ID can be allocated
+
 ### Requirement: Finding equality SHALL be deterministic
-Without a valid `reopen_id`, equality SHALL use a SHA-256 fingerprint of cycle, source stage, owner, canonical file, canonical requirement, and normalized acceptance criteria. Issue prose SHALL NOT be hashed. `reopen_id` takes precedence over fingerprint matching. Different source stages SHALL NOT merge (PRD-C15-001 §5.1; ADR-083; design D2).
+Without a valid `reopen_id`, equality SHALL use a SHA-256 fingerprint of cycle, source stage, owner, canonical file, canonical requirement, and normalized acceptance criteria. Issue prose SHALL NOT be hashed. `reopen_id` takes precedence over fingerprint matching only when that contract matches the stored row. Reopen, rediscovery, done, and deferral MUST NOT overwrite the stored issue, file, requirement, or acceptance criterion. Different source stages SHALL NOT merge (PRD-C15-001 §5.1; ADR-083; design D2).
 
 #### Scenario: Exact rediscovery of a done finding reopens the same ID
 - **WHEN** a later valid report matches the fingerprint of a `done` finding and omits `reopen_id`
-- **THEN** that ID becomes `reopened`, round increments, and a `reopened` occurrence is appended
+- **THEN** that ID becomes `reopened`, round increments, a `reopened` occurrence is appended, and the finding row's issue and acceptance stay unchanged
 
 #### Scenario: Exact rediscovery of an open finding does not clone
 - **WHEN** a later valid report matches the fingerprint of an `open` or `reopened` finding

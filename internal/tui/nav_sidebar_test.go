@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 func TestNavSidebarListsScreensInOrder(t *testing.T) {
@@ -19,22 +20,23 @@ func TestNavSidebarListsScreensInOrder(t *testing.T) {
 		t.Fatalf("expected AI Hero title in sidebar: %q", view)
 	}
 	chat := strings.Index(view, "Chat")
+	history := strings.Index(view, "History")
 	status := strings.Index(view, "Status")
 	artifacts := strings.Index(view, "Artifacts")
 	costs := strings.Index(view, "Costs")
 	events := strings.Index(view, "Events")
-	if chat < 0 || status < 0 || artifacts < 0 || costs < 0 || events < 0 {
+	if chat < 0 || history < 0 || status < 0 || artifacts < 0 || costs < 0 || events < 0 {
 		t.Fatalf("missing nav labels in view: %q", view)
 	}
-	if !(chat < status && status < artifacts && artifacts < costs && costs < events) {
-		t.Fatalf("expected Chat→Status→Artifacts→Costs→Events order: %q", view)
+	if !(chat < history && history < status && status < artifacts && artifacts < costs && costs < events) {
+		t.Fatalf("expected Chat→History→Status→Artifacts→Costs→Events order: %q", view)
 	}
 	plain := stripANSI(view)
 	if !strings.Contains(plain, "> Chat") {
 		t.Fatalf("expected active Chat marker: %q", view)
 	}
-	if !strings.Contains(plain, "alt+1-6") {
-		t.Fatalf("expected six-screen shortcut label: %q", plain)
+	if !strings.Contains(plain, "alt+1-7") {
+		t.Fatalf("expected seven-screen shortcut label: %q", plain)
 	}
 	if strings.Contains(plain, "alt+n") {
 		t.Fatalf("legacy alt+n label must not be rendered: %q", plain)
@@ -46,9 +48,10 @@ func TestNavSidebarShowsSettingsBeforeConfigWithSevenShortcuts(t *testing.T) {
 	m = SetWidth(m, 100)
 	m = SetHeight(m, 24)
 	m.status.CycleNumber = 1
+	m.status.Status = store.CycleStatusActive
 	plain := stripANSI(ViewForTest(m))
 
-	labels := []string{"Chat", "Status", "Artifacts", "Costs", "Events", "Settings", "Config"}
+	labels := []string{"Chat", "History", "Status", "Artifacts", "Costs", "Events", "Settings", "Config"}
 	previous := -1
 	for _, label := range labels {
 		index := strings.Index(plain, label)
@@ -60,8 +63,8 @@ func TestNavSidebarShowsSettingsBeforeConfigWithSevenShortcuts(t *testing.T) {
 		}
 		previous = index
 	}
-	if !strings.Contains(plain, "alt+1-7") {
-		t.Fatalf("expected seven-screen shortcut label: %q", plain)
+	if !strings.Contains(plain, "alt+1-8") {
+		t.Fatalf("expected eight-screen shortcut label: %q", plain)
 	}
 	if strings.Contains(plain, "alt+n") {
 		t.Fatalf("legacy alt+n label must not be rendered: %q", plain)
@@ -116,9 +119,9 @@ func TestTabFocusesNavbarAndEnterOpensHighlightedScreen(t *testing.T) {
 		t.Fatal("arrow navigation must not open a screen before Enter")
 	}
 	lines := next.navSidebarNavigationLines(navSidebarWidth - navSidebarBoxStyle.GetHorizontalFrameSize())
-	focusedStatus := navSidebarFocusedStyle.Render(truncateNavText("  Status", navSidebarWidth-navSidebarBoxStyle.GetHorizontalFrameSize()))
-	if !containsLine(lines, focusedStatus) {
-		t.Fatalf("Status row is not rendered with the focused background: %q", lines)
+	focusedHistory := navSidebarFocusedStyle.Render(truncateNavText("  History", navSidebarWidth-navSidebarBoxStyle.GetHorizontalFrameSize()))
+	if !containsLine(lines, focusedHistory) {
+		t.Fatalf("History row is not rendered with the focused background: %q", lines)
 	}
 	plain := stripANSI(strings.Join(lines, "\n"))
 	if !strings.Contains(plain, "> Chat") || strings.Contains(plain, "> Status") {
@@ -126,14 +129,14 @@ func TestTabFocusesNavbarAndEnterOpensHighlightedScreen(t *testing.T) {
 	}
 
 	next, _ = HandleTestKey(next, "enter")
-	if CurrentScreen(next) != ScreenStatus {
-		t.Fatalf("Enter opened %v, want Status", CurrentScreen(next))
+	if CurrentScreen(next) != ScreenHistory {
+		t.Fatalf("Enter opened %v, want History", CurrentScreen(next))
 	}
 	if next.shellFocus != shellFocusContent {
 		t.Fatal("selected screen should receive focus after opening")
 	}
-	if plain := stripANSI(ViewForTest(next)); !strings.Contains(plain, "> Status") {
-		t.Fatalf("active marker did not move to Status: %q", plain)
+	if plain := stripANSI(ViewForTest(next)); !strings.Contains(plain, "> History") {
+		t.Fatalf("active marker did not move to History: %q", plain)
 	}
 
 	next, _ = HandleTestKey(next, "tab")
@@ -258,11 +261,11 @@ func TestNavSidebarHidesConfigAfterCycleArchived(t *testing.T) {
 	if strings.Contains(plain, "Config") {
 		t.Fatalf("Config nav item should be hidden after archive refresh: %q", plain)
 	}
-	if !strings.Contains(plain, "alt+1-6") {
-		t.Fatalf("expected six-screen shortcut label after archive: %q", plain)
+	if !strings.Contains(plain, "alt+1-7") {
+		t.Fatalf("expected seven-screen shortcut label after archive: %q", plain)
 	}
-	if strings.Contains(plain, "alt+1-7") {
-		t.Fatalf("seven-screen label must not appear without active cycle: %q", plain)
+	if strings.Contains(plain, "alt+1-8") {
+		t.Fatalf("eight-screen label must not appear without active cycle: %q", plain)
 	}
 	if CurrentScreen(m) != ScreenConversation {
 		t.Fatalf("screen=%v want conversation after archive", CurrentScreen(m))

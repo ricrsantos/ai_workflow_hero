@@ -39,7 +39,7 @@ func TestNavigateScreens(t *testing.T) {
 	if CurrentScreen(m) != ScreenStatus {
 		t.Fatalf("screen = %v", CurrentScreen(m))
 	}
-	next, _ := HandleTestKey(m, "alt+3")
+	next, _ := HandleTestKey(m, "alt+4")
 	if CurrentScreen(next) != ScreenArtifacts {
 		t.Fatalf("artifacts screen = %v", CurrentScreen(next))
 	}
@@ -51,10 +51,11 @@ func TestNumberedNavigationUsesVisibleScreenOrder(t *testing.T) {
 		screen screen
 	}{
 		{key: "alt+1", screen: ScreenConversation},
-		{key: "alt+2", screen: ScreenStatus},
-		{key: "alt+3", screen: ScreenArtifacts},
-		{key: "alt+4", screen: ScreenCosts},
-		{key: "alt+5", screen: ScreenEvents},
+		{key: "alt+2", screen: ScreenHistory},
+		{key: "alt+3", screen: ScreenStatus},
+		{key: "alt+4", screen: ScreenArtifacts},
+		{key: "alt+5", screen: ScreenCosts},
+		{key: "alt+6", screen: ScreenEvents},
 	}
 	for _, tc := range withoutConfig {
 		t.Run("without-config/"+tc.key, func(t *testing.T) {
@@ -66,10 +67,10 @@ func TestNumberedNavigationUsesVisibleScreenOrder(t *testing.T) {
 		})
 	}
 
-	withoutConfigAlt6 := SetScreen(NewTestModel(nil), ScreenStatus)
-	next, _ := HandleTestKey(withoutConfigAlt6, "alt+6")
+	withoutConfigAlt7 := SetScreen(NewTestModel(nil), ScreenStatus)
+	next, _ := HandleTestKey(withoutConfigAlt7, "alt+7")
 	if CurrentScreen(next) != ScreenSettings {
-		t.Fatalf("alt+6 must open Settings when Config is hidden, got %v", CurrentScreen(next))
+		t.Fatalf("alt+7 must open Settings when Config is hidden, got %v", CurrentScreen(next))
 	}
 
 	withConfig := []struct {
@@ -77,12 +78,13 @@ func TestNumberedNavigationUsesVisibleScreenOrder(t *testing.T) {
 		screen screen
 	}{
 		{key: "alt+1", screen: ScreenConversation},
-		{key: "alt+2", screen: ScreenStatus},
-		{key: "alt+3", screen: ScreenArtifacts},
-		{key: "alt+4", screen: ScreenCosts},
-		{key: "alt+5", screen: ScreenEvents},
-		{key: "alt+6", screen: ScreenSettings},
-		{key: "alt+7", screen: ScreenConfig},
+		{key: "alt+2", screen: ScreenHistory},
+		{key: "alt+3", screen: ScreenStatus},
+		{key: "alt+4", screen: ScreenArtifacts},
+		{key: "alt+5", screen: ScreenCosts},
+		{key: "alt+6", screen: ScreenEvents},
+		{key: "alt+7", screen: ScreenSettings},
+		{key: "alt+8", screen: ScreenConfig},
 	}
 	for _, tc := range withConfig {
 		t.Run("with-config/"+tc.key, func(t *testing.T) {
@@ -643,7 +645,7 @@ func TestNavigationAllowedWhileStreaming(t *testing.T) {
 	m = EnterConversationForTest(m)
 	m = SetStreamingForTest(m, true)
 
-	for _, key := range []string{"alt+2", "alt+3", "alt+4", "alt+5"} {
+	for _, key := range []string{"alt+2", "alt+3", "alt+4", "alt+5", "alt+6"} {
 		next, _ := HandleTestKey(m, key)
 		if CurrentScreen(next) == ScreenConversation {
 			t.Errorf("key %q: expected to leave Chat while streaming, got ScreenConversation", key)
@@ -660,9 +662,9 @@ func TestConfigNavigationAllowedWhileStreaming(t *testing.T) {
 	m = EnterConversationForTest(m)
 	m = SetStreamingForTest(m, true)
 
-	next, _ := HandleTestKey(m, "alt+7")
+	next, _ := HandleTestKey(m, "alt+8")
 	if CurrentScreen(next) != ScreenConfig {
-		t.Fatalf("alt+7 while streaming opened %v, want Config", CurrentScreen(next))
+		t.Fatalf("alt+8 while streaming opened %v, want Config", CurrentScreen(next))
 	}
 	if !IsConversationStreaming(next) {
 		t.Fatal("streaming must remain true after navigating to Config")
@@ -739,7 +741,7 @@ func TestStreamDeltaProcessedOffChatScreen(t *testing.T) {
 	m = EnterConversationForTest(m)
 	m = SetStreamingForTest(m, true)
 	// Navigate away to Status
-	m, _ = HandleTestKey(m, "alt+2")
+	m, _ = HandleTestKey(m, "alt+3")
 	if CurrentScreen(m) != ScreenStatus {
 		t.Fatal("expected Status screen")
 	}
@@ -932,7 +934,15 @@ stages:
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = svc.Close() })
+	t.Cleanup(func() {
+		_ = svc.Close()
+		// Async session-persist cmds can leave SQLite sidecars after Close;
+		// remove them so t.TempDir cleanup stays deterministic.
+		base := filepath.Join(dir, ".workflow-hero", "hero.db")
+		for _, suf := range []string{"", "-wal", "-shm", "-journal"} {
+			_ = os.Remove(base + suf)
+		}
+	})
 	if _, err := svc.NewCycle("", ""); err != nil {
 		t.Fatal(err)
 	}

@@ -76,16 +76,11 @@ func TestExecuteStreamCompletesWhenSessionIdleWhileSSEOpen(t *testing.T) {
 	}
 }
 
-func TestExecuteResumeMissingSessionStartsNew(t *testing.T) {
-	var warned atomic.Bool
+func TestExecuteResumeMissingSessionRejectsExactResume(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/session/dead":
 			http.NotFound(w, r)
-		case r.Method == http.MethodPost && r.URL.Path == "/session":
-			_ = json.NewEncoder(w).Encode(opencodeSession{ID: "sess-fresh"})
-		case r.URL.Path == "/session/sess-fresh/message":
-			_ = json.NewEncoder(w).Encode(messageResponse{Parts: []part{{Type: "text", Text: "ok"}}})
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -98,23 +93,12 @@ func TestExecuteResumeMissingSessionStartsNew(t *testing.T) {
 	a.HTTP = srv.Client()
 	a.ResolveServeURL = func(ProcessHandle) (string, int, error) { return srv.URL, 1, nil }
 
-	res, err := a.Execute(context.Background(), harness.ExecuteRequest{
+	_, err := a.Execute(context.Background(), harness.ExecuteRequest{
 		SessionID: "dead",
 		Prompt:    "hi",
-		OnStreamDelta: func(d harness.StreamDelta) {
-			if d.Kind == harness.StreamKindWarning && strings.Contains(d.Text, "dead") {
-				warned.Store(true)
-			}
-		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.SessionID != "sess-fresh" {
-		t.Fatalf("session=%q", res.SessionID)
-	}
-	if !warned.Load() {
-		t.Fatal("expected resume warning")
+	if !errors.Is(err, harness.ErrExactResumeUnavailable) {
+		t.Fatalf("err=%v want exact resume unavailable", err)
 	}
 }
 

@@ -95,6 +95,7 @@ func defaultHeroPaletteItems() []paletteItem {
 	}
 	goTo := []paletteItem{
 		{label: "Go to - Chat", hint: "conversation", action: actionGoScreen, screen: screenConversation},
+		{label: "Go to - History", hint: "saved sessions", action: actionGoScreen, screen: screenHistory},
 		{label: "Go to - Status", hint: "cycle overview", action: actionGoScreen, screen: screenStatus},
 		{label: "Go to - Artifacts", hint: "linked files", action: actionGoScreen, screen: screenArtifacts},
 		{label: "Go to - Costs", hint: "token metrics", action: actionGoScreen, screen: screenCosts},

@@ -29,6 +29,7 @@ func TestDefaultHeroPaletteOrder(t *testing.T) {
 		"/hero-help",
 		"/hero-refresh",
 		"Go to - Chat",
+		"Go to - History",
 		"Go to - Status",
 		"Go to - Artifacts",
 		"Go to - Costs",

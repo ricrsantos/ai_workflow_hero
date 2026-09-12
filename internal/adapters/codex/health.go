@@ -27,7 +27,8 @@ func (a *Adapter) CheckHealth(ctx context.Context, sessionID string) (harness.Ha
 		alive = false
 	}
 	if a.isReconnecting() {
-		// Avoid TUI HealthFailed auto-cancel while Execute restarts the child.
+		// Report reconnecting as degraded so the observational TUI health path
+		// does not flash a failed-process warning while Execute restarts the child.
 		return harness.HarnessHealth{
 			ProcessAlive: true,
 			ServerAlive:  false,

@@ -6,7 +6,7 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 11
+const currentSchemaVersion = 13
 
 func (s *Store) migrate() error {
 	return s.migrateTo(currentSchemaVersion)
@@ -300,6 +300,103 @@ func (s *Store) applyMigration(version int) error {
 			`CREATE INDEX idx_todo_projection_ops_cycle ON todo_projection_ops(cycle_id)`,
 			`ALTER TABLE cycles ADD COLUMN completion_disposition TEXT NOT NULL DEFAULT ''`,
 			`ALTER TABLE cycles ADD COLUMN completion_disposition_json TEXT NOT NULL DEFAULT ''`,
+		}
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("migration %d: %w", version, err)
+			}
+		}
+	case 12:
+		// C16 / ADR-091–092, ADR-094, ADR-096, ADR-098: durable session history tables.
+		stmts := []string{
+			`CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  lifecycle TEXT NOT NULL,
+  harness_id TEXT NOT NULL DEFAULT '',
+  native_session_id TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  model_properties_json TEXT NOT NULL DEFAULT '{}',
+  cycle_id INTEGER REFERENCES cycles(id) ON DELETE SET NULL,
+  stage_name TEXT NOT NULL DEFAULT '',
+  agent_name TEXT NOT NULL DEFAULT '',
+  transcript_state TEXT NOT NULL,
+  last_origin TEXT NOT NULL DEFAULT 'local',
+  created_at TEXT NOT NULL,
+  last_activity_at TEXT NOT NULL,
+  interrupted_at TEXT,
+  remote_import_confirmed INTEGER NOT NULL DEFAULT 0,
+  legacy_source_key TEXT UNIQUE,
+  CHECK (kind IN ('freechat','orchestration','research','stage_agent')),
+  CHECK (lifecycle IN ('active','archived','interrupted','deleting')),
+  CHECK (transcript_state IN ('available','unavailable_legacy')),
+  CHECK (last_origin IN ('local','telegram'))
+)`,
+			`CREATE UNIQUE INDEX sessions_harness_native
+  ON sessions(harness_id, native_session_id)
+  WHERE native_session_id != ''`,
+			`CREATE INDEX sessions_active_activity
+  ON sessions(lifecycle, last_activity_at DESC, id)`,
+			`CREATE INDEX sessions_title_nocase ON sessions(title COLLATE NOCASE)`,
+			`CREATE TABLE session_events (
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  event_type TEXT NOT NULL,
+  origin TEXT NOT NULL,
+  origin_address TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL,
+  provider_event_id TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (session_id, seq),
+  CHECK (seq >= 1),
+  CHECK (origin IN ('local','telegram'))
+)`,
+			`CREATE UNIQUE INDEX session_events_provider
+  ON session_events(session_id, provider_event_id)
+  WHERE provider_event_id != ''`,
+			`CREATE TABLE session_assets (
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  asset_id TEXT NOT NULL,
+  ownership TEXT NOT NULL,
+  path TEXT NOT NULL,
+  mime TEXT NOT NULL DEFAULT '',
+  original_name TEXT NOT NULL DEFAULT '',
+  card_meta_json TEXT NOT NULL DEFAULT '{}',
+  PRIMARY KEY (session_id, asset_id),
+  CHECK (ownership IN ('managed_copy','external_source'))
+)`,
+			`CREATE TABLE session_leases (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  owner_id TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  heartbeat_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+)`,
+			`CREATE TABLE session_delete_ops (
+  id INTEGER PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  native_session_id TEXT NOT NULL DEFAULT '',
+  harness_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  remote_warning TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (status IN ('intent','local_purged','remote_attempted','completed'))
+)`,
+		}
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("migration %d: %w", version, err)
+			}
+		}
+	case 13:
+		stmts := []string{
+			`CREATE TABLE session_delete_op_managed_paths (
+  delete_op_id INTEGER NOT NULL REFERENCES session_delete_ops(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  PRIMARY KEY (delete_op_id, path)
+)`,
 		}
 		for _, stmt := range stmts {
 			if _, err := tx.Exec(stmt); err != nil {

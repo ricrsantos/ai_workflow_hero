@@ -17,6 +17,8 @@ func (m model) renderContent() string {
 		return m.renderConfig()
 	case screenSettings:
 		return m.renderSettings()
+	case screenHistory:
+		return m.renderHistory()
 	case screenStatus:
 		return m.renderStatus()
 	case screenArtifacts:
@@ -531,6 +533,9 @@ func (m model) footerHints() string {
 		default:
 			return "tab navbar · ↑↓ fields · space toggle · enter edit/select · alt+s save · alt+enter save and start · alt+r reload · esc leave"
 		}
+	}
+	if m.screen == screenHistory {
+		return m.historyFooterHints()
 	}
 	if m.screen == screenSettings {
 		if m.settings.saving {

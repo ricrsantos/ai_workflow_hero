@@ -308,10 +308,13 @@ func TestNavbarTimerSubdivisionIsAtBottom(t *testing.T) {
 	m := NewTestModel(nil)
 	m.width = 100
 	m.status.CycleNumber = 1
+	m.status.Status = store.CycleStatusActive
 	m.sessionTimer.displayed = time.Hour + 2*time.Minute + 3*time.Second
 	m.aiTimer.displayed = 4 * time.Second
 	m.aiResponseTimer.displayed = 5 * time.Second
-	view := stripANSI(m.renderNavSidebar(19))
+	// Height must fit title/agents/Chat…Config (8 screens after C16 History) +
+	// alt range + timer subdivision.
+	view := stripANSI(m.renderNavSidebar(21))
 	lines := strings.Split(view, "\n")
 	session := strings.Index(view, "Session 01:02:03")
 	aiWorking := strings.LastIndex(view, "00:00:04")
@@ -334,7 +337,7 @@ func TestNavbarTimerSubdivisionIsAtBottom(t *testing.T) {
 	separatorLine := -1
 	for i, line := range lines {
 		switch {
-		case strings.Contains(line, "alt+1-7"):
+		case strings.Contains(line, "alt+1-8"):
 			rangeLine = i
 		case strings.Contains(line, "Session 01:02:03"):
 			sessionLine = i

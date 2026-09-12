@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/filepicker"
@@ -30,6 +31,7 @@ type screen int
 
 const (
 	screenConversation screen = iota
+	screenHistory
 	screenConfig
 	screenSettings
 	screenStatus
@@ -62,12 +64,13 @@ type model struct {
 	statusFindingFocus int // focused finding row on Status (-1 = none)
 
 	// Fixed footer status bar (running / result / error).
-	statusKind       statusKind
-	statusLabel      string
-	statusText       string
-	actionBusy       bool
-	autoUpdateBusy   bool
-	restartRequested bool
+	statusKind                statusKind
+	statusLabel               string
+	statusText                string
+	actionBusy                bool
+	autoUpdateBusy            bool
+	restartRequested          bool
+	pendingQuitAfterInterrupt bool
 
 	// Shared TUI counters. The session timer is cycle-backed or free-chat
 	// in-memory; AI wk covers the currently executing demand and AI rp tracks
@@ -262,11 +265,12 @@ type model struct {
 	harnessQuestionAnswers [][]string
 
 	// Harness watchdog (v2.3): runtime health during TUI Execute only (warn-only).
-	harnessWatchdog       harness.Watchdog
-	harnessHealthStatus   harness.HealthStatus
-	harnessReconnecting   bool // adapter reported connection.closed; skip HealthFailed cancel
-	harnessHealthInFlight bool
-	lastExecutePrompt     string
+	harnessWatchdog         harness.Watchdog
+	harnessHealthStatus     harness.HealthStatus
+	harnessReconnecting     bool // adapter reported connection.closed; Failed uses reconnect copy
+	harnessHealthInFlight   bool
+	harnessHealthGeneration int64 // incremented per Execute so in-flight probes cannot warn the next turn
+	lastExecutePrompt       string
 
 	testMode bool // NewTestModel: omit long-lived execute timers (health probe).
 
@@ -288,6 +292,30 @@ type model struct {
 	// both transports follow the same slash-vs-text rule (conversation-service
 	// R1).
 	convService *conversation.Service
+
+	sessionService *conversation.SessionService
+	history        historyScreen
+
+	heroChatSessionID       string
+	heroChatSessionTitle    string
+	heroLeasedSessionID     string
+	heroLeaseNextHeartbeat  time.Time
+	heroSessionHistorical   bool
+	heroSessionRecoverBusy  bool
+	tuiOwnerID              string
+	sessionPersistBlocked   bool
+	sessionLeaseLost        bool
+	executeWG               *sync.WaitGroup
+	sessionPersistQueue     []store.AppendSessionEventInput
+	sessionAssetUpsertQueue []sessionAssetPersistItem
+	sessionBindingQueue     []sessionBindingPersistItem
+
+	heroSessionRecoverNativeID  string
+	heroSessionRecoverHarnessID string
+
+	conversationContextSyncSeq uint64
+	pendingChatFollowUp        *pendingChatFollowUpState
+	testContextIODelay         time.Duration
 }
 
 type refreshDataMsg struct {
@@ -349,7 +377,12 @@ func newModel(svc *cycle.Service) model {
 	}
 	m.registerCatalogMediaCapability(m.chatHarnessID, m.chatModelSlug)
 	m.convService = conversation.New(nil, nil)
-	return m.syncConversationContext()
+	if svc != nil && svc.Store != nil {
+		m.sessionService = conversation.NewSessionService(svc.Store, store.DefaultClock())
+	}
+	m.tuiOwnerID = newTuiOwnerID()
+	m.executeWG = &sync.WaitGroup{}
+	return m
 }
 
 func newModelWithChat(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harnessID, modelWarn, version string) model {
@@ -419,7 +452,14 @@ func (m model) Init() tea.Cmd {
 	// Timer ownership is established by Update paths after the model state is
 	// installed. Init cannot persist ensureTimerLoop's mutation, so starting a
 	// tick here could create a second loop when the first refresh also starts it.
-	return tea.Batch(m.refreshCmd(), mediaStartupCleanupCmd())
+	cmds := []tea.Cmd{m.refreshCmd(), m.mediaStartupCleanupCmd(), m.retryIncompleteSessionDeletesCmd()}
+	if m.conversationContextIOAsync() {
+		m, seq := m.nextConversationContextSync()
+		cmds = append(cmds, m.syncConversationContextCmd(seq, syncContextBootstrap))
+	} else {
+		m = m.syncConversationContext()
+	}
+	return tea.Batch(cmds...)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -427,7 +467,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tuiRestartMsg:
 		m.restartRequested = true
 		if m.streaming {
-			return m, tea.Batch(m.cancelStreamCmd(), tea.Quit)
+			m.pendingQuitAfterInterrupt = true
+			return m, m.cancelStreamCmd()
 		}
 		return m, tea.Quit
 
@@ -449,6 +490,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.preserveTranscriptFollowOnResize()
 			m = m.ensureInputCaretVisible()
 		}
+		if m.screen == screenHistory {
+			m = m.ensureHistoryListOffset()
+		}
 		m = m.clampContentOffset()
 		if m.screen == screenConversation {
 			var mosaicCmd tea.Cmd
@@ -458,6 +502,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case historyLoadedMsg, historyRenameMsg, historyArchiveMsg, historyRestoreMsg, historyDeleteMsg, historyOpenMsg, historyImportMsg, historyForkDoneMsg:
+		return m.handleHistoryMsg(msg)
+
+	case sessionRecoverStatusMsg:
+		if m.screen == screenConversation {
+			return m.handleConversationMsg(msg)
+		}
+		return m.handleSessionRecoverStatus(msg)
 
 	case refreshDataMsg:
 		if msg.err != nil {
@@ -559,6 +612,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.bumpTranscriptLayout()
 			return m, convWaitTickCmd()
 		}
+		if m.screen == screenHistory && (m.history.loading || m.history.mutating) {
+			m.waitAnimFrame++
+			return m, convWaitTickCmd()
+		}
 		return m, nil
 
 	case harnessResetOpenMsg:
@@ -576,8 +633,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case heroStartBootstrapDoneMsg:
 		return m.handleHeroStartBootstrapDone(msg)
 
+	case heroNewPrepareDoneMsg:
+		if msg.err != nil {
+			m = m.setStatusResult(false, "/hero-new", firstStatusLine(msg.err.Error()))
+			return m, nil
+		}
+		return m.beginHeroRuntimeConversation("new", "", heroRuntimeOpts{})
+
+	case conversationContextSyncDoneMsg:
+		return m.handleConversationContextSyncDone(msg)
+
 	case confirmResumeMsg:
 		return m.dispatchConfirmedAction(msg.action, msg.actionN)
+
+	case sessionInterruptFinalizeDoneMsg:
+		return m, tea.Quit
 
 	case listModelsMsg:
 		return m.handleListModelsMsg(msg)
@@ -633,7 +703,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg:
+	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg, heroSessionBoundMsg, sessionPersistErrMsg, chatTranscriptRestoreMsg, sessionRecoverPollTickMsg, sessionRecoverDismissedMsg, sessionRecoverAttachDoneMsg, sessionDeleteRetryResultMsg:
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)
@@ -708,6 +778,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.screen == screenSettings {
 			return m.handleSettingsKey(msg)
+		}
+		if m.screen == screenHistory {
+			return m.handleHistoryKey(msg)
 		}
 		return m.handleKey(msg)
 	}
@@ -968,6 +1041,9 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		if item.screen == screenConversation {
 			return m.enterConversation()
 		}
+		if item.screen == screenHistory {
+			return m.openHistory()
+		}
 		return m.goListScreen(item.screen)
 	case actionSelectModel:
 		if item.modelSlug != "" && item.harnessID != "" {
@@ -1070,7 +1146,10 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 }
 
 func (m model) goListScreen(s screen) (model, tea.Cmd) {
-	if m.freeChatMode && s != screenConversation {
+	if s == screenHistory {
+		return m.openHistory()
+	}
+	if m.freeChatMode && s != screenConversation && s != screenSettings && s != screenHistory {
 		return m, nil
 	}
 	m.chatInputFocused = false
@@ -1196,8 +1275,12 @@ func (m model) beginNewChat() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	m, _ = m.enterConversation()
-	m = m.resetChatSession()
+	m, enterCmd := m.enterConversation()
+	priorHeroSession := strings.TrimSpace(m.heroLeasedSessionID)
+	if priorHeroSession == "" {
+		priorHeroSession = strings.TrimSpace(m.heroChatSessionID)
+	}
+	m, resetCmd := m.resetChatSession()
 	// /new-chat starts a free-chat session when no cycle is active, so it owns
 	// the explicit Session reset in that case. While a cycle is active, the
 	// cycle timer must continue through a conversation reset. Other resets
@@ -1207,7 +1290,11 @@ func (m model) beginNewChat() (model, tea.Cmd) {
 		m = m.resetSessionTimer()
 	}
 	m = m.setStatusResult(true, "/new-chat", "New chat started with default model.")
-	return m, nil
+	cmds := []tea.Cmd{enterCmd, resetCmd}
+	if priorHeroSession != "" {
+		cmds = append(cmds, m.releaseHeroChatLeaseCmd(priorHeroSession))
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func newChatBlockedMessage() string {
@@ -1227,11 +1314,14 @@ func (m model) beginHeroNew() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-new", "cycle service unavailable")
 		return m, nil
 	}
-	if _, err := m.svc.PrepareWorkflowConfig(); err != nil {
-		m = m.setStatusResult(false, "/hero-new", firstStatusLine(err.Error()))
-		return m, nil
+	if !m.conversationContextIOAsync() {
+		if _, err := m.svc.PrepareWorkflowConfig(); err != nil {
+			m = m.setStatusResult(false, "/hero-new", firstStatusLine(err.Error()))
+			return m, nil
+		}
+		return m.beginHeroRuntimeConversation("new", "", heroRuntimeOpts{})
 	}
-	return m.beginHeroRuntimeConversation("new", "", heroRuntimeOpts{})
+	return m, m.heroNewPrepareCmd()
 }
 
 func (m model) beginHeroStart() (model, tea.Cmd) {
@@ -1247,8 +1337,8 @@ func (m model) beginHeroStart() (model, tea.Cmd) {
 	// All filesystem and SQLite bootstrap work runs as a tea.Cmd. The Bubble
 	// Tea Update loop must remain available for repaint, navigation, and cancel
 	// while /hero-start validates and synchronizes the cycle.
-	m, _ = m.enterConversation()
-	m = m.resetChatSession()
+	m, enterCmd := m.enterConversation()
+	m, resetCmd := m.resetChatSession()
 	m.chatInputFocused = false
 	m.heroStartBootstrapping = true
 	m.waitAnimFrame = 0
@@ -1262,7 +1352,7 @@ func (m model) beginHeroStart() (model, tea.Cmd) {
 	requestID := m.heroStartRequestID
 	ctx, cancel := context.WithCancel(context.Background())
 	m.heroStartCancel = cancel
-	return m, tea.Batch(convWaitTickCmd(), m.heroStartBootstrapCmd(ctx, requestID))
+	return m, tea.Batch(convWaitTickCmd(), enterCmd, resetCmd, m.heroStartBootstrapCmd(ctx, requestID))
 }
 
 type heroStartBootstrapDoneMsg struct {
@@ -1899,8 +1989,11 @@ func (m model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m, _ = m.cancelHeroStartPreparation()
 				return m, tea.Quit
 			}
-			// Cancel the stream first, then quit.
-			return m, tea.Batch(m.cancelStreamCmd(), tea.Quit)
+			if m.streaming {
+				m.pendingQuitAfterInterrupt = true
+				return m, m.cancelStreamCmd()
+			}
+			return m, tea.Quit
 		}
 
 		// Cancel the running stream, then dispatch the confirmed action once
@@ -1943,6 +2036,10 @@ type confirmResumeMsg struct {
 func (m model) dispatchConfirmedAction(action paletteAction, actionN int) (tea.Model, tea.Cmd) {
 	switch action {
 	case actionQuit:
+		if m.streaming {
+			m.pendingQuitAfterInterrupt = true
+			return m, m.cancelStreamCmd()
+		}
 		return m, tea.Quit
 	case actionNew:
 		return m.beginHeroNew()

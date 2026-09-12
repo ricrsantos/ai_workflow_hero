@@ -96,7 +96,14 @@ way to mark it complete with a durable explanation.
 - Hero allocates an ID when a valid failure entry omits one.
 - An agent may provide `reopen_id` only for an existing `done` finding in the
   same cycle and valid source/owner context.
-- `reopen_id` takes precedence over fingerprint matching.
+- `reopen_id` takes precedence over fingerprint matching **only when** the
+  report's canonical `file`, `requirement`, and `acceptance_criteria` match the
+  stored finding contract. A mismatched contract is `unknown_reopen_id`; the
+  agent must omit `reopen_id` so Hero allocates a new ID.
+- Reopen, rediscovery, done, and deferral do **not** overwrite the stored
+  issue, file, requirement, or acceptance criterion. New issue text is
+  append-only on `finding_occurrences`. Implementation assignments always
+  show the frozen contract plus occurrence history.
 - Without `reopen_id`, equality is deterministic. The fingerprint uses cycle,
   source stage, owner, canonical file or requirement, and normalized acceptance
   criterion. Free-form issue wording is not semantically compared.
@@ -140,7 +147,8 @@ open/reopened ──user defers at Escalated──→ deferred_todo
 - `done` means the assigned Implementation agent reported and verified that
   exact ID; it is not a promise that later validation cannot reopen it.
 - Reopening preserves the ID and appends the new round, issue context, source
-  report, and evidence.
+  report, and evidence. The finding row's issue, file, requirement, and
+  acceptance criterion stay frozen; Implementation is assigned that contract.
 - A `deferred_todo` finding is no longer assignable in its source cycle.
 - If the same fingerprint is reported later in that same cycle, Hero records a
   warning occurrence against the deferred finding, does not reopen it, and lets

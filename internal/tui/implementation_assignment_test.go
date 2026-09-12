@@ -378,6 +378,32 @@ func implementationTaskIDs(tasks []implementationTaskBlock) []string {
 	return ids
 }
 
+func TestImplementationFindingBlockFreezesContractAndHistory(t *testing.T) {
+	finding := store.Finding{
+		ID:                 "find-qa-19",
+		Owner:              store.FindingOwnerGeneric,
+		SourceStage:        store.FindingSourceQA,
+		File:               "internal/tui/conversation.go",
+		Requirement:        "PRD-C16-001 FR-08",
+		Issue:              "Cancellation does not join the worker",
+		AcceptanceCriteria: "cancel and join in-flight execution",
+	}
+	occs := []store.FindingOccurrence{
+		{Round: 1, Kind: store.OccurrenceCreated, Issue: "Quit races persist"},
+		{Round: 2, Kind: store.OccurrenceReopened, Issue: "workers use context.Background"},
+	}
+	block := implementationFindingBlock(finding, occs)
+	if !strings.Contains(block.Block, "Contract: frozen") {
+		t.Fatalf("missing frozen contract:\n%s", block.Block)
+	}
+	if !strings.Contains(block.Block, "r1 created: Quit races persist") {
+		t.Fatalf("missing history:\n%s", block.Block)
+	}
+	if !strings.Contains(block.Block, "cancel and join in-flight execution") {
+		t.Fatalf("missing frozen acceptance:\n%s", block.Block)
+	}
+}
+
 func TestMergeImplementationAssignmentOrdersTasksBeforeFindings(t *testing.T) {
 	raw := "- [ ] 1.1 [task-a] [agent:generic_agent] First task\n" +
 		"- [ ] 1.2 [task-b] [agent:generic_agent] Second task\n"
@@ -389,7 +415,7 @@ func TestMergeImplementationAssignmentOrdersTasksBeforeFindings(t *testing.T) {
 		{ID: "find-qa-1", Owner: store.FindingOwnerGeneric, SourceStage: store.FindingSourceQA},
 		{ID: "find-qa-2", Owner: store.FindingOwnerGeneric, SourceStage: store.FindingSourceQA},
 	}
-	byAgent, errs := mergeImplementationAssignment(plan, findings, []string{implementationGenericAgent})
+	byAgent, errs := mergeImplementationAssignment(plan, findings, []string{implementationGenericAgent}, nil)
 	if len(errs) != 0 {
 		t.Fatalf("merge errors=%v", errs)
 	}
@@ -409,7 +435,7 @@ func TestMergeImplementationAssignmentRejectsFindingOwnerOutsideScope(t *testing
 	plan := partitionImplementationTasks("", []string{implementationBackendAgent})
 	plan.Valid = true
 	findings := []store.Finding{{ID: "find-qa-1", Owner: store.FindingOwnerFrontend, SourceStage: store.FindingSourceQA}}
-	_, errs := mergeImplementationAssignment(plan, findings, []string{implementationBackendAgent})
+	_, errs := mergeImplementationAssignment(plan, findings, []string{implementationBackendAgent}, nil)
 	if len(errs) == 0 || !strings.Contains(strings.Join(errs, "; "), "not in active implementation scope") {
 		t.Fatalf("expected scope failure, got %v", errs)
 	}
@@ -417,7 +443,7 @@ func TestMergeImplementationAssignmentRejectsFindingOwnerOutsideScope(t *testing
 
 func TestBuildImplementationStageDispatchVerificationWaveWhenEmpty(t *testing.T) {
 	checklist := implementationChecklist{Linked: true, Ready: true, Raw: "- [x] [task-done] [agent:generic_agent] Done\n"}
-	runAgents, assignments, expected, reason := buildImplementationStageDispatch(checklist, []string{implementationGenericAgent}, nil)
+	runAgents, assignments, expected, reason := buildImplementationStageDispatch(checklist, []string{implementationGenericAgent}, nil, nil)
 	if reason != "" {
 		t.Fatalf("reason=%q", reason)
 	}

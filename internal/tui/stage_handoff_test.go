@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
@@ -505,7 +506,7 @@ func TestImplementationAssignmentPromptsArePartitionedByOwner(t *testing.T) {
 		"  Verify: frontend criterion\n"
 	path := writeImplementationTasks(t, svc, raw)
 	checklist := NewTestModel(svc).implementationChecklist()
-	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend}, nil)
+	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend}, nil, nil)
 	if reason != "" || !reflect.DeepEqual(runAgents, []string{agentBackend, agentFrontend}) || !reflect.DeepEqual(expected, runAgents) {
 		t.Fatalf("dispatch agents=%v expected=%v reason=%q", runAgents, expected, reason)
 	}
@@ -533,7 +534,7 @@ func TestImplementationOwnerlessMixedPlanFailsBeforeDispatch(t *testing.T) {
 		Ready:  true,
 		Raw:    "- [ ] 1.1 [task-unowned] Legacy task\n",
 	}
-	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend}, nil)
+	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend}, nil, nil)
 	if reason == "" || !strings.Contains(reason, "ownership") {
 		t.Fatalf("reason=%q want ownership failure", reason)
 	}
@@ -613,7 +614,7 @@ func TestImplementationReportsMarkUnionAndRedispatchOnlyRemainingOwner(t *testin
 	if !strings.Contains(string(updated), "- [x] 1.1 [task-back]") || !strings.Contains(string(updated), "- [ ] 1.2 [task-front]") {
 		t.Fatalf("unexpected checklist after union mark: %q", updated)
 	}
-	nextAgents, nextAssignments, _, reason := implementationStageDispatch(m.implementationChecklist(), []string{agentBackend, agentFrontend}, nil)
+	nextAgents, nextAssignments, _, reason := implementationStageDispatch(m.implementationChecklist(), []string{agentBackend, agentFrontend}, nil, nil)
 	if reason != "" || !reflect.DeepEqual(nextAgents, []string{agentFrontend}) || len(nextAssignments[agentBackend]) != 0 || len(nextAssignments[agentFrontend]) != 1 {
 		t.Fatalf("next dispatch agents=%v assignments=%v reason=%q", nextAgents, nextAssignments, reason)
 	}
@@ -1254,6 +1255,24 @@ func TestStageAgentReportParserRejectsUnknownField(t *testing.T) {
 	report := parseStageAgentReport(raw, "generic_agent")
 	if report.Valid || !strings.Contains(report.ValidationError, "unknown_field") {
 		t.Fatalf("report=%+v want unknown_field rejection", report)
+	}
+	if got := implementationReportDiagnosticCode(report); got != string(reports.CodeUnknownField) {
+		t.Fatalf("diagnostic code=%q want %s", got, reports.CodeUnknownField)
+	}
+}
+
+func TestStageAgentReportParserRejectsMetricsField(t *testing.T) {
+	raw := `{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test","metrics":{"model":"x","input_chars":1,"output_chars":1}}`
+	report := parseStageAgentReport(raw, "generic_agent")
+	if report.Valid || !strings.Contains(report.ValidationError, "unknown_field") || !strings.Contains(report.ValidationError, "metrics") {
+		t.Fatalf("report=%+v want unknown_field: metrics", report)
+	}
+	if got := implementationReportDiagnosticCode(report); got != string(reports.CodeUnknownField) {
+		t.Fatalf("diagnostic code=%q want %s", got, reports.CodeUnknownField)
+	}
+	copy := formatImplementationHandoffDiagnostics([]stageAgentReport{report}, model{})
+	if !strings.Contains(copy, "unknown_field") {
+		t.Fatalf("chat copy=%q want unknown_field title", copy)
 	}
 }
 

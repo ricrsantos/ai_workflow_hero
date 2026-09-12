@@ -8,6 +8,13 @@ import (
 )
 
 // CheckHealth implements harness.HealthChecker for the Cursor CLI harness.
+//
+// HasInFlight is false both when the CLI process crashed and when Execute has
+// already returned successfully (clearRunning in defer). The TUI watchdog must
+// not treat that second case as HealthFailed: a probe that races executeDone
+// or the next handoff Execute would warn (or previously auto-cancel) with
+// "session idle". Terminal success/cancel/idle for a known session stays
+// alive; only StatusFailed marks the session dead.
 func (a *Adapter) CheckHealth(ctx context.Context, sessionID string) (harness.HarnessHealth, error) {
 	_ = ctx
 	alive := a.HasInFlight()
@@ -28,10 +35,17 @@ func (a *Adapter) CheckHealth(ctx context.Context, sessionID string) (harness.Ha
 			health.SessionAlive = false
 			health.Details = st.Message
 		case harness.StatusRunning:
+			health.ProcessAlive = true
 			health.Details = "session running"
 		default:
-			if !alive {
-				health.SessionAlive = false
+			// completed / cancelled / idle: Execute is gone or not yet
+			// setRunning. Keep process+session alive so Evaluate does not
+			// classify a clean complete as HealthFailed.
+			health.ProcessAlive = true
+			health.SessionAlive = true
+			if st.State != "" {
+				health.Details = "session " + st.State
+			} else {
 				health.Details = "session idle"
 			}
 		}

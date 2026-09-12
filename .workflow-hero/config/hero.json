@@ -1,14 +1,14 @@
 {
   "cli": {
-    "version": "3.2.0_92647fa",
+    "version": "3.2.0_db9315f",
     "installedAt": "2026-08-04T19:30:24Z",
     "tools": [
       "cursor"
     ]
   },
   "assets": {
-    "version": "3.2.0_92647fa",
-    "installedAt": "2026-09-11T13:03:13Z"
+    "version": "3.2.0_db9315f",
+    "installedAt": "2026-09-12T02:44:47Z"
   },
   "harnesses": {
     "claude": {
@@ -25,7 +25,7 @@
     },
     "cursor": {
       "enabled": true,
-      "model": "cursor-grok-4.6-high",
+      "model": "cursor-grok-4.6-xhigh",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     },
@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "cursor",
-    "model": "cursor-grok-4.6-high"
+    "harness": "codex",
+    "model": "gpt-5.6-luna"
   },
   "chat_verbosity": "debug",
   "telegram": {
@@ -86,6 +86,10 @@
       },
       "cursor-grok-4.6-low": {
         "ef": "high",
+        "fs": "false"
+      },
+      "cursor-grok-4.6-xhigh": {
+        "ef": "xhigh",
         "fs": "false"
       }
     },

@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/redact"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
@@ -126,7 +127,7 @@ func newCodexAssetStore(sessionID, workspace string, logger *slog.Logger) *media
 	})
 	if err != nil {
 		if logger != nil {
-			logger.Debug("codex output asset store unavailable", "error", err)
+			logger.Debug("codex output asset store unavailable", "error", redact.Error(err))
 		}
 		return nil
 	}
@@ -194,7 +195,7 @@ func (a *Adapter) CreateSession(ctx context.Context, req harness.SessionRequest)
 		status:  harness.ExecutionStatus{SessionID: id, State: harness.StatusIdle},
 	}
 	a.mu.Unlock()
-	a.log().Info("codex thread created", "thread_id", id)
+	a.log().Info("codex thread created")
 	return out, nil
 }
 
@@ -255,18 +256,9 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		_, loaded := a.sessions[sessionID]
 		a.mu.Unlock()
 		if loaded {
-			a.log().Debug("codex thread resume skipped", "thread_id", sessionID, "error", err)
+			a.log().Debug("codex thread resume skipped", "error", redact.Error(err))
 		} else {
-			a.log().Warn("codex thread resume failed; starting new thread", "thread_id", sessionID, "error", err)
-			sess, cerr := a.CreateSession(ctx, harness.SessionRequest{
-				ProjectDir: req.ProjectDir,
-				StageName:  req.StageName,
-				AgentName:  req.AgentName,
-			})
-			if cerr != nil {
-				return nil, cerr
-			}
-			sessionID = sess.ID
+			return nil, harness.NewExactResumeUnavailable(sessionID, err)
 		}
 	}
 
@@ -312,7 +304,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 					a.setStatus(sessionID, harness.StatusCancelled, "cancelled")
 					return nil, runCtx.Err()
 				}
-				a.log().Warn("codex reconnect failed", "attempt", attempt, "error", err, "thread_id", sessionID)
+				a.log().Warn("codex reconnect failed", "attempt", attempt, "error", redact.Error(err))
 				if attempt+1 >= connectionReconnectAttempts {
 					a.setStatus(sessionID, harness.StatusFailed, err.Error())
 					return nil, fmt.Errorf("codex app-server reconnect failed: %w", err)
@@ -352,7 +344,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 			return nil, err
 		}
 		a.log().Warn("codex app-server connection closed during turn",
-			"attempt", attempt+1, "error", err, "thread_id", sessionID)
+			"attempt", attempt+1, "error", redact.Error(err))
 		a.setReconnecting(true)
 		_ = a.clearDeadAppServer(context.Background())
 	}
@@ -552,7 +544,7 @@ func (a *Adapter) interruptTurn(ctx context.Context, sessionID string) error {
 		"turnId":   turnID,
 	}
 	if err := a.rpcCall(ctx, "turn/interrupt", params, &struct{}{}); err != nil {
-		a.log().Debug("codex turn/interrupt", "error", err)
+		a.log().Debug("codex turn/interrupt", "error", redact.Error(err))
 	}
 	a.setStatus(sessionID, harness.StatusCancelled, "interrupted")
 	return nil

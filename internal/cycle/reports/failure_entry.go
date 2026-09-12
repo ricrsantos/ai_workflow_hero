@@ -70,7 +70,14 @@ func decodeFailureEntries(raw json.RawMessage, fieldName string, opts failureEnt
 			}
 			seenReopen[id] = i
 			if opts.reopen != nil {
-				if derr := opts.reopen.ValidateReopenID(opts.sourceStage, entry.Owner, id); derr != nil {
+				if derr := opts.reopen.ValidateReopenID(ReopenRequest{
+					SourceStage:        opts.sourceStage,
+					Owner:              entry.Owner,
+					ReopenID:           id,
+					File:               entry.File,
+					Requirement:        entry.Requirement,
+					AcceptanceCriteria: entry.AcceptanceCriteria,
+				}); derr != nil {
 					if derr.Field == "" {
 						derr.Field = prefix + "reopen_id"
 					}

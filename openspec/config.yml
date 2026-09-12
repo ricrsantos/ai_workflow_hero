@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   Project: AI Workflow Hero (Hero) — the Hero CLI + Runtime assets themselves.
   This is Hero's own source code repository, not a project that consumes Hero.
-  Phase: Cycle C15 — Deterministic Loop-back Findings and Deferred ToDos.
+  Phase: Cycle C16 — Persistent TUI Session History.
 
   Authoritative baseline sources — read before planning or writing any artifact:
     - AGENTS.md (project summary, doc map, reference lookup order, testing loop, ambiguity policy)
@@ -62,47 +62,50 @@ context: |
     - [C15 PRD] docs/product/PRD-C15-001-loopback-findings-handoff.md — Deterministic Loop-back Findings and Deferred ToDos
     - [C15 ADR] docs/architecture/ADR-C15-001-loopback-findings-handoff.md — Deterministic Findings, Escalation ToDos, and Research Adoption (ADR-083–090)
     - [C15 UI] docs/product/UI-C15-001-loopback-findings-handoff.md — Loop-back Findings and Deferred ToDos UX
+    - [C16 PRD] docs/product/PRD-C16-001-tui-session-history.md — Persistent TUI Session History
+    - [C16 ADR] docs/architecture/ADR-C16-001-tui-session-history.md — Durable TUI Session History (ADR-091–098)
+    - [C16 UI] docs/product/UI-C16-001-tui-session-history.md — TUI Session History
 
-  Authoritative C15 sources: PRD-C15-001 §§1–14, UI-C15-001 §§1–16, and ADR-083–090.
-  Idea notes yield on divergence. Go validates and transitions structured state; agents emit JSON only.
-  Browser UI Validation and QA End-to-End are disabled for this cycle, but the SDD still specifies their
-  report/handoff contracts so later-enabled stages use the same atomic path. Scope is native=true → generic_agent.
+  Authoritative C16 sources: PRD-C16-001 §§1–7, UI-C16-001 §§1–10, and ADR-091–098.
+  Idea notes yield on divergence. Schema v12 is forward-only from v11; never recreate hero.db.
+  Browser UI Validation and QA End-to-End are disabled for this cycle. Scope is native=true → generic_agent.
 
   Planning decisions locked for this change:
-    - Schema v11 is forward-only from v10; never recreate hero.db.
-    - Fingerprint is SHA-256 of NFC + whitespace-collapsed file/requirement/acceptance with cycle, source, owner.
-    - Failed validation close, finding writes, and loop-back share one Store transaction; CLI never nests tx.
-    - Projection uses recoverable todo_projection_ops; SQLite and current-state.md are not a distributed transaction.
-    - Status JSON additive fields use existing camelCase on StatusView; do not rename current keys.
-    - Standalone `hero stage loop-back` stays administrative; agent-driven flow uses atomic `--failed --findings-json`.
+    - Opaque Hero session UUID is the History key; native IDs are harness-scoped attributes.
+    - Audit `conversation` table stays; user-visible events live in `session_events`.
+    - Lease heartbeat 5s / TTL 30s with injected-clock CAS; listing needs no lease.
+    - Fork context is deterministic newest-first user+assistant text bounded to 32 KiB; no LLM.
+    - C14 registered session dirs survive until explicit delete; originals are never unlinked.
+    - Optional RemoteHistoryReader / NativeSessionDeleter; C16 adapters do not invent delete support.
+    - Cycle/stage session columns are compatibility projections, not the aggregate key.
 
   Stack: Go, Cobra, embed.FS, Feature Based + Vertical Slice, Bubble Tea/lipgloss/bubbles, SQLite.
-  Test command: `go test ./...`. Active OpenSpec change: `loopback-findings-handoff`.
+  Test command: `go test ./...`. Active OpenSpec change: `tui-session-history`.
   Engineering guidance: idiomatic Go, small injectable components, explicit wrapped errors,
   context cancellation, no global mutable state; TUI Update/View never block; real temp SQLite
-  and t.TempDir() projections; no live harness accounts.
+  and t.TempDir() media roots; injected clocks; no live harness accounts.
 
 rules:
   proposal:
-    - Reference PRD-C15-001 sections; cite ADR-083–090 and UI-C15-001
+    - Reference PRD-C16-001 sections; cite ADR-091–098 and UI-C16-001
     - State in/out of scope; idea notes yield to PRD/UI/ADR
-    - Classify CLI versus Runtime work per ADR-003; agents never mutate findings/ToDos/stages
-    - Call out atomic failed-close, mixed task-*/find-* assignments, and projection recovery
+    - Classify CLI versus Runtime work per ADR-003; no new session CRUD CLI verbs in C16
+    - Call out schema v12, leases, exact resume/fork, and durable asset retention
 
   specs:
     - Use WHEN/THEN acceptance scenarios with exactly four hashtags for `#### Scenario:`
-    - Align with PRD-C15-001, UI-C15-001, ADR-083–090, and existing store/engine/TUI contracts
+    - Align with PRD-C16-001, UI-C16-001, ADR-091–098, and existing store/conversation/TUI contracts
     - Specify observable lifecycle and diagnostic behavior without prescribing incidental Go internals
     - Mark filesystem, clock, and SQLite as real temporary fixtures
 
   design:
-    - Follow ADR-002, ADR-003, ADR-012, ADR-013, ADR-075, ADR-083–090 and existing vertical-slice boundaries
-    - Factor engine/store so one transaction owns failed-close + findings + loop-back
-    - Keep OpenSpec authoritative for task-* and SQLite authoritative for find-*/structured ToDos
-    - Prefer parallel TUI/Telegram/asset work after service contracts exist
+    - Follow ADR-002, ADR-003, ADR-012, ADR-013, ADR-061, ADR-080, ADR-091–098 and existing vertical-slice boundaries
+    - Keep conversation service free of Bubble Tea/Telegram types; TUI I/O is tea.Cmd only
+    - Keep audit conversation distinct from session_events; History must not CASCADE-delete with cycles
+    - Prefer parallel store slices and adapter capability work after schema exists; TUI waits on the service
 
   tasks:
     - Use atomic `- [ ] X.Y [task-id] [agent:generic_agent]` checklist items with PARALLEL/SERIES markers
     - Scope all implementation to native → `generic_agent`; colocate behavior tests; require `go test ./...`
-    - Do not start UI/prompt work before stable service contracts; do not mark lifecycle complete before migration/recovery tests
-    - Fan out TUI, Telegram, and harness-asset work after the JSON/CLI contracts exist
+    - Do not start History UI work before stable service contracts; do not mark lifecycle complete before v12/lease/delete tests
+    - Fan out History screen, Chat persist, and adapter capability work after the session service exists

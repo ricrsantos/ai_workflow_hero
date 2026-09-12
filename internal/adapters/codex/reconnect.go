@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/redact"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 )
 
@@ -66,7 +67,7 @@ func (a *Adapter) recoverAppServerAfterDisconnect(ctx context.Context, sessionID
 		_, loaded := a.sessions[sessionID]
 		a.mu.Unlock()
 		if loaded {
-			a.log().Debug("codex thread resume skipped after reconnect", "thread_id", sessionID, "error", err)
+			a.log().Debug("codex thread resume skipped after reconnect", "error", redact.Error(err))
 			return nil
 		}
 		return fmt.Errorf("codex thread resume after reconnect: %w", err)
@@ -74,6 +75,6 @@ func (a *Adapter) recoverAppServerAfterDisconnect(ctx context.Context, sessionID
 	if req.OnStreamDelta != nil {
 		req.OnStreamDelta(harness.ConnectionReconnectedDelta(sessionID))
 	}
-	a.log().Info("codex app-server reconnected", "thread_id", sessionID)
+	a.log().Info("codex app-server reconnected")
 	return nil
 }

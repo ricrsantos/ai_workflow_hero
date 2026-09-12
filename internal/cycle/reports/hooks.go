@@ -1,18 +1,28 @@
 package reports
 
+// ReopenRequest is the identity a report claims when setting reopen_id.
+type ReopenRequest struct {
+	SourceStage        string
+	Owner              string
+	ReopenID           string
+	File               string
+	Requirement        string
+	AcceptanceCriteria string
+}
+
 // ReopenIDValidator checks reopen_id against cycle finding state without importing store.
 type ReopenIDValidator interface {
-	ValidateReopenID(sourceStage, owner, reopenID string) *DiagnosticError
+	ValidateReopenID(req ReopenRequest) *DiagnosticError
 }
 
 // ReopenIDValidateFunc is a function adapter for ReopenIDValidator.
-type ReopenIDValidateFunc func(sourceStage, owner, reopenID string) *DiagnosticError
+type ReopenIDValidateFunc func(req ReopenRequest) *DiagnosticError
 
-func (f ReopenIDValidateFunc) ValidateReopenID(sourceStage, owner, reopenID string) *DiagnosticError {
+func (f ReopenIDValidateFunc) ValidateReopenID(req ReopenRequest) *DiagnosticError {
 	if f == nil {
 		return nil
 	}
-	return f(sourceStage, owner, reopenID)
+	return f(req)
 }
 
 // ActionableFindingChecker validates failed-close payloads have actionable findings.

@@ -64,7 +64,7 @@ Browser UI Validation failure loop: returns to `frontend_agent` (or `backend_age
 - Do not run full business journey scripts — Health + optional Visual only.
 - Receive only file pointers — start each session fresh.
 
-## Metrics (required in every completion report)
+## Metrics (orchestrator only)
 
 Estimate character usage for this invocation:
 
@@ -75,9 +75,37 @@ The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
 
 ## Output Format
 
+Allowed top-level fields: `status`, `health_passed`, `visual_ran`, `visual_passed`, `failure_class`, `failures`, `warnings`, `artifacts_dir`, `summary`.
+
+`status` must be `passed` or `failed`. On `passed`, `failures` must be `[]`. `warnings` must be present (use `[]` when none).
+
+Browser failure entries include `failure_class` (`frontend` or `backend`); owner is derived — do not set `owner` manually. Each failure needs `file` and/or `requirement`, `issue`, `acceptance_criteria`, optional `evidence`, optional `reopen_id`.
+
+## C15 report contract (PRD-C15-001 §6)
+
+Emit **one JSON object** as your entire completion output and **stop**. The orchestrator or TUI scheduler validates the report and persists findings, stage transitions, OpenSpec checkboxes, and loop-back.
+
+**Never** mutate operational state yourself:
+- do **not** call `hero stage close`, `hero stage loop-back`, or any other stage/cycle transition CLI;
+- do **not** edit OpenSpec `tasks.md` checkboxes or write gap files (`qa-gaps.md`, `judge-gaps.md`, etc.);
+- do **not** edit `context/current-state.md`;
+- do **not** invent new `find-*` IDs — only set `reopen_id` when reopening an existing `done` finding ID supplied in your context.
+- `reopen_id` is valid only when this failure's `file`, `requirement`, and `acceptance_criteria` match that finding's stored contract. Issue wording may differ and is audit-only; it does **not** replace the Implementation assignment.
+- If the residual is a different file, requirement, or acceptance criterion, omit `reopen_id` so Hero allocates a new `find-*` ID. Do not reuse an ID to describe a new defect.
+
+On success (`status`: `passed`), failure arrays must be **empty** (`[]`).
+
+Valid **owner** values: `backend_agent`, `frontend_agent`, `generic_agent` (must be active in the current implementation scope).
+
+Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`. Optional `evidence` is a string array of safe paths/commands. Optional `reopen_id` reopens a prior `done` finding in the same cycle only when `file`, `requirement`, and `acceptance_criteria` match the stored contract.
+
+Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
+
+### Passing example
+
 ```json
 {
-  "stage": "browser_ui_validation",
+  "status": "passed",
   "health_passed": true,
   "visual_ran": false,
   "visual_passed": null,
@@ -85,7 +113,63 @@ The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
   "failures": [],
   "warnings": [],
   "artifacts_dir": ".workflow-hero/cycles/current/browser-ui/",
-  "summary": "Browser Health passed. Visual Validation skipped (disabled).",
+  "summary": "Browser Health passed. Visual Validation skipped (disabled)."
+}
+```
+
+### Failed Health example
+
+```json
+{
+  "status": "failed",
+  "health_passed": false,
+  "visual_ran": false,
+  "visual_passed": null,
+  "failure_class": "frontend",
+  "failures": [
+    {
+      "failure_class": "frontend",
+      "file": ".workflow-hero/cycles/current/browser-ui/health-report.md",
+      "issue": "CSS bundle failed to load.",
+      "acceptance_criteria": "All required CSS assets load without network errors.",
+      "evidence": [".workflow-hero/cycles/current/browser-ui/screenshots/health.png"],
+      "reopen_id": null
+    }
+  ],
+  "warnings": [],
+  "artifacts_dir": ".workflow-hero/cycles/current/browser-ui/",
+  "summary": "Browser Health failed (frontend)."
+}
+```
+
+### Reopening example
+
+```json
+{
+  "status": "failed",
+  "health_passed": false,
+  "visual_ran": false,
+  "visual_passed": null,
+  "failure_class": "backend",
+  "failures": [
+    {
+      "failure_class": "backend",
+      "file": ".workflow-hero/cycles/current/browser-ui/health-report.md",
+      "issue": "API health check still returns 500.",
+      "acceptance_criteria": "Health endpoint returns 200 with valid payload.",
+      "evidence": [],
+      "reopen_id": "find-bui-1"
+    }
+  ],
+  "warnings": [],
+  "artifacts_dir": ".workflow-hero/cycles/current/browser-ui/",
+  "summary": "Reopened find-bui-1; backend health still failing."
+}
+```
+Example orchestrator-side metrics payload (never include inside the C15 validation JSON object):
+
+```json
+{
   "metrics": {
     "model": "<id>",
     "input_chars": 0,
@@ -94,4 +178,4 @@ The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
 }
 ```
 
-When failing, set `failure_class` to `"frontend"` or `"backend"` and list failures with enough detail for the orchestrator to dispatch the correct implementation agent.
+Estimate character usage for this invocation (`input_chars`, `output_chars`). The orchestrator persists metrics via CLI — do **not** add a `metrics` object to the C15 JSON report above.

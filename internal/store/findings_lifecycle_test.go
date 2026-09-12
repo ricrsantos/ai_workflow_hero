@@ -57,6 +57,9 @@ func TestPersistFindingCreateRediscoverReopen(t *testing.T) {
 	if res.Finding.ID != "find-qa-1" || res.OccurrenceKind != OccurrenceRediscovered || !res.Actionable {
 		t.Fatalf("rediscover result = %+v", res)
 	}
+	if res.Finding.Issue != "first issue" {
+		t.Fatalf("rediscover must not overwrite stored issue, got %q", res.Finding.Issue)
+	}
 	all, err := s.ListFindingsByCycle(cycleID)
 	if err != nil || len(all) != 1 {
 		t.Fatalf("findings after rediscover = %+v err=%v", all, err)
@@ -109,6 +112,63 @@ func TestPersistFindingReopenViaReopenID(t *testing.T) {
 	}
 	if res.Finding.ID != "find-judge-1" || res.Finding.Round != 2 || res.OccurrenceKind != OccurrenceReopened {
 		t.Fatalf("result = %+v", res)
+	}
+	if res.Finding.Issue != "judge gap" || res.Finding.AcceptanceCriteria != "atomic tx" {
+		t.Fatalf("reopen must freeze contract, got issue=%q ac=%q", res.Finding.Issue, res.Finding.AcceptanceCriteria)
+	}
+	occs, err := s.ListFindingOccurrences(cycleID, res.Finding.ID)
+	if err != nil || len(occs) < 3 {
+		t.Fatalf("occurrences=%+v err=%v", occs, err)
+	}
+	if occs[len(occs)-1].Issue != "reopen by id" {
+		t.Fatalf("occurrence issue=%q", occs[len(occs)-1].Issue)
+	}
+}
+
+func TestPersistFindingReopenIDRejectsContractDrift(t *testing.T) {
+	s, cycleID := openTestStoreWithCycle(t)
+	in := FindingInput{
+		CycleID:            cycleID,
+		SourceStage:        FindingSourceQA,
+		Owner:              FindingOwnerGeneric,
+		File:               "internal/tui/chat_session.go",
+		Requirement:        "PRD-C16 FR-08",
+		Issue:              "join the worker",
+		AcceptanceCriteria: "cancel joins in-flight execution",
+	}
+	res, err := s.PersistFinding(in)
+	if err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+	if err := s.InTx(func(tx *sql.Tx) error {
+		return s.MarkFindingDoneTx(tx, cycleID, res.Finding.ID, in.Issue, in.AcceptanceCriteria, "[]")
+	}); err != nil {
+		t.Fatalf("mark done: %v", err)
+	}
+	done, err := s.GetFinding(cycleID, res.Finding.ID)
+	if err != nil || done.Issue != "join the worker" {
+		t.Fatalf("done row mutated issue: %+v err=%v", done, err)
+	}
+	in.ReopenID = res.Finding.ID
+	in.Issue = "workers use context.Background"
+	in.AcceptanceCriteria = "derive a cancellable context per execution"
+	_, err = s.PersistFinding(in)
+	if !errors.Is(err, ErrInvalidReopenID) {
+		t.Fatalf("err=%v want ErrInvalidReopenID", err)
+	}
+	if err := s.ValidateReopenID(cycleID, in.SourceStage, in.Owner, res.Finding.ID, in.File, in.Requirement, in.AcceptanceCriteria); !errors.Is(err, ErrInvalidReopenID) {
+		t.Fatalf("ValidateReopenID err=%v", err)
+	}
+	in.AcceptanceCriteria = "cancel joins in-flight execution"
+	if err := s.ValidateReopenID(cycleID, in.SourceStage, in.Owner, res.Finding.ID, in.File, in.Requirement, in.AcceptanceCriteria); err != nil {
+		t.Fatalf("matching contract should validate: %v", err)
+	}
+	res, err = s.PersistFinding(in)
+	if err != nil {
+		t.Fatalf("reopen matching contract: %v", err)
+	}
+	if res.Finding.Issue != "join the worker" || res.Finding.AcceptanceCriteria != "cancel joins in-flight execution" {
+		t.Fatalf("frozen contract overwritten: %+v", res.Finding)
 	}
 }
 
@@ -275,6 +335,9 @@ func TestPersistFindingReopenedRediscovery(t *testing.T) {
 	}
 	if res.OccurrenceKind != OccurrenceRediscovered || res.Finding.Status != FindingStatusReopened {
 		t.Fatalf("result = %+v", res)
+	}
+	if res.Finding.Issue != "first" {
+		t.Fatalf("rediscovery overwrote issue: %q", res.Finding.Issue)
 	}
 }
 

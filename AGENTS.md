@@ -99,6 +99,7 @@ Colocated `*_test.go` in each `internal/<feature>/` package; golden tests for te
 - **License**: BSD-2-Clause.
 - Do not change architecture without an approved ADR.
 - Cycle artifacts and docs are English; chat language follows `workflow_config.user_preferred_language` (default `EN`).
+- **Inviolable — TUI harness health is passive.** Watchdog and `CheckHealth` only observe and warn (`degraded`, `suspected_hang`, `failed`). They MUST NOT cancel Execute, restart a harness, or take other corrective action from the health path (`handleHarnessHealthResult`, `Watchdog.Evaluate` consumers). Transport recovery belongs in adapter Execute (`connection.closed` / reconnect). User cancel remains Ctrl+C / `/interrupt` / `/harness-reset`. See [harness-adapter spec](openspec/specs/harness-adapter/spec.md).
 
 ## Secrets and Environment Variables
 

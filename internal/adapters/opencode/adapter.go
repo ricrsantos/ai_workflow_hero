@@ -313,24 +313,7 @@ func (a *Adapter) Execute(ctx context.Context, req harness.ExecuteRequest) (*har
 		}
 		sessionID = sess.ID
 	} else if err := a.resumeSession(ctx, sessionID, req.ProjectDir); err != nil {
-		oldID := sessionID
-		a.log().Warn("opencode session resume failed; starting new session", "sessionID", oldID, "error", err)
-		if req.OnStreamDelta != nil {
-			req.OnStreamDelta(harness.StreamDelta{
-				Kind:        harness.StreamKindWarning,
-				Text:        "WARNING: OpenCode session " + oldID + " was not found; started a new conversation.",
-				HarnessType: "session.resume",
-			})
-		}
-		sess, cerr := a.createSession(ctx, harness.SessionRequest{
-			ProjectDir: req.ProjectDir,
-			StageName:  req.StageName,
-			AgentName:  req.AgentName,
-		})
-		if cerr != nil {
-			return nil, cerr
-		}
-		sessionID = sess.ID
+		return nil, harness.NewExactResumeUnavailable(sessionID, err)
 	}
 	if req.OnStreamDelta != nil {
 		req.OnStreamDelta(harness.SessionDelta(harness.SessionStateRunning, "", "session.bound", sessionID))
@@ -1094,3 +1077,4 @@ func truncate(s string, n int) string {
 
 var _ harness.HarnessAdapter = (*Adapter)(nil)
 var _ harness.ModelLister = (*Adapter)(nil)
+var _ harness.RemoteHistoryReader = (*Adapter)(nil)

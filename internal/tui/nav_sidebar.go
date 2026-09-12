@@ -24,6 +24,7 @@ const (
 // navScreens is the fixed left-rail menu (replaces the old horizontal tab bar).
 var navScreens = []navScreenItem{
 	{screenConversation, "Chat"},
+	{screenHistory, "History"},
 	{screenStatus, "Status"},
 	{screenArtifacts, "Artifacts"},
 	{screenCosts, "Costs"},
@@ -36,12 +37,13 @@ var navScreens = []navScreenItem{
 // The visible screen list below decides whether a numbered shortcut is valid.
 var navShortcutKeys = [...]key.Binding{
 	key.NewBinding(key.WithKeys("alt+1"), key.WithHelp("alt+1", "Chat")),
-	key.NewBinding(key.WithKeys("alt+2"), key.WithHelp("alt+2", "Status")),
-	key.NewBinding(key.WithKeys("alt+3"), key.WithHelp("alt+3", "Artifacts")),
-	key.NewBinding(key.WithKeys("alt+4"), key.WithHelp("alt+4", "Costs")),
-	key.NewBinding(key.WithKeys("alt+5"), key.WithHelp("alt+5", "Events")),
-	key.NewBinding(key.WithKeys("alt+6"), key.WithHelp("alt+6", "Settings")),
-	key.NewBinding(key.WithKeys("alt+7"), key.WithHelp("alt+7", "Config")),
+	key.NewBinding(key.WithKeys("alt+2"), key.WithHelp("alt+2", "History")),
+	key.NewBinding(key.WithKeys("alt+3"), key.WithHelp("alt+3", "Status")),
+	key.NewBinding(key.WithKeys("alt+4"), key.WithHelp("alt+4", "Artifacts")),
+	key.NewBinding(key.WithKeys("alt+5"), key.WithHelp("alt+5", "Costs")),
+	key.NewBinding(key.WithKeys("alt+6"), key.WithHelp("alt+6", "Events")),
+	key.NewBinding(key.WithKeys("alt+7"), key.WithHelp("alt+7", "Settings")),
+	key.NewBinding(key.WithKeys("alt+8"), key.WithHelp("alt+8", "Config")),
 }
 
 var (
@@ -91,7 +93,7 @@ func (m model) navScreenRangeLabel() string {
 func (m model) visibleNavScreens() []navScreenItem {
 	items := make([]navScreenItem, 0, len(navScreens))
 	for _, item := range navScreens {
-		if m.freeChatMode && item.screen != screenConversation && item.screen != screenSettings {
+		if m.freeChatMode && item.screen != screenConversation && item.screen != screenHistory && item.screen != screenSettings {
 			continue
 		}
 		if item.screen == screenConfig && !m.hasActiveCycle() {
@@ -260,6 +262,9 @@ func (m model) navigateToScreen(target screen) (model, tea.Cmd) {
 	if target == screenConversation {
 		return m.enterConversation()
 	}
+	if target == screenHistory {
+		return m.openHistory()
+	}
 	if target == screenConfig {
 		return m.openConfig()
 	}
@@ -318,6 +323,52 @@ func navSidebarSeparator(innerW int) string {
 		innerW = 1
 	}
 	return navSidebarSepStyle.Render(strings.Repeat("─", innerW))
+}
+
+// fitNavSidebarNavigation shrinks the agents block before dropping screen rows.
+// navigationLines layout: title, sep, agent rows..., sep, screen rows...
+func fitNavSidebarNavigation(lines []string, budget, screenCount int) []string {
+	if budget <= 0 || len(lines) == 0 {
+		return nil
+	}
+	if len(lines) <= budget {
+		return lines
+	}
+	if screenCount < 0 {
+		screenCount = 0
+	}
+	if screenCount > len(lines) {
+		screenCount = len(lines)
+	}
+	screenStart := len(lines) - screenCount
+	if screenStart < 2 {
+		// Degenerate header — fall back to keeping the tail (screens).
+		if len(lines) > budget {
+			return lines[len(lines)-budget:]
+		}
+		return lines
+	}
+	header := lines[:2] // title + separator
+	agents := lines[2 : screenStart-1]
+	midSep := lines[screenStart-1 : screenStart]
+	screens := lines[screenStart:]
+
+	for len(agents) > 0 && len(header)+len(agents)+len(midSep)+len(screens) > budget {
+		agents = agents[:len(agents)-1]
+	}
+	out := append(append(append(append([]string{}, header...), agents...), midSep...), screens...)
+	if len(out) <= budget {
+		return out
+	}
+	// Still too tall: keep title/sep when possible, then as many trailing screens as fit.
+	keepScreens := budget - len(header)
+	if keepScreens < 0 {
+		return out[len(out)-budget:]
+	}
+	if keepScreens > len(screens) {
+		keepScreens = len(screens)
+	}
+	return append(append([]string{}, header...), screens[len(screens)-keepScreens:]...)
 }
 
 func navSidebarTimerLine(label, elapsed string, innerW int) string {
@@ -392,18 +443,15 @@ func (m model) renderNavSidebar(height int) string {
 		upperH = 0
 	}
 	// Keep the shortcut hint anchored to the bottom of the navigation area.
-	// This leaves any spare rows between the menu and the hint, and keeps the
-	// hint directly above the timer separator.
+	// Prefer dropping live-agent filler rows before truncating screen labels so
+	// History+Config remain visible at the supported 24-row height (C16).
 	lines := make([]string, 0, innerH)
 	if upperH > 0 {
-		lines = navigationLines
 		menuH := upperH - 1
 		if menuH < 0 {
 			menuH = 0
 		}
-		if len(lines) > menuH {
-			lines = lines[:menuH]
-		}
+		lines = fitNavSidebarNavigation(navigationLines, menuH, len(m.visibleNavScreens()))
 		for len(lines) < menuH {
 			lines = append(lines, strings.Repeat(" ", innerW))
 		}

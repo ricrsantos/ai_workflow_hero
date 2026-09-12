@@ -435,33 +435,26 @@ func TestExecute_Unauthenticated(t *testing.T) {
 	}
 }
 
-func TestExecute_ResumeFailureStartsNewThread(t *testing.T) {
+func TestExecute_ResumeFailureRejectsExactResume(t *testing.T) {
 	peer := newMockPeer()
 	peer.resumeFail = true
 	a := codex.NewAdapter(t.TempDir(), nil)
 	a.LookPath = func(string) (string, error) { return "/mock/codex", nil }
 	a.Runner = peer
 
-	res, err := a.Execute(context.Background(), harness.ExecuteRequest{
+	_, err := a.Execute(context.Background(), harness.ExecuteRequest{
 		Prompt:    "follow-up",
 		SessionID: "dead-thread",
 		Stream:    true,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.SessionID != "thr_test_1" {
-		t.Fatalf("session=%q want thr_test_1", res.SessionID)
+	if !errors.Is(err, harness.ErrExactResumeUnavailable) {
+		t.Fatalf("err=%v want exact resume unavailable", err)
 	}
 	peer.mu.Lock()
 	starts := peer.threadStarts
-	turnThread := peer.lastTurnThread
 	peer.mu.Unlock()
-	if starts != 1 {
-		t.Fatalf("thread/start count=%d want 1", starts)
-	}
-	if turnThread != "thr_test_1" {
-		t.Fatalf("turn thread=%q want thr_test_1", turnThread)
+	if starts != 0 {
+		t.Fatalf("thread/start count=%d want 0", starts)
 	}
 }
 

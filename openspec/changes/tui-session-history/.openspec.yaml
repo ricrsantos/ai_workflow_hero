@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-11
+goal: Persistent TUI session history with durable transcripts, History screen,
+  exact native resume, leases, and archive/delete

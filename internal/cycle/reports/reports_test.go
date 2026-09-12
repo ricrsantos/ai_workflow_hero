@@ -83,8 +83,8 @@ func TestDecodeQA_NoActionableFinding(t *testing.T) {
 
 func TestDecodeQA_UnknownReopenID(t *testing.T) {
 	ctx := testCtx()
-	ctx.ReopenIDs = ReopenIDValidateFunc(func(sourceStage, owner, reopenID string) *DiagnosticError {
-		return diag(CodeUnknownReopenID, "failures[0].reopen_id", reopenID, "finding is not a done match in this cycle")
+	ctx.ReopenIDs = ReopenIDValidateFunc(func(req ReopenRequest) *DiagnosticError {
+		return diag(CodeUnknownReopenID, "failures[0].reopen_id", req.ReopenID, "finding is not a done match in this cycle")
 	})
 	raw := `{
 		"status":"failed",
@@ -94,6 +94,30 @@ func TestDecodeQA_UnknownReopenID(t *testing.T) {
 	_, err := DecodeQA([]byte(raw), ctx)
 	if err == nil || err.Code != CodeUnknownReopenID {
 		t.Fatalf("expected unknown_reopen_id, got %v", err)
+	}
+}
+
+func TestDecodeQA_ReopenValidatorReceivesContract(t *testing.T) {
+	ctx := testCtx()
+	var got ReopenRequest
+	ctx.ReopenIDs = ReopenIDValidateFunc(func(req ReopenRequest) *DiagnosticError {
+		got = req
+		return nil
+	})
+	raw := `{
+		"status":"failed",
+		"summary":"regression",
+		"failures":[{"owner":"generic_agent","file":"a.go","requirement":"PRD","issue":"x","acceptance_criteria":"same ac","reopen_id":"find-qa-1"}]
+	}`
+	report, err := DecodeQA([]byte(raw), ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report.Status != ValidationStatusFailed || len(report.Failures) != 1 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+	if got.ReopenID != "find-qa-1" || got.File != "a.go" || got.Requirement != "PRD" || got.AcceptanceCriteria != "same ac" || got.Owner != "generic_agent" || got.SourceStage != SourceQA {
+		t.Fatalf("validator request = %+v", got)
 	}
 }
 
@@ -229,6 +253,28 @@ func implReport(completed, remaining string, gatesTrue bool) string {
 		},
 		"summary":"done"
 	}`
+}
+
+func TestDecodeImplementation_UnknownMetricsField(t *testing.T) {
+	raw := `{
+		"stage":"implementation",
+		"agent":"generic_agent",
+		"status":"complete",
+		"tasks_completed":[],
+		"tasks_remaining":[],
+		"tests_passed":true,
+		"acceptance_gates":{
+			"completed_tasks_verified":true,
+			"task_ownership_respected":true,
+			"required_tests_passed":true
+		},
+		"summary":"done",
+		"metrics":{"model":"x","input_chars":1,"output_chars":1}
+	}`
+	_, err := DecodeImplementation([]byte(raw), OwnerGeneric, nil, testCtx())
+	if err == nil || err.Code != CodeUnknownField || err.Field != "metrics" {
+		t.Fatalf("expected unknown_field metrics, got %v", err)
+	}
 }
 
 func TestDecodeImplementation_MixedAssignmentSuccess(t *testing.T) {

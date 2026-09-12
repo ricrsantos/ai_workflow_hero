@@ -19,7 +19,8 @@ func (s *Store) PredictFindingActionable(cycleID int64, in FindingInput) (bool, 
 			}
 			return false, err
 		}
-		if f.Status == FindingStatusDone && f.SourceStage == in.SourceStage && f.Owner == in.Owner {
+		if f.Status == FindingStatusDone && f.SourceStage == in.SourceStage && f.Owner == in.Owner &&
+			FindingContractMatches(f, in.File, in.Requirement, in.AcceptanceCriteria) {
 			return true, nil
 		}
 		return false, nil

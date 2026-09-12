@@ -78,6 +78,25 @@ rm -f ./temp/hero
   row-for-row preservation assertions, a second idempotent open, and a simulated
   projection failure/retry.
 
+### 3.5 Upgrade for C16 durable session history
+
+- The release containing C16 applies project-store schema migration v11 → v12
+  transactionally on normal store open; it never recreates `hero.db`.
+- Migration adds durable session aggregates, ordered normalized transcript events,
+  asset references, continuation leases, and idempotent remote-import metadata while
+  preserving all cycle, stage, event, metric, audit-conversation, finding, ToDo,
+  process-registry, and model-cache rows.
+- Existing non-empty orchestration/stage harness bindings produce at most one
+  deterministic legacy History entry each. Missing transcript content is marked
+  unavailable; migration does not start a harness or network request.
+- The first C16 startup must classify existing C14 session asset directories safely.
+  It may retain or quarantine ambiguous directories, but must never delete a user
+  source file or age-delete an asset directory linked to a durable session.
+- Release validation includes a copied schema-v11 fixture, forced migration,
+  preservation assertions, deterministic legacy IDs, a second idempotent open,
+  lease recovery with an injected clock, and simulated partial managed-asset cleanup.
+- C16 does not change supported platforms, packaging, or opt-in harness state.
+
 ## 4. Build & Release Process (V1: manual, script-assisted)
 
 V1 does not use CI/CD. Releases are cut manually by the maintainer, but the repetitive cross-compilation work is automated by a single script.

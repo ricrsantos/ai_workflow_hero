@@ -4,6 +4,136 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-12 — Freeze QA→Implement finding contract (handoff)
+
+**Problem**: C16 QA/Implement loop reopened the same `find-qa-*` IDs with mutated issue/acceptance each round. Implementation patched the previous sentence; QA then rewrote the card. `reopen_id` won without matching file/requirement/acceptance, and persist overwrote the assignment contract.
+
+**Fix**: Store `ValidateReopenID` / `PersistFindingTx` require a matching stored contract. Reopen, rediscovery, done, and defer update status/round/occurrences only. Decoder passes file/requirement/acceptance into the reopen validator (`unknown_reopen_id` on drift). Implementation finding blocks include a frozen-contract line plus occurrence history. QA/Judge/BUI/E2E agent prompts (assets + four harness trees) forbid ID reuse for a new residual. ADR-083 amended; PRD-C15-001 §5.1; living `findings-lifecycle` spec updated.
+
+**Validation**: `go test ./internal/store/ ./internal/cycle/reports/ ./internal/engine/ ./internal/tui/ ./internal/cycle/`; `go test ./...`.
+
+## 2026-09-12 — Restore passive TUI harness health (inviolable)
+
+**Outcome**: `handleHarnessHealthResult` no longer calls `cancelStreamCmd` on `HealthFailed`. Degraded / suspected / failed warn only. Reconnecting still uses the connection-dropped copy and maps Failed→Degraded. `TestHealthFailedDoesNotCancelStream` plus hang-path tests lock the contract. `AGENTS.md` Project Constraints records the rule as inviolable (spec `openspec/specs/harness-adapter/spec.md`).
+
+**Validation**: `go test ./internal/tui/ ./internal/harness/ ./internal/adapters/cursor/ ./internal/adapters/codex/`; `go test ./...`.
+
+## 2026-09-12 — Cursor session-idle watchdog cancelled ORCH handoff (C16)
+
+**Problem**: C16 Implementation wave completed (`generic_agent` Cursor, 14m, findings marked done). ~550ms later TUI showed `WARNING: session idle` + ORCH `Interrupted`. `.workflow-hero/logs/tui.log`: `execute complete` then `tui stream cancel failed` (`no in-flight execution for session ""`) then `tui conversation interrupted` then scheduler `retry_start` with Implementation still Running.
+
+**Cause**: Cursor `CheckHealth` mapped `HasInFlight()==false` + non-running status to `SessionAlive=false` / `ProcessAlive=false` ("session idle"). Watchdog `HealthFailed` auto-cancels. A probe in flight during the long GEN turn finished after Execute returned and after `resumeOrchestratorAfterStageHandoff` started ORCH — cancelling the new turn before `cursor agent execute start`.
+
+**Fix**: Known Cursor sessions that are completed/cancelled/idle stay alive in `CheckHealth`. TUI health results include `harnessHealthGeneration` (incremented in `resetHarnessWatchdog`); mismatched probes are ignored.
+
+**Cycle state**: C16 active; Implementation Running 6/6; QA Waiting 5/5; 30 findings done. Resume needs rebuilt TUI then `/hero-start`. Same race can recur on the next long Cursor handoff until the TUI process is replaced.
+
+**Validation**: `go test ./internal/adapters/cursor/ ./internal/tui/ ./internal/harness/`; `go test ./...`.
+
+## 2026-09-12 — Implementation loop-back find-qa-16..23 (generic_agent)
+
+**Outcome**: Closed QA contract defects for C16 session history:
+- find-qa-16: durable media dirs keyed by Hero session ID (provisional ID reused as SQLite PK); retention keep-list aligned.
+- find-qa-17: schema v13 `session_delete_op_managed_paths` + `ResumeIncompleteDelete` purge-before-complete.
+- find-qa-18: conversation/session/context SQLite I/O moved behind tea.Cmd; blocking Update test added.
+- find-qa-19: two-phase quit persists interrupt before Quit; LiveStreamAttacher + OpenCode attach; unsupported adapters stay gated.
+- find-qa-20: history diagnostics log `redact.Error` only.
+- find-qa-21: history truncation/padding via ANSI-safe display width helpers.
+- find-qa-22: atomic remote import + transcript available; import errors stay on History; stable OpenCode message IDs.
+- find-qa-23: Go time layouts `2 Jan 15:04` / `2 Jan 2006 15:04`.
+
+**Validation**: `go test ./...` PASS; `openspec validate tui-session-history --strict` PASS.
+
+## 2026-09-12 — find-qa-18 async conversation context I/O (generic_agent)
+
+**Outcome**: Session/cycle context reads and chat-session store clears (`ClearOrchestrationSession`, stage binding clear, `ConversationContext`, orchestration/stage bindings) run in `tea.Cmd` handlers (`conversation_context.go`) for `/new-chat`, history resume, `enterConversation`, `submitChatFollowUp`, and `/hero-new` `PrepareWorkflowConfig`. `TestUpdatePathsDoNotBlockOnSlowConversationContextIO` injects `testContextIODelay` to prove Update stays fast while Cmd performs SQLite work. `testMode` without delay keeps synchronous helpers for existing unit tests.
+
+**Validation**: `go test ./internal/tui/ -run TestUpdatePathsDoNotBlock` and full `go test ./internal/tui/`.
+
+## 2026-09-12 — find-qa-19 quit-while-streaming + live recover attach (generic_agent)
+
+**Outcome**: Two-phase shutdown sets `pendingQuitAfterInterrupt`, cancels the stream only, then on `streamCancelDoneMsg` runs `syncFinalizeSessionInterruptCmd` (persist + `MarkInterrupted`) before `tea.Quit`/restart. Recovery no longer fakes reconnect via `ResumeSession` when harness reports `running` without `LiveStreamAttacher`; OpenCode implements attach via resume + SSE (`readExecuteSSE`). Composer stays gated on `heroSessionRecoverBusy` through attach.
+
+**Validation**: `go test ./internal/tui/ -run 'TestSessionRecover|TestQuitWhile' ./internal/harness/ -run TestLiveStream`
+
+## 2026-09-12 — find-qa-22 remote import atomicity + TUI error path (generic_agent)
+
+**Outcome**: `store.UpdateSessionTranscriptState` + `ImportRemoteSessionEvents` commit remote append, `remote_import_confirmed`, and `transcript_state=available` atomically. `SessionService.ImportRemoteHistory` reads remote first then imports in one tx (rollback on any failure). History `historyImportMsg` errors keep the user on History with `actionErr` (no Chat open). OpenCode `stableOpenCodeMessageID` replaces index-based fallback for empty `info.id`. Tests: transcript available, atomic rollback, TUI no-open-on-error, reorder-stable provider IDs.
+
+**Validation**: `go test ./...`
+
+## 2026-09-12 — find-qa-17 session delete managed-path manifest (generic_agent)
+
+**Outcome**: Schema v13 adds `session_delete_op_managed_paths`; `DeleteSessionLocalFirst` persists `managed_copy` paths before session cascade delete. `ListManagedPathsForDeleteOp` + `SessionService.ResumeIncompleteDelete` purge from manifest then advance op; TUI startup retry uses resume instead of skipping purge. Tests cover manifest persistence, crash/reopen resume, external paths excluded, purge failure leaves `intent`.
+
+**Validation**: `go test ./internal/store/... ./internal/conversation/... ./internal/tui/...`
+
+## 2026-09-12 — C16 Implementation wave verify (generic_agent)
+
+**Outcome**: Confirmed all assigned `tui-session-history` tasks (01.1–20.2) against shipped code. Fixed gofmt on `internal/harness/capabilities_test.go`. Full verify green: `openspec validate tui-session-history --strict`, `go test ./...`, `go test -race ./...`, `go vet ./...`, `gofmt`, `git diff --check`. Traceability at `openspec/changes/tui-session-history/traceability.md`; current-state already documents C16 History.
+
+**Validation**: openspec strict + go test(+race) + vet + gofmt + diff --check
+
+## 2026-09-12 — C15 Implementation report rejected (`unknown_field: metrics`)
+
+**Outcome**: Aligned C15 stage-agent contracts with `internal/cycle/reports` allowlists. Implementation `backend`/`frontend`/`generic` examples no longer put `metrics` in the report JSON (allowlist + `complete`/`partial`/`blocked`); QA/Judge/BUI/E2E keep metrics out of the decoded object (`Metrics (orchestrator only)`). Orchestrator Metrics Procedure estimates tokens without reading C15 JSON. TUI `implementationReportDiagnosticCode` maps `unknown_field` (and other decoder codes) instead of collapsing to `invalid_report`. Tests: decoder rejects `metrics`; embedded JSON fences decode; Runtime assets forbid `metrics` inside C15 examples.
+
+**Validation**: `go test ./...`
+
+## 2026-09-11 — C16 Implementation wave 1 (full assignment verify)
+
+**Outcome**: Verified all 34 `generic_agent` tasks for `tui-session-history` against the shipped codebase (schema v12 store, SessionService, optional harness capabilities, History/Chat TUI, retention, legacy import, Telegram origin, confirmed remote import, traceability). Corrected architecture-overview stale schema **v11** / "C16 target" wording to describe shipped v12 History behavior. TESTING.md / DEPLOY.md §3.5 / traceability.md already matched.
+
+**Validation**: `openspec validate tui-session-history --strict`; `go test ./...`; `go test -race ./...`; `go vet ./...`; `gofmt`; `git diff --check`
+
+## 2026-09-11 — C16 tasks 13–16 resume/lease/fork/archive TUI
+
+History open acquires/releases leases, attempts exact harness resume, shows fork dialog on failure, restores Chat with stored harness/model/native binding and historical-continuation banner for completed stages; interrupt recovery checks native Status and gates composer; archive/delete confirm flows empty Chat when the current idle session is affected. Implemented in `chat_session_history.go` plus `history_screen.go`, `chat_session.go`, `timers.go`.
+
+## 2026-09-11 — C16 task-17/18/19/20 Telegram origin, remote import, docs, verify
+
+**Outcome**: Telegram turns persist `origin`/`origin_address` on user and assistant events (`chat_session.go` `assistantPersistOrigin`, restore via `eventsToTranscript` + `telegramOriginLabel`). Confirmed remote import: `ShouldOfferRemoteImport`, History import dialog wired to `ImportRemoteHistory` (`session_remote.go`, `session_import.go`); failed reads leave local events unchanged. Updated `context/current-state.md`, `traceability.md` (FR-01–14 / ADR-091–098), confirmed TESTING/DEPLOY C16 sections describe shipped History behavior.
+
+**Validation**: `openspec validate tui-session-history --strict`; `go test ./...`; `go test -race ./...`; `go vet ./...`; `gofmt`; `git diff --check`
+
+## 2026-09-11 — C16 task-10/11 History TUI + navbar
+
+**Outcome**: `internal/tui/history_screen.go` adds async History child model (list/detail, active/archived, search, rename, delete/archive dialogs, UI-C16 §4 copy, wide/stacked/narrow layouts). Navbar inserts History after Chat with `alt+1-8` / free-chat `alt+1-3`; palette `Go to - History`. `sessionService` injected from project store in `newModel`. Resume-from-History in Chat remains stubbed.
+
+**Validation**: `go test ./internal/tui/ -count=1 -timeout 120s`
+
+## 2026-09-11 — C16 task-12 Chat persist/restore + /new-chat
+
+**Outcome**: `internal/tui/chat_session.go` persists visible Chat events through `SessionService` (first-turn gate in execute worker blocks harness on failure; stream inserts via async `tea.Cmd` queue; assistant/assets/native bind synced at execute completion). Transcript restore rebuilds user/agent styling, Telegram origin, assets, interruption markers, and per-session occupancy from `ListEventsNewest` (200). `/new-chat` releases the prior lease and clears in-memory Hero/native ids without deleting the History row. History open triggers `loadChatTranscriptCmd`.
+
+**Validation**: `go test ./internal/tui/ ./internal/conversation/ -count=1 -timeout 180s`
+
+## 2026-09-11 — C16 task-08.1 / task-09.1 retention + legacy import
+
+**Outcome**: `internal/media` `CleanupExpiredSessions` retains directories whose names match registered Hero session IDs (`RegisteredSessionIDs` / `ListRegistered`); unregistered orphans still age out at 7 days. TUI startup (`mediaStartupCleanupCmd`) and shutdown (`launch.go`) pass `ListRegisteredSessionIDs` from the project store. `internal/store.MigrateLegacySessionBindings` runs on every `Open` after schema migration, importing valid orchestration/stage harness+native pairs with D4 titles, `transcript_state=unavailable_legacy`, no `session_events`, idempotent via `legacy_source_key`.
+
+**Validation**: `go test ./internal/media/ ./internal/store/`
+
+## 2026-09-11 — C16 task-06 conversation session service
+
+**Outcome**: `internal/conversation` gained `SessionService` (lifecycle + fork/import/delete helpers), D4 title functions (`TitleFreeChat`, cycle-aware orchestration/research/stage titles), and table-driven tests. `EnsureFirstTurn` atomically creates session+first event; empty surfaces create no row. Fixed `session_bindings_legacy_test.go` `ListSessionsFilter` typo.
+
+**Validation**: `go test ./internal/conversation/ ./internal/store/`
+
+## 2026-09-11 — C16 task-07 optional harness capabilities
+
+**Outcome**: `internal/harness/capabilities.go` adds `NormalizedEvent`, optional `RemoteHistoryReader` / `NativeSessionDeleter`, and `ErrExactResumeUnavailable`. OpenCode implements `ReadRemoteHistory` via existing `fetchSessionMessages` normalization; Cursor/Codex/Claude omit both optional interfaces (tests assert type-assert fails). OpenCode and Codex no longer start a replacement native session when explicit `SessionID` resume fails.
+
+**Validation**: `go test ./internal/harness/... ./internal/adapters/...`
+
+## 2026-09-11 — C16 Planning: tui-session-history SDD
+
+**Outcome**: OpenSpec change `tui-session-history` created at `openspec/changes/tui-session-history/` (proposal, design D1–D12, 8 spec deltas, 34 `generic_agent` tasks, traceability). `openspec validate tui-session-history --strict` passes. Linked with `hero cycle openspec-change tui-session-history`. `openspec/config.yml` context regenerated from `documents.json` for C16.
+
+**Locked decisions**: Schema v12 tables (`sessions`, `session_events`, `session_assets`, `session_leases`, `session_delete_ops`); Hero UUID identity; cycle FK `ON DELETE SET NULL`; lease heartbeat 5s / TTL 30s; fork context 32 KiB user+assistant text; titles without LLM; C14 registered dirs retained until delete; optional `RemoteHistoryReader` / `NativeSessionDeleter` with no invented Cursor/Codex/Claude delete support. Parallel Implementation agents get distinct History rows; nested TASK stays on the parent session.
+
+**Fan-out**: schema v12 ∥ harness capabilities → store slices → session service → History UI ∥ Chat persist → navbar/resume/fork/Telegram/import → docs → final verify.
+
 ## 2026-09-11 — TUI scheduler never-idle after loop-back
 
 **Defect**: C15 persisted findings and loop-back, but `resumeOrchestratorAfterStageHandoff` set `stageHandoffInterventionRequired` whenever `Complete` was false. After QA/Judge fail, if the orchestrator called `hero stage start` and STOPped, Implementation was Running with no Execute. `/hero-start` was the only recovery. Other idle paths (Escalated, PendingApproval, StartStage budget, orch Execute error, silent `startStageAgentSessions` when not Running) also returned without launching or asking.
@@ -1996,3 +2126,51 @@ verification waves.
 **Change**: Closed the QA loop-back for findings-only Implementation. `store.GetTodo` now maps `sql.ErrNoRows` to `ErrNotFound` so manual complete can promote legacy Pending prose. Projection suppresses promoted/resolved legacy prose via `ListResolvedLegacySummaries` while preserving unmatched lines. TUI complete-todo preselect allows unknown legacy prose through to the service. Removed unused soft Implementation report parsers; typed `DecodeImplementation` remains the only path. Regression coverage: no-active-cycle complete, legacy promote+project, Research adopt projection, Cancel release / Finish resolve hooks, open-finding rediscovery actionable prediction, findings-only partial wave progress, unknown-field report rejection.
 
 **Verification**: `go test ./... -count=1` and `openspec validate loopback-findings-handoff --strict` passed.
+
+## 2026-09-11 — C16 Research: persistent TUI session history
+
+**Problem**: Free Chat identity/transcript is process-local, cycle/stage rows retain
+only partial native session bindings, and the TUI has no durable surface to find,
+name, resume, archive, restore, or delete past conversations.
+
+**Decisions**: History is project-scoped and covers every conversation executed or
+observed by Hero TUI, including Telegram origin and distinct parallel stage-agent
+sessions; external IDE chats remain out. Sessions are created on first accepted
+turn, named deterministically, persisted incrementally as normalized visible events,
+and resumed only with the original harness/model/properties. Failed native resume
+offers an explicit context fork. Interrupted turns remain visible and recover through
+native status/reconnect where supported. One database lease permits one continuation
+owner. Active/archive views support name search, rename, restore, and confirmed
+permanent deletion. Local deletion removes only Hero-owned data/assets and succeeds
+even when best-effort provider deletion fails; user source files are never removed.
+Legacy harness bindings migrate idempotently without invented transcript content;
+remote transcript import requires confirmation.
+
+**Architecture/UI**: Proposed schema v12 session aggregate/event/asset/lease/import
+state (ADR-091–098), without repurposing the cycle audit `conversation` table.
+`internal/conversation` owns lifecycle for TUI/Telegram; Bubble Tea performs all I/O
+through commands. History follows Chat in the navbar and uses responsive list/detail
+states. ADR-080 is amended for durable sessions: linked managed assets do not expire
+by age. The user explicitly required Implementation to use the repository
+`golang-tui` and `go-engineering` skills.
+
+**Artifacts**: Created and registered
+`docs/product/PRD-C16-001-tui-session-history.md`,
+`docs/product/UI-C16-001-tui-session-history.md`, and
+`docs/architecture/ADR-C16-001-tui-session-history.md`; updated PRD/UI/ADR indexes,
+architecture overview, DEPLOY migration requirements, TESTING coverage, and current
+project state. No product code was implemented during Research.
+
+**2026-09-11 — C16 Implementation (store schema foundation)**: Bumped
+`internal/store` schema to **v12** with forward-only migration creating
+`sessions`, `session_events`, `session_assets`, `session_leases`, and
+`session_delete_ops` plus D1 indexes; audit `conversation` unchanged. Added
+`TestMigrateV11ToV12PreservesOperationalRowsAndEmptySessionTables` (openCapped v11
+fixture → Open v12). `go test ./internal/store/...` passes. Session service/CRUD and
+D11 legacy backfill not in this slice.
+
+## 2026-09-11 — C16 Implementation wave (generic_agent)
+
+**Outcome**: Shipped schema v12 + store session/events/leases/assets/delete-ops + SessionService/titles + optional harness RemoteHistoryReader/NativeSessionDeleter (OpenCode history only) + durable media retention + idempotent legacy bindings + History screen/navbar + Chat persist/restore/new-chat + exact resume/lease/historical continuation/interrupt/fork/archive/delete + Telegram origin labels + confirmed remote import path. `openspec validate tui-session-history --strict` and `go test ./...` green.
+
+**Validation**: openspec validate --strict; go test ./...; go vet on touched pkgs; gofmt clean on session/history files.

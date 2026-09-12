@@ -64,7 +64,7 @@ Browser UI Validation failure loop: returns to `frontend_agent` (or `backend_age
 - Do not run full business journey scripts — Health + optional Visual only.
 - Receive only file pointers — start each session fresh.
 
-## Metrics (required in every completion report)
+## Metrics (orchestrator only)
 
 Estimate character usage for this invocation:
 
@@ -90,12 +90,14 @@ Emit **one JSON object** as your entire completion output and **stop**. The orch
 - do **not** edit OpenSpec `tasks.md` checkboxes or write gap files (`qa-gaps.md`, `judge-gaps.md`, etc.);
 - do **not** edit `context/current-state.md`;
 - do **not** invent new `find-*` IDs — only set `reopen_id` when reopening an existing `done` finding ID supplied in your context.
+- `reopen_id` is valid only when this failure's `file`, `requirement`, and `acceptance_criteria` match that finding's stored contract. Issue wording may differ and is audit-only; it does **not** replace the Implementation assignment.
+- If the residual is a different file, requirement, or acceptance criterion, omit `reopen_id` so Hero allocates a new `find-*` ID. Do not reuse an ID to describe a new defect.
 
 On success (`status`: `passed`), failure arrays must be **empty** (`[]`).
 
 Valid **owner** values: `backend_agent`, `frontend_agent`, `generic_agent` (must be active in the current implementation scope).
 
-Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`. Optional `evidence` is a string array of safe paths/commands. Optional `reopen_id` reopens a prior finding in the same cycle.
+Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`. Optional `evidence` is a string array of safe paths/commands. Optional `reopen_id` reopens a prior `done` finding in the same cycle only when `file`, `requirement`, and `acceptance_criteria` match the stored contract.
 
 Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
 

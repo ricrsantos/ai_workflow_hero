@@ -470,7 +470,7 @@ func mergeImplementationAssignment(plan implementationTaskPlan, findings []store
 			errs = append(errs, fmt.Sprintf("finding %q owner %q is not in active implementation scope", finding.ID, owner))
 			continue
 		}
-		byAgent[owner] = append(byAgent[owner], implementationFindingBlock(finding))
+		byAgent[owner] = append(byAgent[owner], implementationFindingBlock(finding, nil))
 	}
 	if len(errs) > 0 {
 		return nil, errs
@@ -478,7 +478,7 @@ func mergeImplementationAssignment(plan implementationTaskPlan, findings []store
 	return byAgent, nil
 }
 
-func implementationFindingBlock(finding store.Finding) implementationTaskBlock {
+func implementationFindingBlock(finding store.Finding, occs []store.FindingOccurrence) implementationTaskBlock {
 	var b strings.Builder
 	fmt.Fprintf(&b, "- [ ] %s · finding · %s\n", finding.ID, finding.SourceStage)
 	if file := strings.TrimSpace(finding.File); file != "" {
@@ -489,6 +489,21 @@ func implementationFindingBlock(finding store.Finding) implementationTaskBlock {
 	}
 	fmt.Fprintf(&b, "  Issue: %s\n", strings.TrimSpace(finding.Issue))
 	fmt.Fprintf(&b, "  Acceptance: %s\n", strings.TrimSpace(finding.AcceptanceCriteria))
+	fmt.Fprintf(&b, "  Contract: frozen — reopen this ID only for the same file, requirement, and acceptance; a different residual is a new find-* ID.\n")
+	if len(occs) > 0 {
+		b.WriteString("  History:\n")
+		for _, o := range occs {
+			issue := strings.TrimSpace(o.Issue)
+			if len(issue) > 160 {
+				issue = issue[:157] + "..."
+			}
+			if issue == "" {
+				fmt.Fprintf(&b, "    r%d %s\n", o.Round, o.Kind)
+				continue
+			}
+			fmt.Fprintf(&b, "    r%d %s: %s\n", o.Round, o.Kind, issue)
+		}
+	}
 	return implementationTaskBlock{
 		ID:      finding.ID,
 		Owner:   finding.Owner,

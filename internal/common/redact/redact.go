@@ -61,3 +61,27 @@ func (w Writer) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+var (
+	uuidPattern     = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b`)
+	pathPattern     = regexp.MustCompile(`(/[^\s:]+)+`)
+	nativeIDPattern = regexp.MustCompile(`(?i)\b(sess|session|native)[-_]?[0-9a-z]{8,}\b`)
+)
+
+// RedactDiagnostics masks session identifiers, filesystem paths, and Telegram
+// secrets commonly embedded in error strings and log attributes.
+func RedactDiagnostics(s string, secrets ...string) string {
+	out := Redact(s, secrets...)
+	out = uuidPattern.ReplaceAllString(out, RedactedValue)
+	out = nativeIDPattern.ReplaceAllString(out, RedactedValue)
+	out = pathPattern.ReplaceAllString(out, RedactedValue)
+	return out
+}
+
+// Error returns a diagnostics-safe error string (never empty for non-nil err).
+func Error(err error, secrets ...string) string {
+	if err == nil {
+		return ""
+	}
+	return RedactDiagnostics(err.Error(), secrets...)
+}

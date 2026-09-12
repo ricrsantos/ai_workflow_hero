@@ -353,10 +353,10 @@ func (e *Engine) decodeContextForCycle(cycleID int64) (reports.DecodeContext, er
 	ctx := reports.DecodeContext{
 		ActiveOwners:               active,
 		ActiveImplementationAgents: implAgents,
-		ReopenIDs: reports.ReopenIDValidateFunc(func(sourceStage, owner, reopenID string) *reports.DiagnosticError {
-			if err := e.Store.ValidateReopenID(cycleID, sourceStage, owner, reopenID); err != nil {
+		ReopenIDs: reports.ReopenIDValidateFunc(func(req reports.ReopenRequest) *reports.DiagnosticError {
+			if err := e.Store.ValidateReopenID(cycleID, req.SourceStage, req.Owner, req.ReopenID, req.File, req.Requirement, req.AcceptanceCriteria); err != nil {
 				if errors.Is(err, store.ErrInvalidReopenID) {
-					return reportsUnknownReopenID(reopenID)
+					return reportsUnknownReopenID(req.ReopenID)
 				}
 				return reportsDiagInternal(err.Error())
 			}
@@ -483,7 +483,7 @@ func reportsUnknownReopenID(reopenID string) *reports.DiagnosticError {
 		Code:  reports.CodeUnknownReopenID,
 		Field: "reopen_id",
 		Value: reopenID,
-		Rule:  "finding is not a done match in this cycle with matching source stage and owner",
+		Rule:  "finding is not a done match in this cycle with matching source stage, owner, file, requirement, and acceptance criteria",
 	}
 }
 

@@ -31,7 +31,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("create store directory: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(DELETE)")
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
@@ -41,6 +41,10 @@ func Open(path string) (*Store, error) {
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
+	}
+	if _, err := s.MigrateLegacySessionBindings(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("import legacy session bindings: %w", err)
 	}
 	s.log.Info("store opened", "path", path)
 	return s, nil

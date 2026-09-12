@@ -25,6 +25,8 @@ Display a summary of all available Hero Runtime commands.
 | /hero-continue | Grant extra iterations via `hero continue --extra N` |
 | /hero-back | Reopen Planning (SDD ambiguity; orchestrator-driven, no dedicated CLI verb) |
 | /hero-cycles | List cycles with per-etapa metrics (SQLite + archive folders) |
+| /hero-add-todo | Defer Escalated findings to project ToDos (partial or completed_with_deferred_todos) |
+| /hero-complete-todo | Manually resolve pending ToDos fixed outside Hero (note + confirmation) |
 | /hero-todos | Show pending items from `context/current-state.md` (run `/hero-sync` first when docs changed) |
 | /hero-model | Select TUI model pair and dynamic `fs`/`th`/`ef` properties (atomic `hero.json` save; Chat + `/hero-new`) |
 | /hero-help | Show this help |

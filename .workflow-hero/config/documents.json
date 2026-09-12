@@ -351,6 +351,30 @@
       "slug": "loopback-findings-handoff",
       "path": "docs/product/UI-C15-001-loopback-findings-handoff.md",
       "title": "Loop-back Findings and Deferred ToDos UX"
+    },
+    {
+      "category": "PRD",
+      "cycle": "C16",
+      "seq": 1,
+      "slug": "tui-session-history",
+      "path": "docs/product/PRD-C16-001-tui-session-history.md",
+      "title": "Persistent TUI Session History"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C16",
+      "seq": 1,
+      "slug": "tui-session-history",
+      "path": "docs/architecture/ADR-C16-001-tui-session-history.md",
+      "title": "Durable TUI Session History (ADR-091–098)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C16",
+      "seq": 1,
+      "slug": "tui-session-history",
+      "path": "docs/product/UI-C16-001-tui-session-history.md",
+      "title": "TUI Session History"
     }
   ]
 }

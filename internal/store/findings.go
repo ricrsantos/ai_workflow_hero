@@ -54,7 +54,8 @@ const (
 // ErrInvalidFindingContent is returned when issue, acceptance, or evidence fail safe-content rules.
 var ErrInvalidFindingContent = errors.New("invalid finding content")
 
-// ErrInvalidReopenID is returned when reopen_id does not reference a done finding in context.
+// ErrInvalidReopenID is returned when reopen_id does not reference a done finding
+// whose stored file, requirement, and acceptance criteria match the report.
 var ErrInvalidReopenID = errors.New("invalid reopen_id")
 
 // Finding is a scheduler-owned validation finding row.
@@ -146,6 +147,14 @@ func FindingFingerprint(cycleID int64, sourceStage, owner, file, requirement, ac
 	return hex.EncodeToString(sum[:])
 }
 
+// FindingContractMatches reports whether file, requirement, and acceptance
+// match the stored finding contract after canonicalization. Issue text is ignored.
+func FindingContractMatches(f Finding, file, requirement, acceptance string) bool {
+	return CanonicalizeFindingFile(file) == CanonicalizeFindingFile(f.File) &&
+		NormalizeFindingText(requirement) == NormalizeFindingText(f.Requirement) &&
+		NormalizeFindingText(acceptance) == NormalizeFindingText(f.AcceptanceCriteria)
+}
+
 // PersistFinding applies the finding lifecycle outside an existing transaction.
 func (s *Store) PersistFinding(in FindingInput) (PersistFindingResult, error) {
 	var out PersistFindingResult
@@ -189,8 +198,11 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 		if f.Status != FindingStatusDone || f.SourceStage != in.SourceStage || f.Owner != in.Owner {
 			return PersistFindingResult{}, ErrInvalidReopenID
 		}
+		if !FindingContractMatches(f, in.File, in.Requirement, in.AcceptanceCriteria) {
+			return PersistFindingResult{}, ErrInvalidReopenID
+		}
 		newRound := f.Round + 1
-		if err := updateFindingRowTx(tx, in.CycleID, reopenID, FindingStatusReopened, newRound, in.Issue, canonicalAC, evidenceJSON, now); err != nil {
+		if err := updateFindingStatusRoundTx(tx, in.CycleID, reopenID, FindingStatusReopened, newRound, now); err != nil {
 			log.Error("finding reopen persist failed", "cycle_id", in.CycleID, "finding_id", reopenID, "error", err)
 			return PersistFindingResult{}, err
 		}
@@ -228,7 +240,7 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 				log.Error("finding rediscovery occurrence failed", "cycle_id", in.CycleID, "finding_id", existing.ID, "error", err)
 				return PersistFindingResult{}, err
 			}
-			if err := touchFindingContextTx(tx, in.CycleID, existing.ID, in.Issue, canonicalAC, evidenceJSON, now); err != nil {
+			if err := touchFindingUpdatedAtTx(tx, in.CycleID, existing.ID, now); err != nil {
 				return PersistFindingResult{}, err
 			}
 			updated, err := getFindingTx(tx, in.CycleID, existing.ID)
@@ -243,7 +255,7 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 			}, nil
 		case FindingStatusDone:
 			newRound := existing.Round + 1
-			if err := updateFindingRowTx(tx, in.CycleID, existing.ID, FindingStatusReopened, newRound, in.Issue, canonicalAC, evidenceJSON, now); err != nil {
+			if err := updateFindingStatusRoundTx(tx, in.CycleID, existing.ID, FindingStatusReopened, newRound, now); err != nil {
 				log.Error("finding fingerprint reopen failed", "cycle_id", in.CycleID, "finding_id", existing.ID, "error", err)
 				return PersistFindingResult{}, err
 			}
@@ -339,13 +351,14 @@ type FindingOccurrence struct {
 	Sequence  int
 	Kind      string
 	Round     int
+	Issue     string
 	CreatedAt string
 }
 
 // ListFindingOccurrences returns occurrence history for a finding.
 func (s *Store) ListFindingOccurrences(cycleID int64, findingID string) ([]FindingOccurrence, error) {
 	rows, err := s.db.Query(`
-SELECT sequence, kind, round, created_at
+SELECT sequence, kind, round, issue, created_at
 FROM finding_occurrences
 WHERE cycle_id = ? AND finding_id = ?
 ORDER BY sequence ASC`, cycleID, findingID)
@@ -356,7 +369,7 @@ ORDER BY sequence ASC`, cycleID, findingID)
 	var out []FindingOccurrence
 	for rows.Next() {
 		var o FindingOccurrence
-		if err := rows.Scan(&o.Sequence, &o.Kind, &o.Round, &o.CreatedAt); err != nil {
+		if err := rows.Scan(&o.Sequence, &o.Kind, &o.Round, &o.Issue, &o.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, o)
@@ -431,8 +444,9 @@ ORDER BY created_at ASC, id ASC`, args...)
 	return scanFindings(rows)
 }
 
-// ValidateReopenID reports whether reopen_id may reopen a done finding in context.
-func (s *Store) ValidateReopenID(cycleID int64, sourceStage, owner, reopenID string) error {
+// ValidateReopenID reports whether reopen_id may reopen a done finding whose
+// stored file, requirement, and acceptance criteria match the report contract.
+func (s *Store) ValidateReopenID(cycleID int64, sourceStage, owner, reopenID, file, requirement, acceptance string) error {
 	f, err := s.GetFinding(cycleID, reopenID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -441,6 +455,9 @@ func (s *Store) ValidateReopenID(cycleID int64, sourceStage, owner, reopenID str
 		return err
 	}
 	if f.Status != FindingStatusDone || f.SourceStage != sourceStage || f.Owner != owner {
+		return ErrInvalidReopenID
+	}
+	if !FindingContractMatches(f, file, requirement, acceptance) {
 		return ErrInvalidReopenID
 	}
 	return nil
@@ -453,7 +470,7 @@ func (s *Store) MarkFindingDoneTx(tx *sql.Tx, cycleID int64, id string, issue, a
 		return err
 	}
 	now := nowRFC3339()
-	if err := updateFindingRowTx(tx, cycleID, id, FindingStatusDone, f.Round, issue, acceptanceCriteria, evidenceJSON, now); err != nil {
+	if err := updateFindingStatusRoundTx(tx, cycleID, id, FindingStatusDone, f.Round, now); err != nil {
 		s.findingLog().Error("mark finding done failed", "cycle_id", cycleID, "finding_id", id, "error", err)
 		return err
 	}
@@ -473,7 +490,7 @@ func (s *Store) SetFindingDeferredTodoTx(tx *sql.Tx, cycleID int64, id string, i
 		return err
 	}
 	now := nowRFC3339()
-	if err := updateFindingRowTx(tx, cycleID, id, FindingStatusDeferredTodo, f.Round, issue, acceptanceCriteria, evidenceJSON, now); err != nil {
+	if err := updateFindingStatusRoundTx(tx, cycleID, id, FindingStatusDeferredTodo, f.Round, now); err != nil {
 		return err
 	}
 	if err := appendOccurrenceTx(tx, cycleID, id, OccurrenceDeferred, f.SourceStage, f.Round, issue, acceptanceCriteria, evidenceJSON, now); err != nil {
@@ -656,23 +673,23 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	return nil
 }
 
-func updateFindingRowTx(tx *sql.Tx, cycleID int64, id, status string, round int, issue, acceptance, evidenceJSON, updatedAt string) error {
+func updateFindingStatusRoundTx(tx *sql.Tx, cycleID int64, id, status string, round int, updatedAt string) error {
 	_, err := tx.Exec(`
-UPDATE findings SET status = ?, round = ?, issue = ?, acceptance_criteria = ?, evidence_json = ?, updated_at = ?
+UPDATE findings SET status = ?, round = ?, updated_at = ?
 WHERE cycle_id = ? AND id = ?`,
-		status, round, issue, acceptance, evidenceJSON, updatedAt, cycleID, id,
+		status, round, updatedAt, cycleID, id,
 	)
 	if err != nil {
-		return fmt.Errorf("update finding: %w", err)
+		return fmt.Errorf("update finding status: %w", err)
 	}
 	return nil
 }
 
-func touchFindingContextTx(tx *sql.Tx, cycleID int64, id, issue, acceptance, evidenceJSON, updatedAt string) error {
+func touchFindingUpdatedAtTx(tx *sql.Tx, cycleID int64, id, updatedAt string) error {
 	_, err := tx.Exec(`
-UPDATE findings SET issue = ?, acceptance_criteria = ?, evidence_json = ?, updated_at = ?
+UPDATE findings SET updated_at = ?
 WHERE cycle_id = ? AND id = ?`,
-		issue, acceptance, evidenceJSON, updatedAt, cycleID, id,
+		updatedAt, cycleID, id,
 	)
 	return err
 }

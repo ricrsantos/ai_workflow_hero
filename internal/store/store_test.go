@@ -753,3 +753,232 @@ func TestMigrateV10ToV11PreservesOperationalRows(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrateV11ToV12PreservesOperationalRowsAndEmptySessionTables(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hero.db")
+	ts := "2026-09-11T12:00:00Z"
+
+	s, err := openCapped(path, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cycleID, err := s.CreateCycle(Cycle{
+		Number:             7,
+		Title:              "pre-v12",
+		Status:             CycleStatusActive,
+		StartedAt:          ts,
+		ConfigSnapshotJSON: `{"k":"v"}`,
+		OpenspecChange:     "tui-session-history",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetOrchestrationSession(cycleID, "orch-pre", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateStages([]Stage{
+		{CycleID: cycleID, Name: "qa", Status: StageWaiting, MaxIterations: 2, SortOrder: 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetStageSessionBinding(cycleID, "qa", "cursor", "stage-sess-pre"); err != nil {
+		t.Fatal(err)
+	}
+	eventID, err := s.AppendEvent(Event{
+		CycleID: cycleID, TS: ts, Type: "stage_started", PayloadJSON: `{"stage":"qa"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertMetric(Metric{
+		CycleID: cycleID, StageName: "qa", Agent: "qa_agent",
+		InputTokens: 10, OutputTokens: 5, CostUSD: 0.01, DurationMS: 100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	convMsgID, err := s.AddConversation(ConversationEntry{
+		CycleID: cycleID, TS: ts, Role: "user", Kind: "message", Body: "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	convAssignID, err := s.AddConversation(ConversationEntry{
+		CycleID: cycleID, TS: ts, Role: "system", Kind: "stage_agent_assignment", Body: `{"agent":"qa_agent"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artID, err := s.AddArtifact(Artifact{
+		CycleID: cycleID, Path: "openspec/x.md", Kind: "doc", Label: "spec", CreatedAt: ts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveID, err := s.InsertServeRegistry(ServeRegistryEntry{
+		Harness: "opencode", PID: 4242, Port: 4096,
+		URL: "http://127.0.0.1:4096", ProjectPath: dir, CreatedAt: ts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertModelList("cursor", []string{"gpt-4"}, ts); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertCapabilities(CapabilityCacheRow{
+		Harness: "cursor", Model: "gpt-4", PropertiesJSON: `{"fs":{}}`, RetrievedAt: ts,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	gen, err := s.BeginRefresh("cursor")
+	if err != nil || gen != 1 {
+		t.Fatalf("BeginRefresh: gen=%d err=%v", gen, err)
+	}
+
+	findRes, err := s.PersistFinding(FindingInput{
+		CycleID:            cycleID,
+		SourceStage:        FindingSourceQA,
+		Owner:              FindingOwnerGeneric,
+		File:               "internal/store/migrate.go",
+		Requirement:        "PRD-C16",
+		Issue:              "pre-v12 finding",
+		AcceptanceCriteria: "migration preserves row",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	todoID, err := s.CreateLegacyTodo(CreateLegacyTodoParams{
+		Summary:            "pre-v12 todo",
+		AcceptanceCriteria: "still pending",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projOp, created, err := s.UpsertTodoProjectionOp(UpsertProjectionOpParams{
+		CycleID:        cycleID,
+		OpKind:         ProjectionOpDefer,
+		IdempotencyKey: "test-v11-fixture-defer",
+		Status:         ProjectionStatusIntentPersisted,
+		TodoIDsJSON:    `["` + todoID + `"]`,
+	})
+	if err != nil || !created {
+		t.Fatalf("UpsertTodoProjectionOp: %+v created=%v err=%v", projOp, created, err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open after v11: %v", err)
+	}
+	defer s2.Close()
+
+	v, err := s2.SchemaVersion()
+	if err != nil || v != currentSchemaVersion {
+		t.Fatalf("schema version = %d %v, want %d", v, err, currentSchemaVersion)
+	}
+
+	c, err := s2.GetCycle(cycleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Title != "pre-v12" || c.OpenspecChange != "tui-session-history" ||
+		c.OrchestrationSessionID != "orch-pre" || c.OrchestrationHarnessID != "cursor" {
+		t.Fatalf("cycle mutated: %+v", c)
+	}
+
+	st, err := s2.GetStage(cycleID, "qa")
+	if err != nil || st.HarnessID != "cursor" || st.HarnessSessionID != "stage-sess-pre" {
+		t.Fatalf("stage binding: %+v %v", st, err)
+	}
+	events, err := s2.ListEvents(cycleID, "", 0)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("events: %+v err=%v want 2 (stage_started + finding_created)", events, err)
+	}
+	var sawStageStarted bool
+	for _, ev := range events {
+		if ev.ID == eventID && ev.Type == "stage_started" {
+			sawStageStarted = true
+		}
+	}
+	if !sawStageStarted {
+		t.Fatalf("stage_started event id %d missing from %+v", eventID, events)
+	}
+	metrics, err := s2.ListMetrics(cycleID)
+	if err != nil || len(metrics) != 1 || metrics[0].InputTokens != 10 {
+		t.Fatalf("metrics: %+v %v", metrics, err)
+	}
+	convs, err := s2.ListConversation(cycleID)
+	if err != nil || len(convs) != 2 {
+		t.Fatalf("conversation: %+v %v", convs, err)
+	}
+	convByID := map[int64]ConversationEntry{}
+	for _, e := range convs {
+		convByID[e.ID] = e
+	}
+	if convByID[convMsgID].Body != "hello" || convByID[convAssignID].Kind != "stage_agent_assignment" {
+		t.Fatalf("conversation rows: %+v", convByID)
+	}
+	arts, err := s2.ListArtifacts(cycleID)
+	if err != nil || len(arts) != 1 || arts[0].ID != artID {
+		t.Fatalf("artifacts: %+v %v", arts, err)
+	}
+	entries, err := s2.ListServeRegistry()
+	if err != nil || len(entries) != 1 || entries[0].ID != serveID {
+		t.Fatalf("serve registry: %+v %v", entries, err)
+	}
+	models, refreshedAt, err := s2.ModelList("cursor")
+	if err != nil || len(models) != 1 || refreshedAt != ts {
+		t.Fatalf("model list: %v %q %v", models, refreshedAt, err)
+	}
+	caps, err := s2.ListCapabilities("cursor")
+	if err != nil || len(caps) != 1 {
+		t.Fatalf("capabilities: %+v %v", caps, err)
+	}
+	rgen, pending, err := s2.RefreshState("cursor")
+	if err != nil || rgen != 1 || !pending {
+		t.Fatalf("refresh state: gen=%d pending=%v err=%v", rgen, pending, err)
+	}
+
+	findings, err := s2.ListFindingsByCycle(cycleID)
+	if err != nil || len(findings) != 1 || findings[0].ID != findRes.Finding.ID {
+		t.Fatalf("findings: %+v %v want %s", findings, err, findRes.Finding.ID)
+	}
+	todos, err := s2.ListPendingTodos()
+	if err != nil || len(todos) != 1 || todos[0].ID != todoID {
+		t.Fatalf("todos: %+v %v", todos, err)
+	}
+	gotOp, err := s2.GetTodoProjectionOpByKey("test-v11-fixture-defer")
+	if err != nil || gotOp.IdempotencyKey != projOp.IdempotencyKey {
+		t.Fatalf("projection op: %+v %v", gotOp, err)
+	}
+
+	var sessionCount int
+	if err := s2.db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&sessionCount); err != nil {
+		t.Fatalf("count sessions: %v", err)
+	}
+	if sessionCount != 2 {
+		t.Fatalf("sessions count = %d, want 2 legacy imports (orchestration + qa stage)", sessionCount)
+	}
+	var eventCount int
+	if err := s2.db.QueryRow(`SELECT COUNT(*) FROM session_events`).Scan(&eventCount); err != nil {
+		t.Fatalf("count session_events: %v", err)
+	}
+	if eventCount != 0 {
+		t.Fatalf("session_events count = %d, want 0", eventCount)
+	}
+	for _, table := range []string{
+		"session_assets", "session_leases", "session_delete_ops",
+	} {
+		var n int
+		if err := s2.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if n != 0 {
+			t.Fatalf("%s count = %d, want 0", table, n)
+		}
+	}
+}

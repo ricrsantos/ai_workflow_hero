@@ -35,6 +35,7 @@ type convExecute struct {
 	Origin          string // telegram:<address> when the turn came from Telegram
 	Freechat        bool
 	OccupancyKey    string
+	HeroSessionID   string
 	relay           *conversationStreamRelay
 }
 
@@ -332,7 +333,12 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 			m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
 			return m.returnStageAgentPreparationFailure(stage, findErr.Error())
 		}
-		runAgents, assignments, expectedAgents, reason = implementationStageDispatch(checklist, agents, findings)
+		occsByID, occErr := m.findingOccurrenceHistory(findings)
+		if occErr != nil {
+			m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
+			return m.returnStageAgentPreparationFailure(stage, occErr.Error())
+		}
+		runAgents, assignments, expectedAgents, reason = implementationStageDispatch(checklist, agents, findings, occsByID)
 		if reason != "" {
 			m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
 			return m.returnStageAgentPreparationFailure(stage, reason)
@@ -424,8 +430,8 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	return m, cmd
 }
 
-func implementationStageDispatch(checklist implementationChecklist, activeAgents []string, findings []store.Finding) ([]string, map[string][]implementationTaskBlock, []string, string) {
-	return buildImplementationStageDispatch(checklist, activeAgents, findings)
+func implementationStageDispatch(checklist implementationChecklist, activeAgents []string, findings []store.Finding, occsByID map[string][]store.FindingOccurrence) ([]string, map[string][]implementationTaskBlock, []string, string) {
+	return buildImplementationStageDispatch(checklist, activeAgents, findings, occsByID)
 }
 
 func (m model) actionableImplementationFindings() ([]store.Finding, error) {
@@ -445,6 +451,35 @@ func (m model) actionableImplementationFindings() ([]store.Finding, error) {
 		return nil, fmt.Errorf("list actionable findings: %w", err)
 	}
 	return findings, nil
+}
+
+func (m model) findingOccurrenceHistory(findings []store.Finding) (map[string][]store.FindingOccurrence, error) {
+	if m.svc == nil || m.svc.Store == nil || len(findings) == 0 {
+		return nil, nil
+	}
+	cycle, err := m.svc.SessionCycle()
+	if err != nil {
+		return nil, fmt.Errorf("resolve active cycle: %w", err)
+	}
+	if cycle == nil {
+		return nil, nil
+	}
+	out := make(map[string][]store.FindingOccurrence, len(findings))
+	for _, f := range findings {
+		id := strings.TrimSpace(f.ID)
+		if id == "" {
+			continue
+		}
+		occs, err := m.svc.Store.ListFindingOccurrences(cycle.ID, id)
+		if err != nil {
+			slog.Error("implementation assignment occurrence query failed", "finding_id", id, "error", err)
+			return nil, fmt.Errorf("list finding occurrences: %w", err)
+		}
+		if len(occs) > 0 {
+			out[id] = occs
+		}
+	}
+	return out, nil
 }
 
 func cloneImplementationAssignments(assignments map[string][]implementationTaskBlock) map[string][]implementationTaskBlock {
@@ -1365,20 +1400,53 @@ func formatImplementationHandoffDiagnostics(reports []stageAgentReport, m model)
 }
 
 func implementationReportDiagnosticCode(report stageAgentReport) string {
-	msg := strings.ToLower(report.ValidationError)
+	msg := strings.TrimSpace(report.ValidationError)
+	if msg == "" {
+		return "invalid_report"
+	}
+	if code, _, ok := strings.Cut(msg, ":"); ok {
+		code = strings.ToLower(strings.TrimSpace(code))
+		if isImplementationDiagnosticCode(code) {
+			return code
+		}
+	}
+	lower := strings.ToLower(msg)
 	switch {
-	case strings.Contains(msg, "assignment_union_mismatch"):
+	case strings.Contains(lower, "no json report"):
+		return string(reports.CodeInvalidJSON)
+	case strings.Contains(lower, "assignment_union_mismatch"):
 		return string(reports.CodeAssignmentUnionMismatch)
-	case strings.Contains(msg, "not assigned") || strings.Contains(msg, "unassigned"):
+	case strings.Contains(lower, "not assigned") || strings.Contains(lower, "unassigned"):
 		return string(reports.CodeUnassignedID)
-	case strings.Contains(msg, "nonempty") || strings.Contains(msg, "verification wave assigned no"):
+	case strings.Contains(lower, "nonempty") || strings.Contains(lower, "verification wave assigned no"):
 		return string(reports.CodeNonemptyEmptyAssignment)
-	case strings.Contains(msg, "duplicate"):
+	case strings.Contains(lower, "duplicate"):
 		return string(reports.CodeDuplicateID)
-	case strings.Contains(msg, "both"):
+	case strings.Contains(lower, "both"):
 		return string(reports.CodeOverlappingArrays)
 	default:
 		return "invalid_report"
+	}
+}
+
+func isImplementationDiagnosticCode(code string) bool {
+	switch reports.Code(code) {
+	case reports.CodeInvalidJSON,
+		reports.CodeUnknownField,
+		reports.CodeMissingField,
+		reports.CodeInvalidEnum,
+		reports.CodeInvalidOwner,
+		reports.CodeUnknownReopenID,
+		reports.CodeDuplicateID,
+		reports.CodeOverlappingArrays,
+		reports.CodeAssignmentUnionMismatch,
+		reports.CodeUnassignedID,
+		reports.CodeFalseAcceptanceGate,
+		reports.CodeNonemptyEmptyAssignment,
+		reports.CodeNoActionableFinding:
+		return true
+	default:
+		return false
 	}
 }
 

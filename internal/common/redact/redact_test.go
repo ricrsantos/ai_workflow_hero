@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -66,5 +67,24 @@ func TestHasToken(t *testing.T) {
 	}
 	if HasToken("cycle #42 started") {
 		t.Fatal("false positive token detection")
+	}
+}
+
+func TestRedactDiagnosticsMasksIDsAndPaths(t *testing.T) {
+	in := "session 550e8400-e29b-41d4-a716-446655440000 failed at /tmp/hero/attachments/a.png native sess-abc123def"
+	out := RedactDiagnostics(in)
+	if strings.Contains(out, "550e8400") || strings.Contains(out, "/tmp/") || strings.Contains(out, "sess-abc") {
+		t.Fatalf("expected identifiers redacted, got %q", out)
+	}
+	if !strings.Contains(out, RedactedValue) {
+		t.Fatalf("expected redaction marker in %q", out)
+	}
+}
+
+func TestErrorRedacts(t *testing.T) {
+	err := errors.New("open /home/user/.workflow-hero/hero.db: permission denied")
+	out := Error(err)
+	if strings.Contains(out, "/home/") {
+		t.Fatalf("path leaked: %q", out)
 	}
 }
