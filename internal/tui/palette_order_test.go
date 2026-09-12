@@ -11,6 +11,8 @@ func TestDefaultHeroPaletteOrder(t *testing.T) {
 		"/hero-start",
 		"/hero-approve",
 		"/hero-continue",
+		"/hero-add-todo",
+		"/hero-complete-todo",
 		"/hero-reject",
 		"/hero-cancel",
 		"/hero-back",

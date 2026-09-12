@@ -105,6 +105,26 @@ ORDER BY ts ASC, id ASC`, strings.Join(placeholders, ","))
 	return out, rows.Err()
 }
 
+// GetMetricTx returns the metrics row inside an open transaction, or nil when absent.
+func (s *Store) GetMetricTx(tx *sql.Tx, cycleID int64, stageName, agent string) (*Metric, error) {
+	var m Metric
+	err := tx.QueryRow(`
+SELECT id, cycle_id, stage_name, model, agent, input_tokens, output_tokens, cost_usd, duration_ms
+FROM metrics WHERE cycle_id = ? AND stage_name = ? AND agent = ?`,
+		cycleID, stageName, agent,
+	).Scan(
+		&m.ID, &m.CycleID, &m.StageName, &m.Model, &m.Agent,
+		&m.InputTokens, &m.OutputTokens, &m.CostUSD, &m.DurationMS,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get metric: %w", err)
+	}
+	return &m, nil
+}
+
 // UpsertMetric inserts or replaces a metrics row keyed by cycle+stage+agent.
 func (s *Store) UpsertMetric(m Metric) error {
 	_, err := s.db.Exec(`

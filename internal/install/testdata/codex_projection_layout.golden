@@ -9,10 +9,12 @@ agents/judge_agent.md
 agents/orchestration_agent.md
 agents/planning_agent.md
 agents/qa_agent.md
+commands/hero-add-todo.md
 commands/hero-approve.md
 commands/hero-archive.md
 commands/hero-back.md
 commands/hero-cancel.md
+commands/hero-complete-todo.md
 commands/hero-continue.md
 commands/hero-cycles.md
 commands/hero-finish.md

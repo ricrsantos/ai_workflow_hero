@@ -29,6 +29,11 @@ Where `[N]` is the number of extra iterations to grant (e.g. `/hero-continue 2`)
 
 Extra iterations are granted per /hero-continue invocation and recorded in SQLite by the engine. The base `max_iterations` in `workflow-config.yml` is never modified.
 
+
+## Escalation triage (PRD-C15-001 §8)
+
+After granting iterations with `/hero-continue`, remind the user they may also run `/hero-add-todo` to defer selected findings to project ToDos. Partial deferral keeps the loop Escalated until remaining blockers are resolved or every blocker is deferred (terminal `completed_with_deferred_todos` closure).
+
 ## Output Format
 
 ```

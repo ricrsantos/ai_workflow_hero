@@ -880,6 +880,17 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAttachmentPickerKey(msg)
 	}
 
+	if m.todoControlUsesComposer() {
+		switch s {
+		case "esc":
+			m = m.clearTodoControl()
+			m = m.clearChatInput()
+			return m, nil
+		case "enter", "alt+enter":
+			return m.submitTodoControlComposer()
+		}
+	}
+
 	if m.heroStartBootstrapping || m.heroStartPreparing {
 		if key.Matches(msg, conversationInterruptKey) {
 			return m.cancelHeroStartPreparation()
@@ -1210,6 +1221,9 @@ func (m model) deleteRuneAtCursor() model {
 }
 
 func (m model) submitConversation() (model, tea.Cmd) {
+	if m.todoControlUsesComposer() {
+		return m.submitTodoControlComposer()
+	}
 	text := strings.TrimSpace(m.input)
 	if text == "" && len(m.attachments) == 0 {
 		if m.awaitingRejectReason {
@@ -1260,6 +1274,18 @@ func (m model) submitConversation() (model, tea.Cmd) {
 		m = m.clearChatInput()
 		m.convError = ""
 		return m.beginHeroContinueExecute(extra)
+	}
+
+	if ids, ok := parseHeroAddTodoInline(text); ok {
+		m = m.clearChatInput()
+		m.convError = ""
+		return m.beginHeroAddTodo(ids)
+	}
+
+	if ids, ok := parseHeroCompleteTodoInline(text); ok {
+		m = m.clearChatInput()
+		m.convError = ""
+		return m.beginHeroCompleteTodo(ids)
 	}
 
 	if cycleN, ok := parseHeroResumeInline(text); ok {
@@ -1410,6 +1436,14 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 	case "/hero-finish":
 		m = m.clearChatInput()
 		next, cmd := m.beginHeroFinish()
+		return next, cmd, true
+	case "/hero-add-todo":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroAddTodo(nil)
+		return next, cmd, true
+	case "/hero-complete-todo":
+		m = m.clearChatInput()
+		next, cmd := m.beginHeroCompleteTodo(nil)
 		return next, cmd, true
 	case "/hero-new":
 		m = m.clearChatInput()
@@ -2918,6 +2952,11 @@ func (m model) buildConversation(transcriptLines int) string {
 	}
 
 	b.WriteString(m.renderChatSlashOverlay())
+	if hint := m.renderTodoControlComposerHint(); hint != "" {
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render(hint))
+		b.WriteByte('\n')
+	}
 	if m.attachmentPickerActive {
 		b.WriteString(m.attachmentPicker.View())
 		b.WriteByte('\n')

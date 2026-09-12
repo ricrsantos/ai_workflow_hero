@@ -21,6 +21,8 @@ type Update struct {
 	ChatID string
 	// Text is the message text (may be empty).
 	Text string
+	// HasAttachment is true when the message carries media (photo, document, etc.).
+	HasAttachment bool
 }
 
 // BotAPI abstracts Telegram Bot API connectivity so the daemon is testable
@@ -60,15 +62,18 @@ type botResponse[T any] struct {
 }
 
 type rawUpdate struct {
-	UpdateID int64           `json:"update_id"`
-	Message  *rawMessage     `json:"message"`
+	UpdateID int64       `json:"update_id"`
+	Message  *rawMessage `json:"message"`
 }
 
 type rawMessage struct {
 	Chat *struct {
 		ID int64 `json:"id"`
 	} `json:"chat"`
-	Text string `json:"text"`
+	Text     string            `json:"text"`
+	Photo    []json.RawMessage `json:"photo"`
+	Document *json.RawMessage  `json:"document"`
+	Video    *json.RawMessage  `json:"video"`
 }
 
 func (b *HTTPBotAPI) endpoint(method string) string {
@@ -133,6 +138,8 @@ func (b *HTTPBotAPI) GetUpdates(ctx context.Context, offset int64) ([]Update, er
 				u.ChatID = strconv.FormatInt(ru.Message.Chat.ID, 10)
 			}
 			u.Text = ru.Message.Text
+			u.HasAttachment = len(ru.Message.Photo) > 0 ||
+				ru.Message.Document != nil || ru.Message.Video != nil
 		}
 		out = append(out, u)
 	}

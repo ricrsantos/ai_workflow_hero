@@ -61,6 +61,7 @@ func (m model) renderStatus() string {
 		b.WriteString(stageStatusStyle(st.Status).Render(line))
 		b.WriteByte('\n')
 	}
+	m.appendStatusHandoffSections(&b)
 	return b.String()
 }
 
@@ -175,11 +176,8 @@ func (m model) renderEvents() string {
 	b.WriteString(headerStyle.Render("Recent events"))
 	b.WriteByte('\n')
 	for _, e := range m.events.Events {
-		payload := e.PayloadJSON
-		if len(payload) > 48 {
-			payload = payload[:45] + "..."
-		}
-		line := fmt.Sprintf(" %s  %-18s %s", formatEventTimeLocal(e.TS), e.Type, payload)
+		summary := formatLifecycleEventSummary(e)
+		line := fmt.Sprintf(" %s  %-24s %s", formatEventTimeLocal(e.TS), e.Type, summary)
 		b.WriteString(line)
 		b.WriteByte('\n')
 	}
@@ -435,6 +433,9 @@ func (m model) renderFrame() string {
 	if m.cycleWelcomeDialog {
 		return m.renderCycleWelcomeDialog()
 	}
+	if m.todoControlActive() && !m.todoControlUsesComposer() {
+		return m.renderTodoControlModal() + "\n" + m.renderStatusBar() + "\n" + m.renderBorderRule() + "\n" + m.renderFooter()
+	}
 	if m.telegram != nil && m.telegram.pairing {
 		return m.renderTelegramPairingModal()
 	}
@@ -507,6 +508,12 @@ const fixedFooterHints = "tab focus · alt+m mode · / commands · enter newline
 func (m model) footerHints() string {
 	if m.cycleWelcomeDialog {
 		return "tab/←→ select · enter confirm · esc close"
+	}
+	if m.todoControlActive() {
+		if m.todoControlUsesComposer() {
+			return "enter confirm · esc cancel"
+		}
+		return "see dialog · esc cancel"
 	}
 	if m.shellFocus == shellFocusNavbar {
 		return "tab screen · ↑↓ navbar · enter open · " + m.navScreenRangeLabel() + " screens · alt+q quit"

@@ -37,3 +37,31 @@ func formatTodosList(projectDir string) (string, error) {
 	}
 	return todos.Format(items), nil
 }
+
+// parseHeroAddTodoInline returns optional finding IDs from /hero-add-todo [id...].
+func parseHeroAddTodoInline(text string) ([]string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "/hero-add-todo" {
+		return nil, true
+	}
+	const prefix = "/hero-add-todo "
+	if !strings.HasPrefix(lower, prefix) {
+		return nil, false
+	}
+	args := strings.Fields(strings.TrimSpace(text[len(prefix):]))
+	return args, true
+}
+
+// parseHeroCompleteTodoInline returns optional ToDo IDs from /hero-complete-todo [id...].
+func parseHeroCompleteTodoInline(text string) ([]string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "/hero-complete-todo" {
+		return nil, true
+	}
+	const prefix = "/hero-complete-todo "
+	if !strings.HasPrefix(lower, prefix) {
+		return nil, false
+	}
+	args := strings.Fields(strings.TrimSpace(text[len(prefix):]))
+	return args, true
+}

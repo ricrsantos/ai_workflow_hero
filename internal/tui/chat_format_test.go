@@ -122,6 +122,8 @@ func TestTUIDiscoverResearchPreamble(t *testing.T) {
 		"hero stage close",
 		"--metrics-json",
 		"Do NOT dispatch planning",
+		"hero adopt-todo",
+		"before general grilling",
 	} {
 		if !strings.Contains(got, kw) {
 			t.Fatalf("discover preamble missing %q: %q", kw, got)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 func closeOnce(ch chan struct{}) func() {
@@ -504,7 +505,7 @@ func TestImplementationAssignmentPromptsArePartitionedByOwner(t *testing.T) {
 		"  Verify: frontend criterion\n"
 	path := writeImplementationTasks(t, svc, raw)
 	checklist := NewTestModel(svc).implementationChecklist()
-	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend})
+	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend}, nil)
 	if reason != "" || !reflect.DeepEqual(runAgents, []string{agentBackend, agentFrontend}) || !reflect.DeepEqual(expected, runAgents) {
 		t.Fatalf("dispatch agents=%v expected=%v reason=%q", runAgents, expected, reason)
 	}
@@ -514,7 +515,7 @@ func TestImplementationAssignmentPromptsArePartitionedByOwner(t *testing.T) {
 	backendPrompt := formatImplementationAssignment(checklist, assignments[agentBackend], 1)
 	frontendPrompt := formatImplementationAssignment(checklist, assignments[agentFrontend], 1)
 	for _, prompt := range []string{backendPrompt, frontendPrompt} {
-		if !strings.Contains(prompt, "ownership_validated:true") || !strings.Contains(prompt, "scheduler marks the completed task IDs") {
+		if !strings.Contains(prompt, "ownership_validated:true") || !strings.Contains(prompt, "scheduler marks completed task-* IDs") {
 			t.Fatalf("prompt missing ownership/scheduler contract: %q", prompt)
 		}
 	}
@@ -532,7 +533,7 @@ func TestImplementationOwnerlessMixedPlanFailsBeforeDispatch(t *testing.T) {
 		Ready:  true,
 		Raw:    "- [ ] 1.1 [task-unowned] Legacy task\n",
 	}
-	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend})
+	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend}, nil)
 	if reason == "" || !strings.Contains(reason, "ownership") {
 		t.Fatalf("reason=%q want ownership failure", reason)
 	}
@@ -597,9 +598,9 @@ func TestImplementationReportsMarkUnionAndRedispatchOnlyRemainingOwner(t *testin
 	m.stageHandoffAssignments = map[int]map[string][]implementationTaskBlock{1: cloneImplementationAssignments(plan.ByAgent)}
 	m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
 	backendReport := `backend_agent:
-{"stage":"implementation","agent":"backend_agent","status":"complete","tasks_completed":["task-back"],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}`
+{"stage":"implementation","agent":"backend_agent","status":"complete","tasks_completed":["task-back"],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`
 	frontendReport := `frontend_agent:
-{"stage":"implementation","agent":"frontend_agent","status":"partial","tasks_completed":[],"tasks_remaining":["task-front"],"tests_passed":false,"acceptance_gates":{"completed_tasks_verified":false,"task_ownership_respected":true,"required_tests_passed":false},"blocker":"frontend remains","next_action":"continue frontend"}`
+{"stage":"implementation","agent":"frontend_agent","status":"partial","tasks_completed":[],"tasks_remaining":["task-front"],"tests_passed":false,"acceptance_gates":{"completed_tasks_verified":false,"task_ownership_respected":true,"required_tests_passed":false},"blocker":"frontend remains","next_action":"continue frontend","summary":"test"}`
 	m.stageHandoffOutputs = []string{backendReport, frontendReport}
 	decision := m.evaluateStageHandoff(stageImplementation, "")
 	if decision.Complete || !decision.PartialProgress {
@@ -612,7 +613,7 @@ func TestImplementationReportsMarkUnionAndRedispatchOnlyRemainingOwner(t *testin
 	if !strings.Contains(string(updated), "- [x] 1.1 [task-back]") || !strings.Contains(string(updated), "- [ ] 1.2 [task-front]") {
 		t.Fatalf("unexpected checklist after union mark: %q", updated)
 	}
-	nextAgents, nextAssignments, _, reason := implementationStageDispatch(m.implementationChecklist(), []string{agentBackend, agentFrontend})
+	nextAgents, nextAssignments, _, reason := implementationStageDispatch(m.implementationChecklist(), []string{agentBackend, agentFrontend}, nil)
 	if reason != "" || !reflect.DeepEqual(nextAgents, []string{agentFrontend}) || len(nextAssignments[agentBackend]) != 0 || len(nextAssignments[agentFrontend]) != 1 {
 		t.Fatalf("next dispatch agents=%v assignments=%v reason=%q", nextAgents, nextAssignments, reason)
 	}
@@ -630,7 +631,7 @@ func TestImplementationReportsAreOrderIndependent(t *testing.T) {
 	m.stageHandoffAssignments = map[int]map[string][]implementationTaskBlock{1: cloneImplementationAssignments(plan.ByAgent)}
 	m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
 	complete := func(agent, task string) string {
-		return fmt.Sprintf("%s:\n{\"stage\":\"implementation\",\"agent\":%q,\"status\":\"complete\",\"tasks_completed\":[%q],\"tasks_remaining\":[],\"tests_passed\":true,\"acceptance_gates\":{\"completed_tasks_verified\":true,\"task_ownership_respected\":true,\"required_tests_passed\":true}}", agent, agent, task)
+		return fmt.Sprintf("%s:\n{\"stage\":\"implementation\",\"agent\":%q,\"status\":\"complete\",\"tasks_completed\":[%q],\"tasks_remaining\":[],\"tests_passed\":true,\"acceptance_gates\":{\"completed_tasks_verified\":true,\"task_ownership_respected\":true,\"required_tests_passed\":true},\"summary\":\"test\"}", agent, agent, task)
 	}
 	m.stageHandoffOutputs = []string{complete(agentFrontend, "task-front"), complete(agentBackend, "task-back")}
 	decision := m.evaluateStageHandoff(stageImplementation, "")
@@ -678,7 +679,7 @@ func TestImplementationSymlinkChecklistFailsClosed(t *testing.T) {
 	m.stageHandoffAssignments = map[int]map[string][]implementationTaskBlock{1: cloneImplementationAssignments(plan.ByAgent)}
 	m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
 	m.stageHandoffOutputs = []string{`backend_agent:
-{"stage":"implementation","agent":"backend_agent","status":"complete","tasks_completed":["task-back"],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}`}
+{"stage":"implementation","agent":"backend_agent","status":"complete","tasks_completed":["task-back"],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`}
 	decision := m.evaluateStageHandoff(stageImplementation, "")
 	if decision.Complete || !strings.Contains(decision.Reason, "could not be read") {
 		t.Fatalf("decision=%+v want symlink/read failure", decision)
@@ -729,7 +730,7 @@ func TestReadStageAgentPromptUsesClaudeDirectory(t *testing.T) {
 
 func TestStageAgentReportParserAcceptsFencedJSONWithText(t *testing.T) {
 	raw := "Report follows:\n```json\n" +
-		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":["task-01"],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}` +
+		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":["task-01"],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}` +
 		"\n```\nDone."
 	report := parseStageAgentReport(raw, "generic_agent")
 	if !report.Valid || report.Status != "complete" || !report.TestsPassed || !report.AcceptanceGates {
@@ -741,23 +742,23 @@ func TestStageAgentReportParserAcceptsFencedJSONWithText(t *testing.T) {
 }
 
 func TestStageAgentReportParserRequiresTaskArrays(t *testing.T) {
-	raw := `{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}`
+	raw := `{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`
 	report := parseStageAgentReport(raw, "generic_agent")
-	if report.Valid || !strings.Contains(report.ValidationError, "tasks_remaining is required") {
+	if report.Valid || !strings.Contains(report.ValidationError, "tasks_remaining") {
 		t.Fatalf("report=%+v", report)
 	}
 }
 
 func TestStageAgentReportParserRequiresPartialRecoveryFields(t *testing.T) {
-	raw := `{"stage":"implementation","agent":"generic_agent","status":"partial","tasks_completed":["task-01"],"tasks_remaining":["task-02"],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":false,"task_ownership_respected":true,"required_tests_passed":true}}`
+	raw := `{"stage":"implementation","agent":"generic_agent","status":"partial","tasks_completed":["task-01"],"tasks_remaining":["task-02"],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":false,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`
 	report := parseStageAgentReport(raw, "generic_agent")
-	if report.Valid || !strings.Contains(report.ValidationError, "blocker and next_action") {
+	if report.Valid || !strings.Contains(report.ValidationError, "blocker") {
 		t.Fatalf("report=%+v", report)
 	}
 }
 
 func TestStageAgentReportParserRejectsScalarAcceptanceGate(t *testing.T) {
-	raw := `{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":true}`
+	raw := `{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":true,"summary":"test"}`
 	report := parseStageAgentReport(raw, "generic_agent")
 	if report.Valid {
 		t.Fatalf("scalar acceptance gate must be invalid: %+v", report)
@@ -773,27 +774,27 @@ func TestStageAgentReportParserRequiresImplementationIdentity(t *testing.T) {
 	}{
 		{
 			name:  "missing stage",
-			raw:   `{"agent":"backend_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}`,
+			raw:   `{"agent":"backend_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`,
 			agent: "backend_agent",
-			want:  "stage must be implementation",
+			want:  "stage",
 		},
 		{
 			name:  "wrong stage",
-			raw:   `{"stage":"qa","agent":"backend_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}`,
+			raw:   `{"stage":"qa","agent":"backend_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`,
 			agent: "backend_agent",
-			want:  "stage must be implementation",
+			want:  "implementation",
 		},
 		{
 			name:  "missing agent",
-			raw:   `{"stage":"implementation","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}`,
+			raw:   `{"stage":"implementation","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`,
 			agent: "backend_agent",
-			want:  "agent is required",
+			want:  "agent",
 		},
 		{
 			name:  "agent differs from Execute prefix",
-			raw:   `{"stage":"implementation","agent":"frontend_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}`,
+			raw:   `{"stage":"implementation","agent":"frontend_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`,
 			agent: "backend_agent",
-			want:  "does not match expected agent",
+			want:  "agent",
 		},
 	}
 	for _, tt := range tests {
@@ -835,14 +836,13 @@ func TestStageAgentReportParserRequiresCanonicalAcceptanceGates(t *testing.T) {
 			wantValid: false,
 		},
 		{
-			name:      "partial may report a false additional gate",
+			name:      "partial rejects unknown additional gate",
 			gates:     `{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true,"extra_gate":false}`,
 			status:    "partial",
-			wantValid: true,
-			wantGates: false,
+			wantValid: false,
 		},
 		{
-			name:      "complete cannot report a false additional gate",
+			name:      "complete rejects unknown additional gate",
 			gates:     `{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true,"extra_gate":false}`,
 			status:    "complete",
 			wantValid: false,
@@ -868,7 +868,7 @@ func TestStageAgentReportParserRequiresCanonicalAcceptanceGates(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw := fmt.Sprintf(`{"stage":"implementation","agent":"generic_agent","status":%q,"tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":%s,"blocker":"blocked for test","next_action":"retry test"}`, tt.status, tt.gates)
+			raw := fmt.Sprintf(`{"stage":"implementation","agent":"generic_agent","status":%q,"tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":%s,"blocker":"blocked for test","next_action":"retry test","summary":"test"}`, tt.status, tt.gates)
 			report := parseStageAgentReport(raw, "generic_agent")
 			if report.Valid != tt.wantValid {
 				t.Fatalf("valid=%v want %v; report=%+v", report.Valid, tt.wantValid, report)
@@ -901,31 +901,31 @@ func TestValidateStageAgentTaskIDs(t *testing.T) {
 			name:     "unknown task",
 			assigned: map[string]string{"task-back-1": agentBackend},
 			report:   stageAgentReport{Agent: agentBackend, Status: "partial", TasksCompleted: []string{"task-other"}},
-			wantErr:  "not assigned",
+			wantErr:  "unassigned_id",
 		},
 		{
 			name:     "task owned by another agent",
-			assigned: map[string]string{"task-front-1": agentFrontend},
+			assigned: map[string]string{"task-back-1": agentBackend, "task-front-1": agentFrontend},
 			report:   stageAgentReport{Agent: agentBackend, Status: "partial", TasksCompleted: []string{"task-front-1"}},
-			wantErr:  "assigned to",
+			wantErr:  "unassigned_id",
 		},
 		{
 			name:     "omitted assigned task",
 			assigned: map[string]string{"task-back-1": agentBackend, "task-back-2": agentBackend},
 			report:   stageAgentReport{Agent: agentBackend, Status: "partial", TasksCompleted: []string{"task-back-1"}},
-			wantErr:  "omitted",
+			wantErr:  "assignment_union_mismatch",
 		},
 		{
 			name:     "duplicate task ID",
 			assigned: map[string]string{"task-back-1": agentBackend},
 			report:   stageAgentReport{Agent: agentBackend, Status: "partial", TasksCompleted: []string{"task-back-1", "task-back-1"}},
-			wantErr:  "appears in both",
+			wantErr:  "duplicate_id",
 		},
 		{
 			name:     "intersection between completed and remaining",
 			assigned: map[string]string{"task-back-1": agentBackend},
 			report:   stageAgentReport{Agent: agentBackend, Status: "partial", TasksCompleted: []string{"task-back-1"}, TasksRemaining: []string{"task-back-1"}},
-			wantErr:  "appears in both",
+			wantErr:  "overlapping_arrays",
 		},
 		{
 			name:     "complete with remaining task",
@@ -1039,7 +1039,7 @@ func TestEvaluateImplementationHandoffRequiresChecklistAndCompleteReport(t *test
 	m.stageHandoffExpectedAgents = []string{agentGeneric}
 	m.stageHandoffAssignments = map[int]map[string][]implementationTaskBlock{0: {agentGeneric: {}}}
 	m.stageHandoffOutputs = []string{"generic_agent:\n" +
-		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}`}
+		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`}
 	decision := m.evaluateStageHandoff(stageImplementation, strings.Join(m.stageHandoffOutputs, "\n"))
 	if !decision.Complete || decision.PartialProgress {
 		t.Fatalf("decision=%+v want complete", decision)
@@ -1065,7 +1065,7 @@ func TestEvaluateImplementationVerificationRevalidatesCurrentPlanBeforeComplete(
 	m.stageHandoffExpectedAgents = []string{agentGeneric}
 	m.stageHandoffAssignments = map[int]map[string][]implementationTaskBlock{1: {agentGeneric: {}}}
 	m.stageHandoffOutputs = []string{"generic_agent:\n" +
-		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}`}
+		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`}
 
 	decision := m.evaluateStageHandoff(stageImplementation, "")
 	if decision.Complete || !strings.Contains(decision.Reason, "ownership plan is invalid") {
@@ -1088,7 +1088,7 @@ func TestEvaluateImplementationHandoffStartsFreshWaveOnlyAfterProgress(t *testin
 	}
 
 	report := "generic_agent:\n" +
-		`{"stage":"implementation","agent":"generic_agent","status":"partial","tasks_completed":["task-01"],"tasks_remaining":["task-02"],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"blocker":"task-02 remains","next_action":"implement task-02"}`
+		`{"stage":"implementation","agent":"generic_agent","status":"partial","tasks_completed":["task-01"],"tasks_remaining":["task-02"],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"blocker":"task-02 remains","next_action":"implement task-02","summary":"test"}`
 	m := NewTestModel(svc)
 	m.stageHandoffWave = 1
 	m.stageHandoffExpectedAgents = []string{agentGeneric}
@@ -1117,10 +1117,192 @@ func TestEvaluateImplementationHandoffFailsClosedWithoutLinkedTasks(t *testing.T
 	svc := newTestServiceWithRunningStage(t, dir, "implementation", implementationHandoffYAML)
 	m := NewTestModel(svc)
 	report := "generic_agent:\n" +
-		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true}}`
+		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`
 	m.stageHandoffOutputs = []string{report}
 	decision := m.evaluateStageHandoff(stageImplementation, report)
 	if decision.Complete || !strings.Contains(decision.Reason, "no linked OpenSpec") {
 		t.Fatalf("decision=%+v", decision)
+	}
+}
+
+const qaHandoffYAML = `title: TUI QA Handoff
+objective: test
+scope:
+  native: true
+agents:
+  orchestration_agent:
+    harness: cursor
+    model: gpt-5.3-codex
+    reasoning_effort: medium
+    enable_fast_model: false
+    thinking: na
+  qa_agent:
+    harness: cursor
+    model: composer-2.5
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+  generic_agent:
+    harness: cursor
+    model: composer-2.5
+    reasoning_effort: na
+    enable_fast_model: false
+    thinking: na
+fallback_model:
+  harness: cursor
+  model: composer-2.5
+  reasoning_effort: na
+  enable_fast_model: false
+  thinking: na
+stages:
+  research:
+    enabled: false
+    max_iterations: 1
+    require_human_approval: false
+  planning:
+    enabled: false
+    max_iterations: 1
+    require_human_approval: false
+  implementation:
+    enabled: true
+    max_iterations: 2
+    require_human_approval: false
+  qa:
+    enabled: true
+    max_iterations: 2
+    require_human_approval: false
+`
+
+func TestEvaluateQAFailedHandoffInvokesAtomicClose(t *testing.T) {
+	dir := t.TempDir()
+	svc := newTestServiceWithRunningStage(t, dir, "implementation", qaHandoffYAML)
+	if err := svc.CloseStage("implementation", "completed", "", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("qa"); err != nil {
+		t.Fatal(err)
+	}
+	report := `qa_agent:
+{"status":"failed","summary":"handoff failure","failures":[{"owner":"generic_agent","file":"internal/tui/stage_handoff.go","issue":"missing atomic close","acceptance_criteria":"scheduler owns failed close"}]}`
+	m := NewTestModel(svc)
+	m.stageHandoffOutputs = []string{report}
+	decision := m.evaluateValidationStageHandoff(stageQA, report)
+	if !decision.SchedulerHandledFailure || decision.Complete {
+		t.Fatalf("decision=%+v want scheduler-handled failure", decision)
+	}
+	if !strings.Contains(decision.ChatCopy, "Loop-back QA → Implementation") || !strings.Contains(decision.ChatCopy, "find-qa-1") {
+		t.Fatalf("chat copy=%q", decision.ChatCopy)
+	}
+	cycleRow, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := svc.Store.GetFinding(cycleRow.ID, "find-qa-1")
+	if err != nil || f.Status != store.FindingStatusOpen {
+		t.Fatalf("finding=%+v err=%v", f, err)
+	}
+	impl, err := svc.Store.GetStage(cycleRow.ID, "implementation")
+	if err != nil || impl.Status != store.StageWaiting {
+		t.Fatalf("implementation stage=%+v err=%v want Waiting after loop-back", impl, err)
+	}
+}
+
+func TestImplementationHandoffMarksFindingDone(t *testing.T) {
+	dir := t.TempDir()
+	svc := newTestServiceWithRunningStage(t, dir, "implementation", implementationHandoffYAML)
+	writeImplementationTasks(t, svc, "- [ ] 1.1 [task-done] [agent:generic_agent] Done task\n")
+	cycleRow, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.Store.PersistFinding(store.FindingInput{
+		CycleID:            cycleRow.ID,
+		SourceStage:        store.FindingSourceQA,
+		Owner:              store.FindingOwnerGeneric,
+		File:               "internal/tui/stage_handoff.go",
+		Issue:              "fix handoff",
+		AcceptanceCriteria: "finding is verified in implementation report",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewTestModel(svc)
+	m.stageHandoffWave = 1
+	m.stageHandoffExpectedAgents = []string{agentGeneric}
+	m.stageHandoffAssignments = map[int]map[string][]implementationTaskBlock{1: {
+		agentGeneric: {
+			{ID: "task-done", Owner: agentGeneric},
+			{ID: "find-qa-1", Owner: agentGeneric},
+		},
+	}}
+	m.stageHandoffPendingBefore = []string{"1.1 [task-done] todo"}
+	report := `generic_agent:
+{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":["task-done","find-qa-1"],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`
+	m.stageHandoffOutputs = []string{report}
+	decision := m.evaluateStageHandoff(stageImplementation, "")
+	if !decision.Complete {
+		t.Fatalf("decision=%+v want complete", decision)
+	}
+	f, err := svc.Store.GetFinding(cycleRow.ID, "find-qa-1")
+	if err != nil || f.Status != store.FindingStatusDone {
+		t.Fatalf("finding=%+v err=%v", f, err)
+	}
+}
+
+func TestStageAgentReportParserRejectsUnknownField(t *testing.T) {
+	raw := `{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test","unexpected_field":true}`
+	report := parseStageAgentReport(raw, "generic_agent")
+	if report.Valid || !strings.Contains(report.ValidationError, "unknown_field") {
+		t.Fatalf("report=%+v want unknown_field rejection", report)
+	}
+}
+
+func TestEvaluateImplementationHandoffFindingsOnlyPartialProgress(t *testing.T) {
+	dir := t.TempDir()
+	svc := newTestServiceWithRunningStage(t, dir, "implementation", implementationHandoffYAML)
+	if err := svc.SetOpenspecChange("demo"); err != nil {
+		t.Fatal(err)
+	}
+	changeDir := filepath.Join(dir, "openspec", "changes", "demo")
+	if err := os.MkdirAll(changeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Findings-only wave: every OpenSpec task is already checked.
+	if err := os.WriteFile(filepath.Join(changeDir, "tasks.md"), []byte("- [x] 1.1 [task-done] done\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cycleRow, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range []string{"finding one", "finding two"} {
+		if _, err := svc.Store.PersistFinding(store.FindingInput{
+			CycleID: cycleRow.ID, SourceStage: store.FindingSourceQA, Owner: store.FindingOwnerGeneric,
+			File: "internal/tui/stage_handoff.go", Requirement: "PRD",
+			Issue: issue, AcceptanceCriteria: "fix " + issue,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := NewTestModel(svc)
+	m.stageHandoffWave = 1
+	m.stageHandoffExpectedAgents = []string{agentGeneric}
+	m.stageHandoffAssignments = map[int]map[string][]implementationTaskBlock{1: {
+		agentGeneric: {
+			{ID: "find-qa-1", Owner: agentGeneric},
+			{ID: "find-qa-2", Owner: agentGeneric},
+		},
+	}}
+	m.stageHandoffPendingBefore = nil
+	report := "generic_agent:\n" +
+		`{"stage":"implementation","agent":"generic_agent","status":"partial","tasks_completed":["find-qa-1"],"tasks_remaining":["find-qa-2"],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"blocker":"find-qa-2 remains","next_action":"fix find-qa-2","summary":"test"}`
+	m.stageHandoffOutputs = []string{report}
+	decision := m.evaluateStageHandoff(stageImplementation, report)
+	if !decision.PartialProgress || decision.Complete {
+		t.Fatalf("decision=%+v want findings-only partial progress", decision)
+	}
+	f, err := svc.Store.GetFinding(cycleRow.ID, "find-qa-1")
+	if err != nil || f.Status != store.FindingStatusDone {
+		t.Fatalf("find-qa-1=%+v err=%v", f, err)
 	}
 }

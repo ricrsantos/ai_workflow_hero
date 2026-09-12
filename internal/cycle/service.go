@@ -49,20 +49,6 @@ const (
 	ConversationKindStageAgentResult     = "stage_agent_result"
 )
 
-// StageAgentAuditBody is the JSON envelope stored in a conversation body for
-// a stage-agent assignment or result. Body is kept as the exact string passed
-// by the caller (including whitespace), while stage, agent, and wave make the
-// handoff auditable without requiring a schema migration.
-type StageAgentAuditBody struct {
-	Stage string `json:"stage"`
-	Agent string `json:"agent"`
-	Wave  int    `json:"wave"`
-	// TaskIDs is populated for assignment records. The order is the dispatch
-	// order, which makes the exact assignment auditable without parsing Body.
-	TaskIDs []string `json:"task_ids,omitempty"`
-	Body    string   `json:"body"`
-}
-
 // ExecuteDir returns the workspace directory for harness Execute calls.
 func (s *Service) ExecuteDir() string {
 	if s == nil {
@@ -166,6 +152,12 @@ type StatusView struct {
 	Status         string        `json:"status,omitempty"`
 	OpenspecChange string        `json:"openspec_change,omitempty"`
 	Stages         []StatusStage `json:"stages"`
+
+	Findings              *StatusFindingsBlock `json:"findings,omitempty"`
+	LoopBacks             []StatusLoopBackRow  `json:"loopBacks,omitempty"`
+	Todos                 *StatusTodosBlock    `json:"todos,omitempty"`
+	CompletionDisposition *string              `json:"completionDisposition"`
+	AvailableActions      []string             `json:"availableActions,omitempty"`
 }
 
 // StatusStage is one row in the status view.
@@ -216,6 +208,9 @@ func (s *Service) Status() (StatusView, error) {
 			Iteration:     fmt.Sprintf("%d/%d", st.Iteration, st.EffectiveMaxIterations()),
 			HumanApproval: approval,
 		})
+	}
+	if err := s.enrichStatusView(&view, c, stages); err != nil {
+		return StatusView{}, err
 	}
 	return view, nil
 }
@@ -325,23 +320,116 @@ func (s *Service) Approve(summary, metricsJSON string) error {
 	return mapBusy(s.Engine.Approve(lockHolder(), summary, metrics))
 }
 
-// Reject rejects the pending stage.
+// Reject rejects the pending stage and releases unresolved adopted ToDos
+// (rejection/rollback is a non-validating terminal outcome for adoption; ADR-089).
 func (s *Service) Reject(reason string) error {
+	if err := s.releaseAdoptedTodosBeforeTerminal("rejected: " + strings.TrimSpace(reason)); err != nil {
+		return err
+	}
 	return mapBusy(s.Engine.Reject(lockHolder(), reason))
 }
 
-// Cancel cancels the active cycle.
+// Cancel cancels the active cycle and releases unresolved adopted ToDos.
 func (s *Service) Cancel(reason string) error {
+	if err := s.releaseAdoptedTodosBeforeTerminal("cancelled: " + strings.TrimSpace(reason)); err != nil {
+		return err
+	}
 	return mapBusy(s.Engine.Cancel(lockHolder(), reason))
 }
 
 // Finish finishes the active cycle.
+// Open/reopened findings imply emergency finish → release adopted ToDos.
+// Otherwise resolve adopted ToDos as a validating completion.
 func (s *Service) Finish(metricsJSON string) error {
 	metrics, err := engine.ParseMetricsJSON(metricsJSON)
 	if err != nil {
 		return err
 	}
+	if err := s.finalizeAdoptedTodosBeforeFinish(); err != nil {
+		return err
+	}
 	return mapBusy(s.Engine.Finish(lockHolder(), metrics))
+}
+
+func (s *Service) releaseAdoptedTodosBeforeTerminal(note string) error {
+	if s == nil || s.Store == nil {
+		return nil
+	}
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		if errors.Is(err, store.ErrNoActiveCycle) {
+			return nil
+		}
+		return err
+	}
+	ids, err := s.Store.ListAdoptedTodoIDsForCycle(c.ID)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := s.ReleaseAdoptedTodosForCycle(note); err != nil {
+		return err
+	}
+	return s.reconcileTodoIDsProjection(c.ID, c.Number, store.ProjectionOpRelease, "release", ids)
+}
+
+func (s *Service) finalizeAdoptedTodosBeforeFinish() error {
+	if s == nil || s.Store == nil {
+		return nil
+	}
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		if errors.Is(err, store.ErrNoActiveCycle) {
+			return nil
+		}
+		return err
+	}
+	ids, err := s.Store.ListAdoptedTodoIDsForCycle(c.ID)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	actionable, err := s.Store.ListActionableFindings(c.ID, "")
+	if err != nil {
+		return err
+	}
+	if len(actionable) > 0 {
+		if err := s.ReleaseAdoptedTodosForCycle("emergency finish with open findings"); err != nil {
+			return err
+		}
+		return s.reconcileTodoIDsProjection(c.ID, c.Number, store.ProjectionOpRelease, "release-finish", ids)
+	}
+	if err := s.ResolveAdoptedTodosForCycle(); err != nil {
+		return err
+	}
+	return s.reconcileTodoIDsProjection(c.ID, c.Number, store.ProjectionOpComplete, "resolve-finish", ids)
+}
+
+func (s *Service) reconcileTodoIDsProjection(cycleID int64, cycleNumber int, opKind, prefix string, ids []string) error {
+	for _, id := range ids {
+		key := fmt.Sprintf("%s-c%d-%s", prefix, cycleNumber, id)
+		todoJSON, err := json.Marshal([]string{id})
+		if err != nil {
+			return err
+		}
+		if _, _, err := s.UpsertTodoProjectionOp(store.UpsertProjectionOpParams{
+			CycleID:        cycleID,
+			OpKind:         opKind,
+			IdempotencyKey: key,
+			Status:         store.ProjectionStatusIntentPersisted,
+			TodoIDsJSON:    string(todoJSON),
+		}); err != nil {
+			return err
+		}
+		if err := s.ReconcileTodoProjection(key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Continue grants extra iterations.
@@ -877,22 +965,37 @@ func (s *Service) RecordStageAgentAssignmentWithTasks(stage, agent string, wave 
 	return s.recordStageAgentConversation(
 		ConversationRoleSystem,
 		ConversationKindStageAgentAssignment,
-		stage, agent, wave, taskIDs, body, false,
+		stage, agent, wave, taskIDs, nil, nil, nil, body, false,
 	)
 }
 
 // RecordStageAgentResult appends an audit record for a stage agent's result in
 // the active cycle. The body is retained exactly inside a JSON envelope
-// together with the normalized stage/agent names and wave number.
+// together with the normalized stage/agent names and wave number. The envelope
+// marks result_validated=false so raw agent output is not confused with
+// scheduler-validated task lists.
 func (s *Service) RecordStageAgentResult(stage, agent string, wave int, body string) error {
+	rawOnly := false
 	return s.recordStageAgentConversation(
 		ConversationRoleAgent,
 		ConversationKindStageAgentResult,
-		stage, agent, wave, nil, body, true,
+		stage, agent, wave, nil, nil, nil, &rawOnly, body, true,
 	)
 }
 
-func (s *Service) recordStageAgentConversation(role, kind, stage, agent string, wave int, taskIDs []string, body string, allowEmptyBody bool) error {
+// RecordStageAgentResultValidated appends a result audit that preserves the
+// exact raw agent output together with scheduler-validated tasks_completed and
+// tasks_remaining assignment item IDs (task-* and/or find-*).
+func (s *Service) RecordStageAgentResultValidated(stage, agent string, wave int, body string, completed, remaining []string) error {
+	validated := true
+	return s.recordStageAgentConversation(
+		ConversationRoleAgent,
+		ConversationKindStageAgentResult,
+		stage, agent, wave, nil, completed, remaining, &validated, body, true,
+	)
+}
+
+func (s *Service) recordStageAgentConversation(role, kind, stage, agent string, wave int, taskIDs, completed, remaining []string, resultValidated *bool, body string, allowEmptyBody bool) error {
 	if s == nil || s.Store == nil {
 		return fmt.Errorf("record %s: cycle service unavailable", kind)
 	}
@@ -907,25 +1010,20 @@ func (s *Service) recordStageAgentConversation(role, kind, stage, agent string, 
 	if wave < 1 {
 		return fmt.Errorf("record %s: wave must be at least 1", kind)
 	}
-	normalizedTaskIDs, err := normalizeStageAgentTaskIDs(kind, taskIDs)
-	if err != nil {
-		return err
-	}
 	if !allowEmptyBody && strings.TrimSpace(body) == "" {
 		return fmt.Errorf("record %s: body is required", kind)
+	}
+
+	envelope, err := stageAgentAuditEnvelope(kind, stage, agent, wave, body, taskIDs, completed, remaining, resultValidated)
+	if err != nil {
+		return err
 	}
 
 	c, err := s.Store.GetActiveCycle()
 	if err != nil {
 		return fmt.Errorf("record %s: get active cycle: %w", kind, err)
 	}
-	payload, err := json.Marshal(StageAgentAuditBody{
-		Stage:   stage,
-		Agent:   agent,
-		Wave:    wave,
-		TaskIDs: normalizedTaskIDs,
-		Body:    body,
-	})
+	payload, err := json.Marshal(envelope)
 	if err != nil {
 		return fmt.Errorf("record %s: encode audit body: %w", kind, err)
 	}
@@ -938,27 +1036,6 @@ func (s *Service) recordStageAgentConversation(role, kind, stage, agent string, 
 		return fmt.Errorf("record %s: persist conversation: %w", kind, err)
 	}
 	return nil
-}
-
-func normalizeStageAgentTaskIDs(kind string, taskIDs []string) ([]string, error) {
-	if len(taskIDs) == 0 {
-		return nil, nil
-	}
-
-	normalized := make([]string, 0, len(taskIDs))
-	seen := make(map[string]struct{}, len(taskIDs))
-	for i, taskID := range taskIDs {
-		taskID = strings.TrimSpace(taskID)
-		if taskID == "" {
-			return nil, fmt.Errorf("record %s: task id at index %d is required", kind, i)
-		}
-		if _, exists := seen[taskID]; exists {
-			return nil, fmt.Errorf("record %s: duplicate task id %q", kind, taskID)
-		}
-		seen[taskID] = struct{}{}
-		normalized = append(normalized, taskID)
-	}
-	return normalized, nil
 }
 
 // RecordHarnessInvoked appends a harness_invoked event.
@@ -983,6 +1060,11 @@ func mapBusy(err error) error {
 
 func lockHolder() string {
 	return fmt.Sprintf("cli-%d", os.Getpid())
+}
+
+// DisplayStageName renders a stage slug for TUI and CLI tables.
+func DisplayStageName(name string) string {
+	return displayStageName(name)
 }
 
 func displayStageName(name string) string {

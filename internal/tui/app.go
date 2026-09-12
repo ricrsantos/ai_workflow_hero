@@ -58,7 +58,8 @@ type model struct {
 	config    configScreen
 	settings  settingsScreen
 
-	contentOffset int // scroll for Status/Artifacts/Costs/Events
+	contentOffset      int // scroll for Status/Artifacts/Costs/Events
+	statusFindingFocus int // focused finding row on Status (-1 = none)
 
 	// Fixed footer status bar (running / result / error).
 	statusKind       statusKind
@@ -226,6 +227,16 @@ type model struct {
 	confirmAction  paletteAction
 	confirmActionN int // optional numeric arg (e.g. /hero-continue N)
 
+	// C15 loop-back ToDo control flows (/hero-add-todo, /hero-complete-todo, finish warning).
+	todoPhase         todoControlPhase
+	todoCtrlFindings  []store.Finding
+	todoCtrlSelected  map[string]bool
+	todoCtrlCursor    int
+	todoCtrlTodoIDs   []string
+	todoCtrlNote      string
+	todoCtrlFinishIDs []string
+	todoCtrlBusy      bool
+
 	// Shown once after /hero-new has successfully created its active cycle.
 	// It is transient TUI state: reopening Hero must not show it again.
 	cycleWelcomeDialog bool
@@ -311,6 +322,7 @@ func newModel(svc *cycle.Service) model {
 		sessionTimer:              sessionTimerState{suppressed: true},
 		harnessPermissionRequests: make(map[string]pendingHarnessPermission),
 		lifecycleEventIDs:         make(map[int64]struct{}),
+		statusFindingFocus:        -1,
 	}
 	m.mediaSessionID, m.attachmentTurnID = newMultimodalState()
 	projectDir := ""
@@ -645,9 +657,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case telegramConnectedMsg, telegramRegisteredMsg, telegramInboundMsg, telegramEventMsg, telegramDisconnectedMsg:
 		return m.handleTelegramMsg(msg)
 
+	case addFindingTodosResultMsg:
+		return m.handleAddFindingTodosResult(msg)
+	case completeManualTodosResultMsg:
+		return m.handleCompleteManualTodosResult(msg)
+
 	case tea.KeyMsg:
 		if m.cycleWelcomeDialog {
 			return m.handleCycleWelcomeKey(msg)
+		}
+		if m.todoControlActive() && !m.todoControlUsesComposer() {
+			return m.handleTodoControlKey(msg)
 		}
 		// Pairing owns every key until the modal closes, including Tab and
 		// navbar focus. Otherwise Enter/Esc never reach the instructions.
@@ -712,6 +732,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "esc":
+		if m.screen == screenStatus && m.statusFindingFocus >= 0 {
+			m.statusFindingFocus = -1
+			return m, nil
+		}
 		if m.sidebarVisible() && m.shellFocus == shellFocusContent {
 			return m.focusShellNavbar()
 		}
@@ -742,12 +766,22 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.refreshCmd()
 	case "up":
+		if updated, handled := m.handleStatusFindingKey("up"); handled {
+			return updated, nil
+		}
 		if m.screenHasContentScroll() {
 			return m.scrollContent(-1), nil
 		}
 	case "down":
+		if updated, handled := m.handleStatusFindingKey("down"); handled {
+			return updated, nil
+		}
 		if m.screenHasContentScroll() {
 			return m.scrollContent(1), nil
+		}
+	case "enter":
+		if updated, handled := m.handleStatusFindingKey("enter"); handled {
+			return updated, nil
 		}
 	case "pgup":
 		if m.screenHasContentScroll() {
@@ -995,6 +1029,10 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 		return m.beginHeroStatus()
 	case actionContinue:
 		return m.beginHeroContinue(1)
+	case actionAddTodo:
+		return m.beginHeroAddTodo(nil)
+	case actionCompleteTodo:
+		return m.beginHeroCompleteTodo(nil)
 	case actionBack:
 		return m.beginHeroBack()
 	case actionCancel:
@@ -1036,6 +1074,7 @@ func (m model) goListScreen(s screen) (model, tea.Cmd) {
 	m.chatInputFocused = false
 	if m.screen != s {
 		m.contentOffset = 0
+		m.statusFindingFocus = -1
 	}
 	m.screen = s
 	return m, m.refreshCmd()
@@ -1561,6 +1600,18 @@ func (m model) beginHeroFinish() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-finish", errMsg)
 		return m, nil
 	}
+	findings, err := m.listOpenFindingsForFinish()
+	if err != nil {
+		m = m.setStatusResult(false, "/hero-finish", err.Error())
+		return m, nil
+	}
+	if len(findings) > 0 {
+		return m.beginHeroFinishWarning(findings)
+	}
+	return m.beginHeroFinishExecute()
+}
+
+func (m model) beginHeroFinishExecute() (model, tea.Cmd) {
 	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-finish")
 	if !ok {
 		return m, cmd

@@ -41,7 +41,7 @@ Hero slash commands
 After /select, send the same /hero-* commands as in Chat, for example:
 /hero-new, /hero-start, /hero-approve, /hero-reject, /hero-cancel, /hero-finish,
 /hero-archive, /hero-resume, /hero-sync, /hero-status, /hero-continue, /hero-back,
-/hero-cycles, /hero-todos, /hero-help
+/hero-cycles, /hero-todos, /hero-add-todo, /hero-complete-todo, /hero-help
 
 Ordinary text goes to the selected TUI as a harness turn.
 Addressed form: <address>: <text or command>

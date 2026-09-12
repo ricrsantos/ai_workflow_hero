@@ -1,7 +1,8 @@
 ---
-name: discover_agent
 description: Drives the Research stage — grilling and requirements gathering to produce project specifications.
-model: inherit
+model: gpt-5.6-sol
+name: discover_agent
+reasoningEffort: medium
 ---
 
 # discover_agent — Research and Discovery Agent

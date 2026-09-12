@@ -12,11 +12,11 @@ import (
 
 // LegacyImportResult summarizes a one-shot markdown → store import.
 type LegacyImportResult struct {
-	Imported   bool
-	CycleID    int64
+	Imported    bool
+	CycleID     int64
 	CycleNumber int
-	Stages     int
-	Metrics    int
+	Stages      int
+	Metrics     int
 }
 
 // ImportLegacyCycle reads workflow.md (and optionally metrics.md) under

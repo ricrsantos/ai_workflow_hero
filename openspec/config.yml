@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   Project: AI Workflow Hero (Hero) — the Hero CLI + Runtime assets themselves.
   This is Hero's own source code repository, not a project that consumes Hero.
-  Phase: Cycle C14 — Multimodal Image Support for the Hero TUI Free Chat.
+  Phase: Cycle C15 — Deterministic Loop-back Findings and Deferred ToDos.
 
   Authoritative baseline sources — read before planning or writing any artifact:
     - AGENTS.md (project summary, doc map, reference lookup order, testing loop, ambiguity policy)
@@ -14,10 +14,9 @@ context: |
     - docs/testing/TESTING.md (testing strategy and `go test ./...`)
     - context/current-state.md (current implementation status and architecture summary)
     - context/context-log.md (recent decisions and session history)
-    - docs/idea/v3.3_images/tui-imagens-multimodais.md (non-normative idea; yields to C14 PRD/UI/ADR)
 
   Registered documents below are generated from `.workflow-hero/config/documents.json`
-  plus the active cycle registry `.workflow-hero/cycles/current/documents.json`.
+  plus the active cycle registry `.workflow-hero/cycles/current/documents.json` when present.
   The registries are the source of truth for the document list; do not hand-maintain it here:
     - [C13 PRD] docs/product/PRD-C13-001-claude-code-adapter.md — Claude Code Adapter for Hero TUI
     - [C13 ADR] docs/architecture/ADR-C13-001-claude-code-adapter.md — Claude Code Adapter (ADR-070–074)
@@ -35,6 +34,7 @@ context: |
     - [C03 ADR] docs/architecture/ADR-C03-001-cursor-harness-tui-autonomy.md — Cursor Harness Autonomy & TUI Orchestration (ADR-024–029)
     - [C03 UI] docs/product/UI-C03-001-tui-harness-autonomy.md — TUI Harness Autonomy & Conversation UX
     - [living ADR] docs/architecture/architecture-overview.md — Architecture overview (diagrams, package map; non-normative)
+    - [living TESTING] docs/testing/TESTING.md — Testing strategy and commands
     - [C04 PRD] docs/product/PRD-C04-001-multi-harness.md — Multi-Harness (Cursor + OpenCode) via Hero TUI
     - [C04 ADR] docs/architecture/ADR-C04-001-multi-harness.md — Multi-Harness Cursor + OpenCode (ADR-031–037)
     - [C04 UI] docs/product/UI-C04-001-tui-multi-harness.md — TUI Multi-Harness (Cursor + OpenCode)
@@ -54,57 +54,55 @@ context: |
     - [C09 PRD] docs/product/PRD-C09-001-telegram-integration.md — Telegram Remote Interface Plugin
     - [C09 ADR] docs/architecture/ADR-C09-002-telegram-integration.md — Telegram Plugin and Local Conversation Daemon (ADR-059–064)
     - [C09 UI] docs/product/UI-C09-001-telegram-integration.md — Telegram Plugin Terminal UX
-    - [C14 PRD] docs/product/PRD-C14-001-tui-multimodal-images.md — Multimodal Image Support for Hero TUI
-    - [C14 ADR] docs/architecture/ADR-C14-002-tui-multimodal-images.md — Multimodal Image Support ADRs (ADR-077–082)
-    - [C14 UI] docs/product/UI-C14-001-tui-multimodal-images.md — Multimodal Image Support TUI UX
+    - [C14 PRD] docs/product/PRD-C14-001-tui-multimodal-images.md — TUI Free Chat Multimodal Images
+    - [C14 ADR] docs/architecture/ADR-C14-002-tui-multimodal-images.md — TUI Multimodal Images (ADR-077–082)
+    - [C14 UI] docs/product/UI-C14-001-tui-multimodal-images.md — TUI Multimodal Images
+    - [C09 DEPLOY] docs/deployment/DEPLOY.md — Build, Release, and Distribution (Telegram plugin update)
+    - [C09 TESTING] docs/testing/TESTING.md — Testing strategy (Telegram plugin coverage)
+    - [C15 PRD] docs/product/PRD-C15-001-loopback-findings-handoff.md — Deterministic Loop-back Findings and Deferred ToDos
+    - [C15 ADR] docs/architecture/ADR-C15-001-loopback-findings-handoff.md — Deterministic Findings, Escalation ToDos, and Research Adoption (ADR-083–090)
+    - [C15 UI] docs/product/UI-C15-001-loopback-findings-handoff.md — Loop-back Findings and Deferred ToDos UX
 
-  Authoritative C14 sources: PRD-C14-001 §§1–5, UI-C14-001 §§1–8, and ADR-077–082.
-  The idea file yields on divergence. Multimodal images are Free Chat only; Research and
-  workflow-stage sessions stay text-only. Cursor IDE Runtime, deterministic workflow stages,
-  Telegram image transport, audio/video/PDF, Windows, and session card reconstruction after
-  TUI restart remain out of scope. Browser UI Validation and QA End-to-End are disabled for
-  this cycle. Scope is native=true → generic_agent.
+  Authoritative C15 sources: PRD-C15-001 §§1–14, UI-C15-001 §§1–16, and ADR-083–090.
+  Idea notes yield on divergence. Go validates and transitions structured state; agents emit JSON only.
+  Browser UI Validation and QA End-to-End are disabled for this cycle, but the SDD still specifies their
+  report/handoff contracts so later-enabled stages use the same atomic path. Scope is native=true → generic_agent.
 
   Planning decisions locked for this change:
-    - Keymap: Alt+A (file picker) and Alt+V (clipboard attach) are unused in internal/tui;
-      keep them. Existing Alt bindings (q/r/i/m/enter/1–7/n/s/u) stay unchanged.
-    - Shared contract lives in internal/harness (ADR-077); do not create internal/media yet.
-    - Claude: series fixture spike for --input-format stream-json without a real account.
-      If native stdin is proven, implement it. If not, ship the labeled file-reference
-      degraded path in this cycle (PRD-C14-001 §2.11 / §4). Never silent-drop attachments.
-    - Tool-written images (ADR-082): Codex via imageGeneration/imageView (+ path extraction);
-      OpenCode via SSE file/image/tool-result parts; Cursor/Claude file-ref via workspace
-      FS watch + tool-result path extraction; dedupe by SHA-256 content hash.
-    - Unicode mosaic is mandatory; Kitty/Sixel/iTerm2 are optional phase-4, off by default.
-    - Apply go-engineering and golang-tui skills; all I/O is tea.Cmd; model holds references only.
+    - Schema v11 is forward-only from v10; never recreate hero.db.
+    - Fingerprint is SHA-256 of NFC + whitespace-collapsed file/requirement/acceptance with cycle, source, owner.
+    - Failed validation close, finding writes, and loop-back share one Store transaction; CLI never nests tx.
+    - Projection uses recoverable todo_projection_ops; SQLite and current-state.md are not a distributed transaction.
+    - Status JSON additive fields use existing camelCase on StatusView; do not rename current keys.
+    - Standalone `hero stage loop-back` stays administrative; agent-driven flow uses atomic `--failed --findings-json`.
 
   Stack: Go, Cobra, embed.FS, Feature Based + Vertical Slice, Bubble Tea/lipgloss/bubbles, SQLite.
-  Test command: `go test ./...`. Active OpenSpec change: `tui-multimodal-images`.
+  Test command: `go test ./...`. Active OpenSpec change: `loopback-findings-handoff`.
   Engineering guidance: idiomatic Go, small injectable components, explicit wrapped errors,
-  context cancellation, no global mutable state; TUI Update/View never block; race tests for
-  async workers; fixtures and fake processes only (no live harness accounts).
+  context cancellation, no global mutable state; TUI Update/View never block; real temp SQLite
+  and t.TempDir() projections; no live harness accounts.
 
 rules:
   proposal:
-    - Reference PRD-C14-001 sections; cite ADR-077–082 and UI-C14-001
-    - State in/out of scope; idea file yields to PRD/UI/ADR; Free Chat only
-    - Classify CLI versus TUI/runtime work per ADR-003; no Telegram image transport
-    - Call out keymap decision (Alt+A/Alt+V), Claude spike-or-degraded path, and tool-asset detection
+    - Reference PRD-C15-001 sections; cite ADR-083–090 and UI-C15-001
+    - State in/out of scope; idea notes yield to PRD/UI/ADR
+    - Classify CLI versus Runtime work per ADR-003; agents never mutate findings/ToDos/stages
+    - Call out atomic failed-close, mixed task-*/find-* assignments, and projection recovery
 
   specs:
     - Use WHEN/THEN acceptance scenarios with exactly four hashtags for `#### Scenario:`
-    - Align with PRD-C14-001, UI-C14-001, ADR-077–082, and existing normalized harness contracts
-    - Specify observable security/capability/preview behavior without prescribing Go internals
-    - Mark filesystem, clipboard, process, clock, and protocol dependencies as injectable/test fixtures
+    - Align with PRD-C15-001, UI-C15-001, ADR-083–090, and existing store/engine/TUI contracts
+    - Specify observable lifecycle and diagnostic behavior without prescribing incidental Go internals
+    - Mark filesystem, clock, and SQLite as real temporary fixtures
 
   design:
-    - Follow ADR-002, ADR-003, ADR-031, ADR-077–082 and existing adapter vertical-slice boundaries
-    - Keep validation, asset store, and mosaic outside adapters; keep protocol translation adapter-local
-    - Make all capture/validate/thumbnail/mosaic/open/save I/O asynchronous tea.Cmd; model stores UUID/path metadata only
-    - Prefer parallel adapter work after the shared contract and capability gate exist
+    - Follow ADR-002, ADR-003, ADR-012, ADR-013, ADR-075, ADR-083–090 and existing vertical-slice boundaries
+    - Factor engine/store so one transaction owns failed-close + findings + loop-back
+    - Keep OpenSpec authoritative for task-* and SQLite authoritative for find-*/structured ToDos
+    - Prefer parallel TUI/Telegram/asset work after service contracts exist
 
   tasks:
     - Use atomic `- [ ] X.Y [task-id] [agent:generic_agent]` checklist items with PARALLEL/SERIES markers
     - Scope all implementation to native → `generic_agent`; colocate behavior tests; require `go test ./...`
-    - Gate Claude native work behind the fixture spike; fan out Codex/OpenCode/Cursor adapters after shared contract
-    - Mark TUI composer and mosaic work parallel once the Attachment/Asset contract is available
+    - Do not start UI/prompt work before stable service contracts; do not mark lifecycle complete before migration/recovery tests
+    - Fan out TUI, Telegram, and harness-asset work after the JSON/CLI contracts exist

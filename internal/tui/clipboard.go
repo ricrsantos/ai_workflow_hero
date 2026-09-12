@@ -3,9 +3,9 @@ package tui
 import (
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/atotto/clipboard"
 	osc52 "github.com/aymanbagabas/go-osc52/v2"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // copyToClipboardCmd writes text via OSC 52 (terminal) and native clipboard fallback.

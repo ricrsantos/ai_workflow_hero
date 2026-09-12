@@ -129,6 +129,11 @@ func (m model) startDiscoverResearchSession() (model, tea.Cmd) {
 	} else if section := ideadocs.PromptSection(paths); section != "" {
 		prompt += section + "\n\n"
 	}
+	if snap, err := m.researchTodoSnapshot(); err != nil {
+		slog.Error("tui discover pending todos query failed; blocking research prompt enrichment", "error", err)
+	} else {
+		prompt += researchPendingTodoPromptSection(snap) + "\n\n"
+	}
 	prompt += strings.TrimSpace(agentBody) + "\n"
 	label := "→ Research"
 	if warned {

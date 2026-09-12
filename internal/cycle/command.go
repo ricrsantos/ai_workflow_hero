@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/output"
@@ -22,6 +23,9 @@ func NewCommands() []*cobra.Command {
 		newCancelCommand(),
 		newFinishCommand(),
 		newContinueCommand(),
+		newAddTodoCommand(),
+		newAdoptTodoCommand(),
+		newCompleteTodoCommand(),
 		newStageCommand(),
 		newCycleCommand(),
 		newRunCommand(),
@@ -47,9 +51,12 @@ func withService(run func(cmd *cobra.Command, svc *Service) error) func(cmd *cob
 	}
 }
 
-func mapCLIError(err error) *clierr.HeroError {
+func mapCLIErrorBase(err error) *clierr.HeroError {
 	if errors.Is(err, store.ErrNoActiveCycle) {
 		return clierr.NewWithSuggestion("no active cycle.", "Run `hero cycle new` or `/hero-new` first.")
+	}
+	if errors.Is(err, errNotEscalated) {
+		return clierr.NewWithSuggestion(err.Error(), "Run `/hero-continue` only when a stage is Escalated, or defer findings from an Escalated loop.")
 	}
 	if errors.Is(err, store.ErrBusy) {
 		return clierr.NewWithSuggestion("cycle is locked by another session.", "Wait for the other session to finish or clear the lock.")
@@ -242,7 +249,7 @@ func newStageStartCommand() *cobra.Command {
 }
 
 func newStageCloseCommand() *cobra.Command {
-	var name, summary, metricsJSON string
+	var name, summary, metricsJSON, findingsJSON string
 	var failed bool
 	cmd := &cobra.Command{
 		Use:           "close",
@@ -254,6 +261,18 @@ func newStageCloseCommand() *cobra.Command {
 			if name == "" {
 				return fmt.Errorf("--name is required")
 			}
+			if findingsJSON != "" && !failed {
+				return fmt.Errorf("--findings-json requires --failed")
+			}
+			if findingsJSON != "" {
+				out, err := svc.CloseStageFailedWithFindings(name, []byte(findingsJSON), metricsJSON)
+				if err != nil {
+					return err
+				}
+				output.Successf(cmd.OutOrStdout(), "Stage %s failed with %d finding(s): %s",
+					name, len(out.FindingIDs), strings.Join(out.FindingIDs, ", "))
+				return nil
+			}
 			if err := svc.CloseStage(name, summary, metricsJSON, failed); err != nil {
 				return err
 			}
@@ -264,8 +283,94 @@ func newStageCloseCommand() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Stage name (e.g. research, qa)")
 	cmd.Flags().StringVar(&summary, "summary", "", "Stage summary")
 	cmd.Flags().StringVar(&metricsJSON, "metrics-json", "", "Metrics payload JSON (object or array)")
+	cmd.Flags().StringVar(&findingsJSON, "findings-json", "", "Full validated failed-stage report JSON (requires --failed)")
 	cmd.Flags().BoolVar(&failed, "failed", false, "Mark the stage as Failed")
 	_ = cmd.MarkFlagRequired("name")
+	return cmd
+}
+
+func newAddTodoCommand() *cobra.Command {
+	var idempotencyKey string
+	cmd := &cobra.Command{
+		Use:           "add-todo [find-id...]",
+		Short:         "Defer open findings to project ToDos (Escalated loop only)",
+		Long:          `Deterministic escalation triage. Legal only when a stage loop is Escalated. Defers selected open/reopened findings to pending ToDos.`,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withService(func(cmd *cobra.Command, svc *Service) error {
+				res, err := svc.AddFindingTodos(args, idempotencyKey)
+				if err != nil {
+					return err
+				}
+				output.Successf(cmd.OutOrStdout(), "Deferred %d finding(s) to ToDos: %s",
+					len(res.TodoIDs), strings.Join(res.TodoIDs, ", "))
+				if res.CycleCompleted {
+					output.Success(cmd.OutOrStdout(), "Cycle completed with disposition completed_with_deferred_todos.")
+				} else if res.PartialDeferral {
+					output.Warning(cmd.OutOrStdout(), "Loop remains Escalated; run hero continue before more productive work.")
+				}
+				return nil
+			})(cmd, args)
+		},
+	}
+	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "Idempotency prefix for projection reconciliation retries")
+	return cmd
+}
+
+func newAdoptTodoCommand() *cobra.Command {
+	var note string
+	cmd := &cobra.Command{
+		Use:           "adopt-todo [todo-id...]",
+		Short:         "Adopt pending ToDos into the active cycle (Research)",
+		Long:          `Deterministic Research adoption. Marks pending structured or legacy ToDos as adopted by the active cycle. Not a public slash command.`,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withService(func(cmd *cobra.Command, svc *Service) error {
+				if err := svc.AdoptTodosForResearch(args, note); err != nil {
+					return err
+				}
+				c, err := svc.Store.GetActiveCycle()
+				if err != nil {
+					return err
+				}
+				output.Successf(cmd.OutOrStdout(), "Adopted by C%d: %s", c.Number, strings.Join(args, ", "))
+				output.Success(cmd.OutOrStdout(), "The item remains visible until this cycle validates it.")
+				return nil
+			})(cmd, args)
+		},
+	}
+	cmd.Flags().StringVar(&note, "note", "", "Optional adoption note")
+	return cmd
+}
+
+func newCompleteTodoCommand() *cobra.Command {
+	var note, idempotencyKey string
+	cmd := &cobra.Command{
+		Use:           "complete-todo [todo-id...]",
+		Short:         "Manually resolve pending ToDos with an audit note",
+		Long:          `Deterministic manual completion for pending structured or legacy ToDos. Rejects items adopted by the active cycle.`,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withService(func(cmd *cobra.Command, svc *Service) error {
+				if strings.TrimSpace(note) == "" {
+					return fmt.Errorf("--note is required")
+				}
+				if err := svc.CompleteManualTodos(args, note, idempotencyKey); err != nil {
+					return err
+				}
+				output.Successf(cmd.OutOrStdout(), "Resolved %d ToDo(s).", len(args))
+				return nil
+			})(cmd, args)
+		},
+	}
+	cmd.Flags().StringVar(&note, "note", "", "Non-empty resolution note (required)")
+	cmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "Idempotency prefix for projection reconciliation retries")
 	return cmd
 }
 

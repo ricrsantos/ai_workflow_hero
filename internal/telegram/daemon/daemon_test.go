@@ -551,3 +551,73 @@ func TestPollLoopSkipsWhenNoClients(t *testing.T) {
 		t.Fatalf("idle daemon polled Bot API %d times", polls)
 	}
 }
+
+func TestProcessUpdateProjectControlRejectedOnFreeChat(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+	out := make(chan ipc.Message, 1)
+	_, addr := d.registry.register("", ipc.ModeFree, "", out)
+	if err := d.store.SetSelectedAddress(addr); err != nil {
+		t.Fatal(err)
+	}
+
+	d.processUpdate(context.Background(), Update{UpdateID: 1, ChatID: "CHAT", Text: "/hero-add-todo find-qa-1"})
+
+	select {
+	case m := <-out:
+		t.Fatalf("free chat must not receive project control: %+v", m)
+	default:
+	}
+	got := bot.sentTexts()
+	if len(got) != 1 || !strings.Contains(got[0], "project instance") {
+		t.Fatalf("replies=%v", got)
+	}
+}
+
+func TestProcessUpdateProjectControlForwardsToProjectTUI(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+	out := make(chan ipc.Message, 1)
+	_, addr := d.registry.register("/p", ipc.ModeCycle, "proj", out)
+	if err := d.store.SetSelectedAddress(addr); err != nil {
+		t.Fatal(err)
+	}
+
+	d.processUpdate(context.Background(), Update{UpdateID: 2, ChatID: "CHAT", Text: "/hero-complete-todo todo-1"})
+
+	select {
+	case m := <-out:
+		if m.Text != "/hero-complete-todo todo-1" || !m.IsCommand {
+			t.Fatalf("inbound=%+v", m)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("project TUI did not receive command")
+	}
+}
+
+func TestProcessUpdateProjectControlAttachmentRejected(t *testing.T) {
+	bot := &fakeBot{}
+	d := newTestDaemon(t, bot, openTestStore(t))
+	out := make(chan ipc.Message, 1)
+	_, addr := d.registry.register("/p", ipc.ModeCycle, "proj", out)
+	if err := d.store.SetSelectedAddress(addr); err != nil {
+		t.Fatal(err)
+	}
+
+	d.processUpdate(context.Background(), Update{
+		UpdateID:      3,
+		ChatID:        "CHAT",
+		Text:          "/hero-add-todo find-qa-1",
+		HasAttachment: true,
+	})
+
+	select {
+	case m := <-out:
+		t.Fatalf("attachment command must not forward: %+v", m)
+	default:
+	}
+	got := bot.sentTexts()
+	if len(got) != 1 || !strings.Contains(got[0], "Attachments are not supported") {
+		t.Fatalf("replies=%v", got)
+	}
+}

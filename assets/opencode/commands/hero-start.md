@@ -10,6 +10,8 @@ Prefer running this command in a **new empty chat** after `/hero-new` (clean con
 
 Configuration → Research → Planning → Implementation → QA → Judge → Browser UI Validation → QA End-to-End
 
+Escalation controls include `/hero-continue`, `/hero-add-todo`, and `/hero-complete-todo` (see workflow-help and orchestration_agent).
+
 Each stage can be enabled/disabled in workflow-config.yml. Skip any stage that is not enabled.
 
 ## Session Bootstrap (disk + CLI)

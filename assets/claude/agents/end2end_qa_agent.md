@@ -59,14 +59,90 @@ The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
 
 ## Output Format
 
+Allowed top-level fields: `status`, `use_playwright`, `tests_passed`, `flows_validated`, `failures`, `summary`.
+
+`status` must be `passed` or `failed`. On `passed`, `failures` must be `[]`. Include `flows_validated` (use `[]` when none).
+
+Each failure entry requires `owner`, plus `file` and/or `requirement`, `issue`, `acceptance_criteria`, optional `evidence`, optional `reopen_id`.
+
+## C15 report contract (PRD-C15-001 §6)
+
+Emit **one JSON object** as your entire completion output and **stop**. The orchestrator or TUI scheduler validates the report and persists findings, stage transitions, OpenSpec checkboxes, and loop-back.
+
+**Never** mutate operational state yourself:
+- do **not** call `hero stage close`, `hero stage loop-back`, or any other stage/cycle transition CLI;
+- do **not** edit OpenSpec `tasks.md` checkboxes or write gap files (`qa-gaps.md`, `judge-gaps.md`, etc.);
+- do **not** edit `context/current-state.md`;
+- do **not** invent new `find-*` IDs — only set `reopen_id` when reopening an existing `done` finding ID supplied in your context.
+
+On success (`status`: `passed`), failure arrays must be **empty** (`[]`).
+
+Valid **owner** values: `backend_agent`, `frontend_agent`, `generic_agent` (must be active in the current implementation scope).
+
+Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`. Optional `evidence` is a string array of safe paths/commands. Optional `reopen_id` reopens a prior finding in the same cycle.
+
+Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
+
+### Passing example
+
 ```json
 {
-  "stage": "qa_end_to_end",
+  "status": "passed",
   "use_playwright": false,
   "tests_passed": true,
   "flows_validated": ["checkout", "payment", "confirmation"],
   "failures": [],
-  "summary": "All 3 user flows validated successfully.",
+  "summary": "All 3 user flows validated successfully."
+}
+```
+
+### Failed example
+
+```json
+{
+  "status": "failed",
+  "use_playwright": true,
+  "tests_passed": false,
+  "flows_validated": ["login"],
+  "failures": [
+    {
+      "owner": "frontend_agent",
+      "file": "e2e/checkout.spec.ts",
+      "issue": "Checkout flow times out on payment step.",
+      "acceptance_criteria": "Checkout journey completes without errors.",
+      "evidence": ["playwright test e2e/checkout.spec.ts"],
+      "reopen_id": null
+    }
+  ],
+  "summary": "Checkout flow failed."
+}
+```
+
+### Reopening example
+
+```json
+{
+  "status": "failed",
+  "use_playwright": false,
+  "tests_passed": false,
+  "flows_validated": [],
+  "failures": [
+    {
+      "owner": "backend_agent",
+      "requirement": "PRD acceptance: order confirmation email",
+      "issue": "Confirmation API still returns 500.",
+      "acceptance_criteria": "POST /orders returns 201 and triggers email job.",
+      "evidence": ["curl -f http://localhost:8080/orders"],
+      "reopen_id": "find-e2e-1"
+    }
+  ],
+  "summary": "Reopened find-e2e-1; confirmation API still failing."
+}
+```
+Example orchestrator-side metrics payload (never include inside the C15 validation JSON object):
+
+```json
+{
   "metrics": {
     "model": "<id>",
     "input_chars": 0,
@@ -74,3 +150,5 @@ The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
   }
 }
 ```
+
+Estimate character usage for this invocation (`input_chars`, `output_chars`). The orchestrator persists metrics via CLI — do **not** add a `metrics` object to the C15 JSON report above.

@@ -4,6 +4,88 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-11 — C15 finished via /hero-finish
+
+**Outcome**: Cycle C15 (`loopback-findings-handoff`) completed with all enabled stages done: Research 1/3, Planning 1/3, Implementation 3/4 (two QA loop-backs), QA 3/3 (one `/hero-continue` after iteration budget), Judge 1/3. Browser UI Validation and QA End-to-End stayed skipped (disabled; native scope). `hero finish` recorded `completed_at` in SQLite. OpenSpec change `loopback-findings-handoff` remains linked until `/hero-archive`.
+
+**Decisions that landed**: Validation agents emit typed JSON only; Go atomically persists findings, failed close, and loop-back. Implementation assignments union OpenSpec `task-*` with SQLite `find-*`. Escalated users may defer selected findings via `/hero-add-todo`; `/hero-complete-todo` resolves pending items with an audit note. Cancel/Reject release unresolved adopted ToDos; Finish resolves them (emergency-release if open findings remain). `current-state.md` Pending Features projection is recoverable via `todo_projection_ops`.
+
+**Metrics** (last active `hero metrics` snapshot): 5278751 in / 259178 out tokens (5537929 total), ~$2.326925. Finish-turn orchestrator estimate (`cursor-grok-4.6-high`): 30934 in / 1225 out, ~$0.069218, 120000 ms — not stored as a stage row because no stage was pending approval. Project totals written to `.workflow-hero/metrics-summary.md`.
+
+**Next**: `/hero-archive` (OpenSpec archive first; Hero folder date from store `completed_at`).
+
+## 2026-09-11 — C15 QA loop-back: Reject releases adopted ToDos
+
+**Defect**: `Service.Reject` did not release unresolved adopted ToDos or reconcile `context/current-state.md` (PRD-C15-001 §9.4; ADR-089).
+
+**Fix**: `Reject` now calls `releaseAdoptedTodosBeforeTerminal` before engine reject (same path as `Cancel`). Regression: `TestRejectReleasesAdoptedTodos` covers pending status, adoption history, verified projection op, and pending line in `current-state.md`.
+
+**Validation**: `go test ./internal/cycle/ -run TestRejectReleasesAdoptedTodos`; `go test ./...` green.
+
+## 2026-09-11 — C15 final verification (tasks 19.1–19.2)
+
+**Traceability**: Added `openspec/changes/loopback-findings-handoff/traceability.md` mapping PRD §14, UI §15, ADR-083–090, and §10.4 components to tasks and code. No blocking gaps.
+
+**Fix**: Updated `internal/install/testdata/codex_projection_layout.golden` for C15 `hero-add-todo` / `hero-complete-todo` command assets.
+
+**Validation**: `openspec validate loopback-findings-handoff --strict`; `go test ./...`; `go test -race ./...`; `go vet ./...`; `gofmt -l .` (clean on touched files); `git diff --check`.
+
+**Context**: `current-state.md` marks TUI Status board, Escalated add/complete-todo dialogs, and Telegram C15 surfaces as shipped.
+
+## 2026-09-11 — C15 TUI Status and Events (tasks 12.1–12.2)
+
+**Change**: `internal/tui/status_screen.go` extends Status with loop-backs, findings board (owner labels BACK/FRNT/GEN, `deferred_todo` as `ToDo`), ToDo counts, completion disposition, Escalated CTAs, and focused-row detail from SQLite. `internal/tui/events_format.go` renders lifecycle events ID-first on the Events screen. `internal/store` adds lifecycle event constants and append-on-mutate for finding create/reopen/defer/done and ToDo adopt/release/manual complete. Tests: `go test ./internal/tui/ -count=1 -timeout 120s`.
+
+## 2026-09-11 — C15 TUI control commands (tasks 13.1–13.3)
+
+**Change**: Added `internal/tui/todo_control.go` — Escalated-gated `/hero-add-todo` checklist, partial vs defer-all review, typed `DEFER` confirmation, projection-failure retry copy; `/hero-complete-todo` pending/adopted gates, required note, secret warning, idempotent success messaging; `/hero-finish` strong `FINISH` confirmation when open/reopened findings exist (orchestrator path unchanged, no `completed_with_deferred_todos`). Wired palette items, chat slash dispatch, `herocmd.go` inline parsers. Tests: `go test ./internal/tui/ -count=1`.
+
+## 2026-09-11 — C15 Telegram surface (task-17.1-telegram)
+
+**Change**: `internal/telegram` — help lists `/hero-add-todo` and `/hero-complete-todo`; `IsProjectControlCommand` + daemon routing rejects free-chat targets and attachments; `CompactFindingsStatus` from additive `cycle.StatusView` JSON; TUI `telegram_status.go` appends compact block on cycle `/status`. Tests: `go test ./internal/telegram/...` pass.
+
+## 2026-09-11 — C15 implementation summary (context task-18.1)
+
+**Shipped (verified in tree)**: SQLite schema v10→v11 with findings, occurrences, structured ToDos, adoptions, projection ops, and cycle completion disposition. `internal/store` transactional findings/ToDo APIs; `internal/cycle/reports` typed validation decoders; `internal/engine` atomic `CloseStageFailedWithFindings` and deferred-terminal close paths; `internal/cycle` handoff façade, mixed assignment union, `add-todo` / `complete-todo` / `stage close --failed --findings-json`; `internal/todos` recoverable `current-state.md` projection; TUI implementation assignment union, stage-handoff parse/apply, Research ToDo injection/adoption; `cycle.StatusView` additive JSON (`findings`, `loopBacks`, `todos`, `availableActions`, `completionDisposition`); canonical four-harness agents/commands including `/hero-add-todo` and `/hero-complete-todo`.
+
+**Docs**: `context/current-state.md` consolidated; `architecture-overview.md` schema/command flow aligned to shipped core. Superseded by final verification entry above (TUI Status/control and Telegram now shipped).
+
+## 2026-09-11 — C15 deterministic CLI verbs (tasks 07.1–07.2)
+
+**Change**: Extended `hero stage close` with `--findings-json` (requires `--failed`) calling `Service.CloseStageFailedWithFindings`; report validation errors emit JSON-safe diagnostics (`code`, `field`, `value`, `message`) via `internal/cycle/cli_errors.go`. Added `hero add-todo` and `hero complete-todo` wired through `AddFindingTodos` / `CompleteManualTodos` (`internal/cycle/todo_cli.go`) with Escalated gate, pending/adopted guards, required `--note`, idempotency keys, and `ReconcileTodoProjection` after store mutations. `DeferFindingTodoIdempotent` now marks findings `deferred_todo` in the same transaction. Tests: `command_test.go`, `todo_cli_test.go`.
+
+**Validation**: `go test ./cmd/... ./internal/cycle/ ./internal/store/ -count=1` passes.
+
+## 2026-09-11 — C15 Status JSON (task-11.1-json)
+
+**Change**: Extended `cycle.StatusView` and `Service.Status()` with additive `findings`, `loopBacks`, `todos`, `completionDisposition`, and `availableActions` (`internal/cycle/status_view.go`). Added `store.CountTodosByStatus` and `internal/cycle/status_view_test.go`.
+
+**Validation**: `go test ./internal/cycle/ -count=1` passes.
+
+## 2026-09-11 — C15 assignment audit envelope (task-15.1-audit)
+
+**Change**: Extended `cycle.StageAgentAuditBody` in `internal/cycle/stage_agent_audit.go` to normalize mixed `task-*`/`find-*` assignment IDs via `internal/cycle/reports`, mark raw results with `result_validated=false`, and add `RecordStageAgentResultValidated` for raw body plus normalized `tasks_completed`/`tasks_remaining`. Tests in `internal/cycle/service_test.go`.
+
+**Validation**: `go test ./internal/cycle/ -count=1 -run Audit` passes.
+
+## 2026-09-11 — C15 harness assets (tasks 16.1–16.2)
+
+**Change**: Updated canonical agents under `assets/{cursor,opencode,codex,claude}/agents/` (orchestration, discover, backend/frontend/generic, qa, judge, browser_ui, end2end) with C15 report contracts aligned to `internal/cycle/reports` (field rules, pass/reopen examples, empty success arrays, bans on stage/checkbox/gap-file/current-state mutation; Judge no longer instructs gap files or `hero stage loop-back`). Added `hero-add-todo` and `hero-complete-todo` command assets per harness; refreshed start/status/todos/continue/finish/help and `assets/docs/workflow-help.md`. Bumped `internal/common/assets_test.go` command inventory to 18 files. Helper script: `scripts/c15_asset_bootstrap.py`.
+
+**Validation**: `go test ./internal/common/ -run 'RuntimeAssets|Asset' -count=1` passes.
+
+## 2026-09-11 — C15 findings store slice (tasks 02.1–02.2)
+
+**Change**: Added `internal/store/findings.go` (fingerprint canonicalization, `PersistFinding`/`PersistFindingTx`, ID allocation, status/actionable queries, `ValidateReopenID`, scheduler helpers `MarkFindingDoneTx`/`SetFindingDeferredTodoTx`) and `internal/store/findings_lifecycle_test.go` (create, rediscovery, reopen via fingerprint/`reopen_id`, deferred recurrence, unsafe content rejection, namespace IDs).
+
+**Validation**: `go test ./internal/store/ -count=1` passes.
+
+## 2026-09-11 — C15 ToDo store slice (tasks 03.1–03.2)
+
+**Change**: Added `internal/store/tx.go` (`InTx`), `internal/store/todos.go` (finding/legacy ToDos, adoption history, cycle completion disposition, projection-op upsert/idempotent defer+complete), and `internal/store/todos_test.go` (pending→adopted→resolved, release with history, idempotency without duplicate rows or conflicting notes).
+
+**Validation**: `go test ./internal/store/ -count=1` passes.
+
 ## 2026-09-11 — Telegram `/status` line order
 
 **Problem**: The daemon prefixes outbound text with the instance address. The
@@ -1771,3 +1853,138 @@ Live registry/admission and async mosaic resize/spinner wiring remain on disk.
 
 **Validation**: `hero status` — C14 `completed`; OpenSpec still
 `tui-multimodal-images`. `hero metrics` reports no active cycle.
+
+## 2026-09-11 — C15 Research: deterministic loop-back findings and ToDos
+
+**Problem**: C13/C14 validation loop-backs could reopen Implementation after the
+OpenSpec checklist was already complete. The scheduler then had an empty
+assignment while agents reported old task IDs; the gate rejected them with
+generic copy. Prose gap artifacts were not scheduler state, and escalation had
+no controlled path to preserve selected blockers for a later cycle.
+
+**Decisions**: The user confirmed the complete active idea scope. Schema v11
+will add scheduler-owned findings with stable `find-*` IDs, append-only
+occurrences, structured ToDos, and adoption history. A typed validation report
+must pass completely before one SQLite transaction persists findings, closes
+the failed source stage, and performs loop-back. Implementation assignments
+union owned unchecked `task-*` with owned open/reopened `find-*`; exact contract
+errors name the field and offending ID. Agents emit JSON only and receive
+canonical examples across every harness projection.
+
+At Escalated, `/hero-add-todo` supports explicit partial triage; remaining work
+requires separate `/hero-continue`. Deferring every blocker reconciles SQLite
+and `current-state.md`, skips an empty wave/downstream validation, and closes the
+cycle as `completed` with disposition `completed_with_deferred_todos`.
+`/hero-finish` remains an explicitly warned emergency exit. Research startup
+offers pending ToDos and records selected items as adopted; validated cycles
+resolve them, while cancellation/non-validating outcomes release them to
+pending. `/hero-complete-todo` manually resolves pending (never actively
+adopted) structured or legacy items with confirmation and a required audit note.
+Unrelated pending items were explicitly excluded from C15.
+
+**Artifacts**: Created and registered
+`docs/product/PRD-C15-001-loopback-findings-handoff.md`,
+`docs/product/UI-C15-001-loopback-findings-handoff.md`, and
+`docs/architecture/ADR-C15-001-loopback-findings-handoff.md` (ADR-083–090).
+Updated PRD/ADR indexes, architecture overview target flow, DEPLOY migration
+requirements, TESTING coverage, and current project state. No runtime code was
+implemented during Research.
+
+## 2026-09-11 — C15 Planning: loopback-findings-handoff SDD
+
+**Problem**: Convert approved PRD-C15-001 / UI-C15-001 / ADR-083–090 into an
+implementable OpenSpec change with single-owner native tasks.
+
+**Decisions**: Change slug `loopback-findings-handoff` (persisted via
+`hero cycle openspec-change`). New capabilities: findings-lifecycle,
+durable-todos, structured-stage-reports, telegram-project-control. Modified:
+sqlite-operational-store, runtime-workflow-execution,
+cli-deterministic-command-suite, hero-tui, asset-bootstrap-and-layout.
+Fingerprint is SHA-256 of NFC/whitespace-collapsed file+requirement+acceptance
+with cycle/source/owner. Failed validation close shares one Store transaction
+with finding writes and loop-back; CLI never nests tx. Projection uses
+`todo_projection_ops` and stays Escalated until verified. Status JSON is
+additive on `StatusView`. Browser UI / E2E stay disabled this cycle but their
+contracts still ship. All 34 tasks owned by `generic_agent`; validators parallel
+with schema v11; UI/assets after service contracts.
+
+**Validation**: `openspec validate loopback-findings-handoff --strict` passed.
+No product code implemented.
+
+## 2026-09-11 — C15 Implementation: schema v11 migration foundation
+
+**Change**: Bumped `internal/store` to schema version 11 with forward-only
+transactional migration creating `findings`, `finding_occurrences`, `todos`,
+`todo_adoptions`, `todo_projection_ops`, and `cycles.completion_disposition*`
+per design D1. Added `TestMigrateV10ToV11PreservesOperationalRows` seeding v10
+operational data and asserting intact rows plus empty new tables.
+
+**Verification**: `go test ./internal/store/ -count=1` passed.
+
+## 2026-09-11 — C15 Implementation: structured report validators (task-04.1–04.2)
+
+**Change**: Added `internal/cycle/reports` with typed decoders for QA, Judge,
+Browser UI Validation, QA End-to-End, and Implementation JSON; owner derivation
+(BUI `failure_class`, Judge default owner when exactly one implementation agent
+is active), Judge `sdd_ambiguity` isolation (empty gaps, no findings path),
+empty-success arrays on pass, and `ReopenIDValidator` / `ActionableFindingChecker`
+hooks for store-backed checks without importing `store`.
+
+**Diagnostics**: Stable codes (`invalid_json`, `unknown_field`, `missing_field`,
+`invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`,
+`overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`,
+`false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`)
+with field path, value, and rule on `DiagnosticError`.
+
+**Verification**: `go test ./internal/cycle/... -count=1` passed.
+
+## 2026-09-11 — C15 Implementation: assignment union merge and gates (task-08.1–08.2)
+
+**Change**: Merged OpenSpec tasks with actionable findings in
+`internal/tui/implementation_assignment.go`; TUI dispatch loads findings via
+`Store.ListActionableFindings`, rejects out-of-scope finding owners before
+Execute, and validates reports through exported `reports.ValidateAssignmentUnion`.
+Updated assignment prompt copy for mixed `planned`/`findings` IDs and empty
+verification waves.
+
+**Verification**: `go test ./internal/tui/ -count=1 -run 'Assignment|Implementation|Union|Finding'` and `go test ./internal/cycle/reports/ -count=1` passed; full `./internal/tui/` green.
+
+## 2026-09-11 — C15 Implementation: engine atomic failed-close handoff (task-05)
+
+**Change**: Added `Engine.CloseStageFailedWithFindings` with report decode before
+`store.InTx`, tx-aware store helpers (`UpdateStageTx`, `AppendEventTx`,
+`AddConversationTx`, `UpsertMetricTx`, `GetMetricTx`, `GetStageTx`, `ListStagesTx`),
+`PredictFindingActionable` for deferred/rediscovery checks, loop-back payloads with
+`finding_ids`, and fail-closed tests (invalid report, mid-tx hook, standalone loop-back).
+
+**Verification**: `go test ./internal/engine/ ./internal/store/ ./internal/cycle/reports/ -count=1` passed.
+
+## 2026-09-11 — C15 Implementation: cycle service handoff façade (task-06.1–06.2)
+
+**Change**: Added `internal/cycle/handoff.go` (delegates atomic failed close to engine without nested `InTx`; assignment union via `internal/cycle/assignment.go`; ToDo defer/complete/adopt/release/resolve and projection-op hooks; `CloseImplementationWhenAssignmentEmpty` and `CompleteCycleWithDeferredTodos`). Engine gained `implementation_close.go` for empty-assignment Implementation close and deferred-work terminal disposition (`EventCycleCompletedDeferredTodos`). Store: `ListAdoptedTodoIDsForCycle`, `ReleaseAdoptedTodosForCycle`.
+
+**Verification**: `go test ./internal/cycle/ ./internal/engine/ ./internal/store/ -count=1` passed.
+
+## 2026-09-11 — C15 Implementation: Research ToDo adoption (task-14.1-research)
+
+**Change**: `internal/store.ListPendingTodos`; cycle `ListPendingTodos` / `AdoptTodosForResearch` and CLI `hero adopt-todo`; TUI `research_todos.go` injects pending-ToDo adoption context after idea notes in `startDiscoverResearchSession`; `tuiDiscoverResearchPreamble` and canonical `discover_agent.md` reference `hero adopt-todo` and persistence-failure gating before grilling.
+
+**Verification**: `go test ./internal/tui/ -count=1 -run Research -timeout 60s` passed.
+
+## 2026-09-11 — C15 Implementation: current-state projection (task-10.1, task-10.2)
+
+**Change**: Added recoverable projection in `internal/todos` (`projection.go`, `legacy.go`): build candidate from SQLite pending/adopted rows plus unmatched Pending prose, fsync under `.workflow-hero/tmp/`, advance `todo_projection_ops`, atomic install to `context/current-state.md`, verify IDs/hashes before `verified`. `PromoteSelectedLegacyLine` allocates `todo-N` only for an explicitly selected legacy line. Store gained `ListTodosForProjection`; cycle `ReconcileTodoProjection` delegates to `todos.ReconcileProjection`; `AddFindingTodos` reconciles after defer and defers cycle completion until actionable findings are empty.
+
+**Verification**: `go test ./internal/todos/ ./internal/store/ ./internal/cycle/ -count=1` passed.
+
+## 2026-09-11 — C15 Implementation: TUI stage handoff parse/apply (task-09.1–09.2)
+
+**Change**: `internal/tui/stage_handoff.go` decodes QA/Judge/BUI/E2E validation reports via `internal/cycle/reports`, calls `CloseStageFailedWithFindings` on failed closes, blocks orchestrator stage-close/loop-back on scheduler-handled failures, applies verified Implementation `task-*` OpenSpec checks and `find-*` `MarkFindingDoneTx`, emits UI-C15-001 §§3–5 Chat copy, and closes empty Implementation workloads without another wave. Added `ValidationDecodeContext` on cycle/engine, `reports.ReportJSONFromText`, and chat preambles for scheduler-owned validation failures.
+
+**Verification**: `go test ./internal/tui/ -count=1 -timeout 120s` passed.
+
+## 2026-09-11 — C15 QA loop-back: eight generic_agent defects
+
+**Change**: Closed the QA loop-back for findings-only Implementation. `store.GetTodo` now maps `sql.ErrNoRows` to `ErrNotFound` so manual complete can promote legacy Pending prose. Projection suppresses promoted/resolved legacy prose via `ListResolvedLegacySummaries` while preserving unmatched lines. TUI complete-todo preselect allows unknown legacy prose through to the service. Removed unused soft Implementation report parsers; typed `DecodeImplementation` remains the only path. Regression coverage: no-active-cycle complete, legacy promote+project, Research adopt projection, Cancel release / Finish resolve hooks, open-finding rediscovery actionable prediction, findings-only partial wave progress, unknown-field report rejection.
+
+**Verification**: `go test ./... -count=1` and `openspec validate loopback-findings-handoff --strict` passed.

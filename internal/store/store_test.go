@@ -597,3 +597,159 @@ func TestMigrateV9ToV10AddsOrchestrationSession(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMigrateV10ToV11PreservesOperationalRows(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hero.db")
+	ts := "2026-09-11T12:00:00Z"
+
+	s, err := openCapped(path, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cycleID, err := s.CreateCycle(Cycle{
+		Number:             7,
+		Title:              "pre-v11",
+		Status:             CycleStatusActive,
+		StartedAt:          ts,
+		ConfigSnapshotJSON: `{"k":"v"}`,
+		OpenspecChange:     "loopback-findings-handoff",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetOrchestrationSession(cycleID, "orch-pre", "cursor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateStages([]Stage{
+		{CycleID: cycleID, Name: "qa", Status: StageWaiting, MaxIterations: 2, SortOrder: 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eventID, err := s.AppendEvent(Event{
+		CycleID: cycleID, TS: ts, Type: "stage_started", PayloadJSON: `{"stage":"qa"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertMetric(Metric{
+		CycleID: cycleID, StageName: "qa", Agent: "qa_agent",
+		InputTokens: 10, OutputTokens: 5, CostUSD: 0.01, DurationMS: 100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	convID, err := s.AddConversation(ConversationEntry{
+		CycleID: cycleID, TS: ts, Role: "user", Kind: "message", Body: "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artID, err := s.AddArtifact(Artifact{
+		CycleID: cycleID, Path: "openspec/x.md", Kind: "doc", Label: "spec", CreatedAt: ts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveID, err := s.InsertServeRegistry(ServeRegistryEntry{
+		Harness: "opencode", PID: 4242, Port: 4096,
+		URL: "http://127.0.0.1:4096", ProjectPath: dir, CreatedAt: ts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertModelList("cursor", []string{"gpt-4"}, ts); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertCapabilities(CapabilityCacheRow{
+		Harness: "cursor", Model: "gpt-4", PropertiesJSON: `{"fs":{}}`, RetrievedAt: ts,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	gen, err := s.BeginRefresh("cursor")
+	if err != nil || gen != 1 {
+		t.Fatalf("BeginRefresh: gen=%d err=%v", gen, err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open after v10: %v", err)
+	}
+	defer s2.Close()
+
+	v, err := s2.SchemaVersion()
+	if err != nil || v != currentSchemaVersion {
+		t.Fatalf("schema version = %d %v, want %d", v, err, currentSchemaVersion)
+	}
+
+	c, err := s2.GetCycle(cycleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Title != "pre-v11" || c.OpenspecChange != "loopback-findings-handoff" ||
+		c.OrchestrationSessionID != "orch-pre" || c.OrchestrationHarnessID != "cursor" {
+		t.Fatalf("cycle mutated: %+v", c)
+	}
+	var disposition, dispositionJSON string
+	if err := s2.db.QueryRow(
+		`SELECT completion_disposition, completion_disposition_json FROM cycles WHERE id = ?`, cycleID,
+	).Scan(&disposition, &dispositionJSON); err != nil {
+		t.Fatal(err)
+	}
+	if disposition != "" || dispositionJSON != "" {
+		t.Fatalf("default disposition = (%q, %q)", disposition, dispositionJSON)
+	}
+
+	st, err := s2.GetStage(cycleID, "qa")
+	if err != nil || st.Name != "qa" {
+		t.Fatalf("stage: %+v %v", st, err)
+	}
+	events, err := s2.ListEvents(cycleID, "", 0)
+	if err != nil || len(events) != 1 || events[0].ID != eventID {
+		t.Fatalf("events: %+v err=%v want id %d", events, err, eventID)
+	}
+	metrics, err := s2.ListMetrics(cycleID)
+	if err != nil || len(metrics) != 1 || metrics[0].InputTokens != 10 {
+		t.Fatalf("metrics: %+v %v", metrics, err)
+	}
+	convs, err := s2.ListConversation(cycleID)
+	if err != nil || len(convs) != 1 || convs[0].ID != convID {
+		t.Fatalf("conversation: %+v %v", convs, err)
+	}
+	arts, err := s2.ListArtifacts(cycleID)
+	if err != nil || len(arts) != 1 || arts[0].ID != artID {
+		t.Fatalf("artifacts: %+v %v", arts, err)
+	}
+	entries, err := s2.ListServeRegistry()
+	if err != nil || len(entries) != 1 || entries[0].ID != serveID {
+		t.Fatalf("serve registry: %+v %v", entries, err)
+	}
+	models, refreshedAt, err := s2.ModelList("cursor")
+	if err != nil || len(models) != 1 || refreshedAt != ts {
+		t.Fatalf("model list: %v %q %v", models, refreshedAt, err)
+	}
+	caps, err := s2.ListCapabilities("cursor")
+	if err != nil || len(caps) != 1 {
+		t.Fatalf("capabilities: %+v %v", caps, err)
+	}
+	rgen, pending, err := s2.RefreshState("cursor")
+	if err != nil || rgen != 1 || !pending {
+		t.Fatalf("refresh state: gen=%d pending=%v err=%v", rgen, pending, err)
+	}
+
+	for _, table := range []string{
+		"findings", "finding_occurrences", "todos", "todo_adoptions", "todo_projection_ops",
+	} {
+		var n int
+		if err := s2.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if n != 0 {
+			t.Fatalf("%s count = %d, want 0", table, n)
+		}
+	}
+}

@@ -138,8 +138,8 @@ func TestAssets_OneFilePerCommand(t *testing.T) {
 		count++
 		return nil
 	})
-	if count != 16 {
-		t.Errorf("expected 16 command files, got %d", count)
+	if count != 18 {
+		t.Errorf("expected 18 command files, got %d", count)
 	}
 }
 

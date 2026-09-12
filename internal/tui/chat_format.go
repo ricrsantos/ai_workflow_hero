@@ -87,6 +87,29 @@ func tuiHeroStartContinueAfterStagePreamble(stageName string) string {
 		"---\n\n"
 }
 
+func tuiHeroStartContinueAfterSchedulerFailedValidationPreamble(stageName string) string {
+	stageName = strings.TrimSpace(stageName)
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are the orchestration agent resuming after the Hero TUI scheduler atomically closed " + stageName + " as failed with findings.\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ✗).\n" +
+		"- Do NOT run `hero stage close`, `hero stage loop-back`, or any gap-file / current-state.md mutation for this failure. The scheduler already persisted findings and loop-back.\n" +
+		"- Do NOT re-run the validation stage agent. Summarize the Chat handoff copy below for the user.\n" +
+		"- Implementation is waiting; tell the user to run /hero-start in the Hero TUI when ready for the next Implementation wave.\n" +
+		"- Do NOT dispatch Task for stage agents. The TUI Executes named stage agents.\n\n" +
+		"---\n\n"
+}
+
+func tuiHeroStartContinueAfterValidationReportRejectedPreamble(stageName string) string {
+	stageName = strings.TrimSpace(stageName)
+	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are the orchestration agent resuming after the Hero TUI rejected the " + stageName + " stage-agent report.\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ✗).\n" +
+		"- Do NOT close the stage, loop back, or mutate OpenSpec tasks, gap files, or current-state.md. Nothing was persisted.\n" +
+		"- Show the exact diagnostic copy below and keep the stage Running for intervention.\n" +
+		"- Tell the user to fix the report and run /hero-start for another attempt.\n\n" +
+		"---\n\n"
+}
+
 func tuiHeroStartContinueAfterIncompleteStagePreamble(stageName, reason string) string {
 	stageName = strings.TrimSpace(stageName)
 	reason = strings.TrimSpace(reason)
@@ -111,6 +134,8 @@ func tuiDiscoverResearchPreamble() string {
 	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
 		"You are running the Research stage inside the Hero TUI as discover_agent. Follow discover_agent.md with these overrides:\n\n" +
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
+		"- After active idea notes, complete Research ToDo adoption (PRD-C15-001 §9.3) before general grilling. Hero injects the pending-ToDo block next; follow it exactly.\n" +
+		"- Persist adopted selections only via `hero adopt-todo <id>...` after user confirmation. Adoption persistence failure blocks requirement finalization and Research close until retry succeeds or the user keeps items out of scope.\n" +
 		"- Grill interactively with the user in this session.\n" +
 		"- When Research deliverables are done, persist via `hero stage close --name research --metrics-json '<JSON>'` (Metrics Procedure) and STOP.\n" +
 		"- Do NOT dispatch planning_agent or any later stage. Do NOT ask the user to start Planning.\n" +

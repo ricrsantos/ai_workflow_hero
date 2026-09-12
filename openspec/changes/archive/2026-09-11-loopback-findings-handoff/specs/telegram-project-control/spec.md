@@ -1,0 +1,30 @@
+## Purpose
+
+Telegram help, command forwarding, and compact status rendering for findings, deferred ToDos, and the C15 control commands, using the shared status JSON contract.
+
+## ADDED Requirements
+
+### Requirement: Telegram help SHALL list add-todo and complete-todo
+Telegram help SHALL include `/hero-add-todo` and `/hero-complete-todo` among project-control commands. These commands SHALL reject image or other attachments (PRD-C15-001 §10.3; UI-C15-001 §13).
+
+#### Scenario: Help catalog names both commands
+- **WHEN** a user requests Telegram `/help` without a selected project requirement beyond the existing catalog
+- **THEN** the catalog text includes `/hero-add-todo` and `/hero-complete-todo`
+
+#### Scenario: Attachments are rejected
+- **WHEN** a Telegram user sends either command with an image attachment
+- **THEN** the command is not forwarded as a mutation and the user is told attachments are not accepted
+
+### Requirement: Telegram SHALL forward C15 commands only to a selected connected TUI
+Telegram SHALL forward `/hero-add-todo` and `/hero-complete-todo` only to a selected, connected project TUI under existing addressing and auth rules (PRD-C15-001 §10.3).
+
+#### Scenario: Forwarding requires selection
+- **WHEN** the commands are sent without a selected connected project
+- **THEN** Telegram does not mutate Hero state and prompts for selection using existing rules
+
+### Requirement: Telegram status SHALL consume additive status JSON
+Telegram `/status` SHALL render compact finding counts and the first actionable IDs from `hero status --json` without duplicating parsing logic. Detailed rows remain available through project Status/JSON (UI-C15-001 §13–14; ADR-090).
+
+#### Scenario: Compact counts are shown
+- **WHEN** status JSON reports one open finding `find-qa-1`
+- **THEN** Telegram status includes the open count and `find-qa-1` without inventing a second parser

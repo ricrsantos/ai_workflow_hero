@@ -124,6 +124,17 @@ func (s *Store) AddressKnown(address string) (bool, error) {
 	return n > 0, err
 }
 
+// AddressMode returns the registration mode for a known address, or empty when
+// the address was never registered.
+func (s *Store) AddressMode(address string) (string, error) {
+	var mode string
+	err := s.db.QueryRow("SELECT mode FROM telegram_addresses WHERE address = ?", address).Scan(&mode)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return mode, err
+}
+
 // SetSelectedAddress persists the authorized chat's selected live instance.
 // The daemon supports one authorized chat, so no chat identifier is stored in
 // SQLite (ADR-062).

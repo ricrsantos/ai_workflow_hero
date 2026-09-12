@@ -327,6 +327,30 @@
       "slug": "living",
       "path": "docs/testing/TESTING.md",
       "title": "Testing strategy (Telegram plugin coverage)"
+    },
+    {
+      "category": "PRD",
+      "cycle": "C15",
+      "seq": 1,
+      "slug": "loopback-findings-handoff",
+      "path": "docs/product/PRD-C15-001-loopback-findings-handoff.md",
+      "title": "Deterministic Loop-back Findings and Deferred ToDos"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C15",
+      "seq": 1,
+      "slug": "loopback-findings-handoff",
+      "path": "docs/architecture/ADR-C15-001-loopback-findings-handoff.md",
+      "title": "Deterministic Findings, Escalation ToDos, and Research Adoption (ADR-083–090)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C15",
+      "seq": 1,
+      "slug": "loopback-findings-handoff",
+      "path": "docs/product/UI-C15-001-loopback-findings-handoff.md",
+      "title": "Loop-back Findings and Deferred ToDos UX"
     }
   ]
 }

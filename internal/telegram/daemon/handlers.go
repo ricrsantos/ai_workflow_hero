@@ -12,6 +12,32 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/telegram/ipc"
 )
 
+func (d *Daemon) rejectProjectControl(ctx context.Context, chatID, address, payload string) bool {
+	if !telegram.IsProjectControlCommand(payload) {
+		return false
+	}
+	if d.projectControlBlocked(address) {
+		d.log.Info("project control command rejected for non-project instance", "address", address)
+		d.send(ctx, chatID, telegram.ProjectControlRequiresProjectMessage())
+		return true
+	}
+	return false
+}
+
+func (d *Daemon) projectControlBlocked(address string) bool {
+	if cli, ok := d.registry.lookup(address); ok {
+		return cli.mode == ipc.ModeFree
+	}
+	if d.store == nil {
+		return strings.HasPrefix(address, "free_")
+	}
+	mode, err := d.store.AddressMode(address)
+	if err != nil || mode == "" {
+		return strings.HasPrefix(address, "free_")
+	}
+	return mode == ipc.ModeFree
+}
+
 // prefixAddress prefixes an outbound notification with the instance address so
 // the recipient can attribute it (PRD-C09-001 §3.2; UI-C09-001 §4).
 func prefixAddress(address, text string) string {
@@ -76,10 +102,14 @@ func (d *Daemon) processUpdate(ctx context.Context, u Update) {
 		}
 		_ = d.store.MarkUpdateProcessed(u.UpdateID, d.now())
 	}
-	if strings.TrimSpace(u.Text) == "" {
+	text := strings.TrimSpace(stripBotCommand(u.Text))
+	if u.HasAttachment && telegram.IsProjectControlCommand(text) {
+		d.send(ctx, u.ChatID, telegram.ProjectControlAttachmentRejectedMessage())
 		return
 	}
-	text := strings.TrimSpace(stripBotCommand(u.Text))
+	if strings.TrimSpace(text) == "" {
+		return
+	}
 
 	if d.pairing.active() != "" {
 		d.processPairing(ctx, u, text)
@@ -177,6 +207,9 @@ func (d *Daemon) routeInbound(ctx context.Context, u Update, text string) {
 		d.send(ctx, u.ChatID, "Selected instance is disconnected. Send /list, then /select <number>.")
 		return
 	}
+	if d.rejectProjectControl(ctx, u.ChatID, address, text) {
+		return
+	}
 	d.routeAddressed(ctx, u, address, text)
 }
 
@@ -223,6 +256,9 @@ func (d *Daemon) routeAddressed(ctx context.Context, u Update, address, payload 
 
 	if action == actionCancelPending {
 		d.cancelPending(ctx, u.ChatID, address)
+		return
+	}
+	if d.rejectProjectControl(ctx, u.ChatID, address, arg) {
 		return
 	}
 

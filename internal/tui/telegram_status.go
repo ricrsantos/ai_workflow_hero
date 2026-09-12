@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/telegram"
 )
 
 const telegramStatusCommand = "/status"
@@ -153,6 +154,10 @@ func telegramCycleStatusText(status cycle.StatusView, agents, timing string) str
 	}
 	if stage, ok := telegramCurrentStage(status.Stages); ok {
 		fmt.Fprintf(&b, "Current stage: %s (%s, iteration %s)\n", stage.Name, stage.Status, stage.Iteration)
+	}
+	if findings := telegram.CompactFindingsStatus(status); findings != "" {
+		b.WriteString(findings)
+		b.WriteByte('\n')
 	}
 	if agents != "" {
 		b.WriteString(agents)

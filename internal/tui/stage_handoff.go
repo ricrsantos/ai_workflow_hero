@@ -2,14 +2,18 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
@@ -67,6 +71,12 @@ type stageHandoffDecision struct {
 	Reports         []stageAgentReport
 	Checklist       implementationChecklist
 	Reason          string
+	ChatCopy        string
+	OmitAgentOutput bool
+	// SchedulerHandledFailure is true when validation failed close + loop-back was persisted.
+	SchedulerHandledFailure  bool
+	JudgeSDDAmbiguity        bool
+	CloseImplementationEmpty bool
 }
 
 const (
@@ -281,6 +291,32 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 		return m, nil
 	}
 	stage := strings.TrimSpace(st.Name)
+	if stage == stageImplementation {
+		empty, emptyErr := m.svc.ImplementationWorkloadEmpty()
+		if emptyErr != nil {
+			slog.Error("implementation workload check failed", "error", emptyErr)
+			return m.returnStageAgentPreparationFailure(stage, emptyErr.Error())
+		}
+		if empty {
+			summary := "Implementation assignment empty after scheduler recheck"
+			if err := m.svc.CloseImplementationWhenAssignmentEmpty(summary); err != nil {
+				slog.Error("empty implementation close failed", "error", err)
+				return m.returnStageAgentPreparationFailure(stage, err.Error())
+			}
+			m.stageHandoffLive = false
+			m.stageHandoffStage = ""
+			m.stageHandoffOutputs = nil
+			m = m.restoreOrchestratorSession()
+			m = m.withRuntimeAgent(agentOrchestration)
+			m.runtimeCommandName = "start"
+			m = m.applyAgentRuntimePair(agentOrchestration, "")
+			m = m.bindSessionToRuntimeHarness()
+			label := "✓ Implementation assignment empty after scheduler recheck"
+			prompt := formatImplementationAssignmentEmptyCloseChat() + tuiHeroStartContinueAfterStagePreamble(stageImplementation)
+			m = m.beginSystemConversationExecute(label, prompt)
+			return m, m.conversationExecuteCmds()
+		}
+	}
 	if stage == "" {
 		m.convError = "resolve active stage: active stage has an empty name"
 		m.stageHandoffInterventionRequired = true
@@ -307,14 +343,19 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	expectedAgents := append([]string(nil), agents...)
 	if stage == stageImplementation {
 		var reason string
-		runAgents, assignments, expectedAgents, reason = implementationStageDispatch(checklist, agents)
+		findings, findErr := m.actionableImplementationFindings()
+		if findErr != nil {
+			m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
+			return m.returnStageAgentPreparationFailure(stage, findErr.Error())
+		}
+		runAgents, assignments, expectedAgents, reason = implementationStageDispatch(checklist, agents, findings)
 		if reason != "" {
 			m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
 			return m.returnStageAgentPreparationFailure(stage, reason)
 		}
 	}
 	if len(runAgents) == 0 {
-		return m.returnStageAgentPreparationFailure(stage, "no active implementation agent owns a pending task")
+		return m.returnStageAgentPreparationFailure(stage, "no active implementation agent owns a pending task or actionable finding")
 	}
 
 	// Build every prompt before starting the first Execute. A later prompt
@@ -397,40 +438,27 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	return m, cmd
 }
 
-func implementationStageDispatch(checklist implementationChecklist, activeAgents []string) ([]string, map[string][]implementationTaskBlock, []string, string) {
-	if !checklist.Linked {
-		return nil, nil, nil, "active cycle has no linked OpenSpec tasks.md"
+func implementationStageDispatch(checklist implementationChecklist, activeAgents []string, findings []store.Finding) ([]string, map[string][]implementationTaskBlock, []string, string) {
+	return buildImplementationStageDispatch(checklist, activeAgents, findings)
+}
+
+func (m model) actionableImplementationFindings() ([]store.Finding, error) {
+	if m.svc == nil {
+		return nil, nil
 	}
-	if !checklist.Ready {
-		return nil, nil, nil, "linked OpenSpec tasks.md could not be read"
+	cycle, err := m.svc.SessionCycle()
+	if err != nil {
+		return nil, fmt.Errorf("resolve active cycle: %w", err)
 	}
-	plan := partitionImplementationTasks(checklist.Raw, activeAgents)
-	if !plan.Valid {
-		if len(plan.Errors) == 0 {
-			return nil, nil, nil, "implementation task ownership plan is invalid"
-		}
-		return nil, nil, nil, "implementation task ownership plan is invalid: " + strings.Join(plan.Errors, "; ")
+	if cycle == nil {
+		return nil, fmt.Errorf("active cycle is unavailable")
 	}
-	assignments := make(map[string][]implementationTaskBlock, len(activeAgents))
-	if len(plan.Tasks) == 0 {
-		for _, agent := range activeAgents {
-			assignments[agent] = []implementationTaskBlock{}
-		}
-		return append([]string(nil), activeAgents...), assignments, append([]string(nil), activeAgents...), ""
+	findings, err := m.svc.Store.ListActionableFindings(cycle.ID, "")
+	if err != nil {
+		slog.Error("implementation assignment findings query failed", "cycle_id", cycle.ID, "error", err)
+		return nil, fmt.Errorf("list actionable findings: %w", err)
 	}
-	runAgents := make([]string, 0, len(activeAgents))
-	for _, agent := range activeAgents {
-		tasks := append([]implementationTaskBlock(nil), plan.ByAgent[agent]...)
-		if len(tasks) == 0 {
-			continue
-		}
-		assignments[agent] = tasks
-		runAgents = append(runAgents, agent)
-	}
-	if len(runAgents) == 0 {
-		return nil, nil, nil, "implementation task ownership plan has pending tasks but no active owner"
-	}
-	return runAgents, assignments, append([]string(nil), runAgents...), ""
+	return findings, nil
 }
 
 func cloneImplementationAssignments(assignments map[string][]implementationTaskBlock) map[string][]implementationTaskBlock {
@@ -571,15 +599,39 @@ func formatImplementationAssignment(checklist implementationChecklist, tasks []i
 		return b.String()
 	}
 	if len(tasks) == 0 {
-		b.WriteString("No unchecked task checkboxes remain at wave start. Verify the acceptance gates and return a complete JSON report only if they pass.\n")
+		b.WriteString("→ Implementation verification · no assigned task or finding IDs\n")
+		b.WriteString("Required report: tasks_completed=[] · tasks_remaining=[]\n")
+		b.WriteString("No unchecked task checkboxes or actionable findings remain at wave start. Verify the acceptance gates and return a complete JSON report only if they pass.\n")
 		return b.String()
 	}
-	b.WriteString("Tasks that must be handled in this wave:\n\n")
+	var planned, findingIDs []string
 	for _, task := range tasks {
-		b.WriteString(strings.TrimRight(task.Block, "\n"))
-		b.WriteString("\n\n")
+		id := strings.TrimSpace(task.ID)
+		if id == "" {
+			continue
+		}
+		if strings.HasPrefix(id, "find-") {
+			findingIDs = append(findingIDs, id)
+		} else {
+			planned = append(planned, id)
+		}
 	}
-	b.WriteString("Do not edit task checkboxes. After a structurally valid report, the scheduler marks the completed task IDs in tasks.md in one write. Do not report complete while any assigned task remains.\n")
+	b.WriteString("Tasks and findings that must be handled in this wave:\n\n")
+	if len(planned) > 0 {
+		fmt.Fprintf(&b, "  planned: %s\n", strings.Join(planned, ", "))
+	}
+	if len(findingIDs) > 0 {
+		fmt.Fprintf(&b, "  findings: %s\n\n", strings.Join(findingIDs, ", "))
+	} else if len(planned) > 0 {
+		b.WriteString("\n")
+	}
+	for _, task := range tasks {
+		if block := strings.TrimSpace(task.Block); block != "" {
+			b.WriteString(strings.TrimRight(block, "\n"))
+			b.WriteString("\n\n")
+		}
+	}
+	b.WriteString("Do not edit task checkboxes. After a structurally valid report, the scheduler marks completed task-* IDs in tasks.md and finding-* IDs done in SQLite. Do not report complete while any assigned ID remains.\n")
 	return b.String()
 }
 
@@ -590,77 +642,55 @@ func parseStageAgentReport(raw, agent string) stageAgentReport {
 		report.ValidationError = "no JSON report object found"
 		return report
 	}
-	report.Stage, ok = reportStringField(obj, "stage")
-	if !ok || report.Stage != stageImplementation {
-		report.ValidationError = "stage must be implementation"
-		return report
-	}
-	reportedAgent, ok := reportStringField(obj, "agent")
-	if !ok || strings.TrimSpace(reportedAgent) == "" {
-		report.ValidationError = "agent is required"
-		return report
-	}
-	reportedAgent = strings.TrimSpace(reportedAgent)
-	if reportedAgent != report.Agent {
-		report.ValidationError = fmt.Sprintf("agent %q does not match expected agent %q", reportedAgent, report.Agent)
-		return report
-	}
-	report.Agent = reportedAgent
-	statusRaw, ok := obj["status"]
-	if !ok {
-		report.ValidationError = "status is required"
-		return report
-	}
-	if err := json.Unmarshal(statusRaw, &report.Status); err != nil {
-		report.ValidationError = "status must be a string"
-		return report
-	}
-	report.Status = strings.ToLower(strings.TrimSpace(report.Status))
-	if report.Status != "complete" && report.Status != "partial" && report.Status != "blocked" {
-		report.ValidationError = "status must be complete, partial, or blocked"
-		return report
-	}
-	report.TestsPassed, ok = reportBoolField(obj, "tests_passed")
-	if !ok {
-		report.ValidationError = "tests_passed must be a boolean"
-		return report
-	}
-	report.AcceptanceGates, report.AcceptanceValues, ok = reportAcceptanceField(obj)
-	if !ok {
-		report.ValidationError = "acceptance_gates must contain the canonical boolean gates"
-		return report
-	}
-	var err error
-	report.TasksCompleted, err = requiredReportTaskIDs(obj, "tasks_completed")
+	data, err := json.Marshal(obj)
 	if err != nil {
-		report.ValidationError = err.Error()
+		report.ValidationError = "report object could not be encoded for typed decode"
 		return report
 	}
-	report.TasksRemaining, err = requiredReportTaskIDs(obj, "tasks_remaining")
-	if err != nil {
-		report.ValidationError = err.Error()
+	// Bootstrap assignment from the report's own ID arrays so DecodeImplementation can
+	// enforce structure/enums/gates; the scheduler still applies the real wave union.
+	bootstrap := append([]string{}, softReportTaskIDs(obj, "tasks_completed")...)
+	bootstrap = append(bootstrap, softReportTaskIDs(obj, "tasks_remaining")...)
+	decoded, derr := reports.DecodeImplementation(data, report.Agent, bootstrap, reports.DecodeContext{})
+	if derr != nil {
+		report.ValidationError = derr.Error()
 		return report
 	}
-	if err := validateStageAgentTaskIDLists(report.TasksCompleted, report.TasksRemaining); err != nil {
-		report.ValidationError = err.Error()
-		return report
-	}
-	if report.Status == "complete" && len(report.TasksRemaining) != 0 {
-		report.ValidationError = "complete reports must have an empty tasks_remaining array"
-		return report
-	}
-	if report.Status == "complete" && !report.AcceptanceGates {
-		report.ValidationError = "complete reports require all canonical acceptance gates to be true"
-		return report
-	}
-	if report.Status != "complete" {
-		if !reportNonEmptyString(obj, "blocker") || !reportNonEmptyString(obj, "next_action") {
-			report.ValidationError = "partial and blocked reports require non-empty blocker and next_action"
-			return report
+	report.Stage = decoded.Stage
+	report.Agent = decoded.Agent
+	report.Status = decoded.Status
+	report.TasksCompleted = append([]string{}, decoded.TasksCompleted...)
+	report.TasksRemaining = append([]string{}, decoded.TasksRemaining...)
+	report.TestsPassed = decoded.TestsPassed
+	report.AcceptanceValues = decoded.AcceptanceGates
+	allGates := true
+	for _, v := range decoded.AcceptanceGates {
+		if !v {
+			allGates = false
+			break
 		}
 	}
+	report.AcceptanceGates = allGates
 	report.Valid = true
 	return report
+}
+
+func softReportTaskIDs(obj map[string]json.RawMessage, field string) []string {
+	raw, ok := obj[field]
+	if !ok {
+		return nil
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil || values == nil {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if id := strings.TrimSpace(v); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func extractStageReportObject(raw string) (map[string]json.RawMessage, bool) {
@@ -680,73 +710,6 @@ func extractStageReportObject(raw string) (map[string]json.RawMessage, bool) {
 	return nil, false
 }
 
-func reportBoolField(fields map[string]json.RawMessage, names ...string) (bool, bool) {
-	for _, name := range names {
-		raw, ok := fields[name]
-		if !ok {
-			continue
-		}
-		var value bool
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return false, false
-		}
-		return value, true
-	}
-	return false, false
-}
-
-func reportStringField(fields map[string]json.RawMessage, name string) (string, bool) {
-	raw, ok := fields[name]
-	if !ok {
-		return "", false
-	}
-	var value string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return "", false
-	}
-	return strings.TrimSpace(value), true
-}
-
-func reportAcceptanceField(fields map[string]json.RawMessage) (bool, map[string]bool, bool) {
-	const (
-		completedTasksVerified = "completed_tasks_verified"
-		taskOwnershipRespected = "task_ownership_respected"
-		requiredTestsPassed    = "required_tests_passed"
-	)
-	raw, ok := fields["acceptance_gates"]
-	if !ok {
-		return false, nil, false
-	}
-	var rawValues map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &rawValues); err != nil || rawValues == nil {
-		return false, nil, false
-	}
-	values := make(map[string]bool, len(rawValues))
-	for key, rawValue := range rawValues {
-		if strings.TrimSpace(string(rawValue)) == "null" {
-			return false, nil, false
-		}
-		var value bool
-		if err := json.Unmarshal(rawValue, &value); err != nil {
-			return false, nil, false
-		}
-		values[key] = value
-	}
-	for _, key := range []string{completedTasksVerified, taskOwnershipRespected, requiredTestsPassed} {
-		if _, exists := values[key]; !exists {
-			return false, nil, false
-		}
-	}
-	allPassed := true
-	for _, value := range values {
-		if !value {
-			allPassed = false
-			break
-		}
-	}
-	return allPassed, values, true
-}
-
 func requiredReportStringSlice(fields map[string]json.RawMessage, name string) ([]string, error) {
 	raw, ok := fields[name]
 	if !ok {
@@ -762,30 +725,8 @@ func requiredReportStringSlice(fields map[string]json.RawMessage, name string) (
 	return values, nil
 }
 
-func requiredReportTaskIDs(fields map[string]json.RawMessage, name string) ([]string, error) {
-	values, err := requiredReportStringSlice(fields, name)
-	if err != nil {
-		return nil, err
-	}
-	for i, value := range values {
-		id, err := normalizeStageAgentTaskID(value)
-		if err != nil {
-			return nil, fmt.Errorf("%s[%d]: %w", name, i, err)
-		}
-		values[i] = id
-	}
-	return values, nil
-}
-
 func normalizeStageAgentTaskID(raw string) (string, error) {
-	id := strings.TrimSpace(raw)
-	if strings.HasPrefix(id, "[") && strings.HasSuffix(id, "]") {
-		id = strings.TrimSuffix(strings.TrimPrefix(id, "["), "]")
-	}
-	if !strings.HasPrefix(id, "task-") || strings.TrimSpace(strings.TrimPrefix(id, "task-")) == "" || strings.ContainsAny(id, "[] \t\r\n") {
-		return "", fmt.Errorf("task ID %q is invalid", raw)
-	}
-	return id, nil
+	return normalizeImplementationAssignmentID(raw)
 }
 
 func validateStageAgentTaskIDLists(completed, remaining []string) error {
@@ -812,27 +753,15 @@ func validateStageAgentTaskIDs(assigned map[string]string, report stageAgentRepo
 	if assigned == nil {
 		return fmt.Errorf("assigned task set is required")
 	}
-	if err := validateStageAgentTaskIDLists(report.TasksCompleted, report.TasksRemaining); err != nil {
-		return err
-	}
-	reported := make(map[string]struct{}, len(report.TasksCompleted)+len(report.TasksRemaining))
-	for _, id := range append(append([]string(nil), report.TasksCompleted...), report.TasksRemaining...) {
-		owner, ok := assigned[id]
-		if !ok {
-			return fmt.Errorf("task ID %q is not assigned to %q", id, report.Agent)
-		}
-		if owner != report.Agent {
-			return fmt.Errorf("task ID %q is assigned to %q, not %q", id, owner, report.Agent)
-		}
-		reported[id] = struct{}{}
-	}
+	assignment := make([]string, 0, len(assigned))
 	for id, owner := range assigned {
-		if owner != report.Agent {
-			continue
+		if owner == report.Agent {
+			assignment = append(assignment, id)
 		}
-		if _, ok := reported[id]; !ok {
-			return fmt.Errorf("assigned task ID %q is omitted from the report", id)
-		}
+	}
+	sort.Strings(assignment)
+	if err := validateImplementationAssignmentUnion(report.TasksCompleted, report.TasksRemaining, assignment); err != nil {
+		return err
 	}
 	if report.Status == "complete" && len(report.TasksRemaining) != 0 {
 		return fmt.Errorf("complete reports must have an empty tasks_remaining array")
@@ -1036,10 +965,31 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 		decision.Reason = "reports with completed tasks must pass tests and all canonical acceptance gates"
 		return decision
 	}
+	findingProgress := false
 	if allValid && len(completedIDs) > 0 {
-		if err := markImplementationTasksComplete(decision.Checklist.Path, completedIDs); err != nil {
-			decision.Reason = "could not mark completed implementation tasks: " + err.Error()
-			return decision
+		taskIDs := implementationOpenSpecTaskIDs(completedIDs)
+		findingIDs := implementationFindingIDs(completedIDs)
+		if len(taskIDs) > 0 {
+			if err := markImplementationTasksComplete(decision.Checklist.Path, taskIDs); err != nil {
+				decision.Reason = "could not mark completed implementation tasks: " + err.Error()
+				return decision
+			}
+		}
+		if len(findingIDs) > 0 {
+			if m.svc == nil {
+				decision.Reason = "cycle service unavailable"
+				return decision
+			}
+			cycleRow, err := m.svc.SessionCycle()
+			if err != nil || cycleRow == nil {
+				decision.Reason = "active cycle is unavailable"
+				return decision
+			}
+			if err := markImplementationFindingsDone(m.svc.Store, cycleRow.ID, findingIDs); err != nil {
+				decision.Reason = "could not mark completed implementation findings: " + err.Error()
+				return decision
+			}
+			findingProgress = true
 		}
 		decision.Checklist = m.implementationChecklist()
 		if !decision.Checklist.Linked || !decision.Checklist.Ready {
@@ -1056,7 +1006,8 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 		decision.Complete = true
 		return decision
 	}
-	progress := decision.Checklist.Linked && decision.Checklist.Ready && pendingTaskProgress(m.stageHandoffPendingBefore, decision.Checklist.Pending)
+	checklistProgress := decision.Checklist.Linked && decision.Checklist.Ready && pendingTaskProgress(m.stageHandoffPendingBefore, decision.Checklist.Pending)
+	progress := checklistProgress || findingProgress
 	if allValid && !anyBlocked && progress {
 		if m.stageHandoffWave < maxImplementationHandoffWaves {
 			decision.PartialProgress = true
@@ -1082,6 +1033,12 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 	default:
 		decision.Reason = "stage-agent reports are incomplete"
 	}
+	if !decision.Complete && !decision.PartialProgress {
+		decision.ChatCopy = formatImplementationHandoffDiagnostics(decision.Reports, m)
+		if decision.ChatCopy != "" {
+			decision.OmitAgentOutput = true
+		}
+	}
 	return decision
 }
 
@@ -1099,7 +1056,12 @@ func validateImplementationChecklistPlan(checklist implementationChecklist, acti
 func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	stage := strings.TrimSpace(m.stageHandoffStage)
 	outputs := strings.TrimSpace(strings.Join(m.stageHandoffOutputs, "\n\n"))
-	decision := m.evaluateStageHandoff(stage, outputs)
+	var decision stageHandoffDecision
+	if isValidationHandoffStage(stage) {
+		decision = m.evaluateValidationStageHandoff(stage, outputs)
+	} else {
+		decision = m.evaluateStageHandoff(stage, outputs)
+	}
 	if stage == stageImplementation && decision.PartialProgress {
 		// Keep the stage Running and launch a fresh wave in the same iteration.
 		// The orchestrator is not resumed between productive waves, so a partial
@@ -1139,24 +1101,301 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 		}
 	}
 	canClose := decision.Complete
-	if stage != stageImplementation && outputs != "" {
-		// Existing non-Implementation stage handoffs remain compatible with
-		// their text Output Formats. Empty output is never a close signal.
+	if stage != stageImplementation && outputs != "" && !isValidationHandoffStage(stage) {
+		// Planning and other text handoffs remain compatible with legacy Output Formats.
 		canClose = true
 	}
-	var prompt string
-	if canClose {
-		prompt = tuiHeroStartContinueAfterStagePreamble(stage)
-	} else {
-		prompt = tuiHeroStartContinueAfterIncompleteStagePreamble(stage, decision.Reason)
+	if decision.SchedulerHandledFailure || decision.JudgeSDDAmbiguity {
+		canClose = false
 	}
-	if outputs != "" {
+	var prompt string
+	if copy := strings.TrimSpace(decision.ChatCopy); copy != "" {
+		prompt = copy + "\n\n"
+	}
+	switch {
+	case decision.SchedulerHandledFailure:
+		prompt += tuiHeroStartContinueAfterSchedulerFailedValidationPreamble(stage)
+	case decision.JudgeSDDAmbiguity:
+		prompt += tuiHeroStartContinueAfterIncompleteStagePreamble(stage, "judge reported sdd_ambiguity; use /hero-back or /hero-approve")
+	case canClose:
+		prompt += tuiHeroStartContinueAfterStagePreamble(stage)
+	case decision.OmitAgentOutput && strings.Contains(decision.ChatCopy, "report rejected"):
+		prompt += tuiHeroStartContinueAfterValidationReportRejectedPreamble(stage)
+	default:
+		prompt += tuiHeroStartContinueAfterIncompleteStagePreamble(stage, decision.Reason)
+	}
+	if outputs != "" && !decision.OmitAgentOutput {
 		prompt += "Stage agent output:\n\n" + outputs + "\n"
 	}
-	label := "→ " + stage + " closed"
-	if !canClose {
-		label = "→ " + stage + " gate pending"
-	}
+	label := handoffResumeLabel(stage, canClose, decision)
 	m = m.beginSystemConversationExecute(label, prompt)
 	return m, m.conversationExecuteCmds()
+}
+
+func isValidationHandoffStage(stage string) bool {
+	switch strings.TrimSpace(stage) {
+	case stageQA, stageJudge, stageBrowserUI, stageQAEndToEnd:
+		return true
+	default:
+		return false
+	}
+}
+
+func handoffResumeLabel(stage string, canClose bool, decision stageHandoffDecision) string {
+	if line := firstLine(decision.ChatCopy); line != "" {
+		return line
+	}
+	if canClose {
+		return "→ " + stage + " closed"
+	}
+	return "→ " + stage + " gate pending"
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+		return strings.TrimSpace(s[:idx])
+	}
+	return s
+}
+
+func formatImplementationAssignmentEmptyCloseChat() string {
+	return "✓ Implementation assignment empty after scheduler recheck\n→ Closing Implementation without another wave\n"
+}
+
+func (m model) evaluateValidationStageHandoff(stage, outputs string) stageHandoffDecision {
+	decision := stageHandoffDecision{}
+	if m.svc == nil {
+		decision.Reason = "cycle service unavailable"
+		return decision
+	}
+	rawBody := validationReportBody(outputs, m.stageHandoffOutputs)
+	if rawBody == "" {
+		decision.Reason = "no stage-agent reports were captured"
+		return decision
+	}
+	ctx, err := m.svc.ValidationDecodeContext()
+	if err != nil {
+		decision.Reason = err.Error()
+		return decision
+	}
+	reportJSON, derr := reports.ReportJSONFromText(rawBody)
+	if derr != nil {
+		decision.ChatCopy = formatValidationReportRejected(stage, derr)
+		decision.OmitAgentOutput = true
+		decision.Reason = derr.Error()
+		return decision
+	}
+	status, judgeAmbiguity, decodeErr := decodeValidationReportStatus(stage, reportJSON, ctx)
+	if decodeErr != nil {
+		decision.ChatCopy = formatValidationReportRejected(stage, decodeErr)
+		decision.OmitAgentOutput = true
+		decision.Reason = decodeErr.Error()
+		return decision
+	}
+	if judgeAmbiguity {
+		decision.JudgeSDDAmbiguity = true
+		if status == reports.ValidationStatusPassed {
+			decision.Complete = true
+		}
+		decision.Reason = "judge reported sdd_ambiguity"
+		return decision
+	}
+	if status == reports.ValidationStatusPassed {
+		decision.Complete = true
+		return decision
+	}
+	slog.Info("validation stage failed; invoking atomic close handoff", "stage", stage)
+	out, closeErr := m.svc.CloseStageFailedWithFindings(stage, reportJSON, "")
+	if closeErr != nil {
+		var rve *cycle.ReportValidationError
+		if errors.As(closeErr, &rve) && rve != nil && rve.Diagnostic != nil {
+			decision.ChatCopy = formatValidationReportRejected(stage, rve.Diagnostic)
+			decision.OmitAgentOutput = true
+			decision.Reason = rve.Diagnostic.Error()
+			return decision
+		}
+		decision.Reason = closeErr.Error()
+		return decision
+	}
+	decision.SchedulerHandledFailure = true
+	decision.ChatCopy = m.formatValidationFailedHandoffChat(stage, out.FindingIDs)
+	decision.OmitAgentOutput = true
+	decision.Reason = strings.TrimSpace(out.Summary)
+	return decision
+}
+
+func validationReportBody(outputs string, chunks []string) string {
+	raw := strings.TrimSpace(outputs)
+	if raw == "" && len(chunks) > 0 {
+		raw = strings.TrimSpace(chunks[0])
+	}
+	if raw == "" {
+		return ""
+	}
+	if idx := strings.IndexByte(raw, '\n'); idx >= 0 {
+		return strings.TrimSpace(raw[idx+1:])
+	}
+	return raw
+}
+
+func decodeValidationReportStatus(stage string, reportJSON []byte, ctx reports.DecodeContext) (string, bool, *reports.DiagnosticError) {
+	switch stage {
+	case stageQA:
+		r, err := reports.DecodeQA(reportJSON, ctx)
+		if err != nil {
+			return "", false, err
+		}
+		return r.Status, false, nil
+	case stageJudge:
+		r, err := reports.DecodeJudge(reportJSON, ctx)
+		if err != nil {
+			return "", false, err
+		}
+		return r.Status, r.SDDAmbiguity, nil
+	case stageBrowserUI:
+		r, err := reports.DecodeBrowserUI(reportJSON, ctx)
+		if err != nil {
+			return "", false, err
+		}
+		return r.Status, false, nil
+	case stageQAEndToEnd:
+		r, err := reports.DecodeQAEndToEnd(reportJSON, ctx)
+		if err != nil {
+			return "", false, err
+		}
+		return r.Status, false, nil
+	default:
+		return "", false, reportsDiagInvalidStage(stage)
+	}
+}
+
+func reportsDiagInvalidStage(stage string) *reports.DiagnosticError {
+	return &reports.DiagnosticError{
+		Code:  reports.CodeInvalidEnum,
+		Field: "stage",
+		Value: stage,
+		Rule:  "stage cannot emit validation findings",
+	}
+}
+
+func validationStageTitle(stage string) string {
+	switch stage {
+	case stageQA:
+		return "QA"
+	case stageJudge:
+		return "Judge"
+	case stageBrowserUI:
+		return "Browser UI"
+	case stageQAEndToEnd:
+		return "QA End-to-End"
+	default:
+		return stage
+	}
+}
+
+func formatValidationReportRejected(stage string, d *reports.DiagnosticError) string {
+	if d == nil {
+		return "✗ " + validationStageTitle(stage) + " report rejected · invalid_json\n  No finding, stage close, or loop-back was persisted.\n"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "✗ %s report rejected · %s\n", validationStageTitle(stage), d.Code)
+	if field := strings.TrimSpace(d.Field); field != "" {
+		if value := strings.TrimSpace(d.Value); value != "" {
+			fmt.Fprintf(&b, "  %s: %s\n", field, value)
+		} else {
+			fmt.Fprintf(&b, "  %s\n", field)
+		}
+		if strings.TrimSpace(d.Rule) != "" {
+			fmt.Fprintf(&b, "  %s\n", strings.TrimSpace(d.Rule))
+		}
+	} else if strings.TrimSpace(d.Rule) != "" {
+		fmt.Fprintf(&b, "  %s\n", strings.TrimSpace(d.Rule))
+	}
+	b.WriteString("  No finding, stage close, or loop-back was persisted.\n")
+	return b.String()
+}
+
+func (m model) formatValidationFailedHandoffChat(stage string, findingIDs []string) string {
+	title := validationStageTitle(stage)
+	if len(findingIDs) == 0 {
+		return fmt.Sprintf("✗ %s failed\n→ Loop-back %s → Implementation\n", title, title)
+	}
+	cycleRow, err := m.svc.SessionCycle()
+	if err != nil || cycleRow == nil {
+		slog.Error("validation handoff chat missing cycle", "error", err)
+		return fmt.Sprintf("✗ %s failed · %d findings\n→ Loop-back %s → Implementation\n", title, len(findingIDs), title)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "✗ %s failed · %d findings\n", title, len(findingIDs))
+	for _, id := range findingIDs {
+		f, err := m.svc.Store.GetFinding(cycleRow.ID, id)
+		if err != nil {
+			slog.Error("validation handoff chat finding lookup failed", "finding_id", id, "error", err)
+			fmt.Fprintf(&b, "  %s\n", id)
+			continue
+		}
+		state := strings.TrimSpace(f.Status)
+		round := ""
+		if state == store.FindingStatusReopened {
+			round = fmt.Sprintf(" (round %d)", f.Round)
+		}
+		fmt.Fprintf(&b, "  %s · %s · %s%s\n", f.ID, agentShortLabel(f.Owner), state, round)
+		file := strings.TrimSpace(f.File)
+		if file != "" {
+			fmt.Fprintf(&b, "  %s · %s\n", file, strings.TrimSpace(f.Issue))
+		} else {
+			fmt.Fprintf(&b, "  %s\n", strings.TrimSpace(f.Issue))
+		}
+	}
+	fmt.Fprintf(&b, "\n→ Loop-back %s → Implementation\n", title)
+	fmt.Fprintf(&b, "→ Assignment will include %s\n", strings.Join(findingIDs, ", "))
+	return b.String()
+}
+
+func formatImplementationHandoffDiagnostics(reports []stageAgentReport, m model) string {
+	var b strings.Builder
+	for _, report := range reports {
+		if report.Valid {
+			continue
+		}
+		code := implementationReportDiagnosticCode(report)
+		fmt.Fprintf(&b, "✗ implementation report rejected · %s\n", code)
+		if msg := strings.TrimSpace(report.ValidationError); msg != "" {
+			fmt.Fprintf(&b, "  %s\n", msg)
+		}
+		assign := assignedIDsForAgent(m, report.Agent)
+		if len(assign) > 0 {
+			fmt.Fprintf(&b, "  assigned IDs: %s\n", strings.Join(assign, ", "))
+		}
+		b.WriteString("  No finding, stage close, or loop-back was persisted.\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func implementationReportDiagnosticCode(report stageAgentReport) string {
+	msg := strings.ToLower(report.ValidationError)
+	switch {
+	case strings.Contains(msg, "assignment_union_mismatch"):
+		return string(reports.CodeAssignmentUnionMismatch)
+	case strings.Contains(msg, "not assigned") || strings.Contains(msg, "unassigned"):
+		return string(reports.CodeUnassignedID)
+	case strings.Contains(msg, "nonempty") || strings.Contains(msg, "verification wave assigned no"):
+		return string(reports.CodeNonemptyEmptyAssignment)
+	case strings.Contains(msg, "duplicate"):
+		return string(reports.CodeDuplicateID)
+	case strings.Contains(msg, "both"):
+		return string(reports.CodeOverlappingArrays)
+	default:
+		return "invalid_report"
+	}
+}
+
+func assignedIDsForAgent(m model, agent string) []string {
+	ids := make([]string, 0)
+	for id := range m.assignedImplementationTasks(agent) {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }

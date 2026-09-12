@@ -9,5 +9,6 @@
 | C7 | Criação de uma tela de configuração na TUI do Hero para configrar o workflow-config.yml | 460058 | 0.4335 | 2026-08-29 |
 | C13 | Implementação do adapter para o Claude Code | 5006554 | 0.7840 | 2026-09-09 |
 | C14 | Implementação da capacidade de lidar com imagens na TUI do Hero. | 2101873 | 0.5692 | 2026-09-11 |
+| C15 | Melhorar o processo de controle do fluxo de passagem de informação entre os agentes | 5537929 | 2.3269 | 2026-09-11 |
 
-**Project Grand Total**: 8697654 tokens, ~$5.3136 USD
+**Project Grand Total**: 14235583 tokens, ~$7.6405 USD

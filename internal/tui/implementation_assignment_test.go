@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 func TestPartitionImplementationTasks(t *testing.T) {
@@ -374,4 +376,79 @@ func implementationTaskIDs(tasks []implementationTaskBlock) []string {
 		ids = append(ids, task.ID)
 	}
 	return ids
+}
+
+func TestMergeImplementationAssignmentOrdersTasksBeforeFindings(t *testing.T) {
+	raw := "- [ ] 1.1 [task-a] [agent:generic_agent] First task\n" +
+		"- [ ] 1.2 [task-b] [agent:generic_agent] Second task\n"
+	plan := partitionImplementationTasks(raw, []string{implementationGenericAgent})
+	if !plan.Valid {
+		t.Fatalf("plan=%+v", plan)
+	}
+	findings := []store.Finding{
+		{ID: "find-qa-1", Owner: store.FindingOwnerGeneric, SourceStage: store.FindingSourceQA},
+		{ID: "find-qa-2", Owner: store.FindingOwnerGeneric, SourceStage: store.FindingSourceQA},
+	}
+	byAgent, errs := mergeImplementationAssignment(plan, findings, []string{implementationGenericAgent})
+	if len(errs) != 0 {
+		t.Fatalf("merge errors=%v", errs)
+	}
+	got := implementationTaskIDs(byAgent[implementationGenericAgent])
+	want := []string{"task-a", "task-b", "find-qa-1", "find-qa-2"}
+	if len(got) != len(want) {
+		t.Fatalf("ids=%v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ids=%v want %v", got, want)
+		}
+	}
+}
+
+func TestMergeImplementationAssignmentRejectsFindingOwnerOutsideScope(t *testing.T) {
+	plan := partitionImplementationTasks("", []string{implementationBackendAgent})
+	plan.Valid = true
+	findings := []store.Finding{{ID: "find-qa-1", Owner: store.FindingOwnerFrontend, SourceStage: store.FindingSourceQA}}
+	_, errs := mergeImplementationAssignment(plan, findings, []string{implementationBackendAgent})
+	if len(errs) == 0 || !strings.Contains(strings.Join(errs, "; "), "not in active implementation scope") {
+		t.Fatalf("expected scope failure, got %v", errs)
+	}
+}
+
+func TestBuildImplementationStageDispatchVerificationWaveWhenEmpty(t *testing.T) {
+	checklist := implementationChecklist{Linked: true, Ready: true, Raw: "- [x] [task-done] [agent:generic_agent] Done\n"}
+	runAgents, assignments, expected, reason := buildImplementationStageDispatch(checklist, []string{implementationGenericAgent}, nil)
+	if reason != "" {
+		t.Fatalf("reason=%q", reason)
+	}
+	if len(runAgents) != 1 || len(expected) != 1 || len(assignments[implementationGenericAgent]) != 0 {
+		t.Fatalf("agents=%v expected=%v assignments=%v", runAgents, expected, assignments)
+	}
+}
+
+func TestValidateImplementationAssignmentUnionFindingsOnlyRejectsTaskID(t *testing.T) {
+	err := validateImplementationAssignmentUnion([]string{"task-03.2"}, nil, []string{"find-judge-1"})
+	if err == nil || !strings.Contains(err.Error(), "unassigned_id") {
+		t.Fatalf("error=%v want unassigned_id", err)
+	}
+}
+
+func TestValidateImplementationAssignmentUnionEmptyVerificationWave(t *testing.T) {
+	err := validateImplementationAssignmentUnion([]string{"task-03.2"}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "nonempty_empty_assignment") {
+		t.Fatalf("error=%v want nonempty_empty_assignment", err)
+	}
+	if err := validateImplementationAssignmentUnion(nil, nil, nil); err != nil {
+		t.Fatalf("empty verification wave should accept empty arrays: %v", err)
+	}
+}
+
+func TestValidateImplementationAssignmentUnionExactMatch(t *testing.T) {
+	assign := []string{"task-a", "find-qa-1"}
+	if err := validateImplementationAssignmentUnion([]string{"task-a"}, []string{"find-qa-1"}, assign); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := validateImplementationAssignmentUnion([]string{"task-a"}, nil, assign); err == nil || !strings.Contains(err.Error(), "assignment_union_mismatch") {
+		t.Fatalf("error=%v want assignment_union_mismatch", err)
+	}
 }

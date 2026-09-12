@@ -171,6 +171,12 @@ func TestTelegramStatusText(t *testing.T) {
 		{Name: "generic_agent", Model: "worker-model", Harness: "opencode"},
 	}
 
+	m.status.Findings = &cycle.StatusFindingsBlock{
+		Counts: cycle.StatusFindingCounts{Open: 1},
+		Items:  []cycle.StatusFindingRow{{ID: "find-qa-1", Status: "open"}},
+	}
+	m.status.AvailableActions = []string{"hero-continue", "hero-add-todo"}
+
 	got := m.telegramStatusText(now)
 	if !strings.HasPrefix(got, "Cycle C7: Telegram status\nAgent state: working\n") {
 		t.Fatalf("cycle status order=%q", got)
@@ -178,6 +184,9 @@ func TestTelegramStatusText(t *testing.T) {
 	for _, want := range []string{
 		"Cycle C7: Telegram status",
 		"Current stage: Implementation (Running, iteration 1/3)",
+		"Findings: open 1 · reopened 0 · done 0 · ToDo 0",
+		"Actionable: find-qa-1",
+		"Actions: /hero-continue, /hero-add-todo",
 		"Agents:\n- orchestration_agent: orchestrator-model\n- generic_agent: worker-model",
 		"Session: 00:02:00",
 		"AI wk: 00:01:00",

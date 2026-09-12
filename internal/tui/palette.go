@@ -19,6 +19,8 @@ const (
 	actionApprove
 	actionReject
 	actionContinue
+	actionAddTodo
+	actionCompleteTodo
 	actionBack
 	actionCancel
 	actionFinish
@@ -73,6 +75,8 @@ func defaultHeroPaletteItems() []paletteItem {
 		{label: "/hero-start", hint: "start workflow", action: actionStart},
 		{label: "/hero-approve", hint: "pending approval", action: actionApprove},
 		{label: "/hero-continue", hint: "grant extra iterations", action: actionContinue},
+		{label: "/hero-add-todo", hint: "defer findings to todos", action: actionAddTodo},
+		{label: "/hero-complete-todo", hint: "resolve pending todo", action: actionCompleteTodo},
 		{label: "/hero-reject", hint: "send back", action: actionReject},
 		{label: "/hero-cancel", hint: "abort active cycle", action: actionCancel},
 		{label: "/hero-back", hint: "reopen planning", action: actionBack},

@@ -2,13 +2,18 @@ package tui
 
 import (
 	"bytes"
+	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
+	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
 const (
@@ -438,6 +443,176 @@ func firstImplementationTaskID(ids []string) string {
 		return ""
 	}
 	return ids[0]
+}
+
+// mergeImplementationAssignment unions unchecked owned task-* blocks with
+// actionable findings per active agent. Task order follows OpenSpec; findings
+// follow stable store order (created_at, id). A finding owner outside the
+// active Implementation scope fails the whole plan before Execute.
+func mergeImplementationAssignment(plan implementationTaskPlan, findings []store.Finding, activeAgents []string) (map[string][]implementationTaskBlock, []string) {
+	byAgent := make(map[string][]implementationTaskBlock, len(activeAgents))
+	for _, agent := range activeAgents {
+		byAgent[agent] = append([]implementationTaskBlock(nil), plan.ByAgent[agent]...)
+	}
+	activeSet := make(map[string]struct{}, len(activeAgents))
+	for _, agent := range activeAgents {
+		activeSet[agent] = struct{}{}
+	}
+	var errs []string
+	for _, finding := range findings {
+		owner := strings.TrimSpace(finding.Owner)
+		if !isCanonicalImplementationAgent(owner) {
+			errs = append(errs, fmt.Sprintf("finding %q has unknown owner %q", finding.ID, owner))
+			continue
+		}
+		if _, ok := activeSet[owner]; !ok {
+			slog.Error("implementation assignment rejected finding owner outside active scope",
+				"finding_id", finding.ID, "owner", owner, "active_agents", activeAgents)
+			errs = append(errs, fmt.Sprintf("finding %q owner %q is not in active implementation scope", finding.ID, owner))
+			continue
+		}
+		byAgent[owner] = append(byAgent[owner], implementationFindingBlock(finding))
+	}
+	if len(errs) > 0 {
+		return nil, errs
+	}
+	return byAgent, nil
+}
+
+func implementationFindingBlock(finding store.Finding) implementationTaskBlock {
+	var b strings.Builder
+	fmt.Fprintf(&b, "- [ ] %s · finding · %s\n", finding.ID, finding.SourceStage)
+	if file := strings.TrimSpace(finding.File); file != "" {
+		fmt.Fprintf(&b, "  File: %s\n", file)
+	}
+	if req := strings.TrimSpace(finding.Requirement); req != "" {
+		fmt.Fprintf(&b, "  Requirement: %s\n", req)
+	}
+	fmt.Fprintf(&b, "  Issue: %s\n", strings.TrimSpace(finding.Issue))
+	fmt.Fprintf(&b, "  Acceptance: %s\n", strings.TrimSpace(finding.AcceptanceCriteria))
+	return implementationTaskBlock{
+		ID:      finding.ID,
+		Owner:   finding.Owner,
+		Block:   b.String(),
+		Pending: true,
+	}
+}
+
+func implementationAssignmentIDs(items []implementationTaskBlock) []string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if id := strings.TrimSpace(item.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func implementationOpenSpecTaskIDs(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if strings.HasPrefix(id, "task-") {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func implementationFindingIDs(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if strings.HasPrefix(id, "find-") {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func markImplementationFindingsDone(st *store.Store, cycleID int64, findingIDs []string) error {
+	if st == nil || len(findingIDs) == 0 {
+		return nil
+	}
+	snapshots := make([]store.Finding, 0, len(findingIDs))
+	for _, id := range findingIDs {
+		f, err := st.GetFinding(cycleID, id)
+		if err != nil {
+			return fmt.Errorf("finding %q: %w", id, err)
+		}
+		snapshots = append(snapshots, f)
+	}
+	slog.Info("marking implementation findings done", "cycle_id", cycleID, "finding_ids", findingIDs)
+	return st.InTx(func(tx *sql.Tx) error {
+		for _, f := range snapshots {
+			if err := st.MarkFindingDoneTx(tx, cycleID, f.ID, f.Issue, f.AcceptanceCriteria, f.EvidenceJSON); err != nil {
+				return fmt.Errorf("finding %q: %w", f.ID, err)
+			}
+		}
+		return nil
+	})
+}
+
+func normalizeImplementationAssignmentID(raw string) (string, error) {
+	id, derr := reports.NormalizeAssignmentID(raw)
+	if derr != nil {
+		return "", fmt.Errorf("%s", derr.Error())
+	}
+	return id, nil
+}
+
+func validateImplementationAssignmentUnion(completed, remaining, assignment []string) error {
+	if derr := reports.ValidateAssignmentUnion(completed, remaining, assignment); derr != nil {
+		return fmt.Errorf("%s", derr.Error())
+	}
+	return nil
+}
+
+func buildImplementationStageDispatch(checklist implementationChecklist, activeAgents []string, findings []store.Finding) ([]string, map[string][]implementationTaskBlock, []string, string) {
+	if !checklist.Linked {
+		return nil, nil, nil, "active cycle has no linked OpenSpec tasks.md"
+	}
+	if !checklist.Ready {
+		return nil, nil, nil, "linked OpenSpec tasks.md could not be read"
+	}
+	plan := partitionImplementationTasks(checklist.Raw, activeAgents)
+	if !plan.Valid {
+		if len(plan.Errors) == 0 {
+			return nil, nil, nil, "implementation task ownership plan is invalid"
+		}
+		return nil, nil, nil, "implementation task ownership plan is invalid: " + strings.Join(plan.Errors, "; ")
+	}
+	byAgent, mergeErrors := mergeImplementationAssignment(plan, findings, activeAgents)
+	if len(mergeErrors) > 0 {
+		return nil, nil, nil, "implementation assignment union is invalid: " + strings.Join(mergeErrors, "; ")
+	}
+	hasWork := false
+	for _, agent := range activeAgents {
+		if len(byAgent[agent]) > 0 {
+			hasWork = true
+			break
+		}
+	}
+	if !hasWork {
+		assignments := make(map[string][]implementationTaskBlock, len(activeAgents))
+		for _, agent := range activeAgents {
+			assignments[agent] = []implementationTaskBlock{}
+		}
+		slog.Info("implementation verification wave scheduled", "active_agents", activeAgents)
+		return append([]string(nil), activeAgents...), assignments, append([]string(nil), activeAgents...), ""
+	}
+	runAgents := make([]string, 0, len(activeAgents))
+	assignments := make(map[string][]implementationTaskBlock, len(activeAgents))
+	for _, agent := range activeAgents {
+		items := append([]implementationTaskBlock(nil), byAgent[agent]...)
+		if len(items) == 0 {
+			continue
+		}
+		assignments[agent] = items
+		runAgents = append(runAgents, agent)
+	}
+	if len(runAgents) == 0 {
+		return nil, nil, nil, "implementation assignment has actionable work but no active owner"
+	}
+	return runAgents, assignments, append([]string(nil), runAgents...), ""
 }
 
 // markImplementationTasksComplete updates all requested task checkboxes in a

@@ -176,7 +176,7 @@ type integrationPipeHandle struct {
 	pid  int
 }
 
-func (h *integrationPipeHandle) PID() int                { return h.pid }
+func (h *integrationPipeHandle) PID() int                 { return h.pid }
 func (h *integrationPipeHandle) Stdin() codex.WriteCloser { return h.peer.stdinW }
 func (h *integrationPipeHandle) Stdout() codex.ReadCloser { return h.peer.stdoutR }
 func (h *integrationPipeHandle) Wait() error              { return nil }

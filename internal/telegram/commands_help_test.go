@@ -42,6 +42,8 @@ func TestCommandHelpTextListsCoreCommands(t *testing.T) {
 		"/telegram-cancel-pending",
 		"/hero-new",
 		"/hero-start",
+		"/hero-add-todo",
+		"/hero-complete-todo",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CommandHelpText missing %q:\n%s", want, text)

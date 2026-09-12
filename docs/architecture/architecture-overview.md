@@ -17,7 +17,7 @@ Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning
 | CLI | Cobra + `internal/common/clierr` |
 | TUI | Bubble Tea + lipgloss + huh (install prompts) |
 | Assets | `assets.FS` (`embed.FS`) |
-| Operational store | SQLite at `.workflow-hero/hero.db` (schema v10; orchestrator session pair on `cycles`, stage-agent sessions on `stages`) |
+| Operational store | SQLite at `.workflow-hero/hero.db` (schema **v11**; C15 findings/ToDo tables + cycle disposition; v10 orchestrator session pair on `cycles`, stage-agent sessions on `stages`) |
 | SDD | OpenSpec (external CLI; coupled at archive) |
 | V1 harness | Cursor Agent CLI (`cursor-agent` / `cursor agent`) |
 | Platforms | Linux/macOS `amd64` / `arm64` |
@@ -161,8 +161,8 @@ Repository layout: **feature-based vertical slices** under `internal/<feature>/`
 | **Diagnostics** | `doctor`, `status`, `variables`, `version` | Table default; `--json` where supported |
 | **Models** | `update-models` | Fetches upstream pricing YAML from GitHub |
 | **TUI** | `tui` | Explicit TUI entry (same as default) |
-| **Cycle API** | `metrics`, `events`, `approve`, `reject`, `cancel`, `finish`, `continue` | CLI-as-API (ADR-014) |
-| **Stage** | `stage start`, `stage close`, `stage loop-back` | Direct stage transitions. `loop-back` reopens Implementation after QA/Judge/E2E failure (PRD §5.4) |
+| **Cycle API** | `metrics`, `events`, `approve`, `reject`, `cancel`, `finish`, `continue`, `add-todo`, `complete-todo` | CLI-as-API (ADR-014); C15 ToDo mutations are deterministic |
+| **Stage** | `stage start`, `stage close` (`--failed --findings-json`), `stage loop-back` | Direct transitions; failed close with findings is one SQLite transaction (findings + loop-back) |
 | **Cycle** | `cycle new`, `cycle sync-config`, `cycle archive`, `cycle resume`, `cycle openspec-change` | Lifecycle + OpenSpec coupling |
 | **Harness** | `run` | One-shot harness Execute (tests / automation) |
 
@@ -234,6 +234,42 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / a project `.wor
 | `timers.go` | Shared one-second Session/AI wk/AI rp counters and cycle-duration persistence |
 | `internal/workflowconfig` document layer | Latest-file YAML node merge, managed projection/diff, deterministic current-config seeding from template/archive, validation, and atomic write |
 | `output_view.go` | Shared scrollable output for Status/Costs/Events |
+
+### C15 loop-back findings data/control flow (core shipped)
+
+```text
+QA / Judge / Browser UI / E2E JSON
+                 │ typed validation (all-or-nothing)
+                 ▼
+        cycle.Service + engine transaction
+          ├─ close source stage Failed
+          ├─ create/reopen find-* rows (hero.db v11)
+          ├─ reset downstream stages
+          └─ loop_back event with finding IDs
+                 │
+                 ▼
+Implementation scheduler assignment
+   unchecked OpenSpec task-*  ∪  open/reopened find-*
+                 │ validated report
+          ┌──────┴──────────┐
+          ▼                 ▼
+   check task-* box    mark find-* done
+
+Escalated loop ── /hero-add-todo ──► todo rows + current-state projection
+       │ partial: remains Escalated         │ all blockers deferred
+       │                                    ▼
+       └─ /hero-continue          completed + deferred disposition
+
+next Research ──► offer pending ToDos ──► adopted ──validated cycle──► resolved
+pending ToDo ── /hero-complete-todo + note ──────────────────────────► resolved
+```
+
+Authority remains split deliberately: OpenSpec owns planned `task-*` state;
+SQLite owns operational findings/structured ToDos; `current-state.md` is the
+portable ToDo projection. The projection boundary is recoverable and
+idempotent, not falsely described as a cross-resource transaction (ADR-083–090).
+
+TUI Status sidebar and Telegram `/status` text still omit the additive C15 table blocks; consumers use `hero status --json` (and Events JSON) today. Escalated `/hero-add-todo` and `/hero-complete-todo` are exposed via CLI and embedded Runtime commands; TUI control-dialog wiring may still be finishing.
 
 **Design principles:**
 
@@ -685,7 +721,7 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/tui` | Bubble Tea terminal UI, Free Chat attachment chips, asset cards, async previews, save actions |
 | `internal/harnessmgr` | Adapter registry (cursor + opencode + codex), fallback chain, boot ListModels skip for lazy children |
 | `internal/tui` | Bubble Tea terminal UI |
-| `internal/todos` | `## Pending` section parser in `current-state.md` |
+| `internal/todos` | `## Pending Features` parse/display; recoverable SQLite→file projection via `todo_projection_ops` |
 | `internal/workflowconfig` | `workflow-config.yml` load/normalize; C7 managed node document, validation, merge, and atomic write |
 | `internal/integration` | Cross-feature integration tests (test-only) |
 | `internal/common/template` | `{{path.key}}` substitution (ADR-006) |

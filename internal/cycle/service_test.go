@@ -60,6 +60,13 @@ stages:
 	}
 	// Touch hero.json so FindProjectRoot works via .workflow-hero dir.
 	_ = os.MkdirAll(filepath.Join(dir, ".workflow-hero", "config"), 0o755)
+	ctxDir := filepath.Join(dir, "context")
+	if err := os.MkdirAll(ctxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ctxDir, "current-state.md"), []byte("## Pending Features\n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return dir
 }
 
@@ -358,6 +365,13 @@ func TestStageAgentAuditRoundTrip(t *testing.T) {
 		if len(audit.TaskIDs) != 0 {
 			t.Fatalf("entry[%d] legacy audit task IDs=%v want empty", i, audit.TaskIDs)
 		}
+		if i == 1 {
+			if audit.ResultValidated == nil || *audit.ResultValidated {
+				t.Fatalf("entry[%d] result_validated=%v want false", i, audit.ResultValidated)
+			}
+		} else if audit.ResultValidated != nil {
+			t.Fatalf("entry[%d] assignment result_validated=%v want unset", i, audit.ResultValidated)
+		}
 	}
 }
 
@@ -453,7 +467,7 @@ func TestStageAgentAuditValidationAndActiveCycleErrors(t *testing.T) {
 			call: func() error {
 				return svc.RecordStageAgentAssignmentWithTasks("stage", "agent", 1, []string{"task-01", " \t"}, "body")
 			},
-			want: "task id at index 1 is required",
+			want: "assignment id at index 1",
 		},
 		{
 			name: "duplicate task ID after normalization",
@@ -507,6 +521,121 @@ func TestStageAgentAuditPreservesEmptyResult(t *testing.T) {
 	}
 	if audit.Body != "" {
 		t.Fatalf("empty result body=%q want empty", audit.Body)
+	}
+	if audit.ResultValidated == nil || *audit.ResultValidated {
+		t.Fatalf("empty raw result_validated=%v want false", audit.ResultValidated)
+	}
+}
+
+func TestStageAgentAuditMixedAssignmentTaskIDsRoundTrip(t *testing.T) {
+	dir := setupProject(t)
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	wantTaskIDs := []string{"task-04.1", "find-qa-1", "find-judge-2"}
+	if err := svc.RecordStageAgentAssignmentWithTasks(
+		"implementation",
+		"generic_agent",
+		4,
+		[]string{" task-04.1 ", "[find-qa-1]", "find-judge-2"},
+		"assignment with mixed IDs",
+	); err != nil {
+		t.Fatalf("record mixed assignment: %v", err)
+	}
+
+	c, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := svc.Store.ListConversation(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("conversation entries=%d want 1", len(entries))
+	}
+
+	var audit cycle.StageAgentAuditBody
+	if err := json.Unmarshal([]byte(entries[0].Body), &audit); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(audit.TaskIDs, wantTaskIDs) {
+		t.Fatalf("task_ids=%v want %v", audit.TaskIDs, wantTaskIDs)
+	}
+	if audit.ResultValidated != nil {
+		t.Fatalf("assignment result_validated=%v want unset", audit.ResultValidated)
+	}
+}
+
+func TestStageAgentAuditValidatedResultPreservesRawAndIDs(t *testing.T) {
+	dir := setupProject(t)
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	raw := "Report follows:\n```json\n{\"tasks_completed\":[\"task-03.2\",\"find-qa-1\"]}\n```"
+	if err := svc.RecordStageAgentResultValidated(
+		"implementation",
+		"generic_agent",
+		2,
+		raw,
+		[]string{" task-03.2 ", "find-qa-1"},
+		nil,
+	); err != nil {
+		t.Fatalf("record validated result: %v", err)
+	}
+
+	c, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := svc.Store.ListConversation(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var audit cycle.StageAgentAuditBody
+	if err := json.Unmarshal([]byte(entries[0].Body), &audit); err != nil {
+		t.Fatal(err)
+	}
+	if audit.Body != raw {
+		t.Fatalf("body=%q want raw preserved", audit.Body)
+	}
+	if audit.ResultValidated == nil || !*audit.ResultValidated {
+		t.Fatalf("result_validated=%v want true", audit.ResultValidated)
+	}
+	if !slices.Equal(audit.TasksCompleted, []string{"task-03.2", "find-qa-1"}) {
+		t.Fatalf("tasks_completed=%v", audit.TasksCompleted)
+	}
+	if len(audit.TasksRemaining) != 0 {
+		t.Fatalf("tasks_remaining=%v want empty", audit.TasksRemaining)
+	}
+}
+
+func TestStageAgentAuditRejectsInvalidAssignmentID(t *testing.T) {
+	dir := setupProject(t)
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	err = svc.RecordStageAgentAssignmentWithTasks("implementation", "generic_agent", 1, []string{"task-01", "gap-1"}, "body")
+	if err == nil || !strings.Contains(err.Error(), "assignment id at index 1") {
+		t.Fatalf("error=%v want invalid assignment id at index 1", err)
 	}
 }
 

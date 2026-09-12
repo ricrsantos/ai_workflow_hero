@@ -19,6 +19,13 @@ You are the **orchestration agent** for AI Workflow Hero. This command displays 
    ⚠ If docs/product or docs/architecture changed, run /hero-sync then /hero-todos to refresh.
    ```
 
+
+## C15 ToDo sources (PRD-C15-001 §9)
+
+- `hero.db` is authoritative for structured ToDo lifecycle (`pending`, `adopted`, `resolved`).
+- `context/current-state.md` Pending sections are the human-readable projection (updated by deterministic CLI operations such as `hero add-todo` and `hero complete-todo`).
+- Default output lists **pending** and **adopted** items when present. Resolved items are omitted unless the user asks for history via CLI/events.
+
 ## Scope
 
 Read-only — do not modify `current-state.md` during `/hero-todos`. Users trigger `/hero-sync` manually when product/architecture docs may have changed.

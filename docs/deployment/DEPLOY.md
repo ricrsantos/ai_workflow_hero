@@ -55,6 +55,29 @@ rm -f ./temp/hero
 
 - `assets.version` (recorded in the installed project's `.workflow-hero/config/hero.json`) is **always equal to** `cli.version`, since assets are embedded in the same binary and cannot diverge from it (see [ADR-001](../architecture/ADR.md#adr-001-go-cobra-and-embedfs-for-cli-distribution)).
 
+### 3.4 Upgrade for C15 findings and durable ToDos
+
+- The release containing C15 applies project-store schema migration v10 → v11
+  transactionally on normal store open; it does not recreate `hero.db`.
+- Migration adds findings, finding occurrences, structured ToDos, adoption
+  history, and completion-disposition state while preserving every existing
+  cycle, stage, event, metric, conversation, artifact, process-registry, and
+  model-cache row.
+- Existing projects receive empty new tables/fields; no historical prose gaps or
+  Pending lines are imported automatically. A legacy Pending line is promoted
+  only when the user explicitly adopts or manually completes that item.
+- Runtime asset upgrade refreshes validation/implementation/discover agent
+  contracts and the `/hero-add-todo` / `/hero-complete-todo` command surfaces
+  under the existing checksum policy. Customized files are reported for manual
+  merge and are never silently overwritten.
+- A release is not publishable if it can persist findings without assigning them
+  to Implementation, defer findings without recoverable `current-state.md`
+  reconciliation, or expose mismatched contracts across Cursor, OpenCode,
+  Codex, and Claude projections.
+- Release validation must include a copied schema-v10 fixture, forced migration,
+  row-for-row preservation assertions, a second idempotent open, and a simulated
+  projection failure/retry.
+
 ## 4. Build & Release Process (V1: manual, script-assisted)
 
 V1 does not use CI/CD. Releases are cut manually by the maintainer, but the repetitive cross-compilation work is automated by a single script.

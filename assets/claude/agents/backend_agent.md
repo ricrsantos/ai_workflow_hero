@@ -108,6 +108,31 @@ The report `status` MUST be exactly one of `complete`, `partial`, or `blocked`:
 - `tasks_completed` and `tasks_remaining` MUST contain only IDs from the explicit assignment. `completed_tasks_verified` is true only when every ID in `tasks_completed` is verified; `task_ownership_respected` is false if any task was outside this agent's ownership.
 
 A green test subset does not make an incomplete assignment complete. Never claim `complete` merely because the tests you chose passed.
+## C15 assignment IDs (PRD-C15-001 §6.5)
+
+Your explicit assignment may contain `task-*` IDs, `find-*` IDs, or both. `tasks_completed` and `tasks_remaining` must list only IDs from **your** assignment, be disjoint, and together cover every assigned ID exactly once.
+
+A verification wave with **no** assigned IDs accepts only empty arrays in both fields.
+
+Include verified `find-*` IDs in `tasks_completed` when you fixed that finding.
+
+## C15 report contract (PRD-C15-001 §6)
+
+Emit **one JSON object** as your entire completion output and **stop**. The orchestrator or TUI scheduler validates the report and persists findings, stage transitions, OpenSpec checkboxes, and loop-back.
+
+**Never** mutate operational state yourself:
+- do **not** call `hero stage close`, `hero stage loop-back`, or any other stage/cycle transition CLI;
+- do **not** edit OpenSpec `tasks.md` checkboxes or write gap files (`qa-gaps.md`, `judge-gaps.md`, etc.);
+- do **not** edit `context/current-state.md`;
+- do **not** invent new `find-*` IDs — only set `reopen_id` when reopening an existing `done` finding ID supplied in your context.
+
+On success (`status`: `passed`), failure arrays must be **empty** (`[]`).
+
+Valid **owner** values: `backend_agent`, `frontend_agent`, `generic_agent` (must be active in the current implementation scope).
+
+Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`. Optional `evidence` is a string array of safe paths/commands. Optional `reopen_id` reopens a prior finding in the same cycle.
+
+Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
 ## Output Format
 
 The implementation report MUST be valid JSON and MUST include the completion contract fields below. Keep `tasks_completed` and `tasks_remaining` as task-ID arrays.
@@ -117,7 +142,7 @@ The implementation report MUST be valid JSON and MUST include the completion con
   "stage": "implementation",
   "agent": "backend_agent",
   "status": "complete",
-  "tasks_completed": ["task-1"],
+  "tasks_completed": ["task-1", "find-qa-1"],
   "tasks_remaining": [],
   "files_changed": ["path/to/file"],
   "acceptance_gates": {
@@ -138,3 +163,25 @@ The implementation report MUST be valid JSON and MUST include the completion con
 ```
 
 For `partial` or `blocked` reports, set `status` accordingly, list all unfinished assigned task IDs in `tasks_remaining`, set any unmet `acceptance_gates` values to `false`, and provide non-empty `blocker` and `next_action` strings. Do not use `complete` while any assigned task remains. Never claim that an unassigned or differently owned task was completed.
+
+### Empty verification wave example
+
+```json
+{
+  "stage": "implementation",
+  "agent": "backend_agent",
+  "status": "complete",
+  "tasks_completed": [],
+  "tasks_remaining": [],
+  "files_changed": [],
+  "acceptance_gates": {
+    "completed_tasks_verified": true,
+    "task_ownership_respected": true,
+    "required_tests_passed": true
+  },
+  "tests_passed": true,
+  "blocker": null,
+  "next_action": null,
+  "summary": "Verification wave: no assigned task or finding IDs."
+}
+```

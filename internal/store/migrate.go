@@ -6,7 +6,7 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 10
+const currentSchemaVersion = 11
 
 func (s *Store) migrate() error {
 	return s.migrateTo(currentSchemaVersion)
@@ -209,6 +209,102 @@ func (s *Store) applyMigration(version int) error {
 		}
 		if _, err := tx.Exec(`ALTER TABLE cycles ADD COLUMN orchestration_harness_id TEXT NOT NULL DEFAULT ''`); err != nil {
 			return fmt.Errorf("migration %d: %w", version, err)
+		}
+	case 11:
+		// C15 / ADR-083: findings, ToDos, projection ops, cycle completion disposition.
+		stmts := []string{
+			`CREATE TABLE findings (
+  id TEXT NOT NULL,
+  cycle_id INTEGER NOT NULL REFERENCES cycles(id) ON DELETE CASCADE,
+  source_stage TEXT NOT NULL,
+  owner TEXT NOT NULL,
+  status TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  file TEXT,
+  requirement TEXT,
+  issue TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL,
+  evidence_json TEXT NOT NULL DEFAULT '[]',
+  round INTEGER NOT NULL DEFAULT 1,
+  todo_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (cycle_id, id),
+  UNIQUE (cycle_id, fingerprint),
+  CHECK (round >= 1),
+  CHECK (length(issue) > 0 AND length(acceptance_criteria) > 0),
+  CHECK (source_stage IN ('qa', 'judge', 'browser_ui_validation', 'qa_end_to_end')),
+  CHECK (owner IN ('backend_agent', 'frontend_agent', 'generic_agent')),
+  CHECK (status IN ('open', 'done', 'reopened', 'deferred_todo'))
+)`,
+			`CREATE INDEX idx_findings_cycle ON findings(cycle_id)`,
+			`CREATE TABLE finding_occurrences (
+  cycle_id INTEGER NOT NULL,
+  finding_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  source_stage TEXT NOT NULL,
+  round INTEGER NOT NULL,
+  issue TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL,
+  evidence_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (cycle_id, finding_id, sequence),
+  FOREIGN KEY (cycle_id, finding_id) REFERENCES findings(cycle_id, id) ON DELETE CASCADE,
+  CHECK (round >= 1),
+  CHECK (length(issue) > 0 AND length(acceptance_criteria) > 0),
+  CHECK (kind IN ('created', 'done', 'reopened', 'rediscovered', 'deferred', 'deferred_recurrence')),
+  CHECK (source_stage IN ('qa', 'judge', 'browser_ui_validation', 'qa_end_to_end'))
+)`,
+			`CREATE INDEX idx_finding_occurrences_cycle ON finding_occurrences(cycle_id)`,
+			`CREATE TABLE todos (
+  id TEXT PRIMARY KEY,
+  origin_type TEXT NOT NULL,
+  origin_finding_id TEXT,
+  origin_cycle_id INTEGER,
+  origin_source_stage TEXT,
+  summary TEXT NOT NULL,
+  acceptance_criteria TEXT,
+  status TEXT NOT NULL,
+  adopted_cycle_id INTEGER,
+  resolution_note TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  resolved_at TEXT,
+  CHECK (origin_type IN ('finding', 'legacy')),
+  CHECK (status IN ('pending', 'adopted', 'resolved'))
+)`,
+			`CREATE TABLE todo_adoptions (
+  todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+  sequence INTEGER NOT NULL,
+  cycle_id INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (todo_id, sequence),
+  CHECK (status IN ('adopted', 'released', 'resolved'))
+)`,
+			`CREATE TABLE todo_projection_ops (
+  id INTEGER PRIMARY KEY,
+  cycle_id INTEGER,
+  op_kind TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL,
+  todo_ids_json TEXT NOT NULL,
+  candidate_sha256 TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK (op_kind IN ('defer', 'complete', 'adopt', 'release')),
+  CHECK (status IN ('intent_persisted', 'candidate_ready', 'installed', 'verified'))
+)`,
+			`CREATE INDEX idx_todo_projection_ops_cycle ON todo_projection_ops(cycle_id)`,
+			`ALTER TABLE cycles ADD COLUMN completion_disposition TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE cycles ADD COLUMN completion_disposition_json TEXT NOT NULL DEFAULT ''`,
+		}
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("migration %d: %w", version, err)
+			}
 		}
 	default:
 		return fmt.Errorf("unknown schema migration version %d", version)

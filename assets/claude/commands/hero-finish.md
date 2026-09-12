@@ -20,6 +20,11 @@ You are the **orchestration agent** for AI Workflow Hero.
 6. Update `current-state.md` to reflect the new project state after this cycle.
 7. Notify the user that the cycle is complete; show completion via `hero status` and remind them to run **`/hero-archive`** when ready (OpenSpec archive runs first when linked; folder date from store `completed_at`).
 
+
+## Emergency finish vs deferred closure
+
+`/hero-finish` remains available for emergency cycle termination. When open or reopened findings still exist, require strong confirmation that those findings will **not** become deferred ToDos. This is distinct from `/hero-add-todo` deferring every blocker, which closes with disposition `completed_with_deferred_todos` without treating the cycle as a normal validated completion.
+
 ## Metrics
 
 Compute metrics per **Metrics Procedure** in `orchestration_agent` (chars÷4, model rates from `.workflow-hero/models/*.yml`). Pass the payload via `--metrics-json`; query totals with `hero metrics`.

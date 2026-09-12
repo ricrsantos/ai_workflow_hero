@@ -23,7 +23,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 User-facing chat messages and CTAs **prefer the Hero hyphen slash set** — not CLI verbs as the primary instruction:
 
-`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-continue`, `/hero-back`, `/hero-cycles`, `/hero-todos`, `/hero-help`.
+`/hero-new`, `/hero-start`, `/hero-approve`, `/hero-reject`, `/hero-cancel`, `/hero-finish`, `/hero-archive`, `/hero-resume`, `/hero-sync`, `/hero-status`, `/hero-continue`, `/hero-back`, `/hero-cycles`, `/hero-todos`, `/hero-add-todo`, `/hero-complete-todo`, `/hero-help`.
 
 Agents still invoke `hero …` CLI commands for deterministic persistence; when telling the **user** what to run next, use the slash form (e.g. “run `/hero-approve`”, not “run `hero approve`”). After `/hero-new`, the primary handoff CTA is **`/hero-start`** in a new empty chat.
 
@@ -68,7 +68,7 @@ Read `require_human_approval` for the stage that **just finished** — never for
 
 - Check timeouts between iterations (not mid-execution).
 - On exhaustion, set Human Approval = Escalated, wait for /hero-continue.
-- QA / Browser UI Validation / QA End-to-End failures loop back to implementation agents.
+- QA / Judge / Browser UI Validation / QA End-to-End failures: subagents emit JSON only; the orchestrator/TUI scheduler atomically persists findings and loop-back (never gap files or agent-driven `hero stage loop-back`).
 - Browser UI Validation: Health failure skips Visual; route `failure_class: frontend` → `frontend_agent`, `failure_class: backend` → `backend_agent`. Visual failures → `frontend_agent`. Missing PNG refs are warnings, not failures.
 - Judge SDD ambiguity → offer /hero-back or /hero-approve.
 
@@ -79,6 +79,15 @@ Read `workflow-config.yml → workflow_config.user_preferred_language` (default 
 ## Scope Routing
 
 `workflow-config.yml → scope` maps backend/frontend to backend_agent/frontend_agent; native/script/infrastructure map to generic_agent.
+
+
+## C15 findings and assignments (PRD-C15-001 §7)
+
+- Validation agents return JSON only. Close failed validation stages through the deterministic CLI (for example `hero stage close --name qa --failed --findings-json '<JSON>'`) — never ask a subagent to loop back or write gap markdown.
+- Implementation assignments may mix `task-*` and `find-*` IDs per owner. Pass the exact ID list in every Implementation Task prompt.
+- When the loop is **Escalated**, the user may run `/hero-add-todo` to defer selected open/reopened findings to project ToDos, then `/hero-continue` for remaining blockers. Deferring every blocker closes the cycle with disposition `completed_with_deferred_todos` (distinct from `/hero-finish`).
+- `/hero-complete-todo` resolves pending structured or legacy ToDos fixed outside Hero (never items adopted by the active cycle).
+- `/hero-todos` stays read-only; it lists pending/adopted projection items and the `/hero-sync` notice.
 
 ## Implementation task ownership
 
@@ -134,7 +143,7 @@ After every Implementation report, validate the report and the task file on disk
 - every report has `tests_passed: true`;
 - every value in every report's `acceptance_gates` object is `true`;
 - every report has `completed_tasks_verified: true`, `task_ownership_respected: true`, and `required_tests_passed: true` in its `acceptance_gates` object;
-- every `tasks_completed` and `tasks_remaining` ID belongs to that report's explicit assignment;
+- every `tasks_completed` and `tasks_remaining` ID belongs to that report's explicit assignment (including any assigned `find-*` IDs);
 - every assigned ID is implemented and verified according to the report; the
   checkbox state is informational while the report is being validated and may
   still be `[ ]`;
