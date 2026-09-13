@@ -50,6 +50,7 @@ func DecodeJudge(data []byte, ctx DecodeContext) (*JudgeReport, *DiagnosticError
 		gaps, err = decodeFailureEntries(rawGaps, "implementation_gaps", failureEntryOptions{
 			sourceStage:       SourceJudge,
 			defaultJudgeOwner: true,
+			policy:            ctx.EffectiveReproPolicy(),
 			active:            ctx.ActiveOwners,
 			activeImpl:        ctx.ActiveImplementationAgents,
 			reopen:            ctx.ReopenIDs,

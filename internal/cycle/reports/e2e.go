@@ -60,6 +60,7 @@ func DecodeQAEndToEnd(data []byte, ctx DecodeContext) (*QAEndToEndReport, *Diagn
 	failures, err := decodeFailureEntries(rawFailures, "failures", failureEntryOptions{
 		sourceStage:  SourceQAEndToEnd,
 		requireOwner: true,
+		policy:       ctx.EffectiveReproPolicy(),
 		active:       ctx.ActiveOwners,
 		reopen:       ctx.ReopenIDs,
 	})

@@ -80,6 +80,7 @@ func OpenService(projectDir string) (*Service, error) {
 		return nil, err
 	}
 	eng := engine.New(st)
+	eng.ProjectDir = root
 	if notifier := lifecycle.NewEnvNotifier(); notifier != nil {
 		eng.Notifier = notifier
 	}
@@ -697,6 +698,36 @@ func (s *Service) LoopBackToImplementation(fromStage, reason string) error {
 		return err
 	}
 	return s.Engine.LoopBackToImplementation(c.ID, fromStage, reason)
+}
+
+// EscalateStage stops a stage for an explicit scheduler reason and waits for a
+// human decision (/hero-continue, /hero-add-todo, /hero-cancel, /hero-finish).
+func (s *Service) EscalateStage(name, reason string) error {
+	if s == nil || s.Engine == nil || s.Store == nil {
+		return errors.New("cycle service unavailable")
+	}
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	return s.Engine.EscalateStage(c.ID, name, reason)
+}
+
+// EscalateIfStageTimedOut escalates a stage whose wall-clock timeout is spent.
+// The scheduler calls it between Implementation waves, which is the only point
+// where a long stage can overrun its timeout without passing through
+// StartStage. Iterations are deliberately not re-checked here: a wave is not an
+// iteration, so a stage on its last allowed iteration may still finish the
+// waves that are making progress.
+func (s *Service) EscalateIfStageTimedOut(name string) error {
+	if s == nil || s.Engine == nil || s.Store == nil {
+		return errors.New("cycle service unavailable")
+	}
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	return s.Engine.EscalateIfTimedOut(c.ID, name)
 }
 
 // CloseStage closes a running stage (used by Runtime / tests).

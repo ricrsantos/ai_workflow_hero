@@ -191,8 +191,14 @@ type model struct {
 	stageHandoffPreparationError     string
 	stageHandoffInterventionRequired bool
 	stageHandoffDoneKey              string // "stage:iteration" already TUI-executed this session
-	stageProgressCTAKey              string // last idle CTA; de-dupes watchdog/lifecycle repeats
-	stageProgressHoldUntilStart      bool   // user cancelled; do not auto-redispatch until /hero-start
+	// Repro gate state for the current Implementation wave. The gate runs
+	// asynchronously, so the wave's decision waits for stageHandoffReproChecked.
+	stageHandoffReproChecked    bool
+	stageHandoffReproRunning    bool
+	stageHandoffReproResults    map[string]*cycle.ReproGateError
+	stageHandoffReproError      string
+	stageProgressCTAKey         string // last idle CTA; de-dupes watchdog/lifecycle repeats
+	stageProgressHoldUntilStart bool   // user cancelled; do not auto-redispatch until /hero-start
 
 	// C5 model properties (ADR-042).
 	propsSvc             *modelprops.Service
@@ -720,6 +726,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)
+
+	case reproGateResultMsg:
+		return m.handleReproGateResult(msg)
 
 	case lifecycleEventMsg:
 		return m.handleLifecycleEvent(msg.event)

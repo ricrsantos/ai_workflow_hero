@@ -20,6 +20,11 @@ func handoffProject(t *testing.T) (*cycle.Service, int64) {
 func handoffProjectWithDir(t *testing.T) (*cycle.Service, int64, string) {
 	t.Helper()
 	dir := setupProject(t)
+	// The repro policy reads the project root: a go.mod is what makes the
+	// built-in `go test` repro gate available without extra configuration.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/handofftest\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	svc, err := cycle.OpenService(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +90,11 @@ func TestCloseStageFailedWithFindingsDelegatesToEngine(t *testing.T) {
 
 func TestCloseImplementationWhenAssignmentEmpty(t *testing.T) {
 	dir := setupProject(t)
+	// The repro policy reads the project root: a go.mod is what makes the
+	// built-in `go test` repro gate available without extra configuration.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/handofftest\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	svc, err := cycle.OpenService(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -130,6 +140,11 @@ func TestCloseImplementationWhenAssignmentEmpty(t *testing.T) {
 
 func TestCompleteCycleWithDeferredTodos(t *testing.T) {
 	dir := setupProject(t)
+	// The repro policy reads the project root: a go.mod is what makes the
+	// built-in `go test` repro gate available without extra configuration.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/handofftest\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	svc, err := cycle.OpenService(dir)
 	if err != nil {
 		t.Fatal(err)

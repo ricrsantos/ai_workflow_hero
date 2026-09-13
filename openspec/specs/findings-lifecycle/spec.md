@@ -35,19 +35,49 @@ Without a valid `reopen_id`, equality SHALL use a SHA-256 fingerprint of cycle, 
 - **WHEN** a later valid report in the same cycle matches a `deferred_todo` finding
 - **THEN** Hero appends a `deferred_recurrence` warning occurrence, does not reopen the finding, and does not treat it as an actionable failure
 
+### Requirement: Repro modes SHALL follow the project's verification policy
+The repro identity of a finding SHALL use one of three modes: `go_test` (a Go package plus `Test*` name and source), `command` (a repo-relative target plus filter token, re-run through the argv template in `verification.repro.command`), or `evidence` (no automated re-run; a non-empty `evidence` array). The available modes SHALL come from `verification.repro` in workflow-config.yml, defaulting to `go_test` when the project root holds a `go.mod` and to `evidence` when no automated mode exists. Evidence mode SHALL stay closed for stages that can express the failure automatically, while Browser UI Validation keeps it by default because rendering and visual-diff failures have no deterministic re-run. Agent-supplied tokens SHALL be charset-restricted and interpolated into a project-owned argv without a shell (PRD-C15-001 §6; ADR-084).
+
+#### Scenario: Non-Go project uses its own command
+- **WHEN** `verification.repro.command` is configured and a QA failure entry uses `repro.mode: "command"`
+- **THEN** the report is accepted and the scheduler re-runs that command with the finding's target and filter before accepting `done`
+
+#### Scenario: Mode not enabled is rejected with a usable diagnostic
+- **WHEN** a report uses a mode this project has not enabled
+- **THEN** the report is rejected with `invalid_enum` on `repro.mode` listing the allowed modes, and nothing is persisted
+
+#### Scenario: Browser UI keeps the evidence escape hatch
+- **WHEN** Browser UI Validation reports a visual or rendering failure with `repro.mode: "evidence"` and non-empty `evidence`
+- **THEN** the finding is persisted and routed normally, and the scheduler records that it has no automated gate
+
+### Requirement: The validation loop SHALL have scheduler-owned ceilings
+The scheduler SHALL stop the validation → Implementation loop instead of letting it run until the iteration budget is exhausted. One finding SHALL travel at most 3 rounds, an Implementation stage SHALL run at most 8 waves per iteration, and the stage iteration/timeout budget SHALL be re-checked between waves. Reaching any ceiling SHALL Escalate Implementation so the user decides with `/hero-continue`, `/hero-add-todo`, `/hero-cancel`, or `/hero-finish`.
+
+#### Scenario: A finding that keeps coming back stops the loop
+- **WHEN** an actionable finding reaches round 4 at Implementation dispatch
+- **THEN** no wave is dispatched, Implementation becomes Escalated, and the user is shown the finding IDs and the available actions
+
+#### Scenario: Budget is re-checked between waves
+- **WHEN** an Implementation wave makes progress and the stage timeout or iteration budget is already spent
+- **THEN** the scheduler escalates instead of starting the next wave
+
 ### Requirement: Only Go SHALL change finding status
 Finding status SHALL be `open`, `done`, `reopened`, or `deferred_todo`. Only scheduler/service code MAY change status. `done` means the assigned Implementation agent reported and verified that exact ID. A `deferred_todo` finding is not assignable in its source cycle (PRD-C15-001 §5.3; ADR-083).
 
 #### Scenario: Implementation completion marks a finding done
-- **WHEN** a verified Implementation report includes assigned `find-qa-1` in `tasks_completed` and the locked repro test passes (`go test <package> -count=1 -run ^TestName$`, named test actually ran)
+- **WHEN** a verified Implementation report includes assigned `find-qa-1` in `tasks_completed` and the locked repro passes for its mode (`go test <package> -count=1 -run ^TestName$` for `go_test`; the configured `verification.repro.command` for `command`; nothing to re-run for `evidence`)
 - **THEN** that finding status becomes `done` and a `done` occurrence is appended
 
-#### Scenario: Scheduler rejects done when the repro test still fails
-- **WHEN** an Implementation report includes `find-qa-1` in `tasks_completed` but the locked repro test fails, is missing, or `go test` reports no tests ran
+#### Scenario: Scheduler rejects done when the repro still fails
+- **WHEN** an Implementation report includes `find-qa-1` in `tasks_completed` but the locked repro fails, is missing, or `go test` reports no tests ran
 - **THEN** Hero does not mark the finding done (`repro_test_failed`) and does not check the corresponding OpenSpec task boxes for that close
 
-#### Scenario: Validation reports require a Go repro
-- **WHEN** a QA/Judge/BUI/E2E failure entry omits `repro.package`, `repro.test`, or `repro.source`, or `source` does not declare `func TestName(`
+#### Scenario: Repro verification never blocks the TUI
+- **WHEN** an Implementation wave claims one or more `find-*` IDs as done
+- **THEN** the scheduler re-runs their repros in a background command bounded by a total budget, keeps the handoff live while it runs, and applies the verdict only to the wave that requested it
+
+#### Scenario: Validation reports require a repro in an enabled mode
+- **WHEN** a QA/Judge/BUI/E2E failure entry omits `repro`, uses a `repro.mode` that this project has not enabled, or breaks that mode's shape (a `go_test` `source` that does not declare `func TestName(`, an `evidence` entry carrying package/test/source or an empty `evidence` array)
 - **THEN** the report is rejected fail-closed (`missing_field` / `invalid_enum`) and no finding or stage change is persisted
 
 #### Scenario: Agents cannot mutate findings

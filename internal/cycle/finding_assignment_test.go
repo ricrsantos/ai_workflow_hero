@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -25,7 +26,7 @@ func TestFindingAssignmentMarkdownResidualAndReproUntruncated(t *testing.T) {
 		{Round: 1, Kind: store.OccurrenceCreated, Issue: "Quit races persist"},
 		{Round: 2, Kind: store.OccurrenceReopened, Issue: residual, ReproPackage: f.ReproPackage, ReproTest: f.ReproTest, ReproSource: src},
 	}
-	block := FindingAssignmentMarkdown(f, occs)
+	block := FindingAssignmentMarkdown(f, occs, findingrepro.DefaultGoPolicy())
 	if !strings.Contains(block, "Residual: "+residual) {
 		t.Fatalf("residual must be untruncated:\n%s", block)
 	}

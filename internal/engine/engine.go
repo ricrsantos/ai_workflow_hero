@@ -21,6 +21,10 @@ type Engine struct {
 	Store  *store.Store
 	Logger *slog.Logger
 	Now    func() time.Time
+	// ProjectDir is the project root that owns .workflow-hero. It is optional;
+	// when empty, repro policy detection falls back to the cycle config
+	// snapshot alone.
+	ProjectDir string
 	// Notifier receives lifecycle events (cycle/stage/approval/error/final)
 	// after successful transitions, so downstream transports such as the
 	// Telegram outbound adapter can filter locally without importing harness
@@ -508,26 +512,71 @@ func (e *Engine) EscalateIfExhausted(cycleID int64, stageName string) error {
 	return e.escalateStage(cycleID, st, reason)
 }
 
+// EscalateIfTimedOut escalates a live stage only when its wall-clock timeout is
+// spent. Implementation waves inside one iteration do not consume iterations,
+// so the iteration budget must not be re-applied between them — only the
+// timeout, which otherwise would never be checked until the next StartStage.
+func (e *Engine) EscalateIfTimedOut(cycleID int64, stageName string) error {
+	st, err := e.Store.GetStage(cycleID, stageName)
+	if err != nil {
+		return err
+	}
+	if st.Status == store.StageCompleted || st.Status == store.StageSkipped || st.Status == store.StageEscalated {
+		return nil
+	}
+	if !e.stageTimedOut(st) {
+		return nil
+	}
+	return e.escalateStage(cycleID, st, "timeout")
+}
+
 // budgetExhausted reports whether iteration or timeout budget is spent.
 // Timeout uses wall-clock elapsed since stage StartedAt (first StartStage).
 func (e *Engine) budgetExhausted(st store.Stage) (reason string, exhausted bool) {
 	if st.Iteration >= st.EffectiveMaxIterations() {
 		return "iteration_budget", true
 	}
-	if st.TimeoutMinutes > 0 && st.StartedAt != "" {
-		started, err := time.Parse(time.RFC3339, st.StartedAt)
-		if err != nil {
-			e.Logger.Error("parse stage started_at", "stage", st.Name, "started_at", st.StartedAt, "err", err)
-			return "", false
-		}
-		elapsed := e.Now().UTC().Sub(started.UTC())
-		if elapsed >= time.Duration(st.TimeoutMinutes)*time.Minute {
-			e.Logger.Info("stage timeout exceeded",
-				"stage", st.Name, "timeout_minutes", st.TimeoutMinutes, "elapsed", elapsed.String())
-			return "timeout", true
-		}
+	if e.stageTimedOut(st) {
+		return "timeout", true
 	}
 	return "", false
+}
+
+// stageTimedOut reports whether the stage wall-clock timeout is spent, measured
+// from the first StartStage.
+func (e *Engine) stageTimedOut(st store.Stage) bool {
+	if st.TimeoutMinutes <= 0 || st.StartedAt == "" {
+		return false
+	}
+	started, err := time.Parse(time.RFC3339, st.StartedAt)
+	if err != nil {
+		e.Logger.Error("parse stage started_at", "stage", st.Name, "started_at", st.StartedAt, "err", err)
+		return false
+	}
+	elapsed := e.Now().UTC().Sub(started.UTC())
+	if elapsed < time.Duration(st.TimeoutMinutes)*time.Minute {
+		return false
+	}
+	e.Logger.Info("stage timeout exceeded",
+		"stage", st.Name, "timeout_minutes", st.TimeoutMinutes, "elapsed", elapsed.String())
+	return true
+}
+
+// EscalateStage moves a live stage to Escalated for an explicit scheduler
+// reason (wave cap, finding round cap). Completed, skipped, and already
+// escalated stages are left untouched so the call is idempotent.
+func (e *Engine) EscalateStage(cycleID int64, stageName, reason string) error {
+	st, err := e.Store.GetStage(cycleID, stageName)
+	if err != nil {
+		return err
+	}
+	if st.Status == store.StageCompleted || st.Status == store.StageSkipped || st.Status == store.StageEscalated {
+		return nil
+	}
+	if strings.TrimSpace(reason) == "" {
+		reason = "scheduler_stop"
+	}
+	return e.escalateStage(cycleID, st, reason)
 }
 
 func (e *Engine) escalateStage(cycleID int64, st store.Stage, reason string) error {

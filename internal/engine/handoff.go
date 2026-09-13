@@ -12,6 +12,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
+	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
 // ReportValidationError wraps a typed report diagnostic from internal/cycle/reports.
@@ -353,8 +354,9 @@ func (e *Engine) decodeContextForCycle(cycleID int64) (reports.DecodeContext, er
 	ctx := reports.DecodeContext{
 		ActiveOwners:               active,
 		ActiveImplementationAgents: implAgents,
+		ReproPolicy:                workflowconfig.ReproPolicyForProject(e.ProjectDir, []byte(c.ConfigSnapshotJSON)),
 		ReopenIDs: reports.ReopenIDValidateFunc(func(req reports.ReopenRequest) *reports.DiagnosticError {
-			if err := e.Store.ValidateReopenID(cycleID, req.SourceStage, req.Owner, req.ReopenID, req.File, req.Requirement, req.AcceptanceCriteria, req.ReproPackage, req.ReproTest); err != nil {
+			if err := e.Store.ValidateReopenID(cycleID, req.SourceStage, req.Owner, req.ReopenID, req.File, req.Requirement, req.AcceptanceCriteria, req.ReproMode, req.ReproPackage, req.ReproTest); err != nil {
 				if errors.Is(err, store.ErrInvalidReopenID) {
 					return reportsUnknownReopenID(req.ReopenID)
 				}
@@ -448,6 +450,7 @@ func findingInputFromEntry(cycleID int64, sourceStage string, ent reports.Failur
 		Issue:              ent.Issue,
 		AcceptanceCriteria: ent.AcceptanceCriteria,
 		Evidence:           ent.Evidence,
+		ReproMode:          ent.Repro.Mode,
 		ReproPackage:       ent.Repro.Package,
 		ReproTest:          ent.Repro.Test,
 		ReproSource:        ent.Repro.Source,

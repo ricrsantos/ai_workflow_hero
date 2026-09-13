@@ -167,11 +167,11 @@ func TestPersistFindingReopenIDRejectsContractDrift(t *testing.T) {
 	if !errors.Is(err, ErrInvalidReopenID) {
 		t.Fatalf("err=%v want ErrInvalidReopenID", err)
 	}
-	if err := s.ValidateReopenID(cycleID, in.SourceStage, in.Owner, res.Finding.ID, in.File, in.Requirement, in.AcceptanceCriteria, "", ""); !errors.Is(err, ErrInvalidReopenID) {
+	if err := s.ValidateReopenID(cycleID, in.SourceStage, in.Owner, res.Finding.ID, in.File, in.Requirement, in.AcceptanceCriteria, "", "", ""); !errors.Is(err, ErrInvalidReopenID) {
 		t.Fatalf("ValidateReopenID err=%v", err)
 	}
 	in.AcceptanceCriteria = "cancel joins in-flight execution"
-	if err := s.ValidateReopenID(cycleID, in.SourceStage, in.Owner, res.Finding.ID, in.File, in.Requirement, in.AcceptanceCriteria, "", ""); err != nil {
+	if err := s.ValidateReopenID(cycleID, in.SourceStage, in.Owner, res.Finding.ID, in.File, in.Requirement, in.AcceptanceCriteria, "", "", ""); err != nil {
 		t.Fatalf("matching contract should validate: %v", err)
 	}
 	res, err = s.PersistFinding(in)
@@ -471,10 +471,40 @@ func TestPersistFindingLocksEmptyReproAndRejectsDrift(t *testing.T) {
 	if _, err := s.PersistFinding(reopen); !errors.Is(err, ErrInvalidReopenID) {
 		t.Fatalf("reopen with different test err=%v", err)
 	}
-	if err := s.ValidateReopenID(cycleID, lock.SourceStage, lock.Owner, "find-qa-1", lock.File, lock.Requirement, lock.AcceptanceCriteria, "./internal/tui", "TestFindB"); !errors.Is(err, ErrInvalidReopenID) {
+	if err := s.ValidateReopenID(cycleID, lock.SourceStage, lock.Owner, "find-qa-1", lock.File, lock.Requirement, lock.AcceptanceCriteria, "go_test", "./internal/tui", "TestFindB"); !errors.Is(err, ErrInvalidReopenID) {
 		t.Fatalf("ValidateReopenID drift err=%v", err)
 	}
-	if err := s.ValidateReopenID(cycleID, lock.SourceStage, lock.Owner, "find-qa-1", lock.File, lock.Requirement, lock.AcceptanceCriteria, "./internal/tui", "TestFindA"); err != nil {
+	if err := s.ValidateReopenID(cycleID, lock.SourceStage, lock.Owner, "find-qa-1", lock.File, lock.Requirement, lock.AcceptanceCriteria, "go_test", "./internal/tui", "TestFindA"); err != nil {
 		t.Fatalf("matching repro should validate: %v", err)
+	}
+}
+
+// A finding locked to an automated repro must not be reopened by an
+// evidence-only report: that would silently remove its gate.
+func TestReopenIDRejectsEvidenceDriftFromAutomatedRepro(t *testing.T) {
+	s, cycleID := openTestStoreWithCycle(t)
+	in := FindingInput{
+		CycleID: cycleID, SourceStage: FindingSourceQA, Owner: FindingOwnerGeneric,
+		File: "internal/tui/a.go", Issue: "locked", AcceptanceCriteria: "test passes",
+		ReproMode: "go_test", ReproPackage: "./internal/tui", ReproTest: "TestLocked",
+		ReproSource: "package tui\n\nfunc TestLocked(t *testing.T) {\n\tt.Fatal(\"x\")\n}\n",
+	}
+	res, err := s.PersistFinding(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InTx(func(tx *sql.Tx) error {
+		return s.MarkFindingDoneTx(tx, cycleID, res.Finding.ID, in.Issue, in.AcceptanceCriteria, "[]")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = s.ValidateReopenID(cycleID, in.SourceStage, in.Owner, res.Finding.ID,
+		in.File, in.Requirement, in.AcceptanceCriteria, "evidence", "", "")
+	if !errors.Is(err, ErrInvalidReopenID) {
+		t.Fatalf("err=%v want ErrInvalidReopenID", err)
+	}
+	if err := s.ValidateReopenID(cycleID, in.SourceStage, in.Owner, res.Finding.ID,
+		in.File, in.Requirement, in.AcceptanceCriteria, "go_test", "./internal/tui", "TestLocked"); err != nil {
+		t.Fatalf("matching repro must still validate: %v", err)
 	}
 }

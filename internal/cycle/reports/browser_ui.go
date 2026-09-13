@@ -66,6 +66,7 @@ func DecodeBrowserUI(data []byte, ctx DecodeContext) (*BrowserUIReport, *Diagnos
 	failures, err := decodeFailureEntries(rawFailures, "failures", failureEntryOptions{
 		sourceStage:        SourceBrowserUI,
 		deriveBrowserOwner: true,
+		policy:             ctx.EffectiveReproPolicy(),
 		active:             ctx.ActiveOwners,
 		reopen:             ctx.ReopenIDs,
 	})

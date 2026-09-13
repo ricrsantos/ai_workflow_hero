@@ -55,6 +55,8 @@ Designed for an open-source workflow, it helps you move through:
 - OpenSpec integration for SDD planning and task-driven implementation
 - Research produces project specifications (PRD, ADR, UI, DEPLOY, TESTING) with cycle numbering; architecture changes require an approved ADR
 - Implementation logging standard (`error` / `info` / `debug`, default `info`) enforced by `qa_agent`
+- Verified findings loop: every QA/Judge/Browser UI/E2E failure carries a repro (`go_test`, a project-configured `command`, or `evidence` when no re-run can exist), and Hero re-runs it before accepting an implementation agent's "fixed" claim — configurable under `verification.repro` in `workflow-config.yml`, with the resolved policy shown in the TUI Config screen
+- Scheduler-owned loop ceilings: at most 3 rounds per finding and 8 Implementation waves per iteration, then the stage escalates for a human decision instead of looping
 - Soft secrets hygiene: `.env.example` + `.gitignore` patterns; `hero doctor` warns, never blocks
 - Optional Browser UI Validation (`stages.browser_ui_validation`, requires `scope.frontend`): Playwright Health + optional Visual vs PNGs under `docs/ui/visual_reference`
 - Opt-in Playwright for QA End-to-End journeys (`stages.qa_end_to_end.use_playwright`, requires `scope.frontend`) — distinct from Browser UI Validation
@@ -526,6 +528,8 @@ Projetado para um fluxo open source, ele ajuda você a avançar em:
 - Integração com OpenSpec para planejamento SDD e implementação orientada a tarefas
 - Research gera especificações do projeto (PRD, ADR, UI, DEPLOY, TESTING) com numeração por ciclo; mudanças de arquitetura exigem ADR aprovado
 - Padrão de logging na implementação (`error` / `info` / `debug`, default `info`) verificado pelo `qa_agent`
+- Loop de findings verificado: toda falha de QA/Judge/Browser UI/E2E carrega um repro (`go_test`, um `command` configurado no projeto ou `evidence` quando nenhuma reexecução é possível), e o Hero reexecuta esse repro antes de aceitar o "corrigido" do agente de implementação — configurável em `verification.repro` no `workflow-config.yml`, com a política resolvida visível na tela Config da TUI
+- Tetos de loop do scheduler: no máximo 3 rodadas por finding e 8 waves de Implementation por iteração; ao atingir o teto o estágio escala para decisão humana em vez de continuar em loop
 - Higiene suave de secrets: `.env.example` + padrões no `.gitignore`; `hero doctor` avisa, não bloqueia
 - Browser UI Validation opcional (`stages.browser_ui_validation`, exige `scope.frontend`): Health com Playwright + Visual opcional vs PNGs em `docs/ui/visual_reference`
 - Playwright opcional no QA End-to-End para jornadas (`stages.qa_end_to_end.use_playwright`, exige `scope.frontend`) — distinto do Browser UI Validation

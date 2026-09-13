@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 )
 
 // ManagedConfig is the workflow-config.yml subset owned by the TUI Config
@@ -21,6 +23,10 @@ type ManagedConfig struct {
 	Stages         map[string]ManagedStage     `yaml:"stages"`
 	Agents         map[string]AgentModelConfig `yaml:"agents"`
 	FallbackModel  AgentModelConfig            `yaml:"fallback_model"`
+	// Verification carries the repro policy. Only `repro.mode` and
+	// `repro.allow_evidence` are editable from the Config screen; `repro.command`
+	// is an argv and stays YAML-only so it is never assembled from a text field.
+	Verification Verification `yaml:"verification"`
 }
 
 // WorkflowPreferences contains cycle-wide settings shown by the Config screen.
@@ -153,6 +159,9 @@ func (c ManagedConfig) Validate(opts ValidationOptions) error {
 	if stage, ok := c.Stages["qa_end_to_end"]; ok && stage.UsePlaywright && !c.Scope.Frontend {
 		return fmt.Errorf("stages.qa_end_to_end.use_playwright requires scope.frontend")
 	}
+	if err := c.validateVerification(); err != nil {
+		return err
+	}
 
 	for _, name := range c.RequiredAgentNames() {
 		agent, ok := c.Agents[name]
@@ -164,6 +173,19 @@ func (c ManagedConfig) Validate(opts ValidationOptions) error {
 		}
 	}
 	return validateAgent("fallback_model", c.FallbackModel, false, opts)
+}
+
+// validateVerification keeps the repro policy usable: saving a mode the project
+// cannot run would reject every validation report at decode time.
+func (c ManagedConfig) validateVerification() error {
+	mode, err := findingrepro.CanonicalMode(c.Verification.Repro.Mode)
+	if err != nil {
+		return fmt.Errorf("verification.repro.mode: %w", err)
+	}
+	if mode == findingrepro.ModeCommand && len(c.Verification.Repro.Command) == 0 {
+		return fmt.Errorf("verification.repro.mode command requires verification.repro.command in workflow-config.yml")
+	}
+	return nil
 }
 
 // RequiredAgentNames returns exactly the agent blocks required by the current
@@ -321,6 +343,10 @@ func ManagedDiff(before, after ManagedConfig) []string {
 	add("objective", before.Objective != after.Objective)
 	add("workflow_config.user_preferred_language",
 		before.WorkflowConfig.UserPreferredLanguage != after.WorkflowConfig.UserPreferredLanguage)
+	add("verification.repro.mode",
+		strings.TrimSpace(before.Verification.Repro.Mode) != strings.TrimSpace(after.Verification.Repro.Mode))
+	add("verification.repro.allow_evidence",
+		!sameOptionalBool(before.Verification.Repro.AllowEvidence, after.Verification.Repro.AllowEvidence))
 	for _, field := range []struct {
 		name string
 		a, b bool
@@ -465,7 +491,24 @@ func applyDraft(root yaml.Node, draft ManagedConfig) (yaml.Node, error) {
 		applyAgent(&root, []string{"agents", name}, agent, true)
 	}
 	applyAgent(&root, []string{"fallback_model"}, draft.FallbackModel, false)
+	applyVerification(&root, draft.Verification)
 	return root, nil
+}
+
+// applyVerification writes the two managed repro fields. An unset value removes
+// the key instead of writing an empty scalar, so "auto" stays absent from the
+// document and `verification.repro.command` / `evidence_stages` are untouched.
+func applyVerification(root *yaml.Node, v Verification) {
+	if mode := strings.TrimSpace(v.Repro.Mode); mode != "" {
+		setString(root, []string{"verification", "repro", "mode"}, mode)
+	} else {
+		removeScalar(root, []string{"verification", "repro", "mode"})
+	}
+	if v.Repro.AllowEvidence != nil {
+		setBool(root, []string{"verification", "repro", "allow_evidence"}, *v.Repro.AllowEvidence)
+	} else {
+		removeScalar(root, []string{"verification", "repro", "allow_evidence"})
+	}
 }
 
 var managedStageNames = []string{
@@ -547,6 +590,55 @@ func ensureMappingValue(mapping *yaml.Node, key string) *yaml.Node {
 		created,
 	)
 	return created
+}
+
+// removeScalar deletes path from the document when it exists. Parent mappings
+// are never created, and a parent left empty by the removal is dropped too.
+func removeScalar(root *yaml.Node, path []string) {
+	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode || len(path) == 0 {
+		return
+	}
+	parents := []*yaml.Node{root.Content[0]}
+	current := root.Content[0]
+	for _, key := range path[:len(path)-1] {
+		next := mappingValue(current, key)
+		if next == nil || next.Kind != yaml.MappingNode {
+			return
+		}
+		parents = append(parents, next)
+		current = next
+	}
+	if !deleteMappingKey(current, path[len(path)-1]) {
+		return
+	}
+	for i := len(parents) - 1; i > 0; i-- {
+		if len(parents[i].Content) != 0 {
+			return
+		}
+		if !deleteMappingKey(parents[i-1], path[i-1]) {
+			return
+		}
+	}
+}
+
+func deleteMappingKey(mapping *yaml.Node, key string) bool {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			mapping.Content = append(mapping.Content[:i], mapping.Content[i+2:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func sameOptionalBool(a, b *bool) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
 
 func mappingValue(mapping *yaml.Node, key string) *yaml.Node {

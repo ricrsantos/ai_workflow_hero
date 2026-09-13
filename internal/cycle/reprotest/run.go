@@ -16,10 +16,13 @@ import (
 
 const defaultTimeout = 2 * time.Minute
 
-// Spec is a named Go test the scheduler re-runs before accepting find-* done.
+// Spec is the repro the scheduler re-runs before accepting find-* done. Mode
+// decides how: a Go test, or the project-configured command rendered into Argv.
 type Spec struct {
+	Mode    string
 	Package string
 	Test    string
+	Argv    []string
 }
 
 // ErrNotRun means go test did not execute the named test (missing file or filter miss).
@@ -31,18 +34,9 @@ type event struct {
 	Output string `json:"Output"`
 }
 
-// Run executes `go test -json -count=1 -run ^Test$ package` in projectRoot.
-// A compile failure, a failed test, or a missing test is an error. "no tests"
-// that still exit 0 is treated as ErrNotRun.
+// Run re-runs one repro in projectRoot. A compile failure, a failed test, a
+// missing test, or a non-zero command exit is an error.
 func Run(ctx context.Context, projectRoot string, spec Spec) error {
-	pkg, err := findingrepro.CanonicalPackage(spec.Package)
-	if err != nil || pkg == "" {
-		return fmt.Errorf("invalid repro package %q", spec.Package)
-	}
-	test, err := findingrepro.CanonicalTest(spec.Test)
-	if err != nil || test == "" {
-		return fmt.Errorf("invalid repro test %q", spec.Test)
-	}
 	if strings.TrimSpace(projectRoot) == "" {
 		return errors.New("project root is required")
 	}
@@ -54,7 +48,45 @@ func Run(ctx context.Context, projectRoot string, spec Spec) error {
 		ctx, cancel = context.WithTimeout(ctx, defaultTimeout)
 		defer cancel()
 	}
+	switch spec.Mode {
+	case findingrepro.ModeEvidence:
+		return nil
+	case findingrepro.ModeCommand:
+		return runCommand(ctx, projectRoot, spec)
+	default:
+		return runGoTest(ctx, projectRoot, spec)
+	}
+}
 
+// runCommand executes the project-configured repro command. The argv comes
+// from workflow-config.yml; only the package and test tokens are agent-supplied
+// and both are charset-restricted, and no shell is involved.
+func runCommand(ctx context.Context, projectRoot string, spec Spec) error {
+	if len(spec.Argv) == 0 {
+		return errors.New("repro command is not configured")
+	}
+	cmd := exec.CommandContext(ctx, spec.Argv[0], spec.Argv[1:]...)
+	cmd.Dir = projectRoot
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	detail := strings.TrimSpace(lastLines(string(out), 20))
+	if detail == "" {
+		detail = err.Error()
+	}
+	return fmt.Errorf("repro command %s failed: %s", strings.Join(spec.Argv, " "), detail)
+}
+
+func runGoTest(ctx context.Context, projectRoot string, spec Spec) error {
+	pkg, err := findingrepro.CanonicalPackage(spec.Package)
+	if err != nil || pkg == "" {
+		return fmt.Errorf("invalid repro package %q", spec.Package)
+	}
+	test, err := findingrepro.CanonicalTest(spec.Test)
+	if err != nil || test == "" {
+		return fmt.Errorf("invalid repro test %q", spec.Test)
+	}
 	cmd := exec.CommandContext(ctx, "go", "test", "-json", "-count=1", "-run", "^"+test+"$", pkg)
 	cmd.Dir = projectRoot
 	out, err := cmd.CombinedOutput()
@@ -112,4 +144,17 @@ func firstLine(s string) string {
 		return strings.TrimSpace(s[:i])
 	}
 	return s
+}
+
+// lastLines returns at most n trailing non-empty lines of s.
+func lastLines(s string, n int) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	kept := make([]string, 0, n)
+	for i := len(lines) - 1; i >= 0 && len(kept) < n; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		kept = append([]string{lines[i]}, kept...)
+	}
+	return strings.Join(kept, "\n")
 }

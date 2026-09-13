@@ -74,6 +74,7 @@ type Finding struct {
 	EvidenceJSON       string
 	Round              int
 	TodoID             string
+	ReproMode          string
 	ReproPackage       string
 	ReproTest          string
 	CreatedAt          string
@@ -91,6 +92,7 @@ type FindingInput struct {
 	AcceptanceCriteria string
 	Evidence           []string
 	ReopenID           string
+	ReproMode          string
 	ReproPackage       string
 	ReproTest          string
 	ReproSource        string
@@ -104,7 +106,7 @@ type PersistFindingResult struct {
 }
 
 const findingSelectCols = `id, cycle_id, source_stage, owner, status, fingerprint, file, requirement,
-issue, acceptance_criteria, evidence_json, round, todo_id, repro_package, repro_test, created_at, updated_at`
+issue, acceptance_criteria, evidence_json, round, todo_id, repro_mode, repro_package, repro_test, created_at, updated_at`
 
 // CanonicalizeFindingFile slash-normalizes, trims, and strips leading ./ segments.
 func CanonicalizeFindingFile(file string) string {
@@ -190,7 +192,7 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 	canonicalFile := CanonicalizeFindingFile(in.File)
 	canonicalReq := NormalizeFindingText(in.Requirement)
 	canonicalAC := NormalizeFindingText(in.AcceptanceCriteria)
-	canonicalPkg, canonicalTest, canonicalSource, err := canonicalizeFindingRepro(in)
+	canonicalMode, canonicalPkg, canonicalTest, canonicalSource, err := canonicalizeFindingRepro(in)
 	if err != nil {
 		return PersistFindingResult{}, err
 	}
@@ -217,7 +219,7 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 		if !FindingContractMatches(f, in.File, in.Requirement, in.AcceptanceCriteria) {
 			return PersistFindingResult{}, ErrInvalidReopenID
 		}
-		if !FindingReproMatches(f, canonicalPkg, canonicalTest) {
+		if !FindingReproMatches(f, canonicalMode, canonicalPkg, canonicalTest) {
 			return PersistFindingResult{}, ErrInvalidReopenID
 		}
 		newRound := f.Round + 1
@@ -225,10 +227,10 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 			log.Error("finding reopen persist failed", "cycle_id", in.CycleID, "finding_id", reopenID, "error", err)
 			return PersistFindingResult{}, err
 		}
-		if err := lockFindingReproIfEmptyTx(tx, f, canonicalPkg, canonicalTest, now); err != nil {
+		if err := lockFindingReproIfEmptyTx(tx, f, canonicalMode, canonicalPkg, canonicalTest, now); err != nil {
 			return PersistFindingResult{}, err
 		}
-		if err := appendOccurrenceTx(tx, in.CycleID, reopenID, OccurrenceReopened, in.SourceStage, newRound, in.Issue, canonicalAC, evidenceJSON, now, canonicalPkg, canonicalTest, canonicalSource); err != nil {
+		if err := appendOccurrenceTx(tx, in.CycleID, reopenID, OccurrenceReopened, in.SourceStage, newRound, in.Issue, canonicalAC, evidenceJSON, now, canonicalMode, canonicalPkg, canonicalTest, canonicalSource); err != nil {
 			log.Error("finding reopen occurrence failed", "cycle_id", in.CycleID, "finding_id", reopenID, "error", err)
 			return PersistFindingResult{}, err
 		}
@@ -249,7 +251,7 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 		}, nil
 	}
 
-	existing, err := lookupFindingForInputTx(tx, in, canonicalPkg, canonicalTest)
+	existing, err := lookupFindingForInputTx(tx, in, canonicalMode, canonicalPkg, canonicalTest)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return PersistFindingResult{}, err
 	}
@@ -257,10 +259,10 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 		log.Debug("finding fingerprint match", "cycle_id", in.CycleID, "finding_id", existing.ID, "status", existing.Status, "fingerprint", existing.Fingerprint)
 		switch existing.Status {
 		case FindingStatusOpen, FindingStatusReopened:
-			if err := lockFindingReproIfEmptyTx(tx, existing, canonicalPkg, canonicalTest, now); err != nil {
+			if err := lockFindingReproIfEmptyTx(tx, existing, canonicalMode, canonicalPkg, canonicalTest, now); err != nil {
 				return PersistFindingResult{}, err
 			}
-			if err := appendOccurrenceTx(tx, in.CycleID, existing.ID, OccurrenceRediscovered, in.SourceStage, existing.Round, in.Issue, canonicalAC, evidenceJSON, now, canonicalPkg, canonicalTest, canonicalSource); err != nil {
+			if err := appendOccurrenceTx(tx, in.CycleID, existing.ID, OccurrenceRediscovered, in.SourceStage, existing.Round, in.Issue, canonicalAC, evidenceJSON, now, canonicalMode, canonicalPkg, canonicalTest, canonicalSource); err != nil {
 				log.Error("finding rediscovery occurrence failed", "cycle_id", in.CycleID, "finding_id", existing.ID, "error", err)
 				return PersistFindingResult{}, err
 			}
@@ -283,10 +285,10 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 				log.Error("finding fingerprint reopen failed", "cycle_id", in.CycleID, "finding_id", existing.ID, "error", err)
 				return PersistFindingResult{}, err
 			}
-			if err := lockFindingReproIfEmptyTx(tx, existing, canonicalPkg, canonicalTest, now); err != nil {
+			if err := lockFindingReproIfEmptyTx(tx, existing, canonicalMode, canonicalPkg, canonicalTest, now); err != nil {
 				return PersistFindingResult{}, err
 			}
-			if err := appendOccurrenceTx(tx, in.CycleID, existing.ID, OccurrenceReopened, in.SourceStage, newRound, in.Issue, canonicalAC, evidenceJSON, now, canonicalPkg, canonicalTest, canonicalSource); err != nil {
+			if err := appendOccurrenceTx(tx, in.CycleID, existing.ID, OccurrenceReopened, in.SourceStage, newRound, in.Issue, canonicalAC, evidenceJSON, now, canonicalMode, canonicalPkg, canonicalTest, canonicalSource); err != nil {
 				return PersistFindingResult{}, err
 			}
 			updated, err := getFindingTx(tx, in.CycleID, existing.ID)
@@ -305,10 +307,10 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 				Actionable:     true,
 			}, nil
 		case FindingStatusDeferredTodo:
-			if err := lockFindingReproIfEmptyTx(tx, existing, canonicalPkg, canonicalTest, now); err != nil {
+			if err := lockFindingReproIfEmptyTx(tx, existing, canonicalMode, canonicalPkg, canonicalTest, now); err != nil {
 				return PersistFindingResult{}, err
 			}
-			if err := appendOccurrenceTx(tx, in.CycleID, existing.ID, OccurrenceDeferredRecurrence, in.SourceStage, existing.Round, in.Issue, canonicalAC, evidenceJSON, now, canonicalPkg, canonicalTest, canonicalSource); err != nil {
+			if err := appendOccurrenceTx(tx, in.CycleID, existing.ID, OccurrenceDeferredRecurrence, in.SourceStage, existing.Round, in.Issue, canonicalAC, evidenceJSON, now, canonicalMode, canonicalPkg, canonicalTest, canonicalSource); err != nil {
 				log.Error("deferred recurrence occurrence failed", "cycle_id", in.CycleID, "finding_id", existing.ID, "error", err)
 				return PersistFindingResult{}, err
 			}
@@ -351,6 +353,7 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 		AcceptanceCriteria: canonicalAC,
 		EvidenceJSON:       evidenceJSON,
 		Round:              1,
+		ReproMode:          canonicalMode,
 		ReproPackage:       canonicalPkg,
 		ReproTest:          canonicalTest,
 		CreatedAt:          now,
@@ -359,7 +362,7 @@ func (s *Store) PersistFindingTx(tx *sql.Tx, in FindingInput) (PersistFindingRes
 		log.Error("finding insert failed", "cycle_id", in.CycleID, "finding_id", id, "error", err)
 		return PersistFindingResult{}, err
 	}
-	if err := appendOccurrenceTx(tx, in.CycleID, id, OccurrenceCreated, in.SourceStage, 1, in.Issue, canonicalAC, evidenceJSON, now, canonicalPkg, canonicalTest, canonicalSource); err != nil {
+	if err := appendOccurrenceTx(tx, in.CycleID, id, OccurrenceCreated, in.SourceStage, 1, in.Issue, canonicalAC, evidenceJSON, now, canonicalMode, canonicalPkg, canonicalTest, canonicalSource); err != nil {
 		return PersistFindingResult{}, err
 	}
 	created, err := getFindingTx(tx, in.CycleID, id)
@@ -385,6 +388,7 @@ type FindingOccurrence struct {
 	Kind         string
 	Round        int
 	Issue        string
+	ReproMode    string
 	ReproPackage string
 	ReproTest    string
 	ReproSource  string
@@ -394,7 +398,7 @@ type FindingOccurrence struct {
 // ListFindingOccurrences returns occurrence history for a finding.
 func (s *Store) ListFindingOccurrences(cycleID int64, findingID string) ([]FindingOccurrence, error) {
 	rows, err := s.db.Query(`
-SELECT sequence, kind, round, issue, repro_package, repro_test, repro_source, created_at
+SELECT sequence, kind, round, issue, repro_mode, repro_package, repro_test, repro_source, created_at
 FROM finding_occurrences
 WHERE cycle_id = ? AND finding_id = ?
 ORDER BY sequence ASC`, cycleID, findingID)
@@ -405,7 +409,7 @@ ORDER BY sequence ASC`, cycleID, findingID)
 	var out []FindingOccurrence
 	for rows.Next() {
 		var o FindingOccurrence
-		if err := rows.Scan(&o.Sequence, &o.Kind, &o.Round, &o.Issue, &o.ReproPackage, &o.ReproTest, &o.ReproSource, &o.CreatedAt); err != nil {
+		if err := rows.Scan(&o.Sequence, &o.Kind, &o.Round, &o.Issue, &o.ReproMode, &o.ReproPackage, &o.ReproTest, &o.ReproSource, &o.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, o)
@@ -482,7 +486,7 @@ ORDER BY created_at ASC, id ASC`, args...)
 
 // ValidateReopenID reports whether reopen_id may reopen a done finding whose
 // stored file, requirement, and acceptance criteria match the report contract.
-func (s *Store) ValidateReopenID(cycleID int64, sourceStage, owner, reopenID, file, requirement, acceptance, reproPackage, reproTest string) error {
+func (s *Store) ValidateReopenID(cycleID int64, sourceStage, owner, reopenID, file, requirement, acceptance, reproMode, reproPackage, reproTest string) error {
 	f, err := s.GetFinding(cycleID, reopenID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -496,7 +500,7 @@ func (s *Store) ValidateReopenID(cycleID int64, sourceStage, owner, reopenID, fi
 	if !FindingContractMatches(f, file, requirement, acceptance) {
 		return ErrInvalidReopenID
 	}
-	if !FindingReproMatches(f, reproPackage, reproTest) {
+	if !FindingReproMatches(f, reproMode, reproPackage, reproTest) {
 		return ErrInvalidReopenID
 	}
 	return nil
@@ -513,7 +517,7 @@ func (s *Store) MarkFindingDoneTx(tx *sql.Tx, cycleID int64, id string, issue, a
 		s.findingLog().Error("mark finding done failed", "cycle_id", cycleID, "finding_id", id, "error", err)
 		return err
 	}
-	if err := appendOccurrenceTx(tx, cycleID, id, OccurrenceDone, f.SourceStage, f.Round, issue, acceptanceCriteria, evidenceJSON, now, f.ReproPackage, f.ReproTest, ""); err != nil {
+	if err := appendOccurrenceTx(tx, cycleID, id, OccurrenceDone, f.SourceStage, f.Round, issue, acceptanceCriteria, evidenceJSON, now, f.ReproMode, f.ReproPackage, f.ReproTest, ""); err != nil {
 		return err
 	}
 	s.findingLog().Info("finding marked done", "cycle_id", cycleID, "finding_id", id)
@@ -532,7 +536,7 @@ func (s *Store) SetFindingDeferredTodoTx(tx *sql.Tx, cycleID int64, id string, i
 	if err := updateFindingStatusRoundTx(tx, cycleID, id, FindingStatusDeferredTodo, f.Round, now); err != nil {
 		return err
 	}
-	if err := appendOccurrenceTx(tx, cycleID, id, OccurrenceDeferred, f.SourceStage, f.Round, issue, acceptanceCriteria, evidenceJSON, now, f.ReproPackage, f.ReproTest, ""); err != nil {
+	if err := appendOccurrenceTx(tx, cycleID, id, OccurrenceDeferred, f.SourceStage, f.Round, issue, acceptanceCriteria, evidenceJSON, now, f.ReproMode, f.ReproPackage, f.ReproTest, ""); err != nil {
 		return err
 	}
 	cycleNumber, err := cycleNumberTx(tx, cycleID)
@@ -569,7 +573,7 @@ func validateFindingInput(in FindingInput) error {
 			return fmt.Errorf("%w: evidence[%d]: %v", ErrInvalidFindingContent, i, err)
 		}
 	}
-	if _, _, _, err := canonicalizeFindingRepro(in); err != nil {
+	if _, _, _, _, err := canonicalizeFindingRepro(in); err != nil {
 		return err
 	}
 	return nil
@@ -703,11 +707,11 @@ func getFindingByFingerprintTx(q execQueryer, cycleID int64, fingerprint string)
 func insertFindingTx(tx *sql.Tx, f Finding) error {
 	_, err := tx.Exec(`
 INSERT INTO findings(id, cycle_id, source_stage, owner, status, fingerprint, file, requirement,
-  issue, acceptance_criteria, evidence_json, round, todo_id, repro_package, repro_test, created_at, updated_at)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  issue, acceptance_criteria, evidence_json, round, todo_id, repro_mode, repro_package, repro_test, created_at, updated_at)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		f.ID, f.CycleID, f.SourceStage, f.Owner, f.Status, f.Fingerprint,
 		nullStr(f.File), nullStr(f.Requirement), f.Issue, f.AcceptanceCriteria, f.EvidenceJSON,
-		f.Round, nullStr(f.TodoID), f.ReproPackage, f.ReproTest, f.CreatedAt, f.UpdatedAt,
+		f.Round, nullStr(f.TodoID), f.ReproMode, f.ReproPackage, f.ReproTest, f.CreatedAt, f.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert finding: %w", err)
@@ -750,15 +754,15 @@ SELECT MAX(sequence) FROM finding_occurrences WHERE cycle_id = ? AND finding_id 
 	return int(seq.Int64) + 1, nil
 }
 
-func appendOccurrenceTx(tx *sql.Tx, cycleID int64, findingID, kind, sourceStage string, round int, issue, acceptance, evidenceJSON, createdAt, reproPackage, reproTest, reproSource string) error {
+func appendOccurrenceTx(tx *sql.Tx, cycleID int64, findingID, kind, sourceStage string, round int, issue, acceptance, evidenceJSON, createdAt, reproMode, reproPackage, reproTest, reproSource string) error {
 	seq, err := nextOccurrenceSequenceTx(tx, cycleID, findingID)
 	if err != nil {
 		return err
 	}
 	_, err = tx.Exec(`
-INSERT INTO finding_occurrences(cycle_id, finding_id, sequence, kind, source_stage, round, issue, acceptance_criteria, evidence_json, created_at, repro_package, repro_test, repro_source)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		cycleID, findingID, seq, kind, sourceStage, round, issue, acceptance, evidenceJSON, createdAt, reproPackage, reproTest, reproSource,
+INSERT INTO finding_occurrences(cycle_id, finding_id, sequence, kind, source_stage, round, issue, acceptance_criteria, evidence_json, created_at, repro_mode, repro_package, repro_test, repro_source)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		cycleID, findingID, seq, kind, sourceStage, round, issue, acceptance, evidenceJSON, createdAt, reproMode, reproPackage, reproTest, reproSource,
 	)
 	if err != nil {
 		return fmt.Errorf("insert finding occurrence: %w", err)
@@ -772,7 +776,7 @@ func scanFinding(row rowScanner) (Finding, error) {
 	err := row.Scan(
 		&f.ID, &f.CycleID, &f.SourceStage, &f.Owner, &f.Status, &f.Fingerprint,
 		&file, &req, &f.Issue, &f.AcceptanceCriteria, &f.EvidenceJSON,
-		&f.Round, &todo, &f.ReproPackage, &f.ReproTest, &f.CreatedAt, &f.UpdatedAt,
+		&f.Round, &todo, &f.ReproMode, &f.ReproPackage, &f.ReproTest, &f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {

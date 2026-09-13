@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
@@ -450,7 +451,7 @@ func firstImplementationTaskID(ids []string) string {
 // actionable findings per active agent. Task order follows OpenSpec; findings
 // follow stable store order (created_at, id). A finding owner outside the
 // active Implementation scope fails the whole plan before Execute.
-func mergeImplementationAssignment(plan implementationTaskPlan, findings []store.Finding, activeAgents []string, occsByID map[string][]store.FindingOccurrence) (map[string][]implementationTaskBlock, []string) {
+func mergeImplementationAssignment(plan implementationTaskPlan, findings []store.Finding, activeAgents []string, occsByID map[string][]store.FindingOccurrence, policy findingrepro.Policy) (map[string][]implementationTaskBlock, []string) {
 	byAgent := make(map[string][]implementationTaskBlock, len(activeAgents))
 	for _, agent := range activeAgents {
 		byAgent[agent] = append([]implementationTaskBlock(nil), plan.ByAgent[agent]...)
@@ -472,7 +473,7 @@ func mergeImplementationAssignment(plan implementationTaskPlan, findings []store
 			errs = append(errs, fmt.Sprintf("finding %q owner %q is not in active implementation scope", finding.ID, owner))
 			continue
 		}
-		byAgent[owner] = append(byAgent[owner], implementationFindingBlock(finding, occsByID[finding.ID]))
+		byAgent[owner] = append(byAgent[owner], implementationFindingBlock(finding, occsByID[finding.ID], policy))
 	}
 	if len(errs) > 0 {
 		return nil, errs
@@ -480,11 +481,11 @@ func mergeImplementationAssignment(plan implementationTaskPlan, findings []store
 	return byAgent, nil
 }
 
-func implementationFindingBlock(finding store.Finding, occs []store.FindingOccurrence) implementationTaskBlock {
+func implementationFindingBlock(finding store.Finding, occs []store.FindingOccurrence, policy findingrepro.Policy) implementationTaskBlock {
 	return implementationTaskBlock{
 		ID:      finding.ID,
 		Owner:   finding.Owner,
-		Block:   cycle.FindingAssignmentMarkdown(finding, occs),
+		Block:   cycle.FindingAssignmentMarkdown(finding, occs, policy),
 		Pending: true,
 	}
 }
@@ -557,7 +558,7 @@ func validateImplementationAssignmentUnion(completed, remaining, assignment []st
 	return nil
 }
 
-func buildImplementationStageDispatch(checklist implementationChecklist, activeAgents []string, findings []store.Finding, occsByID map[string][]store.FindingOccurrence) ([]string, map[string][]implementationTaskBlock, []string, string) {
+func buildImplementationStageDispatch(checklist implementationChecklist, activeAgents []string, findings []store.Finding, occsByID map[string][]store.FindingOccurrence, policy findingrepro.Policy) ([]string, map[string][]implementationTaskBlock, []string, string) {
 	if !checklist.Linked {
 		return nil, nil, nil, "active cycle has no linked OpenSpec tasks.md"
 	}
@@ -571,7 +572,7 @@ func buildImplementationStageDispatch(checklist implementationChecklist, activeA
 		}
 		return nil, nil, nil, "implementation task ownership plan is invalid: " + strings.Join(plan.Errors, "; ")
 	}
-	byAgent, mergeErrors := mergeImplementationAssignment(plan, findings, activeAgents, occsByID)
+	byAgent, mergeErrors := mergeImplementationAssignment(plan, findings, activeAgents, occsByID, policy)
 	if len(mergeErrors) > 0 {
 		return nil, nil, nil, "implementation assignment union is invalid: " + strings.Join(mergeErrors, "; ")
 	}

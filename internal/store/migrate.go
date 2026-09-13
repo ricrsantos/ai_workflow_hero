@@ -6,7 +6,7 @@ import (
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 14
+const currentSchemaVersion = 15
 
 func (s *Store) migrate() error {
 	return s.migrateTo(currentSchemaVersion)
@@ -410,6 +410,18 @@ func (s *Store) applyMigration(version int) error {
 			`ALTER TABLE finding_occurrences ADD COLUMN repro_package TEXT NOT NULL DEFAULT ''`,
 			`ALTER TABLE finding_occurrences ADD COLUMN repro_test TEXT NOT NULL DEFAULT ''`,
 			`ALTER TABLE finding_occurrences ADD COLUMN repro_source TEXT NOT NULL DEFAULT ''`,
+		}
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("migration %d: %w", version, err)
+			}
+		}
+	case 15:
+		stmts := []string{
+			`ALTER TABLE findings ADD COLUMN repro_mode TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE finding_occurrences ADD COLUMN repro_mode TEXT NOT NULL DEFAULT ''`,
+			`UPDATE findings SET repro_mode = 'go_test' WHERE repro_mode = '' AND repro_test <> ''`,
+			`UPDATE finding_occurrences SET repro_mode = 'go_test' WHERE repro_mode = '' AND repro_test <> ''`,
 		}
 		for _, stmt := range stmts {
 			if _, err := tx.Exec(stmt); err != nil {

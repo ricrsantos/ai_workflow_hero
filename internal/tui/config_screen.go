@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
@@ -213,10 +214,42 @@ func (m model) configReadOnly() bool {
 type configField struct {
 	path  string
 	label string
-	kind  string // text, number, bool, harness, model, property
+	kind  string // text, number, bool, harness, model, property, choice
 	stage string
 	agent string
 }
+
+// configChoiceValues is the cycle order for kind "choice", keyed by field path.
+// The first entry is always the "auto" value, which removes the key from the
+// YAML document and lets the project decide.
+func configChoiceValues(path string) []string {
+	switch path {
+	case "verification.repro.mode":
+		return configReproModeChoices
+	case "verification.repro.allow_evidence":
+		return configAllowEvidenceChoices
+	default:
+		return nil
+	}
+}
+
+// Verification choice values. "auto" means the key stays absent and the policy
+// is derived from the project (a go.mod enables go_test).
+const (
+	configVerificationAuto = "auto"
+	configVerificationYes  = "yes"
+	configVerificationNo   = "no"
+)
+
+var (
+	configReproModeChoices = []string{
+		configVerificationAuto,
+		findingrepro.ModeGoTest,
+		findingrepro.ModeCommand,
+		findingrepro.ModeEvidence,
+	}
+	configAllowEvidenceChoices = []string{configVerificationAuto, configVerificationYes, configVerificationNo}
+)
 
 func (m model) configFields() []configField {
 	fields := []configField{
@@ -228,6 +261,8 @@ func (m model) configFields() []configField {
 		{"scope.native", "Native", "bool", "", ""},
 		{"scope.script", "Script", "bool", "", ""},
 		{"scope.infrastructure", "Infrastructure", "bool", "", ""},
+		{"verification.repro.mode", "Repro mode", "choice", "", ""},
+		{"verification.repro.allow_evidence", "Allow evidence findings", "choice", "", ""},
 	}
 	requiredAgents := m.config.draft.RequiredAgentNames()
 	for _, name := range []string{"research", "planning", "implementation", "qa", "judge", "browser_ui_validation", "qa_end_to_end"} {
@@ -452,7 +487,7 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if field.kind == "model" {
 			return m.openConfigModelPicker(field), nil
 		}
-		if field.kind == "harness" || field.kind == "property" {
+		if field.kind == "harness" || field.kind == "property" || field.kind == "choice" {
 			m = m.cycleConfigChoice(field)
 			return m, nil
 		}
@@ -585,6 +620,20 @@ func (m model) configFieldValue(field configField) string {
 		return c.Objective
 	case "workflow_config.user_preferred_language":
 		return c.WorkflowConfig.UserPreferredLanguage
+	case "verification.repro.mode":
+		if mode := strings.TrimSpace(c.Verification.Repro.Mode); mode != "" {
+			return mode
+		}
+		return configVerificationAuto
+	case "verification.repro.allow_evidence":
+		switch allow := c.Verification.Repro.AllowEvidence; {
+		case allow == nil:
+			return configVerificationAuto
+		case *allow:
+			return configVerificationYes
+		default:
+			return configVerificationNo
+		}
 	}
 	if field.stage != "" && field.agent == "" {
 		stage := c.Stages[field.stage]
@@ -747,6 +796,9 @@ func (m model) toggleConfigField(field configField) model {
 }
 
 func (m model) cycleConfigChoice(field configField) model {
+	if field.kind == "choice" {
+		return m.cycleConfigVerificationChoice(field)
+	}
 	c := m.config.draft
 	isSubagent := strings.HasSuffix(field.agent, ":subagent")
 	agentName := strings.TrimSuffix(field.agent, ":subagent")
@@ -835,6 +887,41 @@ func (m model) cycleConfigChoice(field configField) model {
 // modelOptions alone can contain only Cursor rows. modelsForHarness adds the
 // persisted capability cache and embedded catalog, which keeps Config usable
 // immediately and lets the asynchronous refresh replace that local view later.
+// cycleConfigVerificationChoice advances a verification field through its
+// explicit option list. "auto" removes the key so the project keeps deciding.
+func (m model) cycleConfigVerificationChoice(field configField) model {
+	choices := configChoiceValues(field.path)
+	if len(choices) == 0 {
+		return m
+	}
+	next := nextChoice(m.configFieldValue(field), choices)
+	c := m.config.draft
+	switch field.path {
+	case "verification.repro.mode":
+		if next == configVerificationAuto {
+			c.Verification.Repro.Mode = ""
+		} else {
+			c.Verification.Repro.Mode = next
+		}
+	case "verification.repro.allow_evidence":
+		switch next {
+		case configVerificationAuto:
+			c.Verification.Repro.AllowEvidence = nil
+		case configVerificationYes:
+			value := true
+			c.Verification.Repro.AllowEvidence = &value
+		default:
+			value := false
+			c.Verification.Repro.AllowEvidence = &value
+		}
+	default:
+		return m
+	}
+	m.config.draft = c
+	m.config.dirty = true
+	return m
+}
+
 func (m model) configModelChoices(harnessID, current string) []string {
 	return m.modelChoicesForHarness(harnessID, current, nil)
 }
@@ -1058,7 +1145,7 @@ func configFieldErrors(err error) map[string]string {
 	fields := map[string]string{}
 	for _, prefix := range []string{
 		"title", "objective", "workflow_config.user_preferred_language", "scope.frontend",
-		"stages.", "agents.", "fallback_model",
+		"verification.repro.", "stages.", "agents.", "fallback_model",
 	} {
 		if idx := strings.Index(message, prefix); idx >= 0 {
 			path := message[idx:]
@@ -1192,6 +1279,12 @@ func (m model) renderConfig() string {
 			}
 			b.WriteString(headerStyle.Render(section))
 			b.WriteByte('\n')
+			if section == "Verification" {
+				for _, line := range m.configReproPolicyLines() {
+					b.WriteString(mutedStyle.Render("  " + line))
+					b.WriteByte('\n')
+				}
+			}
 			lastSection = section
 		}
 		value := m.configFieldValue(field)
@@ -1224,12 +1317,50 @@ func (m model) renderConfig() string {
 	return b.String()
 }
 
+// configReproPolicyLines renders the repro policy the current draft resolves
+// to. The policy is what decides whether a validation report is accepted, and
+// two of its inputs (project go.mod, and the YAML-only command argv) are not
+// editable here — so the screen shows the resolved result instead of leaving
+// the user to discover it through a rejected report.
+func (m model) configReproPolicyLines() []string {
+	projectDir := ""
+	if m.svc != nil {
+		projectDir = m.svc.ProjectDir
+	}
+	hasGoModule := workflowconfig.ProjectHasGoModule(projectDir)
+	policy := workflowconfig.BuildReproPolicy(m.config.draft.Verification, hasGoModule)
+
+	origin := "configured"
+	if strings.TrimSpace(m.config.draft.Verification.Repro.Mode) == "" {
+		origin = "auto · no go.mod in the project root"
+		if hasGoModule {
+			origin = "auto · go.mod in the project root"
+		}
+	}
+	lines := []string{
+		fmt.Sprintf("Default mode: %s (%s)", policy.DefaultMode, origin),
+		"Enabled: " + strings.Join(policy.AllowedModesFor(""), ", "),
+	}
+	if stages := policy.EvidenceStages; len(stages) > 0 {
+		lines = append(lines, "Evidence always allowed for: "+strings.Join(stages, ", "))
+	}
+	if len(policy.Command) > 0 {
+		lines = append(lines, "Command: "+strings.Join(policy.Command, " "))
+	} else {
+		lines = append(lines, "Command: not set · edit verification.repro.command in workflow-config.yml")
+	}
+	lines = append(lines, "Validation reports must use an enabled mode; anything else is rejected and nothing is persisted.")
+	return lines
+}
+
 func configFieldSection(field configField) string {
 	switch {
 	case strings.HasPrefix(field.path, "title"), strings.HasPrefix(field.path, "objective"), strings.HasPrefix(field.path, "workflow_config."):
 		return "Identity"
 	case strings.HasPrefix(field.path, "scope."):
 		return "Scope"
+	case strings.HasPrefix(field.path, "verification."):
+		return "Verification"
 	case field.stage != "":
 		return configStageLabel(field.stage)
 	default:

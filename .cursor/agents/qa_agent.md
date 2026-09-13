@@ -57,17 +57,29 @@ Emit **one JSON object** as your entire completion output and **stop**. The orch
 - do **not** edit OpenSpec `tasks.md` checkboxes or write gap files (`qa-gaps.md`, `judge-gaps.md`, etc.);
 - do **not** edit `context/current-state.md`;
 - do **not** invent new `find-*` IDs — only set `reopen_id` when reopening an existing `done` finding ID supplied in your context.
-- `reopen_id` is valid only when this failure's `file`, `requirement`, `acceptance_criteria`, **and** `repro.package`+`repro.test` match that finding's stored contract. Frozen Issue/Acceptance are identity only; this occurrence's `issue` is Residual for Implementation.
-- If the residual needs a different file, requirement, acceptance criterion, **or a different Go test**, omit `reopen_id` so Hero allocates a new `find-*` ID. Do not reuse an ID to describe a new defect.
-- Do **not** Write repro tests into `internal/` or any project test file. Put the full failing `func Test…(` source in `repro.source`. Implementation lands that source first.
+- `reopen_id` is valid only when this failure's `file`, `requirement`, `acceptance_criteria`, **and** `repro.mode`+`repro.package`+`repro.test` match that finding's stored contract. Frozen Issue/Acceptance are identity only; this occurrence's `issue` is Residual for Implementation.
+- If the residual needs a different file, requirement, acceptance criterion, **or a different repro identity (mode, package, or test)**, omit `reopen_id` so Hero allocates a new `find-*` ID. Do not reuse an ID to describe a new defect.
+- Do **not** Write repro tests into the project tree yourself. Put the failing test source in `repro.source`; Implementation lands it first. Evidence-mode findings carry no source — they carry `evidence`.
 
 On success (`status`: `passed`), failure arrays must be **empty** (`[]`).
 
 Valid **owner** values: `backend_agent`, `frontend_agent`, `generic_agent` (must be active in the current implementation scope).
 
-Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`, and a required `repro` object `{package, test, source}`. `package` is a relative Go path such as `./internal/tui`; `test` is a `Test*` name; `source` must declare `func TestName(`. Optional `evidence` is a string array of safe repo-relative paths or commands. Go recursive patterns (`./...`, `./pkg/...`) are allowed; a `..` path segment (`../secret`) is not. Optional `reopen_id` reopens a prior `done` finding in the same cycle only when file, requirement, acceptance, **and** repro package+test match the stored contract.
+Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`, and a required `repro` object. `repro.mode` decides how Hero re-runs the failure before it may ever be marked done, and defaults to the mode this project configured in `workflow-config.yml → verification.repro` (a project with a root `go.mod` and no explicit configuration defaults to `go_test`):
+
+- `go_test` — `package` is a relative Go path such as `./internal/tui`, `test` is a `Test*` name, and `source` is the full failing `func TestName(`. The scheduler re-runs `go test <package> -count=1 -run ^<test>$`.
+- `command` — `package` is the repo-relative target (file, directory, or suite), `test` is the filter token, and `source` is the optional failing test body in the project's own language. The scheduler re-runs the project command from `verification.repro.command` with those tokens interpolated.
+- `evidence` — only for failures no deterministic re-run can express (visual diffs, coverage ratios, rendering). `package`, `test`, and `source` must be absent and `evidence` must be non-empty. Hero records and routes the finding but cannot gate it automatically, so choose an automated mode whenever one can express the failure.
+
+If a mode is not enabled for this project the whole report is rejected with `invalid_enum` on `repro.mode` and **nothing** is persisted. Do not retry with the same mode: use one the diagnostic lists, or ask the user to configure `verification.repro` in `workflow-config.yml`.
+
+Optional `evidence` is a string array of safe repo-relative paths or commands; a `..` path segment (`../secret`) is not allowed. Optional `reopen_id` reopens a prior `done` finding in the same cycle only when file, requirement, acceptance, **and** repro mode+package+test match the stored contract.
 
 Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
+
+## Loop ceiling (scheduler-owned)
+
+One finding may travel validation → Implementation → validation at most 3 rounds. On the fourth, Hero escalates Implementation instead of dispatching another wave, and the user decides with `/hero-continue` (grant iterations), `/hero-add-todo` (defer the finding), `/hero-cancel`, or `/hero-finish`. Reporting the same residual under a **new** `find-*` ID to dodge that ceiling is a contract violation: reopen the existing ID whenever file, requirement, acceptance, and repro identity still match.
 
 ## Output Format
 
@@ -75,7 +87,7 @@ Allowed top-level fields only: `status`, `failures`, `summary`.
 
 `status` must be `passed` or `failed`. On `passed`, `failures` must be `[]`.
 
-Each failure entry uses `owner` (or legacy alias `agent`) plus `file` and/or `requirement`, `issue`, `acceptance_criteria`, required `repro` `{package,test,source}`, optional `evidence`, optional `reopen_id`.
+Each failure entry uses `owner` (or legacy alias `agent`) plus `file` and/or `requirement`, `issue`, `acceptance_criteria`, a required `repro` `{mode?,package,test,source}` (evidence mode carries `mode` only), optional `evidence`, optional `reopen_id`.
 
 ### Passing example
 
@@ -135,7 +147,7 @@ Each failure entry uses `owner` (or legacy alias `agent`) plus `file` and/or `re
   "summary": "Reopened find-qa-1; checkout tests still fail."
 }
 ```
-`file`, `requirement` (when present), `acceptance_criteria`, and `repro.package`+`repro.test` in that entry MUST match the stored `find-qa-1` contract. A different residual or different test omits `reopen_id`.
+`file`, `requirement` (when present), `acceptance_criteria`, and `repro.mode`+`repro.package`+`repro.test` in that entry MUST match the stored `find-qa-1` contract. A different residual or different repro identity omits `reopen_id`.
 Logging failures belong in the `failures` array (for example `"issue": "Missing leveled logging (error/info/debug); unleveled console.log only"`). Do not emit a separate top-level `"logging"` field in the JSON report.
 
 Example orchestrator-side metrics payload (never include inside the C15 validation JSON object):

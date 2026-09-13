@@ -1662,6 +1662,13 @@ stages:
 	if !strings.Contains(string(data), "user_preferred_language: PT-BR") {
 		t.Fatalf("preflight did not import archived settings:\n%s", data)
 	}
+	// Leaving the stream live let its goroutine touch the project directory
+	// after t.TempDir() started removing it, which failed the test with a
+	// "directory not empty" cleanup error.
+	if cancelled, cancelCmd := CancelConversationStreamForTest(next); cancelCmd != nil {
+		cancelCmd()
+		_ = cancelled
+	}
 }
 
 func newTestServiceInstalledNoCycle(t *testing.T, dir string) *cycle.Service {

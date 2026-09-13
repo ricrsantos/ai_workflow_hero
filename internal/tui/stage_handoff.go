@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/redact"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
@@ -61,6 +62,14 @@ type stageAgentReport struct {
 
 const maxImplementationHandoffWaves = 8
 
+// maxFindingRounds is how many times one finding may travel
+// validation → Implementation → validation before Hero stops re-dispatching it.
+// Without this ceiling a single finding that the implementation agent cannot
+// actually fix keeps the cycle looping until the stage iteration budget runs
+// out, which is both slow and expensive. On the cap the stage is Escalated so
+// the user can grant iterations (/hero-continue) or defer it (/hero-add-todo).
+const maxFindingRounds = 3
+
 type implementationChecklist struct {
 	Path    string
 	Linked  bool
@@ -81,6 +90,9 @@ type stageHandoffDecision struct {
 	SchedulerHandledFailure  bool
 	JudgeSDDAmbiguity        bool
 	CloseImplementationEmpty bool
+	// EscalateReason stops the loop and hands the decision to the user instead
+	// of asking the orchestrator for yet another wave.
+	EscalateReason string
 }
 
 const (
@@ -350,12 +362,15 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 			m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
 			return m.returnStageAgentPreparationFailure(stage, findErr.Error())
 		}
+		if stalled := findingsOverRoundCap(findings); len(stalled) > 0 {
+			return m.escalateStalledFindings(st, stalled)
+		}
 		occsByID, occErr := m.findingOccurrenceHistory(findings)
 		if occErr != nil {
 			m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
 			return m.returnStageAgentPreparationFailure(stage, occErr.Error())
 		}
-		runAgents, assignments, expectedAgents, reason = implementationStageDispatch(checklist, agents, findings, occsByID)
+		runAgents, assignments, expectedAgents, reason = implementationStageDispatch(checklist, agents, findings, occsByID, m.svc.ReproPolicy())
 		if reason != "" {
 			m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
 			return m.returnStageAgentPreparationFailure(stage, reason)
@@ -411,6 +426,7 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	m.stageHandoffStage = stage
 	m.stageHandoffOutputs = nil
 	m.stageHandoffPreparationError = ""
+	m = m.clearReproGateState()
 	m.stageHandoffExpectedAgents = append([]string(nil), expectedAgents...)
 	m.stageHandoffDoneKey = m.runningStageHandoffKey()
 	m.harnessSessionID = ""
@@ -447,8 +463,8 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	return m, cmd
 }
 
-func implementationStageDispatch(checklist implementationChecklist, activeAgents []string, findings []store.Finding, occsByID map[string][]store.FindingOccurrence) ([]string, map[string][]implementationTaskBlock, []string, string) {
-	return buildImplementationStageDispatch(checklist, activeAgents, findings, occsByID)
+func implementationStageDispatch(checklist implementationChecklist, activeAgents []string, findings []store.Finding, occsByID map[string][]store.FindingOccurrence, policy findingrepro.Policy) ([]string, map[string][]implementationTaskBlock, []string, string) {
+	return buildImplementationStageDispatch(checklist, activeAgents, findings, occsByID, policy)
 }
 
 func (m model) actionableImplementationFindings() ([]store.Finding, error) {
@@ -1012,13 +1028,8 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 				decision.Reason = "cycle service unavailable"
 				return decision
 			}
-			cycleRow, err := m.svc.SessionCycle()
-			if err != nil || cycleRow == nil {
-				decision.Reason = "active cycle is unavailable"
-				return decision
-			}
-			if err := cycle.VerifyCompletedFindingRepros(context.Background(), m.svc.Store, cycleRow.ID, m.svc.ProjectDir, findingIDs); err != nil {
-				decision.Reason = err.Error()
+			if reason := m.reproGateFailure(findingIDs); reason != "" {
+				decision.Reason = reason
 				return decision
 			}
 		}
@@ -1068,6 +1079,7 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 			return decision
 		}
 		decision.Reason = fmt.Sprintf("implementation wave limit reached (%d)", maxImplementationHandoffWaves)
+		decision.EscalateReason = "implementation_wave_limit"
 		return decision
 	}
 	switch {
@@ -1109,6 +1121,14 @@ func validateImplementationChecklistPlan(checklist implementationChecklist, acti
 func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	stage := strings.TrimSpace(m.stageHandoffStage)
 	outputs := strings.TrimSpace(strings.Join(m.stageHandoffOutputs, "\n\n"))
+	if stage == stageImplementation && !m.stageHandoffReproChecked && !m.stageHandoffReproRunning {
+		// Re-running a locked repro can take minutes. Do it in a command so the
+		// TUI stays responsive, then re-enter this function with the verdict.
+		if ids := claimedFindingIDs(m.stageHandoffOutputs); len(ids) > 0 {
+			return m.startReproGate(stage, ids)
+		}
+		m.stageHandoffReproChecked = true
+	}
 	var decision stageHandoffDecision
 	if isValidationHandoffStage(stage) {
 		decision = m.evaluateValidationStageHandoff(stage, outputs)
@@ -1120,6 +1140,12 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 		// The orchestrator is not resumed between productive waves, so a partial
 		// report cannot accidentally trigger the Stage Close Sequence.
 		if m.svc != nil {
+			// A wave does not pass through StartStage, so this is the only place
+			// where a long Implementation stage can be checked against its
+			// timeout before burning another wave.
+			if err := m.svc.EscalateIfStageTimedOut(stageImplementation); err != nil {
+				slog.Error("implementation timeout check failed", "error", redact.Error(err))
+			}
 			if st, err := m.svc.ActiveStage(); err != nil || st.Status != store.StageRunning {
 				decision.PartialProgress = false
 				decision.Reason = "implementation stage is no longer Running; intervention required"
@@ -1128,6 +1154,7 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 				m.stageHandoffOutputs = nil
 				m.stageHandoffDoneKey = ""
 				m.stageHandoffPendingBefore = append([]string(nil), decision.Checklist.Pending...)
+				m = m.clearReproGateState()
 				m = m.restoreOrchestratorSession()
 				m.runtimeCommandName = ""
 				return m.startStageAgentSessions(m.namedStageAgents(st))
@@ -1142,6 +1169,7 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	m.stageHandoffAssignments = nil
 	m.stageHandoffExpectedAgents = nil
 	m.stageHandoffPreparationError = ""
+	m = m.clearReproGateState()
 	m.stageHandoffInterventionRequired = !decision.Complete && !decision.SchedulerHandledFailure
 	if decision.SchedulerHandledFailure {
 		// Loop-back already moved Implementation to Waiting. This is a fresh
@@ -1156,6 +1184,14 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	if m.svc != nil {
 		if s, err := m.svc.ActiveRunStage(); err == nil {
 			m.conversationStage = s
+		}
+	}
+	if reason := strings.TrimSpace(decision.EscalateReason); reason != "" && m.svc != nil {
+		if err := m.svc.EscalateStage(stage, reason); err != nil {
+			slog.Error("stage escalation failed", "stage", stage, "reason", reason, "error", redact.Error(err))
+		} else {
+			decision.ChatCopy = strings.TrimSpace(decision.ChatCopy+"\n\n⚠ "+stageTitleForChat(stage)+" escalated · "+decision.Reason+
+				"\n→ Run /hero-continue to grant more iterations, /hero-add-todo to defer a blocking finding, or /hero-cancel / /hero-finish.") + "\n"
 		}
 	}
 	canClose := decision.Complete
@@ -1489,4 +1525,52 @@ func assignedIDsForAgent(m model, agent string) []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+// stageTitleForChat renders a stage name for user-facing chat copy.
+func stageTitleForChat(stage string) string {
+	if title := validationStageTitle(strings.TrimSpace(stage)); title != strings.TrimSpace(stage) {
+		return title
+	}
+	if stage == stageImplementation {
+		return "Implementation"
+	}
+	return strings.TrimSpace(stage)
+}
+
+// findingsOverRoundCap lists findings that already travelled the validation
+// loop more times than maxFindingRounds allows.
+func findingsOverRoundCap(findings []store.Finding) []store.Finding {
+	var out []store.Finding
+	for _, f := range findings {
+		if f.Round > maxFindingRounds {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// escalateStalledFindings stops the Implementation loop for findings that keep
+// coming back, and hands the decision to the user instead of spending another
+// wave on them.
+func (m model) escalateStalledFindings(st store.Stage, stalled []store.Finding) (model, tea.Cmd) {
+	ids := make([]string, 0, len(stalled))
+	for _, f := range stalled {
+		ids = append(ids, fmt.Sprintf("%s (round %d)", f.ID, f.Round))
+	}
+	slog.Info("implementation escalated on finding round cap", "findings", ids, "cap", maxFindingRounds)
+	if m.svc != nil {
+		if err := m.svc.EscalateStage(stageImplementation, "finding_round_limit"); err != nil {
+			slog.Error("finding round cap escalation failed", "error", redact.Error(err))
+			return m.returnStageAgentPreparationFailure(stageImplementation, err.Error())
+		}
+		if cur, err := m.svc.ActiveStage(); err == nil {
+			st = cur
+		}
+	}
+	m.stageHandoffLive = false
+	m.stageHandoffInterventionRequired = true
+	extra := fmt.Sprintf("%d finding(s) reached the %d-round limit: %s",
+		len(stalled), maxFindingRounds, strings.Join(ids, ", "))
+	return m.emitSchedulerCTA(schedulerCTAContinue, st, extra)
 }

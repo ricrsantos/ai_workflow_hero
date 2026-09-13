@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reprotest"
@@ -64,6 +65,11 @@ func newTestServiceWithRunningStage(t *testing.T, dir, stage, yamlBody string) *
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, ".workflow-hero", "config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The repro policy reads the project root: a go.mod is what enables the
+	// built-in `go test` gate without extra configuration.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/tuitest\n\ngo 1.22\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	svc, err := cycle.OpenService(dir)
@@ -425,6 +431,11 @@ stages:
 	if err := os.MkdirAll(filepath.Join(dir, ".workflow-hero", "config"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The repro policy reads the project root: a go.mod is what enables the
+	// built-in `go test` gate without extra configuration.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/tuitest\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	svc, err := cycle.OpenService(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -508,7 +519,7 @@ func TestImplementationAssignmentPromptsArePartitionedByOwner(t *testing.T) {
 		"  Verify: frontend criterion\n"
 	path := writeImplementationTasks(t, svc, raw)
 	checklist := NewTestModel(svc).implementationChecklist()
-	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend}, nil, nil)
+	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend}, nil, nil, findingrepro.DefaultGoPolicy())
 	if reason != "" || !reflect.DeepEqual(runAgents, []string{agentBackend, agentFrontend}) || !reflect.DeepEqual(expected, runAgents) {
 		t.Fatalf("dispatch agents=%v expected=%v reason=%q", runAgents, expected, reason)
 	}
@@ -536,7 +547,7 @@ func TestImplementationOwnerlessMixedPlanFailsBeforeDispatch(t *testing.T) {
 		Ready:  true,
 		Raw:    "- [ ] 1.1 [task-unowned] Legacy task\n",
 	}
-	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend}, nil, nil)
+	runAgents, assignments, expected, reason := implementationStageDispatch(checklist, []string{agentBackend, agentFrontend}, nil, nil, findingrepro.DefaultGoPolicy())
 	if reason == "" || !strings.Contains(reason, "ownership") {
 		t.Fatalf("reason=%q want ownership failure", reason)
 	}
@@ -616,7 +627,7 @@ func TestImplementationReportsMarkUnionAndRedispatchOnlyRemainingOwner(t *testin
 	if !strings.Contains(string(updated), "- [x] 1.1 [task-back]") || !strings.Contains(string(updated), "- [ ] 1.2 [task-front]") {
 		t.Fatalf("unexpected checklist after union mark: %q", updated)
 	}
-	nextAgents, nextAssignments, _, reason := implementationStageDispatch(m.implementationChecklist(), []string{agentBackend, agentFrontend}, nil, nil)
+	nextAgents, nextAssignments, _, reason := implementationStageDispatch(m.implementationChecklist(), []string{agentBackend, agentFrontend}, nil, nil, findingrepro.DefaultGoPolicy())
 	if reason != "" || !reflect.DeepEqual(nextAgents, []string{agentFrontend}) || len(nextAssignments[agentBackend]) != 0 || len(nextAssignments[agentFrontend]) != 1 {
 		t.Fatalf("next dispatch agents=%v assignments=%v reason=%q", nextAgents, nextAssignments, reason)
 	}
@@ -1122,6 +1133,7 @@ func TestEvaluateImplementationHandoffFailsClosedWithoutLinkedTasks(t *testing.T
 	report := "generic_agent:\n" +
 		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`
 	m.stageHandoffOutputs = []string{report}
+	m = applyReproGateForTest(t, m)
 	decision := m.evaluateStageHandoff(stageImplementation, report)
 	if decision.Complete || !strings.Contains(decision.Reason, "no linked OpenSpec") {
 		t.Fatalf("decision=%+v", decision)
@@ -1175,6 +1187,28 @@ stages:
     max_iterations: 2
     require_human_approval: false
 `
+
+// applyReproGateForTest mirrors what the TUI does before evaluating an
+// Implementation wave: it runs the repro gate (asynchronously in production)
+// and stores the verdict on the model.
+func applyReproGateForTest(t *testing.T, m model) model {
+	t.Helper()
+	ids := claimedFindingIDs(m.stageHandoffOutputs)
+	m.stageHandoffReproChecked = true
+	if len(ids) == 0 {
+		return m
+	}
+	cycleRow, err := m.svc.SessionCycle()
+	if err != nil || cycleRow == nil {
+		t.Fatalf("session cycle err=%v", err)
+	}
+	results, err := cycle.VerifyFindingRepros(context.Background(), m.svc.Store, cycleRow.ID, m.svc.ProjectDir, ids)
+	if err != nil {
+		t.Fatalf("repro gate err=%v", err)
+	}
+	m.stageHandoffReproResults = results
+	return m
+}
 
 func TestEvaluateQAFailedHandoffInvokesAtomicClose(t *testing.T) {
 	dir := t.TempDir()
@@ -1242,6 +1276,7 @@ func TestImplementationHandoffMarksFindingDone(t *testing.T) {
 	report := `generic_agent:
 {"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":["task-done","find-qa-1"],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`
 	m.stageHandoffOutputs = []string{report}
+	m = applyReproGateForTest(t, m)
 	decision := m.evaluateStageHandoff(stageImplementation, "")
 	if !decision.Complete {
 		t.Fatalf("decision=%+v want complete", decision)
@@ -1318,6 +1353,7 @@ func TestEvaluateImplementationHandoffFindingsOnlyPartialProgress(t *testing.T) 
 	report := "generic_agent:\n" +
 		`{"stage":"implementation","agent":"generic_agent","status":"partial","tasks_completed":["find-qa-1"],"tasks_remaining":["find-qa-2"],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"blocker":"find-qa-2 remains","next_action":"fix find-qa-2","summary":"test"}`
 	m.stageHandoffOutputs = []string{report}
+	m = applyReproGateForTest(t, m)
 	decision := m.evaluateStageHandoff(stageImplementation, report)
 	if !decision.PartialProgress || decision.Complete {
 		t.Fatalf("decision=%+v want findings-only partial progress", decision)
@@ -1365,6 +1401,7 @@ func TestImplementationHandoffRejectsFailedRepro(t *testing.T) {
 	report := "generic_agent:\n" +
 		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":["find-qa-1"],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`
 	m.stageHandoffOutputs = []string{report}
+	m = applyReproGateForTest(t, m)
 	decision := m.evaluateStageHandoff(stageImplementation, report)
 	if decision.Complete || decision.PartialProgress {
 		t.Fatalf("decision=%+v want repro gate rejection", decision)

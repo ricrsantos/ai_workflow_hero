@@ -1,5 +1,7 @@
 package reports
 
+import "github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
+
 // ReopenRequest is the identity a report claims when setting reopen_id.
 type ReopenRequest struct {
 	SourceStage        string
@@ -8,6 +10,7 @@ type ReopenRequest struct {
 	File               string
 	Requirement        string
 	AcceptanceCriteria string
+	ReproMode          string
 	ReproPackage       string
 	ReproTest          string
 }
@@ -49,6 +52,18 @@ type DecodeContext struct {
 	ActiveImplementationAgents []string
 	ReopenIDs                  ReopenIDValidator
 	Actionable                 ActionableFindingChecker
+	// ReproPolicy decides which repro modes this cycle's reports may use. The
+	// zero value falls back to Hero's original Go-only contract.
+	ReproPolicy findingrepro.Policy
+}
+
+// EffectiveReproPolicy returns the cycle policy, or the Go-only default when
+// no policy was supplied (CLI paths and older callers).
+func (c DecodeContext) EffectiveReproPolicy() findingrepro.Policy {
+	if len(c.ReproPolicy.Modes) == 0 && c.ReproPolicy.DefaultMode == "" && len(c.ReproPolicy.EvidenceStages) == 0 {
+		return findingrepro.DefaultGoPolicy()
+	}
+	return c.ReproPolicy
 }
 
 const (

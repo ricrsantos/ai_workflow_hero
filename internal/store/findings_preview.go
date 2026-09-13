@@ -21,7 +21,7 @@ func (s *Store) PredictFindingActionable(cycleID int64, in FindingInput) (bool, 
 		}
 		if f.Status == FindingStatusDone && f.SourceStage == in.SourceStage && f.Owner == in.Owner &&
 			FindingContractMatches(f, in.File, in.Requirement, in.AcceptanceCriteria) &&
-			FindingReproMatches(f, in.ReproPackage, in.ReproTest) {
+			FindingReproMatches(f, in.ReproMode, in.ReproPackage, in.ReproTest) {
 			return true, nil
 		}
 		return false, nil

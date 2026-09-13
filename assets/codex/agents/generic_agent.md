@@ -107,7 +107,12 @@ Your explicit assignment may contain `task-*` IDs, `find-*` IDs, or both. `tasks
 
 A verification wave with **no** assigned IDs accepts only empty arrays in both fields.
 
-For each assigned `find-*`, land `repro.source` first (the named test MUST fail on current code). Then fix Residual until `go test <package> -count=1 -run ^TestName$` passes. Frozen Issue/Acceptance are identity only. Do not put that ID in `tasks_completed` if Residual is still true or the repro test fails — the scheduler re-runs the test and rejects `done` (`repro_test_failed`).
+Each assigned `find-*` block states its repro mode; follow that block, not a default:
+
+- `go_test` / `command` — land the repro test first (it MUST fail on current code), then fix Residual until the command printed in the block passes. The scheduler re-runs exactly that command before accepting `done` and rejects the claim otherwise (`repro_test_failed`).
+- `evidence` — there is no automated gate. Reproduce from the listed evidence, fix Residual, and say in `summary` how you verified it.
+
+Frozen Issue/Acceptance are identity only; fix Residual. Never put a `find-*` in `tasks_completed` while its Residual is still true. A finding that keeps coming back is capped at 3 rounds, after which Hero escalates to the user instead of re-dispatching it — so do not close a finding you have not actually fixed.
 
 ## C15 report contract (PRD-C15-001 §6)
 
@@ -117,9 +122,6 @@ Emit **one JSON object** as your entire completion output and **stop**. The orch
 - do **not** call `hero stage close`, `hero stage loop-back`, or any other stage/cycle transition CLI;
 - do **not** edit OpenSpec `tasks.md` checkboxes or write gap files (`qa-gaps.md`, `judge-gaps.md`, etc.);
 - do **not** edit `context/current-state.md`;
-- do **not** invent new `find-*` IDs — only set `reopen_id` when reopening an existing `done` finding ID supplied in your context.
-- `reopen_id` is valid only when this failure's `file`, `requirement`, and `acceptance_criteria` match that finding's stored contract. Issue wording may differ and is audit-only; it does **not** replace the Implementation assignment.
-- If the residual is a different file, requirement, or acceptance criterion, omit `reopen_id` so Hero allocates a new `find-*` ID. Do not reuse an ID to describe a new defect.
 
 Allowed top-level fields only: `stage`, `agent`, `status`, `tasks_completed`, `tasks_remaining`, `files_changed`, `acceptance_gates`, `tests_passed`, `blocker`, `next_action`, `summary`.
 

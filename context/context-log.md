@@ -4,6 +4,24 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-12 — Validation loop: repro modes, async gate, and ceilings
+
+**Problem**: The C15 handoff made QA→Implementation deterministic, but three things could still stall or freeze a cycle. (1) The repro contract was Go-only and fail-closed: `repro.package` had to be `./go/path` and `repro.test` a `Test*` name, and the gate ran `go test` literally. In any non-Go project — and for Browser UI visual failures anywhere — QA/Judge/BUI/E2E could not emit a valid report, so every failure was rejected with nothing persisted. (2) The gate ran inside the Bubble Tea `Update` loop with a 2-minute timeout per finding and no aggregate cap, so a wave with several findings froze the TUI for minutes. (3) Nothing bounded an individual finding: `EscalateIfExhausted` had no production caller, the stage budget was only checked at `StartStage`, and a finding could be reopened indefinitely.
+
+**Fix**:
+- `repro.mode` (`go_test` | `command` | `evidence`) with a per-cycle policy from `verification.repro` in `workflow-config.yml` (`internal/workflowconfig/verification.go`, `internal/common/findingrepro/policy.go`). Auto-detection: `go_test` when the project root has a `go.mod`, otherwise `evidence`. `command` re-runs a project-owned argv template with the agent's charset-restricted `{{package}}`/`{{test}}` tokens and no shell. `evidence` requires a non-empty `evidence` array, forbids package/test/source, and stays closed for stages that can automate — except Browser UI Validation, which keeps it by default.
+- The gate moved to a background `tea.Cmd` (`internal/tui/repro_gate.go`) with `cycle.ReproGateBudget` (10 min total), a stale-wave guard, and a transcript progress line. A claimed `find-*` without a verdict is treated as unverified.
+- Ceilings: `maxFindingRounds = 3` at dispatch and `EscalateIfExhausted` between waves; the existing 8-wave cap now escalates too. All three hand the decision to the user (`/hero-continue`, `/hero-add-todo`, `/hero-cancel`, `/hero-finish`) instead of spending another loop.
+- Schema **v15** adds `repro_mode` to `findings` and `finding_occurrences`; pre-v15 rows with a test are backfilled as `go_test`.
+- Agent contracts across the four harness trees document the three modes per stage; the dead `reopen_id` rules were removed from backend/frontend/generic (they never emit findings), and `find-*` assignment blocks now render per mode instead of always telling the agent to write a Go test.
+- Fixed a flaky `internal/tui` test that left a live stream writing into `t.TempDir()` during cleanup.
+
+**Config screen**: the policy was invisible at first, so the only way to discover it was a rejected report. The Config screen now has a **Verification** section that renders the resolved policy (default mode plus its origin, enabled modes, per-stage evidence allowance, and the command argv) and edits `repro.mode` and `repro.allow_evidence` as tri-state choices where `auto` removes the key from the document. `repro.command` and `evidence_stages` are lists and stay YAML-only: the screen has no list widget, and assembling an argv from a free-text field would undermine the no-shell guarantee. Saving `mode: command` without a configured command is rejected by `ManagedConfig.Validate`.
+
+**Applies to**: QA → ORCH → GEN → ORCH → QA and, with the same machinery, Judge, Browser UI Validation, and QA End-to-End.
+
+**Validation**: `go test ./...` (green), plus new tests in `internal/workflowconfig`, `internal/cycle/reports`, `internal/cycle`, and `internal/tui` covering each mode, the async gate, the stale-result guard, and the round cap.
+
 ## 2026-09-12 — QA evidence parent traversal vs Go `...`
 
 **Problem**: QA 8/8 report decoded, then persist rejected `invalid_json` / `evidence[1]: parent traversal is not allowed`. The contract examples already use `"evidence": ["go test ./src/api/..."]`. `validateEvidencePath` used `strings.Contains(p, "..")`, so Go's recursive package pattern `...` was treated as `..`.

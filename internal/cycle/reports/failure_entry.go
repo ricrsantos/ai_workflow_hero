@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 )
 
 // FailureEntry is a normalized validation failure row shared across QA, Judge, BUI, and E2E.
@@ -21,8 +22,10 @@ type FailureEntry struct {
 	Repro              FindingRepro
 }
 
-// FindingRepro is the fail-closed Go test identity a validation report must supply.
+// FindingRepro is the fail-closed repro identity a validation report must
+// supply: an automated re-run (go_test / command) or an evidence-only record.
 type FindingRepro struct {
+	Mode    string
 	Package string
 	Test    string
 	Source  string
@@ -35,6 +38,7 @@ type failureEntryOptions struct {
 	ownerField         string
 	deriveBrowserOwner bool
 	defaultJudgeOwner  bool
+	policy             findingrepro.Policy
 	active             ActiveOwners
 	activeImpl         []string
 	reopen             ReopenIDValidator
@@ -87,6 +91,7 @@ func decodeFailureEntries(raw json.RawMessage, fieldName string, opts failureEnt
 					File:               entry.File,
 					Requirement:        entry.Requirement,
 					AcceptanceCriteria: entry.AcceptanceCriteria,
+					ReproMode:          entry.Repro.Mode,
 					ReproPackage:       entry.Repro.Package,
 					ReproTest:          entry.Repro.Test,
 				}); derr != nil {
@@ -202,7 +207,7 @@ func decodeFailureEntry(item object, prefix string, opts failureEntryOptions) (*
 	}
 	entry.ReopenID = reopen
 
-	repro, err := decodeFindingRepro(item, prefix)
+	repro, err := decodeFindingRepro(item, prefix, opts.sourceStage, opts.policy, entry.Evidence)
 	if err != nil {
 		return nil, err
 	}

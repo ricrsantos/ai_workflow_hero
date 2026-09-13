@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ricrsantos/ai_workflow_hero/assets"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 )
 
 func TestEmbeddedC15ExamplesDecode(t *testing.T) {
@@ -15,6 +16,18 @@ func TestEmbeddedC15ExamplesDecode(t *testing.T) {
 	harnesses := []string{"cursor", "opencode", "codex", "claude"}
 	ctx := testCtx()
 	ctx.ActiveImplementationAgents = []string{OwnerBackend, OwnerFrontend, OwnerGeneric}
+	// The embedded examples document every repro mode, so they are decoded
+	// against a project that enables all of them.
+	ctx.ReproPolicy = findingrepro.Policy{
+		DefaultMode: findingrepro.ModeGoTest,
+		Modes: map[string]bool{
+			findingrepro.ModeGoTest:   true,
+			findingrepro.ModeCommand:  true,
+			findingrepro.ModeEvidence: true,
+		},
+		Command:        []string{"npm", "test", "--", "-t", "{{test}}"},
+		EvidenceStages: []string{SourceBrowserUI},
+	}
 
 	cases := []struct {
 		agent  string

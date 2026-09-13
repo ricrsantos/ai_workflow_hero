@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
@@ -283,5 +284,48 @@ func assertNoHandoffSideEffects(t *testing.T, s *store.Store, cycleID int64, wan
 	events, _ := s.ListEventsByTypes(cycleID, []string{store.EventLoopBack, store.EventStageCompleted})
 	if len(events) != 0 {
 		t.Fatalf("unexpected events: %+v", events)
+	}
+}
+
+// A wave is not an iteration: a stage on its last allowed iteration must keep
+// running productive waves, and only a spent wall-clock timeout stops it.
+func TestEscalateIfTimedOutIgnoresIterationBudget(t *testing.T) {
+	e, s := openTestEngine(t)
+	now := e.Now().UTC()
+	cycleID, err := s.CreateCycle(store.Cycle{Number: 1, Title: "t", Status: store.CycleStatusActive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateStages([]store.Stage{{
+		CycleID: cycleID, Name: "implementation", Status: store.StageRunning,
+		Iteration: 1, MaxIterations: 1, TimeoutMinutes: 30,
+		StartedAt: now.Add(-5 * time.Minute).Format(time.RFC3339), SortOrder: 1,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.EscalateIfTimedOut(cycleID, "implementation"); err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.GetStage(cycleID, "implementation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Status != store.StageRunning {
+		t.Fatalf("status=%s want Running: a spent iteration budget must not stop a productive wave", st.Status)
+	}
+
+	st.StartedAt = now.Add(-31 * time.Minute).Format(time.RFC3339)
+	if err := s.UpdateStage(st); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.EscalateIfTimedOut(cycleID, "implementation"); err != nil {
+		t.Fatal(err)
+	}
+	st, err = s.GetStage(cycleID, "implementation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Status != store.StageEscalated {
+		t.Fatalf("status=%s want Escalated after the stage timeout", st.Status)
 	}
 }

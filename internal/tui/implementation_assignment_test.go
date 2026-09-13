@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
@@ -392,7 +393,7 @@ func TestImplementationFindingBlockFreezesContractAndHistory(t *testing.T) {
 		{Round: 1, Kind: store.OccurrenceCreated, Issue: "Quit races persist"},
 		{Round: 2, Kind: store.OccurrenceReopened, Issue: "workers use context.Background"},
 	}
-	block := implementationFindingBlock(finding, occs)
+	block := implementationFindingBlock(finding, occs, findingrepro.DefaultGoPolicy())
 	if !strings.Contains(block.Block, "Contract: frozen") {
 		t.Fatalf("missing frozen contract:\n%s", block.Block)
 	}
@@ -418,7 +419,7 @@ func TestMergeImplementationAssignmentOrdersTasksBeforeFindings(t *testing.T) {
 		{ID: "find-qa-1", Owner: store.FindingOwnerGeneric, SourceStage: store.FindingSourceQA},
 		{ID: "find-qa-2", Owner: store.FindingOwnerGeneric, SourceStage: store.FindingSourceQA},
 	}
-	byAgent, errs := mergeImplementationAssignment(plan, findings, []string{implementationGenericAgent}, nil)
+	byAgent, errs := mergeImplementationAssignment(plan, findings, []string{implementationGenericAgent}, nil, findingrepro.DefaultGoPolicy())
 	if len(errs) != 0 {
 		t.Fatalf("merge errors=%v", errs)
 	}
@@ -438,7 +439,7 @@ func TestMergeImplementationAssignmentRejectsFindingOwnerOutsideScope(t *testing
 	plan := partitionImplementationTasks("", []string{implementationBackendAgent})
 	plan.Valid = true
 	findings := []store.Finding{{ID: "find-qa-1", Owner: store.FindingOwnerFrontend, SourceStage: store.FindingSourceQA}}
-	_, errs := mergeImplementationAssignment(plan, findings, []string{implementationBackendAgent}, nil)
+	_, errs := mergeImplementationAssignment(plan, findings, []string{implementationBackendAgent}, nil, findingrepro.DefaultGoPolicy())
 	if len(errs) == 0 || !strings.Contains(strings.Join(errs, "; "), "not in active implementation scope") {
 		t.Fatalf("expected scope failure, got %v", errs)
 	}
@@ -446,7 +447,7 @@ func TestMergeImplementationAssignmentRejectsFindingOwnerOutsideScope(t *testing
 
 func TestBuildImplementationStageDispatchVerificationWaveWhenEmpty(t *testing.T) {
 	checklist := implementationChecklist{Linked: true, Ready: true, Raw: "- [x] [task-done] [agent:generic_agent] Done\n"}
-	runAgents, assignments, expected, reason := buildImplementationStageDispatch(checklist, []string{implementationGenericAgent}, nil, nil)
+	runAgents, assignments, expected, reason := buildImplementationStageDispatch(checklist, []string{implementationGenericAgent}, nil, nil, findingrepro.DefaultGoPolicy())
 	if reason != "" {
 		t.Fatalf("reason=%q", reason)
 	}

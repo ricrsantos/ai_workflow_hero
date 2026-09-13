@@ -41,6 +41,7 @@ func DecodeQA(data []byte, ctx DecodeContext) (*QAReport, *DiagnosticError) {
 	failures, err := decodeFailureEntries(rawFailures, "failures", failureEntryOptions{
 		sourceStage:  SourceQA,
 		requireOwner: true,
+		policy:       ctx.EffectiveReproPolicy(),
 		active:       ctx.ActiveOwners,
 		reopen:       ctx.ReopenIDs,
 	})

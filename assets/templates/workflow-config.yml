@@ -7,6 +7,34 @@ workflow_config:
   # Override only when the user explicitly asks for a different chat language.
   user_preferred_language: EN
 
+# Optional: how a validation finding proves itself. Hero re-runs the repro of
+# every finding an implementation agent claims as fixed before it may be marked
+# done, so a "fixed" claim is verified instead of trusted.
+#
+#   mode            go_test | command | evidence
+#                   Default: go_test when the project root has a go.mod,
+#                   otherwise evidence (no automated gate available).
+#   command         argv re-run for mode: command. The tokens {{package}} and
+#                   {{test}} are replaced by the finding's repro identity; the
+#                   command itself always comes from this file, never from an
+#                   agent. No shell is involved.
+#   allow_evidence  Allow evidence-only findings everywhere. Default: false
+#                   while an automated mode exists, so agents cannot dodge the
+#                   gate; true when no automated mode is available.
+#   evidence_stages Stages that may always use evidence mode because their
+#                   failures have no deterministic re-run.
+#
+# `mode` and `allow_evidence` are also editable in the Hero TUI Config screen,
+# which shows the resolved policy. `command` and `evidence_stages` are lists and
+# stay YAML-only: the argv must never be assembled from a free-text field.
+#
+# verification:
+#   repro:
+#     mode: command
+#     command: ["npm", "test", "--", "-t", "{{test}}", "{{package}}"]
+#     allow_evidence: false
+#     evidence_stages: [browser_ui_validation]
+
 scope:
   backend: true
   frontend: false

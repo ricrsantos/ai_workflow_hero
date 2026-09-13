@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/engine"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 	"github.com/ricrsantos/ai_workflow_hero/internal/todos"
+	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
 // ReportValidationError re-exports engine report validation failures for CLI/TUI callers.
@@ -127,7 +129,7 @@ func (s *Service) BuildImplementationAssignmentInput(activeAgents []string) (Imp
 		}
 		return out, fmt.Errorf("implementation task plan invalid")
 	}
-	byAgent, mergeErrors := mergeImplementationAssignment(plan, findings, activeAgents)
+	byAgent, mergeErrors := mergeImplementationAssignment(plan, findings, activeAgents, s.ReproPolicy())
 	if len(mergeErrors) > 0 {
 		return out, fmt.Errorf("implementation assignment union invalid: %s", strings.Join(mergeErrors, "; "))
 	}
@@ -416,4 +418,13 @@ func (s *Service) linkedOpenSpecTasks(c *store.Cycle) (path, raw string, linked,
 		return path, "", linked, false
 	}
 	return path, string(data), linked, true
+}
+
+// ReproPolicy resolves which repro modes this project's validation reports may
+// use and how a command-mode repro is re-run.
+func (s *Service) ReproPolicy() findingrepro.Policy {
+	if s == nil {
+		return findingrepro.DefaultGoPolicy()
+	}
+	return workflowconfig.ReproPolicyForProject(s.ProjectDir, nil)
 }
