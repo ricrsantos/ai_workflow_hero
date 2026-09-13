@@ -97,16 +97,28 @@ way to mark it complete with a durable explanation.
 - An agent may provide `reopen_id` only for an existing `done` finding in the
   same cycle and valid source/owner context.
 - `reopen_id` takes precedence over fingerprint matching **only when** the
-  report's canonical `file`, `requirement`, and `acceptance_criteria` match the
-  stored finding contract. A mismatched contract is `unknown_reopen_id`; the
-  agent must omit `reopen_id` so Hero allocates a new ID.
+  report's canonical `file`, `requirement`, `acceptance_criteria`, and
+  `repro.package`+`repro.test` match the stored finding contract. A mismatched
+  contract or a different Go test is `unknown_reopen_id`; the agent must omit
+  `reopen_id` so Hero allocates a new ID.
 - Reopen, rediscovery, done, and deferral do **not** overwrite the stored
   issue, file, requirement, or acceptance criterion. New issue text is
   append-only on `finding_occurrences`. Implementation assignments always
-  show the frozen contract plus occurrence history.
+  show the frozen contract, untruncated **Residual** (latest occurrence
+  issue), the locked repro test, and occurrence history.
+- Every validation failure/gap entry **must** include `repro: {package, test,
+  source}`. QA/Judge/BUI/E2E do **not** write that test into the project;
+  Implementation lands `repro.source` first (it must fail), then fixes until
+  `go test <package> -count=1 -run ^TestName$` passes. The scheduler re-runs
+  that command before marking `find-*` done (`repro_test_failed` otherwise).
+  In-flight rows with empty stored repro skip the gate until the first incoming
+  repro locks onto the row.
 - Without `reopen_id`, equality is deterministic. The fingerprint uses cycle,
   source stage, owner, canonical file or requirement, and normalized acceptance
-  criterion. Free-form issue wording is not semantically compared.
+  criterion. When `repro.package`+`repro.test` are present they are hashed too,
+  so a different test is a new ID. Legacy empty-repro rows keep the pre-v14
+  six-field hash until the first repro locks and rewrites the fingerprint.
+  Free-form issue wording is not semantically compared.
 - An exact fingerprint match to `done` reopens that ID. A match to `open` or
   `reopened` appends an occurrence without cloning the finding. No exact match
   creates a new ID.
@@ -181,8 +193,10 @@ They must not:
 
 Each failure/gap entry must contain enough structured data for deterministic
 routing and verification. At minimum: `owner` when not derivable, `file` and/or
-`requirement`, non-empty `issue`, non-empty `acceptance_criteria`, optional
-`evidence`, and optional valid `reopen_id`.
+`requirement`, non-empty `issue`, non-empty `acceptance_criteria`, required
+`repro` `{package, test, source}`, optional `evidence`, and optional valid
+`reopen_id`. Validators must not Write the repro test into the project; the
+source belongs in JSON so Implementation can land it.
 
 The canonical embedded agent source for every supported harness must include:
 
@@ -208,6 +222,11 @@ from those canonical assets so contracts do not drift by harness.
       "issue": "Open finding IDs are absent from the Implementation assignment.",
       "acceptance_criteria": "The next assignment contains every open finding ID exactly once.",
       "evidence": ["go test ./internal/tui"],
+      "repro": {
+        "package": "./internal/tui",
+        "test": "TestFindQAHandoffAssignmentContainsOpenIDs",
+        "source": "package tui\n\nfunc TestFindQAHandoffAssignmentContainsOpenIDs(t *testing.T) {\n\tt.Fatal(\"open finding IDs absent from Implementation assignment\")\n}\n"
+      },
       "reopen_id": null
     }
   ],
@@ -231,6 +250,11 @@ Judge keeps implementation gaps separate from SDD ambiguity:
       "issue": "Manual completion accepts an adopted ToDo.",
       "acceptance_criteria": "Only pending ToDos can be manually completed.",
       "evidence": [],
+      "repro": {
+        "package": "./internal/todos",
+        "test": "TestFindJudgeManualCompleteRejectsAdopted",
+        "source": "package todos\n\nfunc TestFindJudgeManualCompleteRejectsAdopted(t *testing.T) {\n\tt.Fatal(\"manual completion accepts an adopted ToDo\")\n}\n"
+      },
       "reopen_id": null
     }
   ],
@@ -272,6 +296,13 @@ Implementation agents receive an explicit ordered assignment containing
 `tasks_completed` and `tasks_remaining` are disjoint and their union must equal
 the exact assignment. IDs not assigned to that report are rejected. A truly
 empty verification assignment accepts only empty arrays.
+
+Claiming a `find-*` ID complete requires Residual to be false **and** the
+locked repro test to pass. The scheduler re-runs
+`go test <package> -count=1 -run ^TestName$` before marking the finding done.
+A missing test, a filter miss (`no tests to run`), or a failing test is
+`repro_test_failed` and leaves the finding open. Implementation must land
+`repro.source` first; validators do not Write that file.
 
 ## 7. Deterministic stage handoff and scheduling
 

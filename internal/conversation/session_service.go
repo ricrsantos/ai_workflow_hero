@@ -170,6 +170,49 @@ func (svc *SessionService) EnsureFirstTurn(ctx context.Context, heroSessionID st
 	}, nil
 }
 
+// CreateSessionWithTranscript creates a Hero session plus its initial events and
+// assets in one store transaction (first-turn attachments cannot land partially).
+func (svc *SessionService) CreateSessionWithTranscript(ctx context.Context, meta CreateSessionParams, events []store.AppendSessionEventInput, assets []store.SessionAsset) (store.Session, error) {
+	if err := ctx.Err(); err != nil {
+		return store.Session{}, err
+	}
+	if svc == nil || svc.Store == nil {
+		return store.Session{}, fmt.Errorf("session service store is required")
+	}
+	if len(events) == 0 {
+		return store.Session{}, fmt.Errorf("first-turn transcript requires at least one event")
+	}
+	sessIn := store.CreateSessionInput{
+		ID:                  strings.TrimSpace(meta.ID),
+		Kind:                meta.Kind,
+		Title:               meta.Title,
+		HarnessID:           meta.HarnessID,
+		Model:               meta.Model,
+		ModelPropertiesJSON: meta.ModelPropertiesJSON,
+		CycleID:             meta.CycleID,
+		StageName:           meta.StageName,
+		AgentName:           meta.AgentName,
+		TranscriptState:     meta.TranscriptState,
+		LastOrigin:          meta.LastOrigin,
+	}
+	if sessIn.Kind == "" {
+		sessIn.Kind = store.SessionKindFreechat
+	}
+	if sessIn.TranscriptState == "" {
+		sessIn.TranscriptState = store.TranscriptAvailable
+	}
+	if sessIn.LastOrigin == "" {
+		sessIn.LastOrigin = store.SessionOriginLocal
+	}
+	sess, err := svc.Store.CreateSessionWithTranscript(sessIn, events, assets)
+	if err != nil {
+		svc.log().Error("session first-turn transcript persistence failed", "kind", sessIn.Kind)
+		return store.Session{}, err
+	}
+	svc.log().Info("session created on first turn", logAttrKind(sess.Kind)...)
+	return sess, nil
+}
+
 // AppendEvent appends a transcript event bound to the active Execute session.
 func (svc *SessionService) AppendEvent(ctx context.Context, in store.AppendSessionEventInput) (store.SessionEvent, error) {
 	if err := ctx.Err(); err != nil {
@@ -332,12 +375,32 @@ func (svc *SessionService) BindNativeSession(ctx context.Context, id, harnessID,
 	return sess, nil
 }
 
+// PersistTranscriptSuffix writes events, assets, and optional native binding atomically.
+func (svc *SessionService) PersistTranscriptSuffix(ctx context.Context, events []store.AppendSessionEventInput, assets []store.SessionAsset, bind *store.NativeSessionBind) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if svc == nil || svc.Store == nil {
+		return fmt.Errorf("session service store is required")
+	}
+	if err := svc.Store.PersistSessionTranscriptSuffix(events, assets, bind); err != nil {
+		svc.log().Error("session transcript suffix persist failed")
+		return err
+	}
+	return nil
+}
+
 // ListEventsNewest loads a bounded transcript page for restore/fork helpers.
 func (svc *SessionService) ListEventsNewest(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]store.SessionEvent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return svc.Store.ListSessionEventsNewest(sessionID, beforeSeq, limit)
+}
+
+// ListSessionEventsNewest is the store-aligned alias used by TUI persist tests.
+func (svc *SessionService) ListSessionEventsNewest(ctx context.Context, sessionID string, beforeSeq int64, limit int) ([]store.SessionEvent, error) {
+	return svc.ListEventsNewest(ctx, sessionID, beforeSeq, limit)
 }
 
 // ForkSessionInput configures an explicit context fork (design D6).

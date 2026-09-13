@@ -836,18 +836,31 @@ func TestMigrateV11ToV12PreservesOperationalRowsAndEmptySessionTables(t *testing
 		t.Fatalf("BeginRefresh: gen=%d err=%v", gen, err)
 	}
 
-	findRes, err := s.PersistFinding(FindingInput{
-		CycleID:            cycleID,
-		SourceStage:        FindingSourceQA,
-		Owner:              FindingOwnerGeneric,
-		File:               "internal/store/migrate.go",
-		Requirement:        "PRD-C16",
-		Issue:              "pre-v12 finding",
-		AcceptanceCriteria: "migration preserves row",
-	})
-	if err != nil {
+	fp := FindingFingerprint(cycleID, FindingSourceQA, FindingOwnerGeneric,
+		"internal/store/migrate.go", "PRD-C16", "migration preserves row", "", "")
+	if _, err := s.db.Exec(`
+INSERT INTO findings(id, cycle_id, source_stage, owner, status, fingerprint, file, requirement,
+  issue, acceptance_criteria, evidence_json, round, todo_id, created_at, updated_at)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"find-qa-1", cycleID, FindingSourceQA, FindingOwnerGeneric, FindingStatusOpen, fp,
+		"internal/store/migrate.go", "PRD-C16", "pre-v12 finding", "migration preserves row", "[]",
+		1, nil, ts, ts,
+	); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.db.Exec(`
+INSERT INTO finding_occurrences(cycle_id, finding_id, sequence, kind, source_stage, round, issue, acceptance_criteria, evidence_json, created_at)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		cycleID, "find-qa-1", 1, OccurrenceCreated, FindingSourceQA, 1, "pre-v12 finding", "migration preserves row", "[]", ts,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AppendEvent(Event{
+		CycleID: cycleID, TS: ts, Type: EventFindingCreated, PayloadJSON: `{"finding_id":"find-qa-1"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	findResID := "find-qa-1"
 	todoID, err := s.CreateLegacyTodo(CreateLegacyTodoParams{
 		Summary:            "pre-v12 todo",
 		AcceptanceCriteria: "still pending",
@@ -944,8 +957,8 @@ func TestMigrateV11ToV12PreservesOperationalRowsAndEmptySessionTables(t *testing
 	}
 
 	findings, err := s2.ListFindingsByCycle(cycleID)
-	if err != nil || len(findings) != 1 || findings[0].ID != findRes.Finding.ID {
-		t.Fatalf("findings: %+v %v want %s", findings, err, findRes.Finding.ID)
+	if err != nil || len(findings) != 1 || findings[0].ID != findResID {
+		t.Fatalf("findings: %+v %v want %s", findings, err, findResID)
 	}
 	todos, err := s2.ListPendingTodos()
 	if err != nil || len(todos) != 1 || todos[0].ID != todoID {

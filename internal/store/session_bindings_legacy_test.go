@@ -107,6 +107,69 @@ func TestMigrateLegacySessionBindingsIdempotent(t *testing.T) {
 	}
 }
 
+func TestMigrateLegacySessionBindingsSkipsLiveNativeCollision(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hero.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cycleID, err := s.CreateCycle(Cycle{
+		Number:             9,
+		Title:              "live-native-collision",
+		Status:             CycleStatusActive,
+		StartedAt:          "2026-09-12T12:00:00Z",
+		ConfigSnapshotJSON: `{}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateStages([]Stage{
+		{CycleID: cycleID, Name: "implementation", Status: StageRunning, MaxIterations: 4, SortOrder: 0},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	const native = "native-gen-live"
+	if _, err := s.CreateSession(CreateSessionInput{
+		Kind:            SessionKindOrchestration,
+		Title:           "C9 · Orchestration · ORCH",
+		HarnessID:       "cursor",
+		NativeSessionID: native,
+		CycleID:         &cycleID,
+		TranscriptState: TranscriptAvailable,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetStageSessionBinding(cycleID, "implementation", "cursor", native); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open after live native bind must succeed: %v", err)
+	}
+	defer s2.Close()
+	sessions, err := s2.ListSessions(ListSessionsFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	natives := 0
+	for _, sess := range sessions {
+		if sess.HarnessID == "cursor" && sess.NativeSessionID == native {
+			natives++
+			if sess.TranscriptState != TranscriptAvailable {
+				t.Fatalf("live row must keep available transcript, got %+v", sess)
+			}
+		}
+	}
+	if natives != 1 {
+		t.Fatalf("native copies=%d want 1 (skip legacy insert)", natives)
+	}
+}
+
 func TestLegacyStageDisplayName(t *testing.T) {
 	tests := []struct {
 		name  string

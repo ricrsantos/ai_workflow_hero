@@ -382,7 +382,7 @@ Pick one entry UI per session for control actions; both read and write `.workflo
 
 ### Development
 
-- Go 1.25+ (see `go.mod`)
+- Go 1.26+ (see `go.mod`)
 - Git
 
 ```bash
@@ -852,7 +852,7 @@ Escolha uma UI por sessão para ações de controle; ambas leem e escrevem `.wor
 
 ### Desenvolvimento
 
-- Go 1.25+ (veja `go.mod`)
+- Go 1.26+ (veja `go.mod`)
 - Git
 
 ```bash

@@ -51,6 +51,8 @@ type AppendSessionEventInput struct {
 	CreatedAt       string // optional RFC3339
 	// TouchLifecycle when non-empty updates sessions.lifecycle in the same tx (e.g. active after interrupt recovery).
 	TouchLifecycle string
+	// ReplaceExisting updates payload/origin for an existing provider_event_id instead of no-op.
+	ReplaceExisting bool
 }
 
 // ErrDuplicateProviderEvent is returned when provider_event_id already exists for the session.
@@ -110,6 +112,9 @@ func appendSessionEventTx(tx *sql.Tx, in AppendSessionEventInput) (SessionEvent,
 SELECT seq FROM session_events WHERE session_id = ? AND provider_event_id = ?`,
 			sessionID, providerID).Scan(&existingSeq)
 		if err == nil {
+			if in.ReplaceExisting {
+				return replaceSessionEventTx(tx, sessionID, existingSeq, in, origin, payload, providerID, created)
+			}
 			return getSessionEventTx(tx, sessionID, existingSeq)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -243,6 +248,40 @@ LIMIT ?`, sessionID, limit)
 		out[len(newestFirst)-1-i] = newestFirst[i]
 	}
 	return out, nil
+}
+
+func replaceSessionEventTx(tx *sql.Tx, sessionID string, seq int64, in AppendSessionEventInput, origin, payload, providerID, created string) (SessionEvent, error) {
+	if _, err := tx.Exec(`
+UPDATE session_events
+SET event_type = ?, origin = ?, origin_address = ?, payload_json = ?, created_at = ?
+WHERE session_id = ? AND seq = ?`,
+		in.EventType, origin, strings.TrimSpace(in.OriginAddress), payload, created, sessionID, seq); err != nil {
+		return SessionEvent{}, fmt.Errorf("replace session event: %w", err)
+	}
+	lifecycleSQL := `UPDATE sessions SET last_activity_at = ?, last_origin = ?`
+	args := []any{created, origin}
+	if life := strings.TrimSpace(in.TouchLifecycle); life != "" {
+		if !validSessionLifecycle(life) {
+			return SessionEvent{}, fmt.Errorf("invalid touch lifecycle %q", life)
+		}
+		lifecycleSQL += `, lifecycle = ?`
+		args = append(args, life)
+	}
+	lifecycleSQL += ` WHERE id = ?`
+	args = append(args, sessionID)
+	if _, err := tx.Exec(lifecycleSQL, args...); err != nil {
+		return SessionEvent{}, fmt.Errorf("touch session activity: %w", err)
+	}
+	return SessionEvent{
+		SessionID:       sessionID,
+		Seq:             seq,
+		EventType:       in.EventType,
+		Origin:          origin,
+		OriginAddress:   strings.TrimSpace(in.OriginAddress),
+		PayloadJSON:     payload,
+		ProviderEventID: providerID,
+		CreatedAt:       created,
+	}, nil
 }
 
 func getSessionEventTx(tx *sql.Tx, sessionID string, seq int64) (SessionEvent, error) {

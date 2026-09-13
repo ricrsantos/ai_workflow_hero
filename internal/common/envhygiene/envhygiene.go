@@ -235,6 +235,36 @@ func IsSensitivePath(rel string) bool {
 	return false
 }
 
+// HasParentTraversal reports whether p contains a ".." path segment after
+// slash-normalization. Go's recursive package pattern "..." is not traversal.
+// Whitespace-separated tokens are checked so commands like `go test ../secret`
+// are rejected while `go test ./...` is allowed.
+func HasParentTraversal(p string) bool {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return false
+	}
+	var b strings.Builder
+	b.Grow(len(p))
+	for _, r := range p {
+		if r == '\\' || r == '/' {
+			b.WriteByte('/')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	p = b.String()
+	for _, tok := range strings.Fields(p) {
+		tok = strings.Trim(tok, `"'`)
+		for _, seg := range strings.Split(tok, "/") {
+			if seg == ".." {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // TrackedSensitiveFiles returns tracked files that look like secrets (warn-only).
 // If git is unavailable or the directory is not a repo, returns nil, nil.
 func TrackedSensitiveFiles(projectDir string) ([]string, error) {

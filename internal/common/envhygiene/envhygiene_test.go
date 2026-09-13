@@ -210,6 +210,34 @@ func TestIsSensitivePath(t *testing.T) {
 	}
 }
 
+func TestHasParentTraversal(t *testing.T) {
+	allowed := []string{
+		"internal/tui/stage_handoff.go",
+		"go test ./internal/tui",
+		"go test ./...",
+		"go test ./src/api/...",
+		"./...",
+		`go test "./src/api/..."`,
+	}
+	for _, p := range allowed {
+		if envhygiene.HasParentTraversal(p) {
+			t.Errorf("HasParentTraversal(%q)=true, want false", p)
+		}
+	}
+	rejected := []string{
+		"../secret.txt",
+		"foo/../bar.go",
+		`foo\..\bar.go`,
+		"go test ../pkg",
+		"..",
+	}
+	for _, p := range rejected {
+		if !envhygiene.HasParentTraversal(p) {
+			t.Errorf("HasParentTraversal(%q)=false, want true", p)
+		}
+	}
+}
+
 func TestTrackedSensitiveFiles(t *testing.T) {
 	dir := t.TempDir()
 	cmd := exec.Command("git", "init", dir)

@@ -47,7 +47,8 @@ func qaFailedReportJSON(t *testing.T) []byte {
 			"owner":"generic_agent",
 			"file":"internal/tui/stage_handoff.go",
 			"issue":"missing atomic close",
-			"acceptance_criteria":"CloseStageFailedWithFindings persists findings in one transaction"
+			"acceptance_criteria":"CloseStageFailedWithFindings persists findings in one transaction",
+			"repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}
 		}]
 	}`
 	return []byte(raw)
@@ -105,6 +106,59 @@ func TestCloseStageFailedWithFindings_AtomicSuccess(t *testing.T) {
 	ids, _ := payload["finding_ids"].([]any)
 	if len(ids) != 1 || ids[0] != "find-qa-1" {
 		t.Fatalf("payload=%s", loopBack.PayloadJSON)
+	}
+}
+
+func TestCloseStageFailedWithFindings_AcceptsGoRecursiveEvidence(t *testing.T) {
+	e, s := openTestEngine(t)
+	id := seedHandoffCycle(t, s, true)
+	if err := e.StartStage(id, "qa"); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{
+		"status":"failed",
+		"summary":"toolchain mismatch",
+		"failures":[{
+			"owner":"generic_agent",
+			"file":"go.mod",
+			"issue":"staticcheck built with older Go",
+			"acceptance_criteria":"staticcheck analyzes the module",
+			"evidence":["go test ./internal/tui","go test ./..."],
+			"repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}
+		}]
+	}`)
+	out, err := e.CloseStageFailedWithFindings(id, "qa", raw, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.FindingIDs) != 1 || out.FindingIDs[0] != "find-qa-1" {
+		t.Fatalf("finding_ids=%v", out.FindingIDs)
+	}
+}
+
+func TestCloseStageFailedWithFindings_RejectsEvidenceParentSegment(t *testing.T) {
+	e, s := openTestEngine(t)
+	id := seedHandoffCycle(t, s, true)
+	_ = e.StartStage(id, "qa")
+	raw := []byte(`{
+		"status":"failed",
+		"summary":"bad evidence",
+		"failures":[{
+			"owner":"generic_agent",
+			"file":"a.go",
+			"issue":"x",
+			"acceptance_criteria":"y",
+			"evidence":["go test ./internal/tui","../secret.txt"],
+			"repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}
+		}]
+	}`)
+	_, err := e.CloseStageFailedWithFindings(id, "qa", raw, nil)
+	var rv *ReportValidationError
+	if !errors.As(err, &rv) || rv.Diagnostic.Code != reports.CodeInvalidEnum {
+		t.Fatalf("err=%v", err)
+	}
+	if !strings.Contains(rv.Diagnostic.Field, "evidence[1]") {
+		t.Fatalf("field=%s", rv.Diagnostic.Field)
 	}
 }
 

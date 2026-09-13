@@ -107,7 +107,7 @@ func TestStatusJSONFindingsLoopBacksAndActions(t *testing.T) {
 			"owner":"generic_agent",
 			"file":"internal/cycle/status_view.go",
 			"issue":"second finding",
-			"acceptance_criteria":"loop-back row includes findingIds"
+			"acceptance_criteria":"loop-back row includes findingIds","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}
 		}]
 	}`)
 	if _, err := svc.CloseStageFailedWithFindings("qa", raw, ""); err != nil {

@@ -57,14 +57,15 @@ Emit **one JSON object** as your entire completion output and **stop**. The orch
 - do **not** edit OpenSpec `tasks.md` checkboxes or write gap files (`qa-gaps.md`, `judge-gaps.md`, etc.);
 - do **not** edit `context/current-state.md`;
 - do **not** invent new `find-*` IDs — only set `reopen_id` when reopening an existing `done` finding ID supplied in your context.
-- `reopen_id` is valid only when this failure's `file`, `requirement`, and `acceptance_criteria` match that finding's stored contract. Issue wording may differ and is audit-only; it does **not** replace the Implementation assignment.
-- If the residual is a different file, requirement, or acceptance criterion, omit `reopen_id` so Hero allocates a new `find-*` ID. Do not reuse an ID to describe a new defect.
+- `reopen_id` is valid only when this failure's `file`, `requirement`, `acceptance_criteria`, **and** `repro.package`+`repro.test` match that finding's stored contract. Frozen Issue/Acceptance are identity only; this occurrence's `issue` is Residual for Implementation.
+- If the residual needs a different file, requirement, acceptance criterion, **or a different Go test**, omit `reopen_id` so Hero allocates a new `find-*` ID. Do not reuse an ID to describe a new defect.
+- Do **not** Write repro tests into `internal/` or any project test file. Put the full failing `func Test…(` source in `repro.source`. Implementation lands that source first.
 
 On success (`status`: `passed`), failure arrays must be **empty** (`[]`).
 
 Valid **owner** values: `backend_agent`, `frontend_agent`, `generic_agent` (must be active in the current implementation scope).
 
-Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`. Optional `evidence` is a string array of safe paths/commands. Optional `reopen_id` reopens a prior `done` finding in the same cycle only when `file`, `requirement`, and `acceptance_criteria` match the stored contract.
+Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`, and a required `repro` object `{package, test, source}`. `package` is a relative Go path such as `./internal/tui`; `test` is a `Test*` name; `source` must declare `func TestName(`. Optional `evidence` is a string array of safe repo-relative paths or commands. Go recursive patterns (`./...`, `./pkg/...`) are allowed; a `..` path segment (`../secret`) is not. Optional `reopen_id` reopens a prior `done` finding in the same cycle only when file, requirement, acceptance, **and** repro package+test match the stored contract.
 
 Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
 
@@ -97,6 +98,11 @@ Allowed top-level fields only: `status`, `implementation_gaps`, `sdd_ambiguity`,
       "issue": "Manual completion accepts an adopted ToDo.",
       "acceptance_criteria": "Only pending ToDos can be manually completed.",
       "evidence": [],
+      "repro": {
+        "package": "./internal/tui",
+        "test": "TestFindHandoffRepro",
+        "source": "package tui\n\nfunc TestFindHandoffRepro(t *testing.T) {\n\tt.Fatal(\"residual still true\")\n}\n"
+      },
       "reopen_id": null
     }
   ],
@@ -117,6 +123,11 @@ Allowed top-level fields only: `status`, `implementation_gaps`, `sdd_ambiguity`,
       "issue": "Manual completion still accepts an adopted ToDo after fix attempt.",
       "acceptance_criteria": "Only pending ToDos can be manually completed.",
       "evidence": ["go test ./internal/todos/..."],
+      "repro": {
+        "package": "./internal/tui",
+        "test": "TestFindHandoffRepro",
+        "source": "package tui\n\nfunc TestFindHandoffRepro(t *testing.T) {\n\tt.Fatal(\"residual still true\")\n}\n"
+      },
       "reopen_id": "find-judge-1"
     }
   ],

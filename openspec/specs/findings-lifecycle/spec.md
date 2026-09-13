@@ -6,7 +6,7 @@ Scheduler-owned validation findings with stable IDs, deterministic fingerprints,
 ## Requirements
 
 ### Requirement: Findings SHALL use stable per-cycle source-namespace IDs
-Hero SHALL allocate user-facing finding IDs in the namespaces `find-qa-N`, `find-judge-N`, `find-bui-N`, and `find-e2e-N` when a valid failure entry omits an ID. Agents MUST NOT invent IDs. An agent MAY supply `reopen_id` only for an existing `done` finding in the same cycle with the same source stage, owner, canonical file, requirement, and acceptance criteria (PRD-C15-001 §5.1; ADR-083).
+Hero SHALL allocate user-facing finding IDs in the namespaces `find-qa-N`, `find-judge-N`, `find-bui-N`, and `find-e2e-N` when a valid failure entry omits an ID. Agents MUST NOT invent IDs. An agent MAY supply `reopen_id` only for an existing `done` finding in the same cycle with the same source stage, owner, canonical file, requirement, acceptance criteria, and repro package+test (PRD-C15-001 §5.1; ADR-083).
 
 #### Scenario: Scheduler allocates the next QA ID
 - **WHEN** a valid QA failure entry omits an ID and the cycle already has `find-qa-1`
@@ -21,7 +21,7 @@ Hero SHALL allocate user-facing finding IDs in the namespaces `find-qa-N`, `find
 - **THEN** the report is rejected with `unknown_reopen_id` and Hero does not mutate that finding; the agent must omit `reopen_id` so a new ID can be allocated
 
 ### Requirement: Finding equality SHALL be deterministic
-Without a valid `reopen_id`, equality SHALL use a SHA-256 fingerprint of cycle, source stage, owner, canonical file, canonical requirement, and normalized acceptance criteria. Issue prose SHALL NOT be hashed. `reopen_id` takes precedence over fingerprint matching only when that contract matches the stored row. Reopen, rediscovery, done, and deferral MUST NOT overwrite the stored issue, file, requirement, or acceptance criterion. Different source stages SHALL NOT merge (PRD-C15-001 §5.1; ADR-083; design D2).
+Without a valid `reopen_id`, equality SHALL use a SHA-256 fingerprint of cycle, source stage, owner, canonical file, canonical requirement, and normalized acceptance criteria. When `repro.package` and `repro.test` are present they SHALL be hashed too, so a different Go test is a new ID. Legacy rows with empty stored repro keep the pre-v14 six-field hash until the first incoming repro locks onto the row and rewrites the fingerprint. Issue prose SHALL NOT be hashed. `reopen_id` takes precedence over fingerprint matching only when that contract **and** repro identity match the stored row. Reopen, rediscovery, done, and deferral MUST NOT overwrite the stored issue, file, requirement, or acceptance criterion. Different source stages SHALL NOT merge (PRD-C15-001 §5.1; ADR-083; design D2).
 
 #### Scenario: Exact rediscovery of a done finding reopens the same ID
 - **WHEN** a later valid report matches the fingerprint of a `done` finding and omits `reopen_id`
@@ -39,8 +39,16 @@ Without a valid `reopen_id`, equality SHALL use a SHA-256 fingerprint of cycle, 
 Finding status SHALL be `open`, `done`, `reopened`, or `deferred_todo`. Only scheduler/service code MAY change status. `done` means the assigned Implementation agent reported and verified that exact ID. A `deferred_todo` finding is not assignable in its source cycle (PRD-C15-001 §5.3; ADR-083).
 
 #### Scenario: Implementation completion marks a finding done
-- **WHEN** a verified Implementation report includes assigned `find-qa-1` in `tasks_completed`
+- **WHEN** a verified Implementation report includes assigned `find-qa-1` in `tasks_completed` and the locked repro test passes (`go test <package> -count=1 -run ^TestName$`, named test actually ran)
 - **THEN** that finding status becomes `done` and a `done` occurrence is appended
+
+#### Scenario: Scheduler rejects done when the repro test still fails
+- **WHEN** an Implementation report includes `find-qa-1` in `tasks_completed` but the locked repro test fails, is missing, or `go test` reports no tests ran
+- **THEN** Hero does not mark the finding done (`repro_test_failed`) and does not check the corresponding OpenSpec task boxes for that close
+
+#### Scenario: Validation reports require a Go repro
+- **WHEN** a QA/Judge/BUI/E2E failure entry omits `repro.package`, `repro.test`, or `repro.source`, or `source` does not declare `func TestName(`
+- **THEN** the report is rejected fail-closed (`missing_field` / `invalid_enum`) and no finding or stage change is persisted
 
 #### Scenario: Agents cannot mutate findings
 - **WHEN** a validation agent writes markdown or calls a store helper directly

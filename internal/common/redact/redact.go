@@ -65,7 +65,7 @@ func (w Writer) Write(p []byte) (int, error) {
 var (
 	uuidPattern     = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b`)
 	pathPattern     = regexp.MustCompile(`(/[^\s:]+)+`)
-	nativeIDPattern = regexp.MustCompile(`(?i)\b(sess|session|native)[-_]?[0-9a-z]{8,}\b`)
+	nativeIDPattern = regexp.MustCompile(`(?i)\b((?:ses|sess|session|native|thread)[-_]?[0-9a-z]{8,})\b`)
 )
 
 // RedactDiagnostics masks session identifiers, filesystem paths, and Telegram

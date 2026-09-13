@@ -71,9 +71,9 @@ func TestHasToken(t *testing.T) {
 }
 
 func TestRedactDiagnosticsMasksIDsAndPaths(t *testing.T) {
-	in := "session 550e8400-e29b-41d4-a716-446655440000 failed at /tmp/hero/attachments/a.png native sess-abc123def"
+	in := "session 550e8400-e29b-41d4-a716-446655440000 failed at /tmp/hero/attachments/a.png native sess-abc123def opencode ses_abcdefgh thread_12345678"
 	out := RedactDiagnostics(in)
-	if strings.Contains(out, "550e8400") || strings.Contains(out, "/tmp/") || strings.Contains(out, "sess-abc") {
+	if strings.Contains(out, "550e8400") || strings.Contains(out, "/tmp/") || strings.Contains(out, "sess-abc") || strings.Contains(out, "ses_abcdefgh") || strings.Contains(out, "thread_12345678") {
 		t.Fatalf("expected identifiers redacted, got %q", out)
 	}
 	if !strings.Contains(out, RedactedValue) {

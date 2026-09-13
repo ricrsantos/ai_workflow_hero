@@ -48,7 +48,7 @@ func TestQAFailedLoopBackDispatchesImplementation(t *testing.T) {
 	svc.Registry = routingRegistry{adapters: map[string]harness.HarnessAdapter{"cursor": h}}
 
 	report := `qa_agent:
-{"status":"failed","summary":"handoff failure","failures":[{"owner":"generic_agent","file":"internal/tui/stage_handoff.go","issue":"missing atomic close","acceptance_criteria":"scheduler owns failed close"}]}`
+{"status":"failed","summary":"handoff failure","failures":[{"owner":"generic_agent","file":"internal/tui/stage_handoff.go","issue":"missing atomic close","acceptance_criteria":"scheduler owns failed close","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}}]}`
 	m := withDefaultChatModel(NewTestModel(svc))
 	m.orchestrationLive = true
 	m.stageHandoffLive = true
@@ -91,7 +91,7 @@ func TestLoopBackRunningStageStillDispatchesWhenOrchAlreadyStarted(t *testing.T)
 		t.Fatal(err)
 	}
 	report := `qa_agent:
-{"status":"failed","summary":"handoff failure","failures":[{"owner":"generic_agent","file":"internal/tui/stage_handoff.go","issue":"missing atomic close","acceptance_criteria":"scheduler owns failed close"}]}`
+{"status":"failed","summary":"handoff failure","failures":[{"owner":"generic_agent","file":"internal/tui/stage_handoff.go","issue":"missing atomic close","acceptance_criteria":"scheduler owns failed close","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}}]}`
 	m := NewTestModel(svc)
 	m.stageHandoffOutputs = []string{report}
 	decision := m.evaluateValidationStageHandoff(stageQA, report)
@@ -274,6 +274,71 @@ func TestExecuteDoneErrorStillDispatchesRunningStage(t *testing.T) {
 	got = drainConversationStream(t, got, cmd)
 	if h.ExecuteCount() < 1 || h.Calls()[0].Agent != agentGeneric {
 		t.Fatalf("calls=%+v want generic_agent", h.Calls())
+	}
+}
+
+func TestHeroContinueExecuteDispatchesRunningQA(t *testing.T) {
+	dir := t.TempDir()
+	writeAgentFile(t, dir, "qa_agent", "QA_AGENT_MARKER")
+	writeAgentFile(t, dir, "orchestration_agent", "ORCH_MARKER")
+	svc := newTestServiceWithRunningStage(t, dir, "implementation", qaHandoffYAML)
+	if err := svc.CloseStage("implementation", "completed", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("qa"); err != nil {
+		t.Fatal(err)
+	}
+	cycleRow, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	qa, err := svc.Store.GetStage(cycleRow.ID, "qa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	qa.Iteration = qa.EffectiveMaxIterations()
+	if err := svc.Store.UpdateStage(qa); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Engine.EscalateIfExhausted(cycleRow.ID, "qa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Continue(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StartStage("qa"); err != nil {
+		t.Fatal(err)
+	}
+	writeHeroJSONHarnesses(t, dir, map[string]bool{"cursor": true})
+	h := &streamingHarness{deltas: []string{"qa running"}, sessionIDs: []string{"qa-sess"}}
+	svc.Harness = h
+	svc.Registry = routingRegistry{adapters: map[string]harness.HarnessAdapter{"cursor": h}}
+
+	m := withDefaultChatModel(NewTestModel(svc))
+	m.orchestrationLive = false
+	m.runtimeCommandName = "continue"
+	m.runtimeAgentName = agentOrchestration
+	m.streaming = true
+	m.stageHandoffLive = true
+	m.stageHandoffStage = stageQA
+	m.stageHandoffDoneKey = "qa:1"
+	m.executes = map[string]convExecute{
+		"ex-1": {ID: "ex-1", AgentName: agentOrchestration},
+	}
+	next, cmd := m.Update(executeDoneMsg{executeID: "ex-1"})
+	got, ok := next.(model)
+	if !ok {
+		t.Fatalf("model type %T", next)
+	}
+	if cmd == nil {
+		t.Fatal("continue executeDone must dispatch qa_agent")
+	}
+	got = drainConversationStream(t, got, cmd)
+	if h.ExecuteCount() < 1 || h.Calls()[0].Agent != agentQA {
+		t.Fatalf("calls=%+v want qa_agent", h.Calls())
+	}
+	if !got.orchestrationLive {
+		t.Fatal("continue executeDone must re-arm the scheduler")
 	}
 }
 

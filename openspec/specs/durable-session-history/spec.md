@@ -1,4 +1,9 @@
-## ADDED Requirements
+# durable-session-history Specification
+
+## Purpose
+TBD - created by archiving change tui-session-history. Update Purpose after archive.
+
+## Requirements
 
 ### Requirement: Hero SHALL persist a durable session aggregate distinct from native harness identity
 Every conversation executed or observed by the Hero TUI SHALL receive an opaque Hero session ID. Native session ID, harness, model, effective model-property snapshot, kind, optional cycle/stage/agent attribution, timestamps, lifecycle, title, and transcript availability SHALL be attributes of that aggregate. Native identity SHALL be unique only within its harness. A session MUST NOT resume through another harness. Cycle and stage columns SHALL be nullable attribution with `ON DELETE SET NULL`; deleting a cycle MUST NOT delete History rows (PRD-C16-001 §3.1, §4 FR-01; ADR-091).
@@ -90,6 +95,10 @@ Opening a schema-v11 database SHALL create at most one deterministic History ent
 #### Scenario: Second open is a no-op
 - **WHEN** the same migrated database is opened again
 - **THEN** no additional legacy sessions are inserted
+
+#### Scenario: Live native identity skips legacy insert
+- **WHEN** a History row already binds `(harness_id, native_session_id)` that a cycle or stage compatibility column also stores
+- **THEN** opening the store SHALL skip that legacy insert, SHALL NOT fail, and SHALL NOT create a second row for the same native identity
 
 ### Requirement: Standalone hero chat SHALL NOT aggregate other projects
 Standalone `hero chat` SHALL list only sessions from its synthetic Free Chat store and MUST NOT read unrelated project `hero.db` files (PRD-C16-001 §3.1).

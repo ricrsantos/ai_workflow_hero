@@ -110,6 +110,27 @@ issue and acceptance under the same ID, so Implementation patched a moving
 target. The freeze above is mandatory: same ID means same file + requirement +
 acceptance. A new residual is a new `find-*` ID.
 
+### Amendment (2026-09-12) — Residual and locked repro tests
+
+Frozen Issue/Acceptance remain identity only. The current defect sentence is
+the latest non-done occurrence issue (**Residual**), shown untruncated in the
+Implementation assignment together with `repro.source`.
+
+Schema **v14** adds `findings.repro_package`/`repro_test` and
+`finding_occurrences.repro_package`/`repro_test`/`repro_source`. Every
+validation failure entry must include `repro: {package, test, source}`.
+Validators must not Write that test into the project. Implementation lands
+the source first (it must fail) and may not claim the ID done until
+`go test <package> -count=1 -run ^TestName$` passes. The scheduler re-runs
+that command before `MarkFindingDone` (`repro_test_failed` otherwise; a
+`go test` exit 0 with no named test run is not a pass).
+
+`reopen_id` additionally requires the same repro package+test. A different
+test is a new `find-*` ID. In-flight empty stored repro skips the done-gate
+until the first incoming repro locks onto the row (and rewrites the
+fingerprint). Fingerprints without repro stay the pre-v14 six-field hash so
+legacy rows still match; fingerprints with repro include package+test.
+
 ### Consequences
 
 - Repairs have stable IDs independent of OpenSpec task completion.

@@ -354,7 +354,7 @@ func (e *Engine) decodeContextForCycle(cycleID int64) (reports.DecodeContext, er
 		ActiveOwners:               active,
 		ActiveImplementationAgents: implAgents,
 		ReopenIDs: reports.ReopenIDValidateFunc(func(req reports.ReopenRequest) *reports.DiagnosticError {
-			if err := e.Store.ValidateReopenID(cycleID, req.SourceStage, req.Owner, req.ReopenID, req.File, req.Requirement, req.AcceptanceCriteria); err != nil {
+			if err := e.Store.ValidateReopenID(cycleID, req.SourceStage, req.Owner, req.ReopenID, req.File, req.Requirement, req.AcceptanceCriteria, req.ReproPackage, req.ReproTest); err != nil {
 				if errors.Is(err, store.ErrInvalidReopenID) {
 					return reportsUnknownReopenID(req.ReopenID)
 				}
@@ -377,6 +377,9 @@ func (e *Engine) hasActionableFindings(cycleID int64, sourceStage string, entrie
 		in := findingInputFromEntry(cycleID, sourceStage, ent)
 		ok, err := e.Store.PredictFindingActionable(cycleID, in)
 		if err != nil {
+			if errors.Is(err, store.ErrInvalidFindingContent) {
+				return reportsDiagInvalidEnum("failures", "", err.Error())
+			}
 			return reportsDiagInternal(err.Error())
 		}
 		if ok {
@@ -445,6 +448,9 @@ func findingInputFromEntry(cycleID int64, sourceStage string, ent reports.Failur
 		Issue:              ent.Issue,
 		AcceptanceCriteria: ent.AcceptanceCriteria,
 		Evidence:           ent.Evidence,
+		ReproPackage:       ent.Repro.Package,
+		ReproTest:          ent.Repro.Test,
+		ReproSource:        ent.Repro.Source,
 	}
 	if ent.ReopenID != nil {
 		in.ReopenID = *ent.ReopenID

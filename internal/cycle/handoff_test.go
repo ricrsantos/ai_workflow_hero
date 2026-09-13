@@ -71,7 +71,7 @@ func TestCloseStageFailedWithFindingsDelegatesToEngine(t *testing.T) {
 			"owner":"generic_agent",
 			"file":"internal/cycle/handoff.go",
 			"issue":"facade test",
-			"acceptance_criteria":"service delegates atomic close"
+			"acceptance_criteria":"service delegates atomic close","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}
 		}]
 	}`)
 	out, err := svc.CloseStageFailedWithFindings("qa", raw, "")

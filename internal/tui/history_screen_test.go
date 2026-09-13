@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -411,5 +412,82 @@ func TestSessionLeaseHeartbeatLostMsg(t *testing.T) {
 	m.sessionPersistBlocked = true
 	if !m.submitBlockedBySessionPersist() {
 		t.Fatal("expected blocked")
+	}
+}
+
+func TestHistoryOpenCleanupReleaseFailureRetries(t *testing.T) {
+	svc := newTestServiceInstalledNoCycle(t, t.TempDir())
+	sessionSvc := conversation.NewSessionService(svc.Store, store.DefaultClock())
+	ctx := context.Background()
+	res, err := sessionSvc.EnsureFirstTurn(ctx, "", conversation.CreateSessionParams{Kind: store.SessionKindFreechat, Title: "t"}, conversation.FirstTurnContent{Text: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewTestModel(svc)
+	m.sessionService = sessionSvc
+	m.tuiOwnerID = "owner-tui"
+	if _, err := sessionSvc.AcquireLease(ctx, res.SessionID, m.tuiOwnerID); err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	m.leaseReleaseFn = func(context.Context, string, string) error {
+		calls++
+		if calls == 1 {
+			return errors.New("lease release injected failure")
+		}
+		return sessionSvc.ReleaseLease(ctx, res.SessionID, m.tuiOwnerID)
+	}
+	updated, cmd := m.handleHistoryMsg(historyOpenMsg{
+		err:        errors.New("resume unavailable"),
+		releaseIDs: []string{res.SessionID},
+	})
+	got := updated.(model)
+	if got.pendingLeaseReleaseID != res.SessionID {
+		t.Fatalf("pending=%q", got.pendingLeaseReleaseID)
+	}
+	if cmd == nil {
+		t.Fatal("expected cleanup release cmd")
+	}
+	msg := cmd()
+	fail, ok := msg.(sessionLeaseReleaseResultMsg)
+	if !ok || fail.err == nil {
+		t.Fatalf("msg=%T %+v", msg, msg)
+	}
+	_, held, err := sessionSvc.Store.GetSessionLease(res.SessionID)
+	if err != nil || !held {
+		t.Fatalf("target lease released despite cleanup failure held=%v err=%v", held, err)
+	}
+	updated, retry := got.handleConversationMsg(fail)
+	got = updated.(model)
+	if retry == nil {
+		t.Fatal("expected retry")
+	}
+}
+
+func TestHistoryForkCleanupReleaseFailureRetries(t *testing.T) {
+	m := NewTestModel(nil)
+	m.tuiOwnerID = "owner-tui"
+	target := "fork-target"
+	m.leaseReleaseFn = func(_ context.Context, sessionID, _ string) error {
+		if sessionID == target {
+			return errors.New("lease release injected failure")
+		}
+		return nil
+	}
+	updated, cmd := m.handleHistoryMsg(historyForkDoneMsg{
+		err:        errors.New("release prior session lease"),
+		releaseIDs: []string{target},
+	})
+	got := updated.(model)
+	if got.pendingLeaseReleaseID != target {
+		t.Fatalf("pending=%q", got.pendingLeaseReleaseID)
+	}
+	if cmd == nil {
+		t.Fatal("expected cleanup release cmd")
+	}
+	msg := cmd()
+	fail, ok := msg.(sessionLeaseReleaseResultMsg)
+	if !ok || fail.err == nil {
+		t.Fatalf("msg=%T %+v", msg, msg)
 	}
 }

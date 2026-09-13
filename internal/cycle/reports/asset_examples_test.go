@@ -4,14 +4,11 @@ import (
 	"encoding/json"
 	"io/fs"
 	"path"
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/ricrsantos/ai_workflow_hero/assets"
 )
-
-var jsonFenceRE = regexp.MustCompile("(?is)```json\\s*\\n(.*?)```")
 
 func TestEmbeddedC15ExamplesDecode(t *testing.T) {
 	t.Parallel()

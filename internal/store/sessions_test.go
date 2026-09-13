@@ -333,3 +333,151 @@ func TestSessionAssetsAndDeleteOps(t *testing.T) {
 		t.Fatalf("incomplete=%v err=%v", incomplete, err)
 	}
 }
+
+func TestPersistSessionTranscriptSuffixAtomicWithBind(t *testing.T) {
+	s := openTestStore(t)
+	first, err := s.CreateSession(CreateSessionInput{Kind: SessionKindFreechat, Title: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.BindNativeSession(first.ID, "cursor", "native-taken", "m", "{}"); err != nil {
+		t.Fatal(err)
+	}
+	second, firstEv, err := s.CreateSessionWithFirstEvent(
+		CreateSessionInput{Kind: SessionKindFreechat, Title: "b"},
+		AppendSessionEventInput{EventType: SessionEventUser, Origin: SessionOriginLocal, PayloadJSON: `{"text":"hi"}`},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstEv.Seq != 1 {
+		t.Fatalf("first seq=%d", firstEv.Seq)
+	}
+	err = s.PersistSessionTranscriptSuffix(
+		[]AppendSessionEventInput{{
+			BoundSessionID: second.ID, SessionID: second.ID,
+			EventType: SessionEventAssistant, Origin: SessionOriginLocal, PayloadJSON: `{"text":"done"}`,
+		}},
+		[]SessionAsset{{
+			SessionID: second.ID, AssetID: "hash-1", Ownership: AssetOwnershipManagedCopy,
+			Path: "/tmp/a.png", Mime: "image/png", OriginalName: "a.png", CardMetaJSON: `{}`,
+		}},
+		&NativeSessionBind{SessionID: second.ID, HarnessID: "cursor", NativeSessionID: "native-taken", Model: "m"},
+	)
+	if !errors.Is(err, ErrDuplicateNativeSession) {
+		t.Fatalf("want duplicate native, got %v", err)
+	}
+	events, err := s.ListSessionEventsNewest(second.ID, 0, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("assistant event leaked after bind failure: %+v", events)
+	}
+	assets, err := s.ListSessionAssets(second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assets) != 0 {
+		t.Fatalf("asset leaked after bind failure: %+v", assets)
+	}
+	got, err := s.GetSession(second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.NativeSessionID != "" {
+		t.Fatalf("native bind leaked: %+v", got)
+	}
+
+	if err := s.PersistSessionTranscriptSuffix(
+		[]AppendSessionEventInput{{
+			BoundSessionID: second.ID, SessionID: second.ID,
+			EventType: SessionEventAssistant, Origin: SessionOriginLocal, PayloadJSON: `{"text":"done"}`,
+			ProviderEventID: "tui:execute-result:assistant",
+		}},
+		[]SessionAsset{{
+			SessionID: second.ID, AssetID: "hash-1", Ownership: AssetOwnershipManagedCopy,
+			Path: "/tmp/a.png", Mime: "image/png", OriginalName: "a.png", CardMetaJSON: `{}`,
+		}},
+		&NativeSessionBind{SessionID: second.ID, HarnessID: "cursor", NativeSessionID: "native-ok", Model: "m"},
+	); err != nil {
+		t.Fatalf("retry persist: %v", err)
+	}
+	events, err = s.ListSessionEventsNewest(second.ID, 0, 20)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("events after retry=%d err=%v", len(events), err)
+	}
+	got, err = s.GetSession(second.ID)
+	if err != nil || got.NativeSessionID != "native-ok" {
+		t.Fatalf("bound=%+v err=%v", got, err)
+	}
+}
+
+func TestReplaceExistingProviderEventUpdatesPayload(t *testing.T) {
+	s := openTestStore(t)
+	sess, _, err := s.CreateSessionWithFirstEvent(
+		CreateSessionInput{Kind: SessionKindFreechat, Title: "stream"},
+		AppendSessionEventInput{EventType: SessionEventUser, PayloadJSON: `{"text":"hi"}`},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.AppendSessionEvent(AppendSessionEventInput{
+		SessionID: sess.ID, BoundSessionID: sess.ID,
+		EventType: SessionEventAssistant, PayloadJSON: `{"text":"Hel"}`, ProviderEventID: "tui:turn:ex:agent:1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced, err := s.AppendSessionEvent(AppendSessionEventInput{
+		SessionID: sess.ID, BoundSessionID: sess.ID,
+		EventType: SessionEventAssistant, PayloadJSON: `{"text":"Hello"}`, ProviderEventID: "tui:turn:ex:agent:1",
+		ReplaceExisting: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.Seq != first.Seq {
+		t.Fatalf("seq=%d want %d", replaced.Seq, first.Seq)
+	}
+	events, err := s.ListSessionEventsNewest(sess.ID, 0, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var assistant int
+	for _, ev := range events {
+		if ev.EventType == SessionEventAssistant {
+			assistant++
+			if ev.PayloadJSON != `{"text":"Hello"}` {
+				t.Fatalf("payload=%s", ev.PayloadJSON)
+			}
+		}
+	}
+	if assistant != 1 {
+		t.Fatalf("assistant events=%d", assistant)
+	}
+}
+
+func TestCreateSessionWithTranscriptAtomicAssetFailure(t *testing.T) {
+	s := openTestStore(t)
+	_, err := s.CreateSessionWithTranscript(
+		CreateSessionInput{Kind: SessionKindFreechat, Title: "images"},
+		[]AppendSessionEventInput{
+			{EventType: SessionEventUser, PayloadJSON: `{"text":"hi"}`},
+			{EventType: SessionEventAttachment, PayloadJSON: `{"name":"a.png"}`, ProviderEventID: "tui:attachment:h1"},
+		},
+		[]SessionAsset{{
+			AssetID: "h1", Ownership: AssetOwnershipManagedCopy, Path: "", Mime: "image/png", OriginalName: "a.png", CardMetaJSON: `{}`,
+		}},
+	)
+	if err == nil {
+		t.Fatal("expected asset path failure")
+	}
+	rows, err := s.ListSessions(ListSessionsFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("partial session created: %+v", rows)
+	}
+}

@@ -23,7 +23,7 @@ On success (`status`: `passed`), failure arrays must be **empty** (`[]`).
 
 Valid **owner** values: `backend_agent`, `frontend_agent`, `generic_agent` (must be active in the current implementation scope).
 
-Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`. Optional `evidence` is a string array of safe paths/commands. Optional `reopen_id` reopens a prior finding in the same cycle.
+Each failure entry needs at least one of `file` or `requirement`, plus non-empty `issue` and `acceptance_criteria`. Optional `evidence` is a string array of safe repo-relative paths or commands. Go recursive patterns (`./...`, `./pkg/...`) are allowed; a `..` path segment (`../secret`) is not. Optional `reopen_id` reopens a prior finding in the same cycle.
 
 Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
 
@@ -336,7 +336,7 @@ def patch_orchestration(path: Path) -> None:
     insert = """
 ## C15 findings and assignments (PRD-C15-001 §7)
 
-- Validation agents return JSON only. Close failed validation stages through the deterministic CLI (for example `hero stage close --name qa --failed --findings-json '<JSON>'`) — never ask a subagent to loop back or write gap markdown.
+- Validation agents return JSON only. Failed QA/Judge/BUI/E2E entries require `repro: {package, test, source}` (`package` like `./internal/tui`, `test` a `Test*` name, `source` the full failing `func Test…(`). The TUI scheduler extracts the first JSON object with `status` from mixed agent output, including `repro.source` that contains Go braces; in Cursor IDE Runtime pass that object to `hero stage close --name <stage> --failed --findings-json '<JSON>'`. Never ask a subagent to loop back or write gap markdown.
 - Implementation assignments may mix `task-*` and `find-*` IDs per owner. Pass the exact ID list in every Implementation Task prompt.
 - When the loop is **Escalated**, the user may run `/hero-add-todo` to defer selected open/reopened findings to project ToDos, then `/hero-continue` for remaining blockers. Deferring every blocker closes the cycle with disposition `completed_with_deferred_todos` (distinct from `/hero-finish`).
 - `/hero-complete-todo` resolves pending structured or legacy ToDos fixed outside Hero (never items adopted by the active cycle).

@@ -22,21 +22,6 @@ func parseObject(data []byte) (object, *DiagnosticError) {
 	return root, nil
 }
 
-func extractJSONObject(raw string) (object, *DiagnosticError) {
-	for i := 0; i < len(raw); i++ {
-		if raw[i] != '{' {
-			continue
-		}
-		obj, err := parseObject([]byte(raw[i:]))
-		if err == nil && obj != nil {
-			if _, ok := obj["status"]; ok {
-				return obj, nil
-			}
-		}
-	}
-	return nil, diag(CodeInvalidJSON, "", "", "no JSON report object with status found")
-}
-
 func trimLeadingJSON(data []byte) []byte {
 	return []byte(strings.TrimSpace(string(data)))
 }

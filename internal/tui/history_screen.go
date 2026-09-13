@@ -159,6 +159,7 @@ type historyOpenMsg struct {
 	forkSource    string
 	offerImport   bool
 	importHarness string
+	releaseIDs    []string
 }
 
 func (m model) openHistory() (model, tea.Cmd) {
@@ -274,6 +275,17 @@ func (m model) handleHistoryMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.history.mutating = false
 		m.history.dialog = historyDialogNone
 		m.history.forkSourceID = ""
+		if len(msg.releaseIDs) > 0 {
+			var cleanupCmd tea.Cmd
+			m, cleanupCmd = m.scheduleLeaseReleaseCleanups(msg.releaseIDs)
+			if msg.err != nil {
+				m.history.actionErr = msg.err.Error()
+				slog.Error("history fork failed", "error", redact.Error(msg.err))
+				return m, cleanupCmd
+			}
+			next, openCmd := m.finishHistoryOpen(msg.sessionID, false)
+			return next, tea.Batch(cleanupCmd, openCmd)
+		}
 		if msg.err != nil {
 			m.history.actionErr = msg.err.Error()
 			slog.Error("history fork failed", "error", redact.Error(msg.err))
@@ -287,10 +299,14 @@ func (m model) handleHistoryMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.history.detailBusy = true
 			return m, nil
 		}
+		var cleanupCmd tea.Cmd
+		if len(msg.releaseIDs) > 0 {
+			m, cleanupCmd = m.scheduleLeaseReleaseCleanups(msg.releaseIDs)
+		}
 		if msg.err != nil {
 			m.history.actionErr = msg.err.Error()
 			slog.Error("history open failed", "error", redact.Error(msg.err))
-			return m, nil
+			return m, cleanupCmd
 		}
 		if msg.needFork {
 			m.history.forkHarness = msg.forkHarness
@@ -298,7 +314,7 @@ func (m model) handleHistoryMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.history.forkSourceID = msg.forkSource
 			m.history.dialog = historyDialogFork
 			m.history.dialogFocus = 0
-			return m, nil
+			return m, cleanupCmd
 		}
 		if msg.offerImport {
 			m.history.dialog = historyDialogImport
@@ -306,9 +322,10 @@ func (m model) handleHistoryMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.history.importHarness = msg.importHarness
 			m.history.importSessionID = msg.sessionID
 			m.history.pendingOpenRestored = msg.restored
-			return m, nil
+			return m, cleanupCmd
 		}
-		return m.finishHistoryOpen(msg.sessionID, msg.restored)
+		next, openCmd := m.finishHistoryOpen(msg.sessionID, msg.restored)
+		return next, tea.Batch(cleanupCmd, openCmd)
 
 	case historyImportMsg:
 		m.history.dialogBusy = false
@@ -324,19 +341,10 @@ func (m model) handleHistoryMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.history.actionErr = msg.err.Error()
 			slog.Error("history remote import failed", "error", redact.Error(msg.err))
-			var cmds []tea.Cmd
 			if sessionID != "" {
-				// Release the provisional lease acquired for import so retries
-				// and navigation are not blocked by an orphan owner (find-qa-30).
-				cmds = append(cmds, m.releaseHeroChatLeaseCmd(sessionID))
-				if strings.TrimSpace(m.heroLeasedSessionID) == sessionID {
-					m.heroLeasedSessionID = ""
-				}
-				if strings.TrimSpace(m.heroChatSessionID) == sessionID {
-					m.heroChatSessionID = ""
-				}
+				return m.scheduleLeaseReleaseCleanups([]string{sessionID})
 			}
-			return m, tea.Batch(cmds...)
+			return m, nil
 		}
 		if msg.imported > 0 {
 			m = m.setStatusResult(true, "history", fmt.Sprintf("✓ Imported %d events.", msg.imported))

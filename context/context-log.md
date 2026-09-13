@@ -4,6 +4,80 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-12 — QA evidence parent traversal vs Go `...`
+
+**Problem**: QA 8/8 report decoded, then persist rejected `invalid_json` / `evidence[1]: parent traversal is not allowed`. The contract examples already use `"evidence": ["go test ./src/api/..."]`. `validateEvidencePath` used `strings.Contains(p, "..")`, so Go's recursive package pattern `...` was treated as `..`.
+
+**Fix**: `envhygiene.HasParentTraversal` rejects only a `..` path segment (including inside commands). Decoder names `invalid_enum` at `failures[n].evidence[i]`. Persist still blocks `../secret` and `go test ../pkg`. Content errors from `PredictFindingActionable` map to `invalid_enum`, not `invalid_json`.
+
+**Cycle**: QA still Running 8/8; nothing persisted yet. Rebuild TUI, `/hero-start` in the TUI. Do not `/hero-continue` or `/hero-add-todo`.
+
+**Validation**: `go test ./internal/common/envhygiene/ ./internal/store/ ./internal/cycle/reports/ ./internal/engine/` then `go test ./...`.
+
+## 2026-09-12 — Go 1.26 + linters rebuilt
+
+**Problem**: QA flagged Staticcheck/golangci-lint compile errors: module `go 1.25.11` / packages built with Go 1.26 vs tools built with Go 1.23.7.
+
+**Fix**: Fedora already ships `go1.26.7`. `go.mod` is now `go 1.26`. Reinstalled `staticcheck` 2026.1 (v0.7.0) and `golangci-lint` v2.13.2 with that toolchain. Docs (current-state, architecture-overview, README, TESTING.md, AGENTS.md) say Go 1.26+. Pre-existing staticcheck style findings (ST1005/U1000) are unchanged; version mismatch is gone.
+
+**Validation**: `staticcheck ./...` runs (no version mismatch); `golangci-lint` smoke on small packages is clean; `go test ./...` passes.
+
+## 2026-09-12 — QA invalid_json with repro.source braces
+
+**Symptom**: QA 8/8 report rejected `invalid_json` / "no JSON report object with status found". The agent did emit a failed C15 object with six `repro` entries; `repro.source` Go braces made it omit the last failure's closing `}` before `]`. `json.Unmarshal` of the suffix then failed on every `{`, so the TUI hid the syntax error.
+
+**Fix**: Extract the first `status` object with `json.Decoder` (trailing fences/prose ignored). If a status-looking object hits `invalid character ']' after object key:value pair`, insert the missing `}` and retry. Orchestration prompts document required `repro` and that the TUI extracts mixed output. Live C16 QA body now decodes as `failed` with 6 findings.
+
+**Cycle**: QA still **Running 8/8**; nothing was persisted. Rebuild TUI, `/hero-start` again — same QA output should loop back. Do not `/hero-continue` or `/hero-add-todo`.
+
+**Validation**: `go test ./internal/cycle/reports/ ./internal/engine/ ./internal/tui/`.
+
+## 2026-09-12 — TUI freeze after /hero-continue (scheduler disarmed)
+
+**Symptom**: `/hero-continue` granted +1, started QA Running 8/8, printed the Portuguese ORCH status lines, correctly did not dispatch Task — then the TUI sat on that text and never launched `qa_agent`.
+
+**Cause**: `beginHeroRuntimeConversation` set `orchestrationLive` only for `start`/`approve`. Continue turned the scheduler off. `executeDone` then cleared `runtimeAgentName` and `maybeHandoffAfterExecute` returned without `ensureStageProgress`. A leftover `stageHandoffLive` fence from the Escalated wave would swallow the same path even if live stayed true. Persist-only stream batches could also drop `waitConvBatchMsg` (prior C16 hang).
+
+**Fix**: Continue (and reject/back/resume) keep the scheduler armed; continue clears stale handoff/hold; `maybeHandoffAfterExecute` re-arms and dispatches on continue even if live was false; conversation batches always re-arm the stream waiter while streaming; persist serialization errors no longer skip handoff. Tests: `TestHeroContinueClearsStaleHandoffAndKeepsScheduler`, `TestHeroContinueExecuteDispatchesRunningQA`.
+
+**Cycle**: Extra iteration is already consumed (QA Running). Rebuild/restart the TUI; do **not** `/hero-continue` again. If the process is still streaming, `/interrupt` then let the idle scheduler pick up Running QA. Partial deferral via `/hero-add-todo` remains available only while Escalated.
+
+**Validation**: `go test ./internal/tui/`; `go test ./...`.
+
+## 2026-09-12 — QA→Implement residual lock + repro test gate
+
+**Problem**: C16 QA/Implement onion-peel. Frozen AC stayed broad; QA reopened the same `find-*` with a new residual sentence; GEN patched the previous sentence; Residual never became the assignment.
+
+**Fix**: Schema **v14** stores locked `repro.package`/`repro.test` on findings and `repro.source` on occurrences. Decoder requires `repro` on every QA/Judge/BUI/E2E failure (`missing_field` fail-closed). Assignment shows untruncated Residual + full source; Issue/Acceptance remain identity. `reopen_id` matches repro identity or a new ID is allocated. First incoming repro locks onto in-flight empty rows and rewrites the fingerprint. Scheduler runs `go test <pkg> -json -count=1 -run ^TestName$` before marking done; missing/no-run/fail → `repro_test_failed`. QA must not Write tests into `internal/`; GEN lands `repro.source` first.
+
+**Validation**: `go test ./...` after this change.
+
+**Cycle**: C16 Implementation Escalated. Rebuild TUI before the next QA round so GEN 8+ sees Residual/repro. Live GEN in this tree was racing writes — interrupt it if it still stomps files.
+
+## 2026-09-12 — GEN→QA store Open blocked by native binding
+
+**Symptom**: TUI ORCH could not close Implementation. `hero status` / `hero stage close` failed with `open store: import legacy session bindings: native session id already bound`.
+
+**Cause**: After GEN `executeDone`, `BindNativeSession` wrote the GEN Cursor id onto the live orchestrator History row. `Store.Open` always runs D11 legacy import. The implementation stage column had the same native id, no `legacy_source_key` yet, and `insertLegacySessionTx` treated `ErrDuplicateNativeSession` as fatal.
+
+**Fix**: Skip legacy insert when `(harness_id, native_session_id)` already exists, and treat `ErrDuplicateNativeSession` as a duplicate skip. `TestMigrateLegacySessionBindingsSkipsLiveNativeCollision`. Change spec scenario added.
+
+**Cycle**: C16 Implementation still **Running 7**, findings `find-qa-19..29` marked **done** at 12:57. Do **not** `/hero-start` (empty-assignment close risk). Rebuild, restart TUI, let the scheduler retry close → QA.
+
+**Validation**: `go test ./internal/store/`; `go test ./...`.
+
+## 2026-09-12 — TUI freeze after /hero-continue (C16 persist waiter)
+
+**Symptom**: After rebuild, `/hero-continue` then `/hero-start` hung with `⚠ execute — no in-flight cursor agent process`. `.workflow-hero/logs/tui.log`: Cursor `execute start` → `execute done` (~24–31s) with **no** `tui conversation execute complete`. Interrupt logged `tui stream cancel failed` (`no in-flight execution for session ""`).
+
+**Cause**: C16 History persist. First native session-id stream delta queues a cycle binding. `conversationBatchMsg` returned `drainSessionPersistCmd` without `waitConvBatchMsg`. The stream reader stopped; `convStreamCh` filled; worker `CloseAndWait` blocked after Cursor had already `clearRunning`. Watchdog probed empty `harnessSessionID` + `HasInFlight()==false` → `HealthFailed` warning. Health is observational (does not cancel). Same hang on `/hero-start` because every first Cursor turn emits a session id.
+
+**Fix**: Persist-only conversation batches re-arm `waitConvBatchMsg`. `sessionPersistErrMsg` / `sessionLeaseLostMsg` also re-arm while streaming. `TestConversationBatchPersistKeepsStreamWaiter`.
+
+**Cycle after the hang**: C16 Implementation **Running 7/7** (extra already granted), QA Waiting 6, six findings still reopened. Do **not** `/hero-start` (11:07 already closed Implementation empty once). After rebuild, quit the stuck TUI and let the idle scheduler dispatch GEN.
+
+**Validation**: `go test ./internal/tui/`; `go test ./...`.
+
 ## 2026-09-12 — Freeze QA→Implement finding contract (handoff)
 
 **Problem**: C16 QA/Implement loop reopened the same `find-qa-*` IDs with mutated issue/acceptance each round. Implementation patched the previous sentence; QA then rewrote the card. `reopen_id` won without matching file/requirement/acceptance, and persist overwrote the assignment contract.
@@ -2174,3 +2248,41 @@ D11 legacy backfill not in this slice.
 **Outcome**: Shipped schema v12 + store session/events/leases/assets/delete-ops + SessionService/titles + optional harness RemoteHistoryReader/NativeSessionDeleter (OpenCode history only) + durable media retention + idempotent legacy bindings + History screen/navbar + Chat persist/restore/new-chat + exact resume/lease/historical continuation/interrupt/fork/archive/delete + Telegram origin labels + confirmed remote import path. `openspec validate tui-session-history --strict` and `go test ./...` green.
 
 **Validation**: openspec validate --strict; go test ./...; go vet on touched pkgs; gofmt clean on session/history files.
+
+## 2026-09-12 — C16 find-qa-37 first-turn lease retry
+
+**Outcome**: First-turn persistence failures now retain the Hero session ID in
+the retry message, infer it from durable payloads when older callers omit it,
+and reacquire the continuation lease only after the idempotent event/asset
+retry succeeds. Successful retry restores the Chat binding and heartbeat;
+reset clears the pending lease-retry marker.
+
+**Validation**: `go test ./internal/tui -count=1 -run
+^TestFirstTurnLeaseFailureRetryRestoresSessionLease$`; `go test ./...`;
+`go test -race ./...`; `go vet ./...`; `openspec validate tui-session-history
+--strict`; `gofmt`; `git diff --check`.
+
+## 2026-09-13 — OpenCode model catalog sync (34 models)
+
+**Outcome**: Synced `assets/models/opencode.yml` and
+`.workflow-hero/models/opencode.yml` 1:1 with `opencode models` (CLI v1.18.30):
+7 Zen free + 27 Go. Added 11 IDs (`opencode/ling-3.0-flash-fin-free`,
+`opencode/muse-spark-1.2-contributor-free`,
+`opencode/muse-spark-1.3-contributor-free`,
+`opencode-go/deepseek-v4-flash-vision-exp`,
+`opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash`,
+`opencode-go/grok-4.6`, `opencode-go/hy4-preview`,
+`opencode-go/longcat-2.0`, `opencode-go/muse-spark-1.3-contributor`,
+`opencode-go/qwen3.8-flash`). Removed 4 stale IDs no longer listed upstream
+(`opencode/deepseek-v4-flash-free`, `opencode/hy3-free`,
+`opencode/laguna-s-2.1-free`, `opencode-go/grok-4.5`). Fixed
+`opencode-go/deepseek-v4-flash` pricing to off-peak (0.15/0/0.003/0.60) per
+`opencode models --verbose` + https://opencode.ai/docs/go. Pricing/context for
+new rows from `--verbose` cost/limit; C5 `fs`/`th`/`ef` follow the closest
+sibling family pattern in the same file. `last_updated` bumped to 2026-09-13;
+`.workflow-hero/config/checksums.json` hash refreshed;
+`context/current-state.md` OpenCode count updated 27 → 34.
+
+**Validation**: `opencode models --verbose` ID diff (34/34 match, shape check);
+`go test ./internal/modelprops/... ./internal/common/... ./internal/adapters/opencode/...`;
+full `go test ./...` green (no FAIL).

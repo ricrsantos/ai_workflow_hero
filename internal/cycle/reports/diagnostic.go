@@ -22,6 +22,7 @@ const (
 	CodeFalseAcceptanceGate     Code = "false_acceptance_gate"
 	CodeNonemptyEmptyAssignment Code = "nonempty_empty_assignment"
 	CodeNoActionableFinding     Code = "no_actionable_finding"
+	CodeReproTestFailed         Code = "repro_test_failed"
 )
 
 // DiagnosticError is a field-specific validation failure returned by decoders.

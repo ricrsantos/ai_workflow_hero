@@ -66,6 +66,10 @@ type convMessage struct {
 	// (UI-C09-001 §3). It never carries a token or chat id.
 	origin string
 
+	// persistProviderID is the durable session_events.provider_event_id for this
+	// transcript row so later stream snapshots replace the same event.
+	persistProviderID string
+
 	// responseLines caches the expensive wrapping/styling work for a transcript
 	// message. The cache is invalidated whenever the message content/state changes.
 	responseLines        []string
@@ -129,7 +133,8 @@ type executePairMsg struct {
 }
 
 type streamCancelDoneMsg struct {
-	err error
+	err               error
+	workerStillActive bool
 }
 
 type convWaitTickMsg struct{}
@@ -501,9 +506,11 @@ func (m model) resetChatSessionMemory() model {
 	m.heroSessionHistorical = false
 	m.heroSessionRecoverBusy = false
 	m.sessionPersistBlocked = false
+	m.sessionLeaseRetryID = ""
 	m.sessionPersistQueue = nil
 	m.sessionAssetUpsertQueue = nil
 	m.sessionBindingQueue = nil
+	m.sessionNativeBindQueue = nil
 	m.heroSessionRecoverNativeID = ""
 	m.heroSessionRecoverHarnessID = ""
 	m = m.resetConversationUsage()
@@ -575,6 +582,18 @@ func usesOrchestratorRuntime(cmdName string) bool {
 	}
 }
 
+// keepsOrchestrationScheduler reports whether a Runtime slash should leave the
+// TUI stage scheduler armed after Execute. /hero-continue must stay armed so
+// the granted Running stage actually launches; status/sync/finish do not.
+func keepsOrchestrationScheduler(cmdName string) bool {
+	switch cmdName {
+	case "start", "approve", "continue", "reject", "back", "resume":
+		return true
+	default:
+		return false
+	}
+}
+
 // beginHeroRuntimeConversation opens Chat and executes a Hero runtime command markdown
 // (same body as Cursor slash expansion). modelSlug is optional; when empty, uses the
 // conversation model (YAML orchestrator, discover agent, or /hero-model default).
@@ -623,7 +642,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 	m.runtimeModelSlug = strings.TrimSpace(modelSlug)
 	m.runtimeHarnessID = ""
 	m.runtimeAgentName = ""
-	m.orchestrationLive = cmdName == "start" || cmdName == "approve"
+	m.orchestrationLive = keepsOrchestrationScheduler(cmdName)
 	if cmdName == "start" {
 		m.researchLive = false
 		m.orchestrationSessionID = ""
@@ -631,7 +650,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 		m.researchSessionID = ""
 		if m.svc != nil {
 			if err := m.svc.ClearOrchestrationSession(); err != nil {
-				slog.Debug("tui clear orchestration session failed", "error", err)
+				slog.Debug("tui clear orchestration session failed", "error", redact.Error(err))
 			}
 		}
 		// /hero-start is the explicit retry after a completion gate leaves a
@@ -640,6 +659,13 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 		m.stageHandoffDoneKey = ""
 		m.stageProgressHoldUntilStart = false
 		m.stageProgressCTAKey = ""
+	}
+	if cmdName == "continue" {
+		// Extra iterations start a new wave. Drop leftover handoff fences from
+		// the Escalated turn so executeDone can launch the now-Running stage.
+		m.stageProgressHoldUntilStart = false
+		m.stageHandoffInterventionRequired = false
+		m = m.clearStageHandoffState()
 	}
 
 	var executePrompt string
@@ -652,7 +678,7 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 			composite, err = orchestratorRuntimePrompt(m.svc.ProjectDir, cmdBody)
 		}
 		if err != nil {
-			slog.Error("tui orchestration runtime prompt failed", "cmd", cmdName, "error", err)
+			slog.Error("tui orchestration runtime prompt failed", "cmd", cmdName, "error", redact.Error(err))
 			m.convError = err.Error()
 			return m, nil
 		}
@@ -761,6 +787,7 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 		occupancyKey = cycleOccupancyKey(stageName, parentName)
 	}
 	m, executeID := m.nextExecuteID()
+	m.executeCancelled = false
 	if reset || m.executes == nil {
 		m.executes = make(map[string]convExecute)
 	}
@@ -813,6 +840,7 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 		Origin:          origin,
 		Freechat:        freechat,
 		OccupancyKey:    occupancyKey,
+		HeroSessionID:   strings.TrimSpace(m.heroChatSessionID),
 	}
 
 	if m.convStreamCh == nil {
@@ -1199,9 +1227,18 @@ func (m model) deleteRuneAtCursor() model {
 }
 
 func (m model) submitConversation() (model, tea.Cmd) {
-	if m.submitBlockedBySessionPersist() {
-		m.convError = "Session persistence failed. Resolve the error or start a new chat before sending again."
+	if m.sessionLeaseLost {
+		m.convError = "Session lease lost. Reopen the session from History to recover before sending."
 		return m, nil
+	}
+	if m.sessionPersistBlocked {
+		m.convError = "Retrying session persistence…"
+		updated, cmd := m.drainSessionPersistCmd()
+		if cmd == nil {
+			updated.sessionPersistBlocked = false
+			updated.convError = ""
+		}
+		return updated, cmd
 	}
 	if m.composerBlockedBySessionRecover() {
 		m.convError = historyCopyInterrupted1
@@ -1608,11 +1645,21 @@ func (m model) startConversationExecute(executeID, userText, prompt, origin stri
 	if wg != nil {
 		wg.Add(1)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if ex, ok := m.executes[executeID]; ok {
+		ex.cancel = cancel
+		m.executes[executeID] = ex
+	}
 	go func() {
 		if wg != nil {
 			defer wg.Done()
 		}
-		ctx := context.Background()
+		defer cancel()
+		if ctx.Err() != nil {
+			relay.CloseAndWait()
+			relay.SendControl(executeDoneMsg{executeID: executeID, err: ctx.Err()})
+			return
+		}
 		boundHeroID := strings.TrimSpace(m.heroChatSessionID)
 		pairHarness := resolved.pair.HarnessID
 		pairModel := resolved.pair.Model
@@ -1622,20 +1669,26 @@ func (m model) startConversationExecute(executeID, userText, prompt, origin stri
 				relay.SendControl(executeDoneMsg{executeID: executeID, err: resolveErr})
 				return
 			}
+			if ctx.Err() != nil {
+				relay.CloseAndWait()
+				relay.SendControl(executeDoneMsg{executeID: executeID, err: ctx.Err()})
+				return
+			}
 			heroID, gateErr := m.persistUserTurnBeforeExecute(ctx, executeMeta, userText, labelRole, pairHarness, pairModel, resolved.props)
 			if gateErr != nil {
 				relay.CloseAndWait()
 				if pe, ok := gateErr.(*sessionTurnPersistError); ok {
-					if pe.sessionID != "" {
-						relay.SendControl(heroSessionBoundMsg{executeID: executeID, sessionID: pe.sessionID})
+					if strings.TrimSpace(pe.sessionID) != "" || pe.serialization {
+						relay.SendControl(sessionPersistErrMsg{
+							err:           pe.err,
+							sessionID:     pe.sessionID,
+							events:        pe.events,
+							assets:        pe.assets,
+							bindings:      pe.bindings,
+							nativeBinds:   pe.nativeBinds,
+							serialization: pe.serialization,
+						})
 					}
-					relay.SendControl(sessionPersistErrMsg{
-						err:           pe.err,
-						events:        pe.events,
-						assets:        pe.assets,
-						bindings:      pe.bindings,
-						serialization: pe.serialization,
-					})
 				} else {
 					relay.SendControl(sessionPersistErrMsg{err: gateErr})
 				}
@@ -1664,6 +1717,9 @@ func (m model) startConversationExecute(executeID, userText, prompt, origin stri
 		// follow the acknowledged Chat order (find-qa-28). Final result
 		// persistence happens in the executeDoneMsg handler after deltas apply.
 		_ = boundHeroID
+		if ctx.Err() != nil && err == nil {
+			err = ctx.Err()
+		}
 		relay.CloseAndWait()
 		relay.SendControl(executeDoneMsg{executeID: executeID, result: execution, err: err, harnessID: harnessID, modelSlug: pairModel, props: resolved.props})
 	}()
@@ -1701,7 +1757,7 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 	}
 	if !freechat && svc != nil && strings.TrimSpace(stageName) != "" && agentName != agentOrchestration {
 		if err := svc.SetStageHarnessID(stageName, pair.HarnessID); err != nil {
-			slog.Debug("tui persist stage harness id failed", "error", err)
+			slog.Debug("tui persist stage harness id failed", "error", redact.Error(err))
 		}
 	}
 	profile := harness.PermissionProfileAsk
@@ -1709,7 +1765,7 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 		if hero, err := install.LoadHeroJSON(projectDir); err == nil {
 			profile = install.HarnessPermissionProfile(hero, pair.HarnessID)
 		} else {
-			slog.Warn("could not load hero.json permission profile; using ask", "harness", pair.HarnessID, "error", err)
+			slog.Debug("tui permission profile load failed; using ask", "error", redact.Error(err))
 		}
 	}
 	req := harness.ExecuteRequest{
@@ -1882,10 +1938,13 @@ func isImmediateConversationMessage(msg tea.Msg) bool {
 	}
 }
 
-func (m model) cancelStreamCmd() tea.Cmd {
+func (m *model) cancelStreamCmd() tea.Cmd {
 	executes := make([]convExecute, 0, len(m.executes))
 	for _, ex := range m.executes {
 		executes = append(executes, ex)
+		if ex.cancel != nil {
+			ex.cancel()
+		}
 	}
 	// Invalidate the model's acceptance set synchronously while retaining the
 	// copied executions for the asynchronous Cancel calls below. ExecuteDone
@@ -1895,6 +1954,7 @@ func (m model) cancelStreamCmd() tea.Cmd {
 	for executeID := range m.executes {
 		delete(m.executes, executeID)
 	}
+	m.executeCancelled = true
 	fallbackAdapter := m.harnessAdapter()
 	var injected harness.HarnessAdapter
 	var registry harnessmgr.Registry
@@ -1905,21 +1965,6 @@ func (m model) cancelStreamCmd() tea.Cmd {
 	wg := m.executeWG
 	return func() tea.Msg {
 		var err error
-		if len(executes) == 0 {
-			if fallbackAdapter != nil {
-				err = fallbackAdapter.Cancel(context.Background(), "")
-			}
-			if wg != nil {
-				done := make(chan struct{})
-				go func() { wg.Wait(); close(done) }()
-				select {
-				case <-done:
-				case <-time.After(15 * time.Second):
-					slog.Error("tui execute worker join timed out")
-				}
-			}
-			return streamCancelDoneMsg{err: err}
-		}
 		for _, ex := range executes {
 			// The TUI stops accepting this execution before cancelling the
 			// harness, so a relay blocked on a full chat channel cannot leak.
@@ -1934,9 +1979,14 @@ func (m model) cancelStreamCmd() tea.Cmd {
 				err = cerr
 			}
 		}
+		if len(executes) == 0 && fallbackAdapter != nil {
+			if cerr := fallbackAdapter.Cancel(context.Background(), ""); cerr != nil {
+				err = cerr
+			}
+		}
 		// Join in-flight execute workers so interrupt finalization cannot race
 		// late result/binding writes (find-qa-19).
-		if wg := m.executeWG; wg != nil {
+		if wg != nil {
 			done := make(chan struct{})
 			go func() {
 				wg.Wait()
@@ -1949,9 +1999,20 @@ func (m model) cancelStreamCmd() tea.Cmd {
 				if err == nil {
 					err = fmt.Errorf("execute worker join timed out")
 				}
+				return streamCancelDoneMsg{err: err, workerStillActive: true}
 			}
 		}
 		return streamCancelDoneMsg{err: err}
+	}
+}
+
+func (m model) waitExecuteWorkersCmd() tea.Cmd {
+	wg := m.executeWG
+	return func() tea.Msg {
+		if wg != nil {
+			wg.Wait()
+		}
+		return streamCancelDoneMsg{}
 	}
 }
 
@@ -1972,6 +2033,12 @@ func adapterForCancel(harnessID string, injected, fallback harness.HarnessAdapte
 func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case heroSessionBoundMsg:
+		if msg.executeID != "" {
+			if _, ok := m.executes[msg.executeID]; !ok {
+				slog.Debug("tui ignored late session binding after execute removal")
+				return m, nil
+			}
+		}
 		m.heroChatSessionID = strings.TrimSpace(msg.sessionID)
 		m.heroLeasedSessionID = m.heroChatSessionID
 		m.sessionLeaseLost = false
@@ -2006,9 +2073,16 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.heroLeaseNextHeartbeat = time.Time{}
 		m.convError = "Session lease lost. Reopen the session from History to recover before sending."
 		slog.Error("tui session lease heartbeat lost")
+		if m.streaming && m.convStreamCh != nil {
+			return m, waitConvBatchMsg(m.convStreamCh)
+		}
 		return m, nil
 
 	case sessionPersistErrMsg:
+		sessionID := strings.TrimSpace(msg.sessionID)
+		if sessionID == "" {
+			sessionID = persistBatchSessionIDWithBindings(msg.events, msg.assets, msg.bindings, msg.nativeBinds)
+		}
 		if len(msg.events) > 0 {
 			m.sessionPersistQueue = append(msg.events, m.sessionPersistQueue...)
 		}
@@ -2018,6 +2092,21 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.bindings) > 0 {
 			m.sessionBindingQueue = append(msg.bindings, m.sessionBindingQueue...)
 		}
+		if len(msg.nativeBinds) > 0 {
+			m.sessionNativeBindQueue = append(msg.nativeBinds, m.sessionNativeBindQueue...)
+		}
+		if sessionID != "" {
+			currentSessionID := strings.TrimSpace(m.heroChatSessionID)
+			if currentSessionID == "" || currentSessionID == sessionID {
+				m.heroChatSessionID = sessionID
+				pm := &m
+				pm.syncMediaSessionFromHero()
+				m = *pm
+				if strings.TrimSpace(m.heroLeasedSessionID) != sessionID {
+					m.sessionLeaseRetryID = sessionID
+				}
+			}
+		}
 		m.sessionPersistBlocked = true
 		if msg.serialization {
 			m.convError = "Session persistence serialization failed. Fix the payload, retry, or cancel before sending."
@@ -2025,7 +2114,97 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.convError = "Session persistence failed. Retry or cancel before sending."
 		}
 		slog.Error("tui session persist blocked further sends")
+		if m.streaming && m.convStreamCh != nil {
+			return m, waitConvBatchMsg(m.convStreamCh)
+		}
 		return m, nil
+
+	case sessionPersistOKMsg:
+		var cmds []tea.Cmd
+		leaseAttached := false
+		if msg.leaseAcquired {
+			sessionID := strings.TrimSpace(msg.sessionID)
+			currentSessionID := strings.TrimSpace(m.heroChatSessionID)
+			if sessionID != "" && strings.TrimSpace(m.sessionLeaseRetryID) == sessionID && (currentSessionID == "" || currentSessionID == sessionID) {
+				m.heroChatSessionID = sessionID
+				m.heroLeasedSessionID = sessionID
+				m.sessionLeaseRetryID = ""
+				m.sessionLeaseLost = false
+				pm := &m
+				pm.syncMediaSessionFromHero()
+				m = *pm
+				m.heroLeaseNextHeartbeat = time.Now().Add(sessionLeaseHeartbeatInterval)
+				cmds = append(cmds, m.startHeroLeaseHeartbeat(sessionID))
+				leaseAttached = true
+			} else if sessionID != "" {
+				// A reset or session switch may have invalidated this retry while
+				// its command was running. Do not strand the newly acquired lease.
+				cmds = append(cmds, m.releaseHeroChatLeaseCmd(sessionID))
+			}
+		}
+		if !msg.leaseAcquired || leaseAttached {
+			m.sessionPersistBlocked = false
+		}
+		if m.streaming && m.convStreamCh != nil {
+			cmds = append(cmds, waitConvBatchMsg(m.convStreamCh))
+		}
+		return m, combineTimerCmds(cmds...)
+
+	case sessionLeaseReleaseResultMsg:
+		sessionID := strings.TrimSpace(msg.sessionID)
+		if sessionID == "" {
+			return m, nil
+		}
+		if msg.err != nil {
+			if m.heroLeaseOwnedByCurrentChat(sessionID) {
+				m.clearPendingLeaseRelease(sessionID)
+				if restoreCmd := m.restoreHeroLeaseAfterStaleCleanup(sessionID); restoreCmd != nil {
+					return m, restoreCmd
+				}
+				return m, nil
+			}
+			m.trackPendingLeaseRelease(sessionID)
+			if m.screen == screenHistory {
+				m.history.actionErr = "Session lease release failed. Retrying cleanup."
+			} else if strings.TrimSpace(m.convError) == "" {
+				m.convError = "Session lease release failed. Retrying cleanup."
+			}
+			return m, m.scheduleLeaseReleaseRetry(sessionID)
+		}
+		m.clearPendingLeaseRelease(sessionID)
+		if m.heroLeaseOwnedByCurrentChat(sessionID) {
+			if restoreCmd := m.restoreHeroLeaseAfterStaleCleanup(sessionID); restoreCmd != nil {
+				return m, restoreCmd
+			}
+			return m, nil
+		}
+		if strings.TrimSpace(m.heroLeasedSessionID) == sessionID && strings.TrimSpace(m.heroChatSessionID) != sessionID {
+			m.heroLeasedSessionID = ""
+		}
+		if m.history.actionErr == "Session lease release failed. Retrying cleanup." && len(m.pendingLeaseReleaseIDs) == 0 {
+			m.history.actionErr = ""
+		}
+		if m.convError == "Session lease release failed. Retrying cleanup." && len(m.pendingLeaseReleaseIDs) == 0 {
+			m.convError = ""
+		}
+		if next := strings.TrimSpace(m.pendingLeaseReleaseID); next != "" && next != sessionID {
+			return m, m.releaseHeroChatLeaseCmd(next)
+		}
+		return m, nil
+
+	case sessionLeaseReleaseRetryMsg:
+		sessionID := strings.TrimSpace(msg.sessionID)
+		if sessionID == "" {
+			return m, nil
+		}
+		if m.heroLeaseOwnedByCurrentChat(sessionID) {
+			m.clearPendingLeaseRelease(sessionID)
+			return m, nil
+		}
+		if !m.leaseReleasePending(sessionID) && strings.TrimSpace(m.heroLeasedSessionID) != sessionID {
+			return m, nil
+		}
+		return m, m.releaseHeroChatLeaseCmd(sessionID)
 
 	case chatTranscriptRestoreMsg:
 		m = m.applyChatTranscriptRestore(msg)
@@ -2095,6 +2274,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				continue
 			}
 			if delta, ok := item.(streamDeltaMsg); ok {
+				if !m.acceptStreamDelta(delta) {
+					continue
+				}
 				pm := &m
 				pm.applyStreamDelta(delta)
 				m = *pm
@@ -2123,18 +2305,26 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if persistCmd != nil {
 			cmds = append(cmds, persistCmd)
 		}
-		if len(cmds) > 0 {
-			// executeDone/cancel already re-issued the stream waiter when needed.
-			// Returning those cmds is what delivers Telegram replies (they used
-			// to be discarded here, so outbound never left the TUI).
-			return m, combineTimerCmds(cmds...)
-		}
+		// Nested handlers (session bind, persist drain, Telegram) used to
+		// return without waitConvBatchMsg. The first native session-id delta
+		// then dropped the stream reader, convStreamCh filled, and
+		// CloseAndWait deadlocked after Cursor had already exited — the TUI
+		// showed the full ORCH text and never dispatched QA after continue.
 		if m.streaming && m.convStreamCh != nil {
-			return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
+			cmds = append(cmds, waitConvBatchMsg(m.convStreamCh))
+		}
+		if len(cmds) > 0 {
+			return m, combineTimerCmds(append(cmds, m.ensureTimerLoop())...)
 		}
 		return m, m.ensureTimerLoop()
 
 	case streamDeltaMsg:
+		if !m.acceptStreamDelta(msg) {
+			if m.streaming && m.convStreamCh != nil {
+				return m, waitConvBatchMsg(m.convStreamCh)
+			}
+			return m, nil
+		}
 		pm := &m
 		pm.applyStreamDelta(msg)
 		m = *pm
@@ -2214,6 +2404,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			trackedExecute = true
 		}
+		if m.executeCancelled {
+			return m, nil
+		}
 		m = m.bindExecuteView(msg.executeID)
 		stageForMetrics := strings.TrimSpace(m.conversationStage)
 		agentForMetrics := strings.TrimSpace(m.runtimeAgentName)
@@ -2252,7 +2445,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.svc != nil && strings.TrimSpace(stageForMetrics) != "" && strings.TrimSpace(label) != "" && wave > 0 {
 				if err := m.svc.RecordStageAgentResult(stageForMetrics, label, wave, resultBody); err != nil {
-					slog.Warn("tui persist stage agent result failed", "stage", stageForMetrics, "agent", label, "wave", wave, "error", err)
+					slog.Error("tui persist stage agent result failed", "error", redact.Error(err))
 				}
 			}
 		}
@@ -2273,7 +2466,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.harnessHealthStatus = harness.HealthHealthy
 			m = m.clearHarnessPermission()
 			m = m.clearHarnessQuestion()
-			if !m.orchestrationLive {
+			if !m.orchestrationLive && !keepsOrchestrationScheduler(m.runtimeCommandName) {
 				m = m.clearRuntimePair()
 				m.runtimeAgentName = ""
 				m.workflowProps = nil
@@ -2363,7 +2556,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := m.svc.AccumulateStageHarnessMetrics(
 					stageForMetrics, agentForMetrics, modelForMetrics, usage, msg.result.Duration,
 				); err != nil {
-					slog.Debug("tui accumulate stage metrics failed", "error", err)
+					slog.Debug("tui accumulate stage metrics failed", "error", redact.Error(err))
 				}
 			}
 			if msg.result.SessionID != "" && !m.stageHandoffLive {
@@ -2393,9 +2586,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if _, err := m.svc.PrepareCycle(); err != nil {
 				m.convError = err.Error()
 				m = m.resetSessionTimer()
-				slog.Error("tui prepare cycle after hero-new failed", "error", err)
+				slog.Error("tui prepare cycle after hero-new failed", "error", redact.Error(err))
 			} else if st, err := m.svc.Status(); err != nil {
-				slog.Error("tui load status after hero-new failed", "error", err)
+				slog.Error("tui load status after hero-new failed", "error", redact.Error(err))
 			} else {
 				// Refresh immediately so Config is visible and the welcome action can
 				// navigate there before the asynchronous refresh returns.
@@ -2437,44 +2630,50 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		replyCmd := m.telegramTurnReplyCmd(turnOrigin, reply, "", !siblingsRemain)
-		var bindCmd tea.Cmd
-		if msg.err == nil && m.heroChatSessionActive() {
-			pm := &m
-			agentIdx := m.agentMsgIndex
-			if trackedExecute {
-				agentIdx = executeMeta.AgentMsgIndex
+		if msg.err == nil {
+			heroID := strings.TrimSpace(executeMeta.HeroSessionID)
+			if heroID == "" {
+				heroID = strings.TrimSpace(m.heroChatSessionID)
 			}
-			if agentIdx >= 0 && agentIdx < len(pm.transcript) {
-				if err := pm.queuePersistForMessage(pm.transcript[agentIdx]); err != nil {
-					m = *pm
-					m.sessionPersistBlocked = true
-					m.convError = "Session persistence serialization failed. Fix the payload, retry, or cancel before sending."
-					slog.Error("tui execute result persist serialization failed")
-					return m, nil
+			if m.sessionService != nil && heroID != "" {
+				pm := &m
+				agentIdx := m.agentMsgIndex
+				if trackedExecute {
+					agentIdx = executeMeta.AgentMsgIndex
 				}
-			}
-			if msg.result != nil {
-				for _, asset := range msg.result.Assets {
-					if err := pm.queueSessionAsset(asset); err != nil {
-						m = *pm
-						m.sessionPersistBlocked = true
-						m.convError = "Session persistence serialization failed. Fix the payload, retry, or cancel before sending."
-						slog.Error("tui execute asset persist serialization failed")
-						return m, nil
+				persistFailed := false
+				if agentIdx >= 0 && agentIdx < len(pm.transcript) {
+					if err := pm.queuePersistTranscriptIndex(heroID, msg.executeID, agentIdx); err != nil {
+						persistFailed = true
+						pm.sessionPersistBlocked = true
+						pm.convError = "Session persistence serialization failed. Fix the payload, retry, or cancel before sending."
+						slog.Error("tui execute result persist serialization failed")
 					}
 				}
-				if sid := strings.TrimSpace(msg.result.SessionID); sid != "" {
-					modelSlug := strings.TrimSpace(msg.modelSlug)
-					if modelSlug == "" {
-						modelSlug = modelForMetrics
+				if !persistFailed && msg.result != nil {
+					for _, asset := range msg.result.Assets {
+						if err := pm.queueSessionAssetOn(heroID, asset); err != nil {
+							persistFailed = true
+							pm.sessionPersistBlocked = true
+							pm.convError = "Session persistence serialization failed. Fix the payload, retry, or cancel before sending."
+							slog.Error("tui execute asset persist serialization failed")
+							break
+						}
 					}
-					bindCmd = m.bindNativeHeroSessionCmd(msg.harnessID, sid, modelSlug, msg.props)
+					if !persistFailed {
+						if sid := strings.TrimSpace(msg.result.SessionID); sid != "" {
+							modelSlug := strings.TrimSpace(msg.modelSlug)
+							if modelSlug == "" {
+								modelSlug = modelForMetrics
+							}
+							pm.queueSessionNativeBindPersist(heroID, msg.harnessID, sid, modelSlug, msg.props)
+						}
+					}
 				}
+				m = *pm
 			}
-			m = *pm
 		}
 		m, heroPersistCmd := m.drainSessionPersistCmd()
-		heroPersistCmd = combineTimerCmds(heroPersistCmd, bindCmd)
 		if siblingsRemain {
 			if m.convStreamCh != nil {
 				return m, combineTimerCmds(heroPersistCmd, waitConvBatchMsg(m.convStreamCh), replyCmd)
@@ -2490,6 +2689,10 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamCancelDoneMsg:
 		m = m.stopAITimer(time.Now())
+		if msg.workerStillActive {
+			m.convError = "Interruption is still stopping the harness. Wait before quitting."
+			return m, m.waitExecuteWorkersCmd()
+		}
 		if m.runtimeCommandName == "new" && m.sessionTimer.pendingCycle {
 			// The cycle row is created by the /hero-new demand. If that demand is
 			// cancelled before refresh binds the row, do not leave a pending
@@ -2518,7 +2721,8 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.heroChatSessionActive() {
 			pm := &m
 			if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(pm.transcript) {
-				if err := pm.queuePersistForMessage(pm.transcript[m.agentMsgIndex]); err != nil {
+				heroID := strings.TrimSpace(m.heroChatSessionID)
+				if err := pm.queuePersistTranscriptIndex(heroID, "", m.agentMsgIndex); err != nil {
 					m.sessionPersistBlocked = true
 					m.convError = "Session persistence serialization failed. Fix the payload, retry, or cancel before sending."
 					slog.Error("tui interrupt agent persist serialization failed")
@@ -2535,6 +2739,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessionPersistQueue = nil
 			m.sessionAssetUpsertQueue = nil
 			m.sessionBindingQueue = nil
+			m.sessionNativeBindQueue = nil
 			return m.afterExecuteTelegramDrain(finalizeCmd)
 		}
 		m, persistCmd := m.drainSessionPersistCmd()
@@ -2551,13 +2756,31 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) acceptStreamDelta(msg streamDeltaMsg) bool {
+	if m.executeCancelled {
+		return false
+	}
+	executeID := strings.TrimSpace(msg.executeID)
+	if executeID == "" {
+		return true
+	}
+	_, ok := m.executes[executeID]
+	return ok
+}
+
 func (m *model) applyStreamDelta(msg streamDeltaMsg) {
+	if !m.acceptStreamDelta(msg) {
+		return
+	}
+	heroID := m.heroSessionIDForExecute(msg.executeID)
 	turnIndex := m.agentMsgIndex
 	if msg.executeID != "" {
 		if execute, ok := m.executes[msg.executeID]; ok {
 			turnIndex = execute.AgentMsgIndex
 		}
 	}
+	prevPersistHero := m.streamPersistHeroID
+	m.streamPersistHeroID = heroID
 	*m = m.bindExecuteView(msg.executeID)
 	if sid := strings.TrimSpace(msg.delta.SessionID); sid != "" {
 		if ex, ok := m.executes[msg.executeID]; ok {
@@ -2578,12 +2801,29 @@ func (m *model) applyStreamDelta(msg streamDeltaMsg) {
 	beforeAssets := len(m.assets)
 	*m = m.appendStreamDeltaForTurn(msg.delta, turnIndex)
 	if msg.delta.Kind == harness.StreamKindAsset && msg.delta.Asset != nil && len(m.assets) > beforeAssets {
-		if err := m.queueSessionAsset(*msg.delta.Asset); err != nil {
+		if err := m.queueSessionAssetOn(heroID, *msg.delta.Asset); err != nil {
 			m.sessionPersistBlocked = true
 			// Keep the visible asset; block sends until the retry payload can be written.
 			slog.Error("tui stream asset persist serialization failed")
 		}
 	}
+	switch msg.delta.Kind {
+	case harness.StreamKindText:
+		if err := m.queuePersistTranscriptIndex(heroID, msg.executeID, m.agentMsgIndex); err != nil {
+			m.sessionPersistBlocked = true
+			slog.Error("tui stream transcript persist serialization failed")
+		}
+	case harness.StreamKindThinking:
+		idx := m.thinkingMsgIndex
+		if idx < 0 {
+			idx = turnIndex
+		}
+		if err := m.queuePersistTranscriptIndex(heroID, msg.executeID, idx); err != nil {
+			m.sessionPersistBlocked = true
+			slog.Error("tui stream transcript persist serialization failed")
+		}
+	}
+	m.streamPersistHeroID = prevPersistHero
 }
 
 func (m model) bindExecuteView(executeID string) model {
@@ -2660,7 +2900,7 @@ func (m model) appendStreamDeltaForTurn(d harness.StreamDelta, turnIndex int) mo
 		}
 		return m
 	case harness.StreamKindWarning:
-		slog.Warn("harness stream warning", "harness_type", d.HarnessType)
+		slog.Info("harness stream warning", "harness_type", d.HarnessType)
 		// UI-C06-001 §5 / D11: yellow status-area warning (not raw JSON in assistant text).
 		m = m.setStatusWarning("harness", firstStatusLine(d.Text))
 		switch d.HarnessType {
@@ -2945,7 +3185,7 @@ func (m model) persistHarnessPermissionPause(paused bool) model {
 		return m
 	}
 	if err := m.svc.SetStageHarnessPermissionPaused(stage, paused); err != nil {
-		slog.Debug("tui persist harness permission pause failed", "error", err)
+		slog.Debug("tui persist harness permission pause failed", "error", redact.Error(err))
 	}
 	return m
 }
@@ -3110,6 +3350,11 @@ func (m *model) appendAttributed(role convRole, d harness.StreamDelta) {
 			if role == convRoleThinking {
 				m.thinkingMsgIndex = i
 			}
+			heroID := m.persistTargetHeroID()
+			if err := m.queuePersistTranscriptIndex(heroID, "", i); err != nil {
+				m.sessionPersistBlocked = true
+				slog.Error("tui stream transcript persist serialization failed")
+			}
 			return
 		}
 	}
@@ -3146,7 +3391,8 @@ func (m *model) insertBeforeAgent(msg convMessage) int {
 		m.transcript = append(m.transcript, msg)
 		idx = len(m.transcript) - 1
 	}
-	if err := m.queuePersistForMessage(msg); err != nil {
+	heroID := m.persistTargetHeroID()
+	if err := m.queuePersistTranscriptIndex(heroID, "", idx); err != nil {
 		m.sessionPersistBlocked = true
 		slog.Error("tui message persist serialization failed")
 	}

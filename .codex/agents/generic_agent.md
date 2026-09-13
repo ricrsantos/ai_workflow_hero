@@ -1,7 +1,9 @@
 ---
-name: generic_agent
 description: Implements native apps, scripts, and infrastructure for native/script/infrastructure scopes.
-model: inherit
+model: gpt-5.6-luna
+name: generic_agent
+reasoningEffort: max
+thinking: "off"
 ---
 
 # generic_agent — Native / Script / Infrastructure Agent
@@ -107,7 +109,7 @@ Your explicit assignment may contain `task-*` IDs, `find-*` IDs, or both. `tasks
 
 A verification wave with **no** assigned IDs accepts only empty arrays in both fields.
 
-Include verified `find-*` IDs in `tasks_completed` when you fixed that finding.
+For each assigned `find-*`, land `repro.source` first (the named test MUST fail on current code). Then fix Residual until `go test <package> -count=1 -run ^TestName$` passes. Frozen Issue/Acceptance are identity only. Do not put that ID in `tasks_completed` if Residual is still true or the repro test fails — the scheduler re-runs the test and rejects `done` (`repro_test_failed`).
 
 ## C15 report contract (PRD-C15-001 §6)
 

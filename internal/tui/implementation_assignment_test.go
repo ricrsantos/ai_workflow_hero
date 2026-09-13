@@ -396,6 +396,9 @@ func TestImplementationFindingBlockFreezesContractAndHistory(t *testing.T) {
 	if !strings.Contains(block.Block, "Contract: frozen") {
 		t.Fatalf("missing frozen contract:\n%s", block.Block)
 	}
+	if !strings.Contains(block.Block, "Residual: workers use context.Background") {
+		t.Fatalf("missing untruncated residual:\n%s", block.Block)
+	}
 	if !strings.Contains(block.Block, "r1 created: Quit races persist") {
 		t.Fatalf("missing history:\n%s", block.Block)
 	}

@@ -289,31 +289,41 @@ func (s *Store) UpdateSessionLifecycle(id, lifecycle string, interruptedAt *stri
 
 // BindNativeSession sets harness/native/model attributes after first native bind.
 func (s *Store) BindNativeSession(id, harnessID, nativeSessionID, model, modelPropertiesJSON string) (Session, error) {
+	err := s.InTx(func(tx *sql.Tx) error {
+		return bindNativeSessionTx(tx, id, harnessID, nativeSessionID, model, modelPropertiesJSON)
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	s.log.Info("session native identity bound", "harness_id", strings.TrimSpace(harnessID))
+	return s.GetSession(id)
+}
+
+func bindNativeSessionTx(tx *sql.Tx, id, harnessID, nativeSessionID, model, modelPropertiesJSON string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return Session{}, ErrSessionNotFound
+		return ErrSessionNotFound
 	}
 	props := strings.TrimSpace(modelPropertiesJSON)
 	if props == "" {
 		props = "{}"
 	}
-	res, err := s.db.Exec(`
+	res, err := tx.Exec(`
 UPDATE sessions SET harness_id = ?, native_session_id = ?, model = ?, model_properties_json = ?
 WHERE id = ?`,
 		strings.TrimSpace(harnessID), strings.TrimSpace(nativeSessionID),
 		strings.TrimSpace(model), props, id)
 	if err != nil {
 		if isUniqueViolation(err) {
-			return Session{}, ErrDuplicateNativeSession
+			return ErrDuplicateNativeSession
 		}
-		return Session{}, fmt.Errorf("bind native session: %w", err)
+		return fmt.Errorf("bind native session: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return Session{}, ErrSessionNotFound
+		return ErrSessionNotFound
 	}
-	s.log.Info("session native identity bound", "harness_id", strings.TrimSpace(harnessID))
-	return s.GetSession(id)
+	return nil
 }
 
 // SetRemoteImportConfirmed marks that the user confirmed remote history import.

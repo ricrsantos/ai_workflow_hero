@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/redact"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 )
 
@@ -69,12 +70,12 @@ func clearChatSessionStore(svc *cycle.Service) {
 		return
 	}
 	if err := svc.ClearOrchestrationSession(); err != nil {
-		slog.Debug("tui clear orchestration session failed", "error", err)
+		slog.Debug("tui clear orchestration session failed", "error", redact.Error(err))
 	}
 	stage, _, err := svc.ConversationContext()
 	if err == nil && strings.TrimSpace(stage) != "" {
 		if err := svc.SetStageSessionBinding(stage, "", ""); err != nil {
-			slog.Debug("tui clear harness session failed", "error", err)
+			slog.Debug("tui clear harness session failed", "error", redact.Error(err))
 		}
 	}
 }
@@ -84,7 +85,7 @@ func (m model) applyConversationContextSnapshot(snap conversationContextSnapshot
 		return m
 	}
 	if snap.ConversationContextErr != nil {
-		slog.Debug("tui conversation context unavailable", "error", snap.ConversationContextErr)
+		slog.Debug("tui conversation context unavailable", "error", redact.Error(snap.ConversationContextErr))
 		m.conversationStage = ""
 		return m
 	}

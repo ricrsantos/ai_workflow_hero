@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -243,6 +244,23 @@ func insertLegacySessionTx(tx *sql.Tx, binding legacyBinding) (bool, error) {
 	if exists == 1 {
 		return false, nil
 	}
+	// A live History row may already own this native id (TUI first-turn +
+	// BindNativeSession, including when Chat reuses the orchestrator session
+	// for GEN). createSessionTx maps that unique hit to ErrDuplicateNativeSession,
+	// which used to abort Store.Open and block every hero CLI call.
+	if native := strings.TrimSpace(binding.NativeSessionID); native != "" {
+		var existing string
+		err := tx.QueryRow(`
+SELECT id FROM sessions
+WHERE harness_id = ? AND native_session_id = ?
+LIMIT 1`, strings.TrimSpace(binding.HarnessID), native).Scan(&existing)
+		if err == nil {
+			return false, nil
+		}
+		if err != sql.ErrNoRows {
+			return false, fmt.Errorf("check native session binding: %w", err)
+		}
+	}
 	activity := strings.TrimSpace(binding.ActivityAt)
 	if activity == "" {
 		activity = nowRFC3339()
@@ -262,7 +280,7 @@ func insertLegacySessionTx(tx *sql.Tx, binding legacyBinding) (bool, error) {
 		LastActivityAt:  activity,
 	})
 	if err != nil {
-		if isUniqueViolation(err) {
+		if errors.Is(err, ErrDuplicateNativeSession) || isUniqueViolation(err) {
 			return false, nil
 		}
 		return false, err

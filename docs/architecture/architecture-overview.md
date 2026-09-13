@@ -12,12 +12,12 @@ Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning
 
 | Concern | Choice |
 |---|---|
-| Language | Go 1.25+ (`modernc.org/sqlite`, no CGO) |
+| Language | Go 1.26+ (`modernc.org/sqlite`, no CGO) |
 | Module | `github.com/ricrsantos/ai_workflow_hero` |
 | CLI | Cobra + `internal/common/clierr` |
 | TUI | Bubble Tea + lipgloss + huh (install prompts) |
 | Assets | `assets.FS` (`embed.FS`) |
-| Operational store | SQLite at `.workflow-hero/hero.db` (schema **v13**; v12 C16 `sessions`/`session_events`/`session_assets`/`session_leases`/`session_delete_ops` + v13 `session_delete_op_managed_paths`; v11 C15 findings/ToDo + cycle disposition; v10 orchestrator session pair on `cycles`, stage-agent sessions on `stages`) |
+| Operational store | SQLite at `.workflow-hero/hero.db` (schema **v14**; v14 C15 finding repro package/test/source; v13 `session_delete_op_managed_paths`; v12 C16 `sessions`/`session_events`/`session_assets`/`session_leases`/`session_delete_ops`; v11 C15 findings/ToDo + cycle disposition; v10 orchestrator session pair on `cycles`, stage-agent sessions on `stages`) |
 | SDD | OpenSpec (external CLI; coupled at archive) |
 | V1 harness | Cursor Agent CLI (`cursor-agent` / `cursor agent`) |
 | Platforms | Linux/macOS `amd64` / `arm64` |
@@ -251,8 +251,8 @@ QA / Judge / Browser UI / E2E JSON
                  ▼
 Implementation scheduler assignment
    unchecked OpenSpec task-*  ∪  open/reopened find-*
-   (frozen file/requirement/issue/acceptance + occurrence history)
-                 │ validated report
+   (frozen file/requirement/issue/acceptance + untruncated Residual + repro test + occurrence history)
+                 │ validated report + repro gate (`go test -run ^TestName$`)
           ┌──────┴──────────┐
           ▼                 ▼
    check task-* box    mark find-* done
@@ -279,7 +279,7 @@ TUI Status sidebar and Telegram `/status` text still omit the additive C15 table
 - **Harness conversations** use `HarnessAdapter.Execute` with streaming (`stream-json`), not IDE chat injection (ADR-026).
 - **Dual OpenCode-style panes** on Chat: composer + response area. Orchestrator pair on `cycles.orchestration_session_id`/`orchestration_harness_id` (schema v10) and stage-agent `harness_session_id`/`harness_id` remain compatibility projections. **C16 shipped:** durable Hero session aggregates (`sessions` + `session_events`) are the conversation source of truth for History/Chat persist-restore while retaining those projections. A session is never resumed through a different harness.
 - **Orchestrator vs Research**: TUI Execute for control slashes uses `agents.orchestration_agent` from `workflow-config.yml`; Research uses a separate `discover_agent` session (`research_session.go`); Cursor IDE chat keeps grilling in the orchestrator session.
-- **TUI-direct stage Execute (C8 + ADR-075)**: after ORCH starts a stage and STOPs, the TUI Executes named stage agents on their YAML harness+model pair (`stage_handoff.go`, `stage_progress.go`). Nested Task fan-out stays inside the parent harness; generic Tasks chip `TASK`. Implementation may run BACK/FRNT/GEN concurrently. For a linked OpenSpec change, the TUI validates canonical ownership, injects only each agent's ordered unchecked task blocks, and persists assignment audits with ordered `task_ids` per agent/wave plus raw result audits. It permits close only after valid complete reports, passing gates, and a scheduler reread with an empty checklist; progress may start a bounded fresh wave without advancing the stage iteration. If Implementation starts/restarts already empty, one verification wave may collect reports/gates; after a wave clears all pending tasks, no empty wave is redispatched. `Escalated` never executes before `/hero-continue`. Idle Running/Waiting/Escalated/PendingApproval with no Execute either launches the named agents or posts a deterministic Hero CTA (`/hero-start`, `/hero-continue`, `/hero-approve`); C15 scheduler-handled loop-back clears intervention so Implementation is not left Running with a stopped agent. `EventStageStarted` while idle re-enters the same gate. Cursor IDE Runtime still uses Task for every subagent (ADR-005 / ADR-054 / ADR-075).
+- **TUI-direct stage Execute (C8 + ADR-075)**: after ORCH starts a stage and STOPs, the TUI Executes named stage agents on their YAML harness+model pair (`stage_handoff.go`, `stage_progress.go`). Nested Task fan-out stays inside the parent harness; generic Tasks chip `TASK`. Implementation may run BACK/FRNT/GEN concurrently. For a linked OpenSpec change, the TUI validates canonical ownership, injects only each agent's ordered unchecked task blocks, and persists assignment audits with ordered `task_ids` per agent/wave plus raw result audits. It permits close only after valid complete reports, passing gates, and a scheduler reread with an empty checklist; progress may start a bounded fresh wave without advancing the stage iteration. If Implementation starts/restarts already empty, one verification wave may collect reports/gates; after a wave clears all pending tasks, no empty wave is redispatched. `Escalated` never executes before `/hero-continue`. `/hero-continue` keeps the TUI scheduler armed (`orchestrationLive`) and drops leftover handoff fences so the granted Running stage actually launches. Idle Running/Waiting/Escalated/PendingApproval with no Execute either launches the named agents or posts a deterministic Hero CTA (`/hero-start`, `/hero-continue`, `/hero-approve`); C15 scheduler-handled loop-back clears intervention so Implementation is not left Running with a stopped agent. `EventStageStarted` while idle re-enters the same gate. Cursor IDE Runtime still uses Task for every subagent (ADR-005 / ADR-054 / ADR-075).
 - **Boot** validates harness availability (`IsAvailable`); may prompt for harness selection when `cli.tools` is empty (ADR-027).
 - **Default harness model** is stored in `hero.json` → `harnesses.<tool>` (ADR-030); per-cycle agent models live in `workflow-config.yml`. Freechat and `/hero-new` use the harness default; orchestrator slashes use YAML `orchestration_agent` (then `fallback_model`, then `/hero-model`).
 - **`/hero-new` config preflight**: the TUI asks `cycle.Service` to validate `.workflow-hero/cycles/current/workflow-config.yml` before the Runtime turn. If it is missing, `workflowconfig.EnsureCurrent` seeds it from the installed template and deep-merges the highest archived cycle's `workflow_config`, `fallback_model`, `stages`, and `agents`; existing files are never overwritten. `PrepareCycle` validates the result and passes the exact current path to the engine, while Cursor's shared Runtime command remains responsible for its own create/update path.

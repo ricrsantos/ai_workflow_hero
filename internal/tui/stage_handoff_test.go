@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reprotest"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
@@ -1184,7 +1186,7 @@ func TestEvaluateQAFailedHandoffInvokesAtomicClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	report := `qa_agent:
-{"status":"failed","summary":"handoff failure","failures":[{"owner":"generic_agent","file":"internal/tui/stage_handoff.go","issue":"missing atomic close","acceptance_criteria":"scheduler owns failed close"}]}`
+{"status":"failed","summary":"handoff failure","failures":[{"owner":"generic_agent","file":"internal/tui/stage_handoff.go","issue":"missing atomic close","acceptance_criteria":"scheduler owns failed close","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}}]}`
 	m := NewTestModel(svc)
 	m.stageHandoffOutputs = []string{report}
 	decision := m.evaluateValidationStageHandoff(stageQA, report)
@@ -1323,5 +1325,55 @@ func TestEvaluateImplementationHandoffFindingsOnlyPartialProgress(t *testing.T) 
 	f, err := svc.Store.GetFinding(cycleRow.ID, "find-qa-1")
 	if err != nil || f.Status != store.FindingStatusDone {
 		t.Fatalf("find-qa-1=%+v err=%v", f, err)
+	}
+}
+
+func TestImplementationHandoffRejectsFailedRepro(t *testing.T) {
+	dir := t.TempDir()
+	svc := newTestServiceWithRunningStage(t, dir, "implementation", implementationHandoffYAML)
+	writeImplementationTasks(t, svc, "- [x] 1.1 [task-done] [agent:generic_agent] Done task\n")
+	cycleRow, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := "package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"
+	if _, err := svc.Store.PersistFinding(store.FindingInput{
+		CycleID:            cycleRow.ID,
+		SourceStage:        store.FindingSourceQA,
+		Owner:              store.FindingOwnerGeneric,
+		File:               "internal/tui/stage_handoff.go",
+		Issue:              "fix handoff",
+		AcceptanceCriteria: "finding is verified in implementation report",
+		ReproPackage:       "./internal/tui",
+		ReproTest:          "TestFindHandoffRepro",
+		ReproSource:        src,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	restore := cycle.SetFindingReproRunForTest(func(context.Context, string, reprotest.Spec) error {
+		return fmt.Errorf("test still fails")
+	})
+	t.Cleanup(restore)
+	m := NewTestModel(svc)
+	m.stageHandoffWave = 1
+	m.stageHandoffExpectedAgents = []string{agentGeneric}
+	m.stageHandoffAssignments = map[int]map[string][]implementationTaskBlock{1: {
+		agentGeneric: {
+			{ID: "find-qa-1", Owner: agentGeneric},
+		},
+	}}
+	report := "generic_agent:\n" +
+		`{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":["find-qa-1"],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test"}`
+	m.stageHandoffOutputs = []string{report}
+	decision := m.evaluateStageHandoff(stageImplementation, report)
+	if decision.Complete || decision.PartialProgress {
+		t.Fatalf("decision=%+v want repro gate rejection", decision)
+	}
+	if !strings.Contains(decision.Reason, "repro_test_failed") {
+		t.Fatalf("reason=%q", decision.Reason)
+	}
+	f, err := svc.Store.GetFinding(cycleRow.ID, "find-qa-1")
+	if err != nil || f.Status == store.FindingStatusDone {
+		t.Fatalf("finding must stay open, got %+v err=%v", f, err)
 	}
 }

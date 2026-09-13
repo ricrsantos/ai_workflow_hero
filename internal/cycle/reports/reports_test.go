@@ -61,6 +61,100 @@ func TestDecodeQA_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestReportJSONFromText_IgnoresTrailingFenceAndProse(t *testing.T) {
+	raw := "notes first\n```json\n{\"status\":\"passed\",\"failures\":[],\"summary\":\"ok\"}\n```\ntrailing"
+	got, err := ReportJSONFromText(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	report, derr := DecodeQA(got, testCtx())
+	if derr != nil {
+		t.Fatalf("decode: %v", derr)
+	}
+	if report.Status != ValidationStatusPassed {
+		t.Fatalf("status=%q", report.Status)
+	}
+}
+
+func TestReportJSONFromText_RepairsMissingFailureCloseBeforeArrayEnd(t *testing.T) {
+	// QA agents often omit the failure-object close when repro.source contains
+	// nested `{` / `}`. encoding/json then reports: invalid character ']' after
+	// object key:value pair.
+	raw := "→ running checks\n" +
+		`{"status":"failed","failures":[{"owner":"generic_agent","file":"a.go","issue":"x","acceptance_criteria":"y","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) {\n\tt.Fatal(\"x\")\n}\n"}],"summary":"six remain"}`
+	got, err := ReportJSONFromText(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	report, derr := DecodeQA(got, testCtx())
+	if derr != nil {
+		t.Fatalf("decode: %v", derr)
+	}
+	if report.Status != ValidationStatusFailed || len(report.Failures) != 1 {
+		t.Fatalf("report=%+v", report)
+	}
+	if report.Failures[0].Repro.Test != "TestFindHandoffRepro" {
+		t.Fatalf("repro=%+v", report.Failures[0].Repro)
+	}
+	if !strings.Contains(report.Failures[0].Repro.Source, "func TestFindHandoffRepro(") {
+		t.Fatalf("source=%q", report.Failures[0].Repro.Source)
+	}
+}
+
+func TestDecodeQA_GoRecursiveEvidenceAllowed(t *testing.T) {
+	raw := `{
+		"status":"failed",
+		"summary":"toolchain",
+		"failures":[{
+			"owner":"generic_agent",
+			"file":"go.mod",
+			"issue":"x",
+			"acceptance_criteria":"y",
+			"evidence":["go test ./internal/tui","go test ./src/api/..."],
+			"repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}
+		}]
+	}`
+	report, err := DecodeQA([]byte(raw), testCtx())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(report.Failures) != 1 || len(report.Failures[0].Evidence) != 2 {
+		t.Fatalf("report=%+v", report)
+	}
+	if report.Failures[0].Evidence[1] != "go test ./src/api/..." {
+		t.Fatalf("evidence=%v", report.Failures[0].Evidence)
+	}
+}
+
+func TestDecodeQA_EvidenceParentSegmentRejected(t *testing.T) {
+	raw := `{
+		"status":"failed",
+		"summary":"bad evidence",
+		"failures":[{
+			"owner":"generic_agent",
+			"file":"a.go",
+			"issue":"x",
+			"acceptance_criteria":"y",
+			"evidence":["go test ./internal/tui","../secret.txt"],
+			"repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}
+		}]
+	}`
+	_, err := DecodeQA([]byte(raw), testCtx())
+	if err == nil || err.Code != CodeInvalidEnum {
+		t.Fatalf("expected invalid_enum, got %v", err)
+	}
+	if !strings.Contains(err.Field, "evidence[1]") {
+		t.Fatalf("field=%s", err.Field)
+	}
+}
+
+func TestReportJSONFromText_InvalidStillRejected(t *testing.T) {
+	_, err := ReportJSONFromText("no report here {not json}")
+	if err == nil || err.Code != CodeInvalidJSON {
+		t.Fatalf("expected invalid_json, got %v", err)
+	}
+}
+
 func TestDecodeQA_InvalidOwner(t *testing.T) {
 	raw := `{
 		"status":"failed",
@@ -89,7 +183,7 @@ func TestDecodeQA_UnknownReopenID(t *testing.T) {
 	raw := `{
 		"status":"failed",
 		"summary":"bad",
-		"failures":[{"owner":"generic_agent","file":"a.go","issue":"x","acceptance_criteria":"y","reopen_id":"find-qa-1"}]
+		"failures":[{"owner":"generic_agent","file":"a.go","issue":"x","acceptance_criteria":"y","reopen_id":"find-qa-1","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}}]
 	}`
 	_, err := DecodeQA([]byte(raw), ctx)
 	if err == nil || err.Code != CodeUnknownReopenID {
@@ -107,7 +201,7 @@ func TestDecodeQA_ReopenValidatorReceivesContract(t *testing.T) {
 	raw := `{
 		"status":"failed",
 		"summary":"regression",
-		"failures":[{"owner":"generic_agent","file":"a.go","requirement":"PRD","issue":"x","acceptance_criteria":"same ac","reopen_id":"find-qa-1"}]
+		"failures":[{"owner":"generic_agent","file":"a.go","requirement":"PRD","issue":"x","acceptance_criteria":"same ac","reopen_id":"find-qa-1","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}}]
 	}`
 	report, err := DecodeQA([]byte(raw), ctx)
 	if err != nil {
@@ -118,6 +212,24 @@ func TestDecodeQA_ReopenValidatorReceivesContract(t *testing.T) {
 	}
 	if got.ReopenID != "find-qa-1" || got.File != "a.go" || got.Requirement != "PRD" || got.AcceptanceCriteria != "same ac" || got.Owner != "generic_agent" || got.SourceStage != SourceQA {
 		t.Fatalf("validator request = %+v", got)
+	}
+	if got.ReproPackage != "./internal/tui" || got.ReproTest != "TestFindHandoffRepro" {
+		t.Fatalf("validator repro = %+v", got)
+	}
+}
+
+func TestDecodeQA_MissingRepro(t *testing.T) {
+	raw := `{
+		"status":"failed",
+		"summary":"bad",
+		"failures":[{"owner":"generic_agent","file":"a.go","issue":"x","acceptance_criteria":"y"}]
+	}`
+	_, err := DecodeQA([]byte(raw), testCtx())
+	if err == nil || err.Code != CodeMissingField {
+		t.Fatalf("expected missing_field, got %v", err)
+	}
+	if !strings.Contains(err.Field, "repro") {
+		t.Fatalf("field path: %s", err.Field)
 	}
 }
 
@@ -139,7 +251,7 @@ func TestDecodeJudge_DefaultOwnerRequiresSingleImplAgent(t *testing.T) {
 		"status":"failed",
 		"summary":"gap",
 		"sdd_ambiguity":false,
-		"implementation_gaps":[{"requirement":"R1","issue":"i","acceptance_criteria":"a"}]
+		"implementation_gaps":[{"requirement":"R1","issue":"i","acceptance_criteria":"a","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}}]
 	}`
 	_, err := DecodeJudge([]byte(raw), ctx)
 	if err == nil || err.Code != CodeMissingField {
@@ -154,7 +266,7 @@ func TestDecodeJudge_DefaultOwnerSingleAgent(t *testing.T) {
 		"status":"failed",
 		"summary":"gap",
 		"sdd_ambiguity":false,
-		"implementation_gaps":[{"requirement":"R1","issue":"i","acceptance_criteria":"a"}]
+		"implementation_gaps":[{"requirement":"R1","issue":"i","acceptance_criteria":"a","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}}]
 	}`
 	report, err := DecodeJudge([]byte(raw), ctx)
 	if err != nil {
@@ -169,7 +281,7 @@ func TestDecodeBrowserUI_FailureClassOwner(t *testing.T) {
 	raw := `{
 		"status":"failed",
 		"summary":"ui fail",
-		"failures":[{"failure_class":"frontend","file":"x.tsx","issue":"i","acceptance_criteria":"a"}]
+		"failures":[{"failure_class":"frontend","file":"x.tsx","issue":"i","acceptance_criteria":"a","repro":{"package":"./internal/tui","test":"TestFindHandoffRepro","source":"package tui\n\nfunc TestFindHandoffRepro(t *testing.T) { t.Fatal(\"repro\") }\n"}}]
 	}`
 	report, err := DecodeBrowserUI([]byte(raw), testCtx())
 	if err != nil {

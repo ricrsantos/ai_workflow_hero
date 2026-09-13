@@ -151,15 +151,15 @@ agents:
             enable_fast_model: false
             thinking: na
     generic_agent:
-        harness: cursor
-        model: cursor-grok-4.5-high
-        reasoning_effort: na
+        harness: codex
+        model: gpt-5.6-luna
+        reasoning_effort: max
         enable_fast_model: false
-        thinking: na
+        thinking: off
         subagent:
-            same_of_agent: false
-            model: composer-2.5
-            reasoning_effort: na
+            same_of_agent: true
+            model: opencode-go/deepseek-v4-flash
+            reasoning_effort: max
             enable_fast_model: false
             thinking: na
     qa_agent:

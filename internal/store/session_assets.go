@@ -34,6 +34,17 @@ type SessionAsset struct {
 
 // UpsertSessionAsset persists asset metadata for a session.
 func (s *Store) UpsertSessionAsset(asset SessionAsset) error {
+	err := s.InTx(func(tx *sql.Tx) error {
+		return upsertSessionAssetTx(tx, asset)
+	})
+	if err != nil {
+		return err
+	}
+	s.log.Debug("session asset upserted", "ownership", strings.TrimSpace(asset.Ownership))
+	return nil
+}
+
+func upsertSessionAssetTx(tx *sql.Tx, asset SessionAsset) error {
 	asset.SessionID = strings.TrimSpace(asset.SessionID)
 	asset.AssetID = strings.TrimSpace(asset.AssetID)
 	if asset.SessionID == "" || asset.AssetID == "" {
@@ -50,11 +61,10 @@ func (s *Store) UpsertSessionAsset(asset SessionAsset) error {
 	if meta == "" {
 		meta = "{}"
 	}
-	err := s.InTx(func(tx *sql.Tx) error {
-		if _, err := getSessionTx(tx, asset.SessionID); err != nil {
-			return err
-		}
-		_, err := tx.Exec(`
+	if _, err := getSessionTx(tx, asset.SessionID); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`
 INSERT INTO session_assets(session_id, asset_id, ownership, path, mime, original_name, card_meta_json)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(session_id, asset_id) DO UPDATE SET
@@ -63,14 +73,11 @@ ON CONFLICT(session_id, asset_id) DO UPDATE SET
   mime = excluded.mime,
   original_name = excluded.original_name,
   card_meta_json = excluded.card_meta_json`,
-			asset.SessionID, asset.AssetID, asset.Ownership, path,
-			strings.TrimSpace(asset.Mime), strings.TrimSpace(asset.OriginalName), meta)
-		return err
-	})
+		asset.SessionID, asset.AssetID, asset.Ownership, path,
+		strings.TrimSpace(asset.Mime), strings.TrimSpace(asset.OriginalName), meta)
 	if err != nil {
 		return fmt.Errorf("upsert session asset: %w", err)
 	}
-	s.log.Debug("session asset upserted", "ownership", asset.Ownership)
 	return nil
 }
 

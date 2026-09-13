@@ -2579,6 +2579,9 @@ func TestHeroContinueRuntimeConversation(t *testing.T) {
 	if h.lastAgentName != "orchestration_agent" {
 		t.Fatalf("agent=%q", h.lastAgentName)
 	}
+	if !next.orchestrationLive {
+		t.Fatal("continue must keep the stage scheduler armed")
+	}
 }
 
 func TestHeroContinueRequiresEscalatedStage(t *testing.T) {
@@ -2621,6 +2624,39 @@ func TestHeroContinueInlineExtra(t *testing.T) {
 	next = drainConversationStream(t, next, cmd)
 	if !strings.Contains(h.lastPrompt, "hero continue --extra 3") {
 		t.Fatalf("prompt=%q", h.lastPrompt)
+	}
+}
+
+func TestHeroContinueClearsStaleHandoffAndKeepsScheduler(t *testing.T) {
+	dir := t.TempDir()
+	setupHeroApproveRuntimeFiles(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-continue.md"), []byte("# /hero-continue\n\nCONTINUE_MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nCONTINUE_AGENT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceWithEscalatedStageInDir(t, dir)
+	h := &streamingHarness{deltas: []string{"continued"}, sessionID: "continue-sess"}
+	svc.Harness = h
+
+	m := withDefaultChatModel(NewTestModel(svc))
+	m.stageHandoffLive = true
+	m.stageHandoffStage = "qa"
+	m.stageHandoffDoneKey = "qa:7"
+	m.stageProgressHoldUntilStart = true
+	next, _ := BeginHeroContinueExecuteForTest(m, 1)
+	if !next.orchestrationLive {
+		t.Fatal("continue must keep the stage scheduler armed")
+	}
+	if next.stageHandoffLive {
+		t.Fatal("continue must drop leftover stageHandoffLive")
+	}
+	if next.stageHandoffDoneKey != "" {
+		t.Fatalf("doneKey=%q want empty", next.stageHandoffDoneKey)
+	}
+	if next.stageProgressHoldUntilStart {
+		t.Fatal("continue must release the cancel hold")
 	}
 }
 

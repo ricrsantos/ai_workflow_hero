@@ -17,11 +17,15 @@ QA, Judge, Browser UI Validation, and QA End-to-End SHALL emit one JSON object. 
 - **THEN** no finding is created and the existing `/hero-back` versus `/hero-approve` decision path is used
 
 ### Requirement: Failure entries SHALL carry routing and verification fields
-Each failure/gap entry SHALL include `owner` when not derivable, `file` and/or `requirement`, non-empty `issue`, non-empty `acceptance_criteria`, optional safe `evidence` paths, and optional valid `reopen_id`. QA and QA End-to-End require a valid owner. Browser UI maps `failure_class=frontend` to `frontend_agent` and `failure_class=backend` to `backend_agent`; Visual failures are frontend. Missing visual reference PNGs SHALL warn and MUST NOT create findings. Judge implementation gaps require an explicit owner, defaulting only when exactly one Implementation agent is active; otherwise the report fails closed. An invalid or unavailable owner rejects the entire report (PRD-C15-001 §5.4, §6.2–6.4).
+Each failure/gap entry SHALL include `owner` when not derivable, `file` and/or `requirement`, non-empty `issue`, non-empty `acceptance_criteria`, optional safe `evidence` paths or commands, and optional valid `reopen_id`. Safe evidence MAY include Go recursive package patterns (`./...`, `./pkg/...`). Evidence MUST NOT contain a `..` path segment. QA and QA End-to-End require a valid owner. Browser UI maps `failure_class=frontend` to `frontend_agent` and `failure_class=backend` to `backend_agent`; Visual failures are frontend. Missing visual reference PNGs SHALL warn and MUST NOT create findings. Judge implementation gaps require an explicit owner, defaulting only when exactly one Implementation agent is active; otherwise the report fails closed. An invalid or unavailable owner rejects the entire report (PRD-C15-001 §5.4, §6.2–6.4).
 
 #### Scenario: QA entry without acceptance criteria is rejected
 - **WHEN** a QA failure omits `acceptance_criteria`
 - **THEN** the diagnostic is `missing_field` at `failures[0].acceptance_criteria` and nothing is persisted
+
+#### Scenario: Go recursive package evidence is accepted
+- **WHEN** a failure entry includes evidence `go test ./...` or `go test ./src/api/...`
+- **THEN** the report is accepted; parent-traversal rejection applies only to a `..` path segment such as `../secret.txt` or `go test ../pkg`
 
 #### Scenario: Missing visual PNG is a warning only
 - **WHEN** Browser Visual Validation lacks a reference PNG

@@ -16,7 +16,7 @@ Hero ships as a single Go CLI binary (`hero`) that bootstraps a project with com
 
 - **Stack**: Go CLI (Cobra) + `embed.FS` + Bubble Tea TUI + SQLite + embedded Cursor Runtime assets
 - **Backend**: Go single-binary CLI (`hero`) with feature-based vertical slices under `internal/`
-- **Languages**: Go
+- **Languages**: Go 1.26+
 
 ## Documentation Map
 

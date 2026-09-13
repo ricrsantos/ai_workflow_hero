@@ -20,13 +20,13 @@ func (s *Store) PredictFindingActionable(cycleID int64, in FindingInput) (bool, 
 			return false, err
 		}
 		if f.Status == FindingStatusDone && f.SourceStage == in.SourceStage && f.Owner == in.Owner &&
-			FindingContractMatches(f, in.File, in.Requirement, in.AcceptanceCriteria) {
+			FindingContractMatches(f, in.File, in.Requirement, in.AcceptanceCriteria) &&
+			FindingReproMatches(f, in.ReproPackage, in.ReproTest) {
 			return true, nil
 		}
 		return false, nil
 	}
-	fp := FindingFingerprint(cycleID, in.SourceStage, in.Owner, in.File, in.Requirement, in.AcceptanceCriteria)
-	existing, err := s.GetFindingByFingerprint(cycleID, fp)
+	existing, err := s.lookupFindingForInput(cycleID, in)
 	if errors.Is(err, ErrNotFound) {
 		return true, nil
 	}

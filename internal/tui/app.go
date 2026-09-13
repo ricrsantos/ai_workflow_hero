@@ -16,6 +16,7 @@ import (
 	codexadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	opencodeadapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/redact"
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
@@ -296,19 +297,30 @@ type model struct {
 	sessionService *conversation.SessionService
 	history        historyScreen
 
-	heroChatSessionID       string
-	heroChatSessionTitle    string
-	heroLeasedSessionID     string
-	heroLeaseNextHeartbeat  time.Time
-	heroSessionHistorical   bool
-	heroSessionRecoverBusy  bool
-	tuiOwnerID              string
-	sessionPersistBlocked   bool
-	sessionLeaseLost        bool
+	heroChatSessionID      string
+	heroChatSessionTitle   string
+	heroLeasedSessionID    string
+	heroLeaseNextHeartbeat time.Time
+	heroSessionHistorical  bool
+	heroSessionRecoverBusy bool
+	tuiOwnerID             string
+	sessionPersistBlocked  bool
+	sessionLeaseLost       bool
+	// sessionLeaseRetryID identifies a persisted session whose retry must
+	// reacquire continuation ownership before another send is allowed.
+	sessionLeaseRetryID     string
 	executeWG               *sync.WaitGroup
+	executeCancelled        bool
 	sessionPersistQueue     []store.AppendSessionEventInput
 	sessionAssetUpsertQueue []sessionAssetPersistItem
 	sessionBindingQueue     []sessionBindingPersistItem
+	sessionNativeBindQueue  []sessionNativeBindPersistItem
+	pendingLeaseReleaseID   string
+	pendingLeaseReleaseIDs  []string
+	leaseReleaseFn          func(context.Context, string, string) error
+	leaseEpoch              *leaseReleaseEpoch
+	streamPersistHeroID     string
+	testPersistDelay        time.Duration
 
 	heroSessionRecoverNativeID  string
 	heroSessionRecoverHarnessID string
@@ -382,6 +394,7 @@ func newModel(svc *cycle.Service) model {
 	}
 	m.tuiOwnerID = newTuiOwnerID()
 	m.executeWG = &sync.WaitGroup{}
+	m.leaseEpoch = newLeaseReleaseEpoch()
 	return m
 }
 
@@ -515,7 +528,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshDataMsg:
 		if msg.err != nil {
 			m = m.setStatusResult(false, "refresh", msg.err.Error())
-			slog.Error("tui refresh failed", "error", msg.err)
+			slog.Error("tui refresh failed", "error", redact.Error(msg.err))
 			return m, nil
 		}
 		hadCycle := m.hasActiveCycle()
@@ -561,7 +574,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err != nil {
 			text := msg.err.Error()
-			slog.Error("tui action failed", "error", msg.err)
+			slog.Error("tui action failed", "error", redact.Error(msg.err))
 			if label == "" {
 				label = "Error"
 			}
@@ -656,7 +669,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.propsRefreshBusy = false
 		for _, summary := range msg.summaries {
 			if summary.Err != nil {
-				slog.Debug("tui model props refresh failed", "harness", summary.HarnessID, "error", summary.Err)
+				slog.Debug("tui model props refresh failed", "harness", summary.HarnessID, "error", redact.Error(summary.Err))
 			}
 		}
 		if m.propsPendingSelect != nil {
@@ -699,11 +712,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case mediaCleanupMsg:
 		if msg.err != nil {
 			m = m.setStatusWarning("media", "session asset cleanup failed")
-			slog.Error("tui media session cleanup failed", "error", msg.err)
+			slog.Error("tui media session cleanup failed", "error", redact.Error(msg.err))
 		}
 		return m, nil
 
-	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg, heroSessionBoundMsg, sessionPersistErrMsg, chatTranscriptRestoreMsg, sessionRecoverPollTickMsg, sessionRecoverDismissedMsg, sessionRecoverAttachDoneMsg, sessionDeleteRetryResultMsg:
+	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg, heroSessionBoundMsg, sessionPersistErrMsg, sessionPersistOKMsg, sessionLeaseLostMsg, sessionLeaseReleaseResultMsg, sessionLeaseReleaseRetryMsg, chatTranscriptRestoreMsg, sessionRecoverPollTickMsg, sessionRecoverDismissedMsg, sessionRecoverAttachDoneMsg, sessionDeleteRetryResultMsg:
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)
@@ -1212,7 +1225,7 @@ func (m model) refreshCmd() tea.Cmd {
 		}
 		sessionCycle, sErr := svc.SessionCycle()
 		if sErr != nil {
-			slog.Debug("tui session cycle refresh failed", "error", sErr)
+			slog.Debug("tui session cycle refresh failed", "error", redact.Error(sErr))
 		}
 		metrics, mErr := svc.Metrics()
 		if mErr != nil {
@@ -1292,6 +1305,7 @@ func (m model) beginNewChat() (model, tea.Cmd) {
 	m = m.setStatusResult(true, "/new-chat", "New chat started with default model.")
 	cmds := []tea.Cmd{enterCmd, resetCmd}
 	if priorHeroSession != "" {
+		m.trackPendingLeaseRelease(priorHeroSession)
 		cmds = append(cmds, m.releaseHeroChatLeaseCmd(priorHeroSession))
 	}
 	return m, tea.Batch(cmds...)
@@ -1861,7 +1875,7 @@ func dispatchPromptMsg(svc *cycle.Service, label, prompt, modelSlug, mode, harne
 		Mode:       mode,
 	})
 	if err != nil {
-		slog.Error("tui command dispatch failed", "command", label, "error", err)
+		slog.Error("tui command dispatch failed", "command", label, "error", redact.Error(err))
 		return actionResultMsg{
 			title: label,
 			err:   fmt.Errorf("dispatch failed for %s; run the same command in Cursor chat", label),
@@ -1924,7 +1938,7 @@ func (m model) importCommandCmd(item paletteItem) tea.Cmd {
 	return func() tea.Msg {
 		prompt, err := cursoradapter.ReadCommandPrompt(path)
 		if err != nil {
-			slog.Error("tui import command read failed", "path", path, "error", err)
+			slog.Error("tui import command read failed", "error", redact.Error(err))
 			return actionResultMsg{err: fmt.Errorf("read command %s: %w", label, err)}
 		}
 		return dispatchPromptMsg(svc, label, prompt, modelSlug, mode, harnessID)

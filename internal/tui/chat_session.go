@@ -12,23 +12,80 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/redact"
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
+	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
 
-// sessionPersistGates serialize durable writes per Hero session so stream
-// queue drains, execute-result sync writes, and interrupt finalization cannot
-// reorder or interleave failed suffixes (find-qa-28).
-var sessionPersistGates sync.Map // map[string]*sync.Mutex
+// sessionPersistPipelines provide per-session FIFO ordering so a slow earlier
+// drain cannot commit after a later stream or final-result drain (find-qa-28).
+var sessionPersistPipelines sync.Map // map[string]*sessionPersistPipeline
 
-func sessionPersistGate(sessionID string) *sync.Mutex {
+type sessionPersistPipeline struct {
+	mu      sync.Mutex
+	queue   []sessionPersistWork
+	running bool
+}
+
+type sessionPersistWork struct {
+	fn     func() tea.Msg
+	result chan tea.Msg
+}
+
+func sessionPersistPipelineFor(sessionID string) *sessionPersistPipeline {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		sessionID = "_"
 	}
-	v, _ := sessionPersistGates.LoadOrStore(sessionID, &sync.Mutex{})
-	return v.(*sync.Mutex)
+	v, _ := sessionPersistPipelines.LoadOrStore(sessionID, &sessionPersistPipeline{})
+	return v.(*sessionPersistPipeline)
+}
+
+func (p *sessionPersistPipeline) submit(fn func() tea.Msg) tea.Cmd {
+	if p == nil {
+		return func() tea.Msg { return fn() }
+	}
+	w := sessionPersistWork{fn: fn, result: make(chan tea.Msg, 1)}
+	p.mu.Lock()
+	p.queue = append(p.queue, w)
+	if !p.running {
+		p.running = true
+		go p.loop()
+	}
+	p.mu.Unlock()
+	return func() tea.Msg {
+		return <-w.result
+	}
+}
+
+func (p *sessionPersistPipeline) loop() {
+	for {
+		p.mu.Lock()
+		if len(p.queue) == 0 {
+			p.running = false
+			p.mu.Unlock()
+			return
+		}
+		w := p.queue[0]
+		p.queue = p.queue[1:]
+		p.mu.Unlock()
+		w.result <- w.fn()
+	}
+}
+
+func (p *sessionPersistPipeline) run(fn func() error) error {
+	if p == nil {
+		return fn()
+	}
+	errCh := make(chan error, 1)
+	cmd := p.submit(func() tea.Msg {
+		errCh <- fn()
+		return nil
+	})
+	_ = cmd()
+	return <-errCh
 }
 
 type heroSessionBoundMsg struct {
@@ -38,10 +95,26 @@ type heroSessionBoundMsg struct {
 
 type sessionPersistErrMsg struct {
 	err           error
+	sessionID     string
 	events        []store.AppendSessionEventInput
 	assets        []sessionAssetPersistItem
 	bindings      []sessionBindingPersistItem
+	nativeBinds   []sessionNativeBindPersistItem
 	serialization bool
+}
+
+type sessionPersistOKMsg struct {
+	sessionID     string
+	leaseAcquired bool
+}
+
+type sessionLeaseReleaseResultMsg struct {
+	sessionID string
+	err       error
+}
+
+type sessionLeaseReleaseRetryMsg struct {
+	sessionID string
 }
 
 // sessionTurnPersistError carries retryable first-turn / attachment failure state
@@ -52,6 +125,7 @@ type sessionTurnPersistError struct {
 	events        []store.AppendSessionEventInput
 	assets        []sessionAssetPersistItem
 	bindings      []sessionBindingPersistItem
+	nativeBinds   []sessionNativeBindPersistItem
 	serialization bool
 }
 
@@ -74,6 +148,14 @@ type sessionBindingPersistItem struct {
 	stage         string
 	sessionID     string
 	harnessID     string
+}
+
+type sessionNativeBindPersistItem struct {
+	heroID    string
+	harnessID string
+	nativeID  string
+	modelSlug string
+	propsJSON string
 }
 
 type sessionAssetPersistItem struct {
@@ -130,11 +212,57 @@ func (m model) heroChatSessionActive() bool {
 	return m.sessionService != nil && strings.TrimSpace(m.heroChatSessionID) != ""
 }
 
+func (m *model) heroSessionIDForExecute(executeID string) string {
+	executeID = strings.TrimSpace(executeID)
+	if executeID != "" {
+		if ex, ok := m.executes[executeID]; ok {
+			if id := strings.TrimSpace(ex.HeroSessionID); id != "" {
+				return id
+			}
+		}
+	}
+	return strings.TrimSpace(m.heroChatSessionID)
+}
+
+func (m model) persistTargetHeroID() string {
+	if id := strings.TrimSpace(m.streamPersistHeroID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(m.heroChatSessionID)
+}
+
+func routeSessionPersistPayload(heroID string, events []store.AppendSessionEventInput, assets []sessionAssetPersistItem) {
+	heroID = strings.TrimSpace(heroID)
+	if heroID == "" {
+		return
+	}
+	for i := range events {
+		events[i].SessionID = heroID
+		events[i].BoundSessionID = heroID
+	}
+	for i := range assets {
+		assets[i].sessionID = heroID
+	}
+}
+
 func (m *model) queueSessionPersist(in store.AppendSessionEventInput) {
+	m.queueSessionPersistOn("", in)
+}
+
+func (m *model) queueSessionPersistOn(heroID string, in store.AppendSessionEventInput) {
 	if m.sessionService == nil {
 		return
 	}
-	heroID := strings.TrimSpace(m.heroChatSessionID)
+	heroID = strings.TrimSpace(heroID)
+	if heroID == "" {
+		heroID = strings.TrimSpace(in.SessionID)
+	}
+	if heroID == "" {
+		heroID = strings.TrimSpace(in.BoundSessionID)
+	}
+	if heroID == "" {
+		heroID = strings.TrimSpace(m.heroChatSessionID)
+	}
 	if heroID == "" {
 		return
 	}
@@ -171,107 +299,415 @@ func (m *model) queueSessionBindingPersist(orchestration bool, stage, sessionID,
 	})
 }
 
+func (m *model) queueSessionNativeBindPersist(heroID, harnessID, nativeID, modelSlug string, props map[string]string) {
+	heroID = strings.TrimSpace(heroID)
+	nativeID = strings.TrimSpace(nativeID)
+	if m.sessionService == nil || heroID == "" || nativeID == "" {
+		return
+	}
+	m.sessionNativeBindQueue = append(m.sessionNativeBindQueue, sessionNativeBindPersistItem{
+		heroID:    heroID,
+		harnessID: strings.TrimSpace(harnessID),
+		nativeID:  nativeID,
+		modelSlug: strings.TrimSpace(modelSlug),
+		propsJSON: marshalChatSessionProps(props),
+	})
+}
+
 func (m model) drainSessionPersistCmd() (model, tea.Cmd) {
 	hasEvents := len(m.sessionPersistQueue) > 0
 	hasAssets := len(m.sessionAssetUpsertQueue) > 0
 	hasBindings := len(m.sessionBindingQueue) > 0
-	if !hasEvents && !hasAssets && !hasBindings {
+	hasNative := len(m.sessionNativeBindQueue) > 0
+	if !hasEvents && !hasAssets && !hasBindings && !hasNative {
 		return m, nil
 	}
-	if (hasEvents || hasAssets) && m.sessionService == nil {
+	if (hasEvents || hasAssets || hasNative) && m.sessionService == nil {
 		return m, nil
 	}
-	if hasBindings && m.svc == nil && !hasEvents && !hasAssets {
+	if hasBindings && m.svc == nil && !hasEvents && !hasAssets && !hasNative {
 		return m, nil
 	}
 	eventBatch := append([]store.AppendSessionEventInput(nil), m.sessionPersistQueue...)
 	assetBatch := append([]sessionAssetPersistItem(nil), m.sessionAssetUpsertQueue...)
 	bindingBatch := append([]sessionBindingPersistItem(nil), m.sessionBindingQueue...)
+	nativeBatch := append([]sessionNativeBindPersistItem(nil), m.sessionNativeBindQueue...)
+	leaseRetryID := strings.TrimSpace(m.sessionLeaseRetryID)
+	leaseRetryOwner := strings.TrimSpace(m.tuiOwnerID)
 	m.sessionPersistQueue = nil
 	m.sessionAssetUpsertQueue = nil
 	m.sessionBindingQueue = nil
+	m.sessionNativeBindQueue = nil
 	svc := m.sessionService
 	cycleSvc := m.svc
-	return m, func() tea.Msg {
-		heroKey := ""
-		if len(eventBatch) > 0 {
-			heroKey = strings.TrimSpace(eventBatch[0].SessionID)
-			if heroKey == "" {
-				heroKey = strings.TrimSpace(eventBatch[0].BoundSessionID)
+	heroKey := persistBatchSessionID(eventBatch, assetBatch, nativeBatch)
+	pipe := sessionPersistPipelineFor(heroKey)
+	delay := m.testPersistDelay
+	return m, pipe.submit(func() tea.Msg {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		msg := persistSessionSuffix(context.Background(), svc, cycleSvc, eventBatch, assetBatch, bindingBatch, nativeBatch)
+		if leaseRetryID == "" {
+			return msg
+		}
+		if errMsg, ok := msg.(sessionPersistErrMsg); ok {
+			if strings.TrimSpace(errMsg.sessionID) == "" {
+				errMsg.sessionID = leaseRetryID
 			}
+			return errMsg
 		}
-		if heroKey == "" && len(assetBatch) > 0 {
-			heroKey = strings.TrimSpace(assetBatch[0].sessionID)
-		}
-		gate := sessionPersistGate(heroKey)
-		gate.Lock()
-		defer gate.Unlock()
-		fail := func(err error, eventIdx, assetIdx, bindingIdx int, serialization bool) tea.Msg {
+		if svc == nil {
 			return sessionPersistErrMsg{
-				err:           err,
-				events:        append([]store.AppendSessionEventInput(nil), eventBatch[eventIdx:]...),
-				assets:        append([]sessionAssetPersistItem(nil), assetBatch[assetIdx:]...),
-				bindings:      append([]sessionBindingPersistItem(nil), bindingBatch[bindingIdx:]...),
-				serialization: serialization,
+				err:         sessionPersistenceError(fmt.Errorf("session service is required to reacquire lease")),
+				sessionID:   leaseRetryID,
+				events:      eventBatch,
+				assets:      assetBatch,
+				bindings:    bindingBatch,
+				nativeBinds: nativeBatch,
 			}
 		}
-		for i, in := range eventBatch {
-			if svc == nil {
-				return fail(fmt.Errorf("session service unavailable"), i, 0, 0, false)
-			}
-			if _, err := svc.AppendEvent(context.Background(), in); err != nil {
-				slog.Error("tui session event persist failed", "event_type", in.EventType)
-				return fail(err, i, 0, 0, false)
-			}
-		}
-		for i, item := range assetBatch {
-			if svc == nil || svc.Store == nil {
-				return fail(fmt.Errorf("session store unavailable"), len(eventBatch), i, 0, false)
-			}
-			heroID := strings.TrimSpace(item.sessionID)
-			if heroID == "" {
-				continue
-			}
-			asset := item.asset
-			cardMeta, err := json.Marshal(asset)
-			if err != nil {
-				slog.Error("tui session asset card meta marshal failed")
-				return fail(fmt.Errorf("asset card serialization failed: %w", err), len(eventBatch), i, 0, true)
-			}
-			if err := svc.Store.UpsertSessionAsset(store.SessionAsset{
-				SessionID:    heroID,
-				AssetID:      asset.ContentHash,
-				Ownership:    store.AssetOwnershipManagedCopy,
-				Path:         asset.Path,
-				Mime:         asset.MIMEType,
-				OriginalName: asset.Name,
-				CardMetaJSON: string(cardMeta),
-			}); err != nil {
-				slog.Error("tui session asset persist failed")
-				return fail(err, len(eventBatch), i, 0, false)
+		if _, err := svc.AcquireLease(context.Background(), leaseRetryID, leaseRetryOwner); err != nil {
+			slog.Error("tui session lease retry failed", "error", redact.Error(err))
+			return sessionPersistErrMsg{
+				err:         sessionPersistenceError(err),
+				sessionID:   leaseRetryID,
+				events:      eventBatch,
+				assets:      assetBatch,
+				bindings:    bindingBatch,
+				nativeBinds: nativeBatch,
 			}
 		}
-		for i, item := range bindingBatch {
-			if cycleSvc == nil {
-				continue
-			}
-			if item.orchestration {
-				if err := cycleSvc.SetOrchestrationSession(item.sessionID, item.harnessID); err != nil {
-					slog.Error("tui persist orchestration session failed")
-					return fail(err, len(eventBatch), len(assetBatch), i, false)
-				}
-				continue
-			}
-			if err := cycleSvc.SetStageSessionBinding(item.stage, item.harnessID, item.sessionID); err != nil {
-				slog.Error("tui persist stage session binding failed")
-				return fail(err, len(eventBatch), len(assetBatch), i, false)
-			}
+		return sessionPersistOKMsg{sessionID: leaseRetryID, leaseAcquired: true}
+	})
+}
+
+func persistBatchSessionID(events []store.AppendSessionEventInput, assets []sessionAssetPersistItem, native []sessionNativeBindPersistItem) string {
+	if len(events) > 0 {
+		heroKey := strings.TrimSpace(events[0].SessionID)
+		if heroKey == "" {
+			heroKey = strings.TrimSpace(events[0].BoundSessionID)
 		}
-		return nil
+		if heroKey != "" {
+			return heroKey
+		}
 	}
+	if len(assets) > 0 {
+		if heroKey := strings.TrimSpace(assets[0].sessionID); heroKey != "" {
+			return heroKey
+		}
+	}
+	if len(native) > 0 {
+		return strings.TrimSpace(native[0].heroID)
+	}
+	return ""
+}
+
+func persistBatchSessionIDWithBindings(
+	events []store.AppendSessionEventInput,
+	assets []sessionAssetPersistItem,
+	bindings []sessionBindingPersistItem,
+	native []sessionNativeBindPersistItem,
+) string {
+	if id := persistBatchSessionID(events, assets, native); id != "" {
+		return id
+	}
+	if len(bindings) > 0 {
+		return strings.TrimSpace(bindings[0].sessionID)
+	}
+	return ""
+}
+
+func persistSessionSuffix(
+	ctx context.Context,
+	svc *conversation.SessionService,
+	cycleSvc *cycle.Service,
+	eventBatch []store.AppendSessionEventInput,
+	assetBatch []sessionAssetPersistItem,
+	bindingBatch []sessionBindingPersistItem,
+	nativeBatch []sessionNativeBindPersistItem,
+) tea.Msg {
+	fail := func(err error, serialization bool, events []store.AppendSessionEventInput, assets []sessionAssetPersistItem, bindings []sessionBindingPersistItem, natives []sessionNativeBindPersistItem) tea.Msg {
+		return sessionPersistErrMsg{
+			err:           err,
+			sessionID:     persistBatchSessionIDWithBindings(events, assets, bindings, natives),
+			events:        events,
+			assets:        assets,
+			bindings:      bindings,
+			nativeBinds:   natives,
+			serialization: serialization,
+		}
+	}
+	if _, err := storeAssetsFromPersistItems(assetBatch); err != nil {
+		slog.Error("tui session asset card meta marshal failed")
+		return fail(fmt.Errorf("asset card serialization failed: %w", err), true, eventBatch, assetBatch, bindingBatch, nativeBatch)
+	}
+	if svc != nil {
+		groups := groupPersistSuffix(eventBatch, assetBatch, nativeBatch)
+		for i, group := range groups {
+			var bind *store.NativeSessionBind
+			if group.bind != nil {
+				bind = &store.NativeSessionBind{
+					SessionID:           group.bind.heroID,
+					HarnessID:           group.bind.harnessID,
+					NativeSessionID:     group.bind.nativeID,
+					Model:               group.bind.modelSlug,
+					ModelPropertiesJSON: group.bind.propsJSON,
+				}
+			}
+			groupAssets, convErr := storeAssetsFromPersistItems(group.assets)
+			if convErr != nil {
+				slog.Error("tui session asset card meta marshal failed")
+				return fail(fmt.Errorf("asset card serialization failed: %w", convErr), true, remainingPersistEvents(groups, i), remainingPersistAssets(groups, i), bindingBatch, remainingPersistNatives(groups, i))
+			}
+			if len(group.events) == 0 && len(groupAssets) == 0 && bind == nil {
+				continue
+			}
+			if err := svc.PersistTranscriptSuffix(ctx, group.events, groupAssets, bind); err != nil {
+				if bind != nil {
+					slog.Error("tui session native bind persist failed")
+				} else {
+					slog.Error("tui session transcript suffix persist failed")
+				}
+				return fail(err, false, remainingPersistEvents(groups, i), remainingPersistAssets(groups, i), bindingBatch, remainingPersistNatives(groups, i))
+			}
+		}
+	}
+	for i, item := range bindingBatch {
+		if cycleSvc == nil {
+			continue
+		}
+		if item.orchestration {
+			if err := cycleSvc.SetOrchestrationSession(item.sessionID, item.harnessID); err != nil {
+				slog.Error("tui persist orchestration session failed")
+				return fail(err, false, nil, nil, append([]sessionBindingPersistItem(nil), bindingBatch[i:]...), nil)
+			}
+			continue
+		}
+		if err := cycleSvc.SetStageSessionBinding(item.stage, item.harnessID, item.sessionID); err != nil {
+			slog.Error("tui persist stage session binding failed")
+			return fail(err, false, nil, nil, append([]sessionBindingPersistItem(nil), bindingBatch[i:]...), nil)
+		}
+	}
+	return sessionPersistOKMsg{}
+}
+
+type persistSuffixGroup struct {
+	sessionID string
+	events    []store.AppendSessionEventInput
+	assets    []sessionAssetPersistItem
+	bind      *sessionNativeBindPersistItem
+}
+
+func persistEventSessionID(ev store.AppendSessionEventInput) string {
+	id := strings.TrimSpace(ev.SessionID)
+	if id == "" {
+		id = strings.TrimSpace(ev.BoundSessionID)
+	}
+	return id
+}
+
+func groupPersistSuffix(events []store.AppendSessionEventInput, assets []sessionAssetPersistItem, natives []sessionNativeBindPersistItem) []persistSuffixGroup {
+	usedEvents := make([]bool, len(events))
+	usedAssets := make([]bool, len(assets))
+	takeFor := func(sessionID string) ([]store.AppendSessionEventInput, []sessionAssetPersistItem) {
+		sessionID = strings.TrimSpace(sessionID)
+		var evs []store.AppendSessionEventInput
+		var as []sessionAssetPersistItem
+		if sessionID == "" {
+			return evs, as
+		}
+		for i, ev := range events {
+			if usedEvents[i] || persistEventSessionID(ev) != sessionID {
+				continue
+			}
+			usedEvents[i] = true
+			evs = append(evs, ev)
+		}
+		for i, asset := range assets {
+			if usedAssets[i] || strings.TrimSpace(asset.sessionID) != sessionID {
+				continue
+			}
+			usedAssets[i] = true
+			as = append(as, asset)
+		}
+		return evs, as
+	}
+
+	groups := make([]persistSuffixGroup, 0, len(natives)+1)
+	for i := range natives {
+		item := natives[i]
+		sid := strings.TrimSpace(item.heroID)
+		evs, as := takeFor(sid)
+		bind := item
+		groups = append(groups, persistSuffixGroup{sessionID: sid, events: evs, assets: as, bind: &bind})
+	}
+
+	leftoverIdx := map[string]int{}
+	for i, ev := range events {
+		if usedEvents[i] {
+			continue
+		}
+		sid := persistEventSessionID(ev)
+		if idx, ok := leftoverIdx[sid]; ok {
+			groups[idx].events = append(groups[idx].events, ev)
+			continue
+		}
+		leftoverIdx[sid] = len(groups)
+		groups = append(groups, persistSuffixGroup{sessionID: sid, events: []store.AppendSessionEventInput{ev}})
+	}
+	for i, asset := range assets {
+		if usedAssets[i] {
+			continue
+		}
+		sid := strings.TrimSpace(asset.sessionID)
+		if idx, ok := leftoverIdx[sid]; ok {
+			groups[idx].assets = append(groups[idx].assets, asset)
+			continue
+		}
+		leftoverIdx[sid] = len(groups)
+		groups = append(groups, persistSuffixGroup{sessionID: sid, assets: []sessionAssetPersistItem{asset}})
+	}
+	return groups
+}
+
+func remainingPersistEvents(groups []persistSuffixGroup, from int) []store.AppendSessionEventInput {
+	var out []store.AppendSessionEventInput
+	for _, group := range groups[from:] {
+		out = append(out, group.events...)
+	}
+	return out
+}
+
+func remainingPersistAssets(groups []persistSuffixGroup, from int) []sessionAssetPersistItem {
+	var out []sessionAssetPersistItem
+	for _, group := range groups[from:] {
+		out = append(out, group.assets...)
+	}
+	return out
+}
+
+func remainingPersistNatives(groups []persistSuffixGroup, from int) []sessionNativeBindPersistItem {
+	var out []sessionNativeBindPersistItem
+	for _, group := range groups[from:] {
+		if group.bind != nil {
+			out = append(out, *group.bind)
+		}
+	}
+	return out
+}
+
+func storeAssetsFromPersistItems(items []sessionAssetPersistItem) ([]store.SessionAsset, error) {
+	out := make([]store.SessionAsset, 0, len(items))
+	for _, item := range items {
+		heroID := strings.TrimSpace(item.sessionID)
+		asset := item.asset
+		cardMeta, err := json.Marshal(asset)
+		if err != nil {
+			return nil, err
+		}
+		assetID := strings.TrimSpace(asset.ContentHash)
+		if assetID == "" {
+			assetID = strings.TrimSpace(asset.ID)
+		}
+		if assetID == "" {
+			continue
+		}
+		out = append(out, store.SessionAsset{
+			SessionID:    heroID,
+			AssetID:      assetID,
+			Ownership:    store.AssetOwnershipManagedCopy,
+			Path:         asset.Path,
+			Mime:         asset.MIMEType,
+			OriginalName: asset.Name,
+			CardMetaJSON: string(cardMeta),
+		})
+	}
+	return out, nil
 }
 
 func (m model) releaseHeroChatLeaseCmd(sessionID string) tea.Cmd {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" || (m.sessionService == nil && m.leaseReleaseFn == nil) {
+		return nil
+	}
+	owner := strings.TrimSpace(m.tuiOwnerID)
+	svc := m.sessionService
+	releaseFn := m.leaseReleaseFn
+	epoch := m.leaseEpoch
+	captured := uint64(0)
+	if epoch != nil {
+		captured = epoch.current(sessionID)
+	}
+	return func() tea.Msg {
+		var err error
+		if releaseFn != nil {
+			err = releaseFn(context.Background(), sessionID, owner)
+		} else if svc != nil {
+			err = svc.ReleaseLease(context.Background(), sessionID, owner)
+		}
+		if err != nil {
+			slog.Error("tui session lease release failed", "error", redact.Error(err))
+			return sessionLeaseReleaseResultMsg{sessionID: sessionID, err: err}
+		}
+		if epoch != nil && epoch.current(sessionID) != captured && svc != nil {
+			if _, acquireErr := svc.AcquireLease(context.Background(), sessionID, owner); acquireErr != nil {
+				slog.Error("tui stale lease cleanup restore failed", "error", redact.Error(acquireErr))
+				return sessionLeaseReleaseResultMsg{sessionID: sessionID, err: acquireErr}
+			}
+			slog.Info("tui restored lease after stale cleanup")
+			return sessionLeaseReleaseResultMsg{sessionID: sessionID}
+		}
+		slog.Info("tui session lease released")
+		return sessionLeaseReleaseResultMsg{sessionID: sessionID}
+	}
+}
+
+const sessionLeaseReleaseRetryInterval = 500 * time.Millisecond
+
+type leaseReleaseEpoch struct {
+	mu  sync.Mutex
+	gen map[string]uint64
+}
+
+func newLeaseReleaseEpoch() *leaseReleaseEpoch {
+	return &leaseReleaseEpoch{gen: make(map[string]uint64)}
+}
+
+func (e *leaseReleaseEpoch) bump(sessionID string) {
+	sessionID = strings.TrimSpace(sessionID)
+	if e == nil || sessionID == "" {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.gen == nil {
+		e.gen = make(map[string]uint64)
+	}
+	e.gen[sessionID]++
+}
+
+func (e *leaseReleaseEpoch) current(sessionID string) uint64 {
+	if e == nil {
+		return 0
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.gen == nil {
+		return 0
+	}
+	return e.gen[strings.TrimSpace(sessionID)]
+}
+
+func (m model) heroLeaseOwnedByCurrentChat(sessionID string) bool {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return false
+	}
+	return strings.TrimSpace(m.heroLeasedSessionID) == sessionID || strings.TrimSpace(m.heroChatSessionID) == sessionID
+}
+
+func (m model) restoreHeroLeaseAfterStaleCleanup(sessionID string) tea.Cmd {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" || m.sessionService == nil {
 		return nil
@@ -279,11 +715,95 @@ func (m model) releaseHeroChatLeaseCmd(sessionID string) tea.Cmd {
 	owner := strings.TrimSpace(m.tuiOwnerID)
 	svc := m.sessionService
 	return func() tea.Msg {
-		if err := svc.ReleaseLease(context.Background(), sessionID, owner); err != nil {
-			slog.Debug("tui session lease release failed")
+		if _, err := svc.AcquireLease(context.Background(), sessionID, owner); err != nil {
+			slog.Error("tui stale lease cleanup restore failed", "error", redact.Error(err))
+			return sessionLeaseReleaseResultMsg{sessionID: sessionID, err: err}
 		}
+		slog.Info("tui restored lease after stale cleanup")
 		return nil
 	}
+}
+
+func (m *model) bumpLeaseReleaseEpoch(sessionID string) {
+	if m.leaseEpoch == nil {
+		m.leaseEpoch = newLeaseReleaseEpoch()
+	}
+	m.leaseEpoch.bump(sessionID)
+}
+
+func (m model) scheduleLeaseReleaseRetry(sessionID string) tea.Cmd {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil
+	}
+	return tea.Tick(sessionLeaseReleaseRetryInterval, func(time.Time) tea.Msg {
+		return sessionLeaseReleaseRetryMsg{sessionID: sessionID}
+	})
+}
+
+func (m *model) trackPendingLeaseRelease(sessionID string) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return
+	}
+	m.pendingLeaseReleaseID = sessionID
+	for _, id := range m.pendingLeaseReleaseIDs {
+		if id == sessionID {
+			return
+		}
+	}
+	m.pendingLeaseReleaseIDs = append(m.pendingLeaseReleaseIDs, sessionID)
+}
+
+func (m *model) clearPendingLeaseRelease(sessionID string) {
+	sessionID = strings.TrimSpace(sessionID)
+	out := m.pendingLeaseReleaseIDs[:0]
+	for _, id := range m.pendingLeaseReleaseIDs {
+		if id != sessionID {
+			out = append(out, id)
+		}
+	}
+	m.pendingLeaseReleaseIDs = out
+	if strings.TrimSpace(m.pendingLeaseReleaseID) == sessionID {
+		m.pendingLeaseReleaseID = ""
+		if len(m.pendingLeaseReleaseIDs) > 0 {
+			m.pendingLeaseReleaseID = m.pendingLeaseReleaseIDs[0]
+		}
+	}
+}
+
+func (m model) leaseReleasePending(sessionID string) bool {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return false
+	}
+	if strings.TrimSpace(m.pendingLeaseReleaseID) == sessionID {
+		return true
+	}
+	for _, id := range m.pendingLeaseReleaseIDs {
+		if id == sessionID {
+			return true
+		}
+	}
+	return false
+}
+
+func (m model) scheduleLeaseReleaseCleanups(sessionIDs []string) (model, tea.Cmd) {
+	var cmds []tea.Cmd
+	for _, id := range sessionIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		m.trackPendingLeaseRelease(id)
+		if cmd := m.releaseHeroChatLeaseCmd(id); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if len(cmds) == 0 {
+		return m, nil
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func marshalChatSessionProps(props map[string]string) string {
@@ -388,76 +908,76 @@ func attachmentAsset(att harness.Attachment) harness.Asset {
 	return asset
 }
 
-func attachmentPersistItems(heroID string, attachments []harness.Attachment) ([]sessionAssetPersistItem, error) {
+func attachmentPersistBatch(heroID string, attachments []harness.Attachment) ([]store.AppendSessionEventInput, []sessionAssetPersistItem, error) {
 	heroID = strings.TrimSpace(heroID)
-	out := make([]sessionAssetPersistItem, 0, len(attachments))
-	for _, att := range attachments {
-		asset := attachmentAsset(att)
-		if _, err := json.Marshal(asset); err != nil {
-			return nil, err
-		}
-		out = append(out, sessionAssetPersistItem{sessionID: heroID, asset: asset})
-	}
-	return out, nil
-}
-
-func (m model) releaseLeaseQuietly(ctx context.Context, heroID string) {
-	heroID = strings.TrimSpace(heroID)
-	if m.sessionService == nil || heroID == "" {
-		return
-	}
-	owner := strings.TrimSpace(m.tuiOwnerID)
-	if err := m.sessionService.ReleaseLease(ctx, heroID, owner); err != nil {
-		slog.Error("tui session lease release after persist failure failed")
-	}
-}
-func (m model) persistAcceptedAttachments(ctx context.Context, heroID string, attachments []harness.Attachment) error {
-	heroID = strings.TrimSpace(heroID)
-	if m.sessionService == nil || heroID == "" || len(attachments) == 0 {
-		return nil
-	}
-	gate := sessionPersistGate(heroID)
-	gate.Lock()
-	defer gate.Unlock()
+	events := make([]store.AppendSessionEventInput, 0, len(attachments))
+	assets := make([]sessionAssetPersistItem, 0, len(attachments))
 	for _, att := range attachments {
 		asset := attachmentAsset(att)
 		raw, err := json.Marshal(asset)
 		if err != nil {
-			return sessionPersistenceError(err)
-		}
-		if _, err := m.sessionService.AppendEvent(ctx, store.AppendSessionEventInput{
-			BoundSessionID: heroID,
-			SessionID:      heroID,
-			EventType:      store.SessionEventAttachment,
-			Origin:         store.SessionOriginLocal,
-			PayloadJSON:    string(raw),
-		}); err != nil {
-			return sessionPersistenceError(err)
-		}
-		cardMeta, err := json.Marshal(asset)
-		if err != nil {
-			cardMeta = []byte("{}")
+			return nil, nil, err
 		}
 		assetID := strings.TrimSpace(asset.ContentHash)
 		if assetID == "" {
 			assetID = strings.TrimSpace(asset.ID)
 		}
-		if assetID == "" {
-			continue
-		}
-		if err := m.sessionService.Store.UpsertSessionAsset(store.SessionAsset{
-			SessionID:    heroID,
-			AssetID:      assetID,
-			Ownership:    store.AssetOwnershipManagedCopy,
-			Path:         asset.Path,
-			Mime:         asset.MIMEType,
-			OriginalName: asset.Name,
-			CardMetaJSON: string(cardMeta),
-		}); err != nil {
-			return sessionPersistenceError(err)
-		}
+		events = append(events, store.AppendSessionEventInput{
+			BoundSessionID:  heroID,
+			SessionID:       heroID,
+			EventType:       store.SessionEventAttachment,
+			Origin:          store.SessionOriginLocal,
+			PayloadJSON:     string(raw),
+			ProviderEventID: "tui:attachment:" + assetID,
+		})
+		assets = append(assets, sessionAssetPersistItem{sessionID: heroID, asset: asset})
+	}
+	return events, assets, nil
+}
+
+func (m model) persistAcceptedAttachments(ctx context.Context, heroID string, attachments []harness.Attachment) error {
+	heroID = strings.TrimSpace(heroID)
+	if m.sessionService == nil || heroID == "" || len(attachments) == 0 {
+		return nil
+	}
+	events, items, err := attachmentPersistBatch(heroID, attachments)
+	if err != nil {
+		return sessionPersistenceError(err)
+	}
+	storeAssets, err := storeAssetsFromPersistItems(items)
+	if err != nil {
+		return sessionPersistenceError(err)
+	}
+	pipe := sessionPersistPipelineFor(heroID)
+	if err := pipe.run(func() error {
+		return m.sessionService.PersistTranscriptSuffix(ctx, events, storeAssets, nil)
+	}); err != nil {
+		return &sessionTurnPersistError{err: sessionPersistenceError(err), sessionID: heroID, events: events, assets: items}
 	}
 	return nil
+}
+
+func firstTurnUserEvent(heroID string, userLabel string, labelRole convRole, turn conversation.FirstTurnContent, providerEventID string) (store.AppendSessionEventInput, error) {
+	payload, err := buildUserPersistPayload(userLabel, labelRole, turn.AttachmentCount)
+	if err != nil {
+		return store.AppendSessionEventInput{}, err
+	}
+	origin := store.SessionOriginLocal
+	addr := ""
+	if turn.Origin == conversation.OriginTelegram {
+		origin = store.SessionOriginTelegram
+		addr = turn.OriginAddress
+	}
+	heroID = strings.TrimSpace(heroID)
+	return store.AppendSessionEventInput{
+		BoundSessionID:  heroID,
+		SessionID:       heroID,
+		EventType:       store.SessionEventUser,
+		Origin:          origin,
+		OriginAddress:   addr,
+		PayloadJSON:     payload,
+		ProviderEventID: strings.TrimSpace(providerEventID),
+	}, nil
 }
 
 func (m model) persistUserTurnBeforeExecute(
@@ -471,66 +991,60 @@ func (m model) persistUserTurnBeforeExecute(
 	if m.sessionService == nil {
 		return strings.TrimSpace(m.heroChatSessionID), nil
 	}
+	persistCtx := context.WithoutCancel(ctx)
 	turn := m.chatFirstTurnContent(userLabel, labelRole, ex)
 	if !conversation.HasAcceptedTurn(turn) {
 		return strings.TrimSpace(m.heroChatSessionID), nil
 	}
 	heroID := strings.TrimSpace(m.heroChatSessionID)
 	meta := m.chatSessionCreateMeta(ex, pairHarness, pairModel, props)
+	if meta.Title == "" {
+		imageOnly := turn.AttachmentCount > 0 && strings.TrimSpace(turn.Text) == "" && strings.TrimSpace(turn.StageAgentPrompt) == ""
+		meta.Title = conversation.TitleFreeChat(turn.Text, imageOnly)
+	}
+	providerID := ""
+	if heroID == "" {
+		providerID = "tui:first-user"
+	}
+	userEvent, err := firstTurnUserEvent(heroID, userLabel, labelRole, turn, providerID)
+	if err != nil {
+		return "", sessionPersistenceError(err)
+	}
+	attachEvents, attachItems, err := attachmentPersistBatch(heroID, ex.Attachments)
+	if err != nil {
+		return "", &sessionTurnPersistError{err: sessionPersistenceError(err), sessionID: heroID, serialization: true}
+	}
+	storeAssets, err := storeAssetsFromPersistItems(attachItems)
+	if err != nil {
+		return "", &sessionTurnPersistError{err: sessionPersistenceError(err), sessionID: heroID, serialization: true, events: append([]store.AppendSessionEventInput{userEvent}, attachEvents...), assets: attachItems}
+	}
+	events := append([]store.AppendSessionEventInput{userEvent}, attachEvents...)
 	if heroID == "" {
 		if provisional := strings.TrimSpace(m.mediaSessionID); provisional != "" {
 			meta.ID = provisional
 		}
-		res, err := m.sessionService.EnsureFirstTurn(ctx, "", meta, turn)
+		sess, err := m.sessionService.CreateSessionWithTranscript(persistCtx, meta, events, storeAssets)
 		if err != nil {
-			return "", sessionPersistenceError(err)
+			return "", &sessionTurnPersistError{err: sessionPersistenceError(err), events: events, assets: attachItems}
 		}
-		heroID = strings.TrimSpace(res.SessionID)
+		heroID = strings.TrimSpace(sess.ID)
 		if heroID == "" {
 			return "", nil
 		}
-		owner := strings.TrimSpace(m.tuiOwnerID)
-		if _, err := m.sessionService.AcquireLease(ctx, heroID, owner); err != nil {
-			return "", sessionPersistenceError(err)
-		}
+		routeSessionPersistPayload(heroID, events, attachItems)
 		slog.Info("tui hero chat session created")
-		if err := m.persistAcceptedAttachments(ctx, heroID, ex.Attachments); err != nil {
-			assets, serErr := attachmentPersistItems(heroID, ex.Attachments)
-			m.releaseLeaseQuietly(ctx, heroID)
-			if serErr != nil {
-				return "", &sessionTurnPersistError{err: sessionPersistenceError(serErr), sessionID: heroID, assets: assets, serialization: true}
-			}
-			return "", &sessionTurnPersistError{err: err, sessionID: heroID, assets: assets}
+		owner := strings.TrimSpace(m.tuiOwnerID)
+		if _, err := m.sessionService.AcquireLease(persistCtx, heroID, owner); err != nil {
+			slog.Error("tui first-turn lease acquisition failed", "error", redact.Error(err))
+			return "", &sessionTurnPersistError{err: sessionPersistenceError(err), sessionID: heroID, events: events, assets: attachItems}
 		}
 		return heroID, nil
 	}
-	payload, err := buildUserPersistPayload(userLabel, labelRole, turn.AttachmentCount)
-	if err != nil {
-		return "", sessionPersistenceError(err)
-	}
-	origin := store.SessionOriginLocal
-	addr := ""
-	if turn.Origin == conversation.OriginTelegram {
-		origin = store.SessionOriginTelegram
-		addr = turn.OriginAddress
-	}
-	_, err = m.sessionService.AppendEvent(ctx, store.AppendSessionEventInput{
-		BoundSessionID: heroID,
-		SessionID:      heroID,
-		EventType:      store.SessionEventUser,
-		Origin:         origin,
-		OriginAddress:  addr,
-		PayloadJSON:    payload,
-	})
-	if err != nil {
-		return "", sessionPersistenceError(err)
-	}
-	if err := m.persistAcceptedAttachments(ctx, heroID, ex.Attachments); err != nil {
-		assets, serErr := attachmentPersistItems(heroID, ex.Attachments)
-		if serErr != nil {
-			return "", &sessionTurnPersistError{err: sessionPersistenceError(serErr), sessionID: heroID, assets: assets, serialization: true}
-		}
-		return "", &sessionTurnPersistError{err: err, sessionID: heroID, assets: assets}
+	pipe := sessionPersistPipelineFor(heroID)
+	if err := pipe.run(func() error {
+		return m.sessionService.PersistTranscriptSuffix(persistCtx, events, storeAssets, nil)
+	}); err != nil {
+		return "", &sessionTurnPersistError{err: sessionPersistenceError(err), sessionID: heroID, events: events, assets: attachItems}
 	}
 	return heroID, nil
 }
@@ -553,6 +1067,10 @@ func buildUserPersistPayload(userLabel string, labelRole convRole, attachmentCou
 }
 
 func (m *model) queuePersistForMessage(msg convMessage) error {
+	return m.queuePersistForMessageOn("", msg)
+}
+
+func (m *model) queuePersistForMessageOn(heroID string, msg convMessage) error {
 	eventType, ok := sessionEventTypeForRole(msg.role)
 	if !ok {
 		return nil
@@ -562,13 +1080,36 @@ func (m *model) queuePersistForMessage(msg convMessage) error {
 		return err
 	}
 	origin, addr := sessionOriginFromConv(msg.origin)
-	m.queueSessionPersist(store.AppendSessionEventInput{
-		EventType:     eventType,
-		Origin:        origin,
-		OriginAddress: addr,
-		PayloadJSON:   payload,
-	})
+	in := store.AppendSessionEventInput{
+		EventType:       eventType,
+		Origin:          origin,
+		OriginAddress:   addr,
+		PayloadJSON:     payload,
+		ProviderEventID: strings.TrimSpace(msg.persistProviderID),
+		ReplaceExisting: strings.TrimSpace(msg.persistProviderID) != "",
+	}
+	m.queueSessionPersistOn(heroID, in)
 	return nil
+}
+
+func (m *model) queuePersistTranscriptIndex(heroID, executeID string, idx int) error {
+	if idx < 0 || idx >= len(m.transcript) {
+		return nil
+	}
+	if id := strings.TrimSpace(m.transcript[idx].persistProviderID); id == "" {
+		key := strings.TrimSpace(executeID)
+		if key == "" {
+			key = strings.TrimSpace(heroID)
+		}
+		if key == "" {
+			key = strings.TrimSpace(m.heroChatSessionID)
+		}
+		if key == "" {
+			key = "local"
+		}
+		m.transcript[idx].persistProviderID = fmt.Sprintf("tui:turn:%s:%s:%d", key, m.transcript[idx].role, idx)
+	}
+	return m.queuePersistForMessageOn(heroID, m.transcript[idx])
 }
 
 func sessionEventTypeForRole(role convRole) (string, bool) {
@@ -648,11 +1189,15 @@ func (m *model) queueSessionInterruption() {
 }
 
 func (m *model) queueSessionAsset(asset harness.Asset) error {
+	return m.queueSessionAssetOn("", asset)
+}
+
+func (m *model) queueSessionAssetOn(heroID string, asset harness.Asset) error {
 	payload, err := json.Marshal(asset)
 	if err != nil {
 		return err
 	}
-	m.queueSessionPersist(store.AppendSessionEventInput{
+	m.queueSessionPersistOn(heroID, store.AppendSessionEventInput{
 		EventType:   store.SessionEventAsset,
 		Origin:      store.SessionOriginLocal,
 		PayloadJSON: string(payload),
@@ -660,7 +1205,10 @@ func (m *model) queueSessionAsset(asset harness.Asset) error {
 	if m.sessionService == nil || m.sessionService.Store == nil {
 		return nil
 	}
-	heroID := strings.TrimSpace(m.heroChatSessionID)
+	heroID = strings.TrimSpace(heroID)
+	if heroID == "" {
+		heroID = strings.TrimSpace(m.heroChatSessionID)
+	}
 	if heroID == "" {
 		return nil
 	}
@@ -676,15 +1224,10 @@ func (m model) bindNativeHeroSessionCmd(harnessID, nativeID, modelSlug string, p
 	if heroID == "" || m.sessionService == nil || strings.TrimSpace(nativeID) == "" {
 		return nil
 	}
-	svc := m.sessionService
-	return func() tea.Msg {
-		_, err := svc.BindNativeSession(context.Background(), heroID, harnessID, nativeID, modelSlug, marshalChatSessionProps(props))
-		if err != nil {
-			slog.Error("tui bind native hero session failed")
-			return sessionPersistErrMsg{err: err}
-		}
-		return nil
-	}
+	pm := &m
+	pm.queueSessionNativeBindPersist(heroID, harnessID, nativeID, modelSlug, props)
+	_, cmd := pm.drainSessionPersistCmd()
+	return cmd
 }
 
 func (m model) loadChatTranscriptCmd(sessionID string) tea.Cmd {
@@ -980,12 +1523,11 @@ func syncPersistExecuteResult(
 	if svc == nil || heroID == "" {
 		return nil
 	}
-	gate := sessionPersistGate(heroID)
-	gate.Lock()
-	defer gate.Unlock()
 	if result == nil {
 		return nil
 	}
+	var events []store.AppendSessionEventInput
+	var items []sessionAssetPersistItem
 	text := strings.TrimSpace(result.Output)
 	if text != "" {
 		payload, err := marshalTranscriptPayload(convMessage{
@@ -1000,51 +1542,54 @@ func syncPersistExecuteResult(
 			return sessionPersistenceError(err)
 		}
 		origin, addr := assistantPersistOrigin(ex)
-		if _, err := svc.AppendEvent(ctx, store.AppendSessionEventInput{
-			BoundSessionID: heroID,
-			SessionID:      heroID,
-			EventType:      store.SessionEventAssistant,
-			Origin:         origin,
-			OriginAddress:  addr,
-			PayloadJSON:    payload,
-		}); err != nil {
-			return sessionPersistenceError(err)
-		}
+		events = append(events, store.AppendSessionEventInput{
+			BoundSessionID:  heroID,
+			SessionID:       heroID,
+			EventType:       store.SessionEventAssistant,
+			Origin:          origin,
+			OriginAddress:   addr,
+			PayloadJSON:     payload,
+			ProviderEventID: "tui:execute-result:assistant:" + heroID,
+		})
 	}
 	for _, asset := range result.Assets {
 		raw, err := json.Marshal(asset)
 		if err != nil {
 			return sessionPersistenceError(fmt.Errorf("asset serialization failed: %w", err))
 		}
-		if _, err := svc.AppendEvent(ctx, store.AppendSessionEventInput{
-			BoundSessionID: heroID,
-			SessionID:      heroID,
-			EventType:      store.SessionEventAsset,
-			Origin:         store.SessionOriginLocal,
-			PayloadJSON:    string(raw),
-		}); err != nil {
-			return sessionPersistenceError(err)
+		assetID := strings.TrimSpace(asset.ContentHash)
+		if assetID == "" {
+			assetID = strings.TrimSpace(asset.ID)
 		}
-		cardMeta, err := json.Marshal(asset)
-		if err != nil {
-			cardMeta = []byte("{}")
-		}
-		if err := svc.Store.UpsertSessionAsset(store.SessionAsset{
-			SessionID:    heroID,
-			AssetID:      asset.ContentHash,
-			Ownership:    store.AssetOwnershipManagedCopy,
-			Path:         asset.Path,
-			Mime:         asset.MIMEType,
-			OriginalName: asset.Name,
-			CardMetaJSON: string(cardMeta),
-		}); err != nil {
-			return sessionPersistenceError(err)
-		}
+		events = append(events, store.AppendSessionEventInput{
+			BoundSessionID:  heroID,
+			SessionID:       heroID,
+			EventType:       store.SessionEventAsset,
+			Origin:          store.SessionOriginLocal,
+			PayloadJSON:     string(raw),
+			ProviderEventID: "tui:execute-result:asset:" + assetID,
+		})
+		items = append(items, sessionAssetPersistItem{sessionID: heroID, asset: asset})
 	}
+	storeAssets, err := storeAssetsFromPersistItems(items)
+	if err != nil {
+		return sessionPersistenceError(err)
+	}
+	var bind *store.NativeSessionBind
 	if sid := strings.TrimSpace(result.SessionID); sid != "" {
-		if _, err := svc.BindNativeSession(ctx, heroID, harnessID, sid, modelSlug, marshalChatSessionProps(props)); err != nil {
-			return sessionPersistenceError(err)
+		bind = &store.NativeSessionBind{
+			SessionID:           heroID,
+			HarnessID:           harnessID,
+			NativeSessionID:     sid,
+			Model:               modelSlug,
+			ModelPropertiesJSON: marshalChatSessionProps(props),
 		}
 	}
-	return nil
+	pipe := sessionPersistPipelineFor(heroID)
+	return pipe.run(func() error {
+		if err := svc.PersistTranscriptSuffix(ctx, events, storeAssets, bind); err != nil {
+			return sessionPersistenceError(err)
+		}
+		return nil
+	})
 }

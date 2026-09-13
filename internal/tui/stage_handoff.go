@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/redact"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
@@ -37,6 +39,7 @@ type convExecute struct {
 	OccupancyKey    string
 	HeroSessionID   string
 	relay           *conversationStreamRelay
+	cancel          context.CancelFunc
 }
 
 // stageAgentReport is the deliberately small contract between a stage agent
@@ -98,10 +101,24 @@ const (
 )
 
 func (m model) maybeHandoffAfterExecute() (model, tea.Cmd) {
-	if !m.orchestrationLive || m.svc == nil {
+	if m.svc == nil {
 		return m, nil
 	}
 	agent := strings.TrimSpace(m.runtimeAgentName)
+	if m.runtimeCommandName == "continue" && !m.researchLive && len(m.executes) == 0 && (agent == agentOrchestration || agent == "") {
+		// /hero-continue used to set orchestrationLive=false, so this gate ran
+		// after ORCH STOP and never launched the granted Running stage.
+		m.orchestrationLive = true
+		m.stageProgressHoldUntilStart = false
+		if m.stageHandoffLive {
+			m = m.clearStageHandoffState()
+		}
+		m.stageHandoffDoneKey = ""
+		return m.ensureStageProgress()
+	}
+	if !m.orchestrationLive {
+		return m, nil
+	}
 	// /hero-approve follow-up can run while researchLive is still set from discover.
 	if m.researchLive && agent == agentOrchestration && m.researchStageClosedOrMovedOn() {
 		m.researchLive = false
@@ -279,13 +296,13 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	if stage == stageImplementation {
 		empty, emptyErr := m.svc.ImplementationWorkloadEmpty()
 		if emptyErr != nil {
-			slog.Error("implementation workload check failed", "error", emptyErr)
+			slog.Error("implementation workload check failed", "error", redact.Error(emptyErr))
 			return m.returnStageAgentPreparationFailure(stage, emptyErr.Error())
 		}
 		if empty {
 			summary := "Implementation assignment empty after scheduler recheck"
 			if err := m.svc.CloseImplementationWhenAssignmentEmpty(summary); err != nil {
-				slog.Error("empty implementation close failed", "error", err)
+				slog.Error("empty implementation close failed", "error", redact.Error(err))
 				return m.returnStageAgentPreparationFailure(stage, err.Error())
 			}
 			m.stageHandoffLive = false
@@ -366,7 +383,7 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	for _, agent := range runAgents {
 		body, err := m.readStageAgentPrompt(agent)
 		if err != nil {
-			slog.Error("tui stage agent prompt read failed", "agent", agent, "error", err)
+			slog.Error("tui stage agent prompt read failed", "agent", agent, "error", redact.Error(err))
 			return m.returnStageAgentPreparationFailure(stage, err.Error())
 		}
 		slug, _ := m.stageAgentModelSlug(agent)
@@ -417,7 +434,7 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 				taskIDs = append(taskIDs, task.ID)
 			}
 			if err := m.svc.RecordStageAgentAssignmentWithTasks(stage, agent, m.stageHandoffWave, taskIDs, item.prompt); err != nil {
-				slog.Warn("tui persist stage agent assignment failed", "stage", stage, "agent", agent, "wave", m.stageHandoffWave, "error", err)
+				slog.Warn("tui persist stage agent assignment failed", "stage", stage, "agent", agent, "wave", m.stageHandoffWave, "error", redact.Error(err))
 			}
 		}
 		if i == 0 {
@@ -447,7 +464,7 @@ func (m model) actionableImplementationFindings() ([]store.Finding, error) {
 	}
 	findings, err := m.svc.Store.ListActionableFindings(cycle.ID, "")
 	if err != nil {
-		slog.Error("implementation assignment findings query failed", "cycle_id", cycle.ID, "error", err)
+		slog.Error("implementation assignment findings query failed", "cycle_id", cycle.ID, "error", redact.Error(err))
 		return nil, fmt.Errorf("list actionable findings: %w", err)
 	}
 	return findings, nil
@@ -472,7 +489,7 @@ func (m model) findingOccurrenceHistory(findings []store.Finding) (map[string][]
 		}
 		occs, err := m.svc.Store.ListFindingOccurrences(cycle.ID, id)
 		if err != nil {
-			slog.Error("implementation assignment occurrence query failed", "finding_id", id, "error", err)
+			slog.Error("implementation assignment occurrence query failed", "finding_id", id, "error", redact.Error(err))
 			return nil, fmt.Errorf("list finding occurrences: %w", err)
 		}
 		if len(occs) > 0 {
@@ -990,6 +1007,21 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 	if allValid && len(completedIDs) > 0 {
 		taskIDs := implementationOpenSpecTaskIDs(completedIDs)
 		findingIDs := implementationFindingIDs(completedIDs)
+		if len(findingIDs) > 0 {
+			if m.svc == nil {
+				decision.Reason = "cycle service unavailable"
+				return decision
+			}
+			cycleRow, err := m.svc.SessionCycle()
+			if err != nil || cycleRow == nil {
+				decision.Reason = "active cycle is unavailable"
+				return decision
+			}
+			if err := cycle.VerifyCompletedFindingRepros(context.Background(), m.svc.Store, cycleRow.ID, m.svc.ProjectDir, findingIDs); err != nil {
+				decision.Reason = err.Error()
+				return decision
+			}
+		}
 		if len(taskIDs) > 0 {
 			if err := markImplementationTasksComplete(decision.Checklist.Path, taskIDs); err != nil {
 				decision.Reason = "could not mark completed implementation tasks: " + err.Error()
@@ -1349,7 +1381,7 @@ func (m model) formatValidationFailedHandoffChat(stage string, findingIDs []stri
 	}
 	cycleRow, err := m.svc.SessionCycle()
 	if err != nil || cycleRow == nil {
-		slog.Error("validation handoff chat missing cycle", "error", err)
+		slog.Error("validation handoff chat missing cycle", "error", redact.Error(err))
 		return fmt.Sprintf("✗ %s failed · %d findings\n→ Loop-back %s → Implementation\n", title, len(findingIDs), title)
 	}
 	var b strings.Builder
@@ -1357,7 +1389,7 @@ func (m model) formatValidationFailedHandoffChat(stage string, findingIDs []stri
 	for _, id := range findingIDs {
 		f, err := m.svc.Store.GetFinding(cycleRow.ID, id)
 		if err != nil {
-			slog.Error("validation handoff chat finding lookup failed", "finding_id", id, "error", err)
+			slog.Error("validation handoff chat finding lookup failed", "finding_id", id, "error", redact.Error(err))
 			fmt.Fprintf(&b, "  %s\n", id)
 			continue
 		}

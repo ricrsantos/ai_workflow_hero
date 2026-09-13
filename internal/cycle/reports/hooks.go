@@ -8,6 +8,8 @@ type ReopenRequest struct {
 	File               string
 	Requirement        string
 	AcceptanceCriteria string
+	ReproPackage       string
+	ReproTest          string
 }
 
 // ReopenIDValidator checks reopen_id against cycle finding state without importing store.

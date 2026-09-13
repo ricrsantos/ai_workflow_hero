@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene"
 )
 
 // FailureEntry is a normalized validation failure row shared across QA, Judge, BUI, and E2E.
@@ -16,6 +18,14 @@ type FailureEntry struct {
 	Evidence           []string
 	ReopenID           *string
 	FailureClass       string
+	Repro              FindingRepro
+}
+
+// FindingRepro is the fail-closed Go test identity a validation report must supply.
+type FindingRepro struct {
+	Package string
+	Test    string
+	Source  string
 }
 
 type failureEntryOptions struct {
@@ -45,7 +55,7 @@ func decodeFailureEntries(raw json.RawMessage, fieldName string, opts failureEnt
 	allowed := map[string]struct{}{
 		"owner": {}, "agent": {}, "file": {}, "requirement": {},
 		"issue": {}, "acceptance_criteria": {}, "evidence": {}, "reopen_id": {},
-		"failure_class": {},
+		"failure_class": {}, "repro": {},
 	}
 
 	entries := make([]FailureEntry, 0, len(items))
@@ -77,6 +87,8 @@ func decodeFailureEntries(raw json.RawMessage, fieldName string, opts failureEnt
 					File:               entry.File,
 					Requirement:        entry.Requirement,
 					AcceptanceCriteria: entry.AcceptanceCriteria,
+					ReproPackage:       entry.Repro.Package,
+					ReproTest:          entry.Repro.Test,
 				}); derr != nil {
 					if derr.Field == "" {
 						derr.Field = prefix + "reopen_id"
@@ -190,6 +202,12 @@ func decodeFailureEntry(item object, prefix string, opts failureEntryOptions) (*
 	}
 	entry.ReopenID = reopen
 
+	repro, err := decodeFindingRepro(item, prefix)
+	if err != nil {
+		return nil, err
+	}
+	entry.Repro = repro
+
 	return entry, nil
 }
 
@@ -206,7 +224,15 @@ func decodeEvidence(raw json.RawMessage, field string) ([]string, *DiagnosticErr
 	}
 	out := make([]string, len(values))
 	for i, v := range values {
-		out[i] = strings.TrimSpace(v)
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return nil, diag(CodeInvalidEnum, field+"["+itoa(i)+"]", "", "evidence path must be non-empty")
+		}
+		if envhygiene.HasParentTraversal(v) {
+			return nil, diag(CodeInvalidEnum, field+"["+itoa(i)+"]", truncateValue(v),
+				"evidence may use Go recursive patterns (./...) but not a .. path segment")
+		}
+		out[i] = v
 	}
 	return out, nil
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ricrsantos/ai_workflow_hero/internal/common/redact"
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
@@ -40,8 +41,9 @@ type sessionRecoverStatusMsg struct {
 }
 
 type historyForkDoneMsg struct {
-	sessionID string
-	err       error
+	sessionID  string
+	err        error
+	releaseIDs []string
 }
 
 func (m model) priorHeroLeaseSessionID() string {
@@ -180,7 +182,7 @@ func (m model) sessionLeaseHeartbeatTickCmd(sessionID string) tea.Cmd {
 	}
 	return func() tea.Msg {
 		if _, err := svc.HeartbeatLease(context.Background(), sessionID, owner); err != nil {
-			slog.Error("tui session lease heartbeat failed")
+			slog.Error("tui session lease heartbeat failed", "error", redact.Error(err))
 			return sessionLeaseLostMsg{sessionID: sessionID}
 		}
 		return nil
@@ -199,93 +201,35 @@ func (m model) syncFinalizeSessionInterruptCmd() tea.Cmd {
 	eventBatch := append([]store.AppendSessionEventInput(nil), m.sessionPersistQueue...)
 	assetBatch := append([]sessionAssetPersistItem(nil), m.sessionAssetUpsertQueue...)
 	bindingBatch := append([]sessionBindingPersistItem(nil), m.sessionBindingQueue...)
+	nativeBatch := append([]sessionNativeBindPersistItem(nil), m.sessionNativeBindQueue...)
 	sessionID := strings.TrimSpace(m.heroChatSessionID)
 	svc := m.sessionService
 	cycleSvc := m.svc
-	return func() tea.Msg {
-		heroKey := strings.TrimSpace(sessionID)
-		if heroKey == "" && len(eventBatch) > 0 {
-			heroKey = strings.TrimSpace(eventBatch[0].SessionID)
+	heroKey := persistBatchSessionID(eventBatch, assetBatch, nativeBatch)
+	if heroKey == "" {
+		heroKey = sessionID
+	}
+	pipe := sessionPersistPipelineFor(heroKey)
+	return pipe.submit(func() tea.Msg {
+		msg := persistSessionSuffix(context.Background(), svc, cycleSvc, eventBatch, assetBatch, bindingBatch, nativeBatch)
+		if errMsg, ok := msg.(sessionPersistErrMsg); ok {
+			return errMsg
 		}
-		gate := sessionPersistGate(heroKey)
-		gate.Lock()
-		defer gate.Unlock()
-		var persistErr error
-		for _, in := range eventBatch {
-			if svc == nil {
-				slog.Error("tui sync session interrupt persist failed: service unavailable")
-				return sessionPersistErrMsg{err: sessionPersistenceError(nil), events: append([]store.AppendSessionEventInput(nil), eventBatch...), assets: append([]sessionAssetPersistItem(nil), assetBatch...), bindings: append([]sessionBindingPersistItem(nil), bindingBatch...)}
-			}
-			if _, err := svc.AppendEvent(context.Background(), in); err != nil {
-				slog.Error("tui sync session interrupt persist failed", "event_type", in.EventType)
-				persistErr = err
-				break
-			}
-		}
-		if persistErr == nil {
-			for _, item := range assetBatch {
-				if svc == nil || svc.Store == nil {
-					continue
-				}
-				heroID := strings.TrimSpace(item.sessionID)
-				if heroID == "" {
-					continue
-				}
-				asset := item.asset
-				cardMeta, err := json.Marshal(asset)
-				if err != nil {
-					persistErr = err
-					break
-				}
-				if err := svc.Store.UpsertSessionAsset(store.SessionAsset{
-					SessionID:    heroID,
-					AssetID:      asset.ContentHash,
-					Ownership:    store.AssetOwnershipManagedCopy,
-					Path:         asset.Path,
-					Mime:         asset.MIMEType,
-					OriginalName: asset.Name,
-					CardMetaJSON: string(cardMeta),
-				}); err != nil {
-					slog.Error("tui sync session interrupt asset persist failed")
-					persistErr = err
-					break
-				}
-			}
-		}
-		if persistErr == nil {
-			for _, item := range bindingBatch {
-				if cycleSvc == nil {
-					continue
-				}
-				if item.orchestration {
-					if err := cycleSvc.SetOrchestrationSession(item.sessionID, item.harnessID); err != nil {
-						persistErr = err
-						break
-					}
-					continue
-				}
-				if err := cycleSvc.SetStageSessionBinding(item.stage, item.harnessID, item.sessionID); err != nil {
-					persistErr = err
-					break
-				}
-			}
-		}
-		if persistErr == nil && svc != nil && sessionID != "" {
+		if svc != nil && sessionID != "" {
 			if _, err := svc.MarkInterrupted(context.Background(), sessionID); err != nil {
-				slog.Error("tui sync mark hero session interrupted failed")
-				persistErr = err
-			}
-		}
-		if persistErr != nil {
-			return sessionPersistErrMsg{
-				err:      sessionPersistenceError(persistErr),
-				events:   append([]store.AppendSessionEventInput(nil), eventBatch...),
-				assets:   append([]sessionAssetPersistItem(nil), assetBatch...),
-				bindings: append([]sessionBindingPersistItem(nil), bindingBatch...),
+				slog.Error("tui sync mark hero session interrupted failed", "error", redact.Error(err))
+				return sessionPersistErrMsg{
+					err:         sessionPersistenceError(err),
+					sessionID:   sessionID,
+					events:      eventBatch,
+					assets:      assetBatch,
+					bindings:    bindingBatch,
+					nativeBinds: nativeBatch,
+				}
 			}
 		}
 		return sessionInterruptFinalizeDoneMsg{}
-	}
+	})
 }
 
 func (m model) markHeroSessionInterruptedCmd() tea.Cmd {
@@ -296,7 +240,7 @@ func (m model) markHeroSessionInterruptedCmd() tea.Cmd {
 	}
 	return func() tea.Msg {
 		if _, err := svc.MarkInterrupted(context.Background(), sessionID); err != nil {
-			slog.Error("tui mark hero session interrupted failed")
+			slog.Error("tui mark hero session interrupted failed", "error", redact.Error(err))
 		}
 		return nil
 	}
@@ -389,7 +333,7 @@ func (m model) sessionRecoverCancelCmd() tea.Cmd {
 		defer cancel()
 		if adapter != nil && nativeID != "" {
 			if err := adapter.Cancel(ctx, nativeID); err != nil {
-				slog.Error("tui session recover cancel failed")
+				slog.Error("tui session recover cancel failed", "error", redact.Error(err))
 				return sessionRecoverStatusMsg{
 					sessionID: sessionID,
 					nativeID:  nativeID,
@@ -401,7 +345,7 @@ func (m model) sessionRecoverCancelCmd() tea.Cmd {
 		}
 		if svc != nil && svc.Store != nil && sessionID != "" {
 			if _, err := svc.Store.UpdateSessionLifecycle(sessionID, store.SessionLifecycleActive, nil); err != nil {
-				slog.Error("tui session recover dismiss lifecycle failed")
+				slog.Error("tui session recover dismiss lifecycle failed", "error", redact.Error(err))
 				return sessionRecoverStatusMsg{
 					sessionID: sessionID,
 					nativeID:  nativeID,
@@ -415,6 +359,37 @@ func (m model) sessionRecoverCancelCmd() tea.Cmd {
 	}
 }
 
+func appendReleaseID(ids []string, id string) []string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ids
+	}
+	for _, existing := range ids {
+		if existing == id {
+			return ids
+		}
+	}
+	return append(ids, id)
+}
+
+func releaseLeaseCollect(svc *conversation.SessionService, releaseFn func(context.Context, string, string) error, ctx context.Context, sessionID, owner string, leftover []string) []string {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return leftover
+	}
+	var err error
+	if releaseFn != nil {
+		err = releaseFn(ctx, sessionID, owner)
+	} else if svc != nil {
+		err = svc.ReleaseLease(ctx, sessionID, owner)
+	}
+	if err != nil {
+		slog.Error("tui history lease cleanup failed", "error", redact.Error(err))
+		return appendReleaseID(leftover, sessionID)
+	}
+	return leftover
+}
+
 func (m model) historyOpenCmd(id string, restore bool, priorLeaseID string) tea.Cmd {
 	svc := m.sessionService
 	var registry harnessmgr.Registry
@@ -422,6 +397,7 @@ func (m model) historyOpenCmd(id string, restore bool, priorLeaseID string) tea.
 		registry = m.svc.Registry
 	}
 	owner := strings.TrimSpace(m.tuiOwnerID)
+	releaseFn := m.leaseReleaseFn
 	defaultAdapter := m.harnessAdapter()
 	lookupAdapter := func(harnessID string) harness.HarnessAdapter {
 		harnessID = strings.TrimSpace(harnessID)
@@ -446,39 +422,50 @@ func (m model) historyOpenCmd(id string, restore bool, priorLeaseID string) tea.
 			}
 			return historyOpenMsg{err: err}
 		}
+		if epoch := m.leaseEpoch; epoch != nil {
+			epoch.bump(id)
+		}
 		// Validate the target fully before releasing the prior lease so a failed
 		// open cannot leave the TUI without ownership or with dual leases (find-qa-29).
 		binding, err := svc.ResumeBinding(ctx, id)
 		if err != nil {
-			_ = svc.ReleaseLease(ctx, id, owner)
-			return historyOpenMsg{err: err}
+			leftover := releaseLeaseCollect(svc, releaseFn, ctx, id, owner, nil)
+			return historyOpenMsg{err: err, releaseIDs: leftover}
 		}
 		nativeID := strings.TrimSpace(binding.NativeSessionID)
 		if nativeID != "" {
 			adapter := lookupAdapter(binding.HarnessID)
 			if err := tryExactHarnessResume(ctx, adapter, nativeID); err != nil {
-				_ = svc.ReleaseLease(ctx, id, owner)
+				leftover := releaseLeaseCollect(svc, releaseFn, ctx, id, owner, nil)
 				if errors.Is(err, harness.ErrExactResumeUnavailable) {
 					return historyOpenMsg{
 						needFork:    true,
 						forkHarness: binding.HarnessID,
 						forkModel:   binding.Model,
 						forkSource:  id,
+						releaseIDs:  leftover,
 					}
 				}
-				return historyOpenMsg{err: err}
+				return historyOpenMsg{err: err, releaseIDs: leftover}
 			}
 		}
 		sess, err := svc.GetSession(ctx, id)
 		if err != nil {
-			_ = svc.ReleaseLease(ctx, id, owner)
-			return historyOpenMsg{err: err}
+			leftover := releaseLeaseCollect(svc, releaseFn, ctx, id, owner, nil)
+			return historyOpenMsg{err: err, releaseIDs: leftover}
 		}
 		if prior := strings.TrimSpace(priorLeaseID); prior != "" && prior != id {
-			if err := svc.ReleaseLease(ctx, prior, owner); err != nil {
-				slog.Error("tui history prior lease release failed")
-				_ = svc.ReleaseLease(ctx, id, owner)
-				return historyOpenMsg{err: fmt.Errorf("release prior session lease: %w", err)}
+			var priorErr error
+			if releaseFn != nil {
+				priorErr = releaseFn(ctx, prior, owner)
+			} else {
+				priorErr = svc.ReleaseLease(ctx, prior, owner)
+			}
+			if priorErr != nil {
+				slog.Error("tui history prior lease release failed", "error", redact.Error(priorErr))
+				leftover := appendReleaseID(nil, prior)
+				leftover = releaseLeaseCollect(svc, releaseFn, ctx, id, owner, leftover)
+				return historyOpenMsg{err: fmt.Errorf("release prior session lease: %w", priorErr), releaseIDs: leftover}
 			}
 		}
 		bindRemoteHistoryReader(svc, registry, sess.HarnessID)
@@ -496,6 +483,7 @@ func (m model) historyForkCmd(sourceID string) tea.Cmd {
 	sourceID = strings.TrimSpace(sourceID)
 	svc := m.sessionService
 	owner := strings.TrimSpace(m.tuiOwnerID)
+	releaseFn := m.leaseReleaseFn
 	priorLease := m.priorHeroLeaseSessionID()
 	return func() tea.Msg {
 		if svc == nil {
@@ -509,11 +497,21 @@ func (m model) historyForkCmd(sourceID string) tea.Cmd {
 		if _, err := svc.AcquireLease(ctx, sess.ID, owner); err != nil {
 			return historyForkDoneMsg{err: err}
 		}
+		if epoch := m.leaseEpoch; epoch != nil {
+			epoch.bump(sess.ID)
+		}
 		if prior := strings.TrimSpace(priorLease); prior != "" && prior != sess.ID {
-			if err := svc.ReleaseLease(ctx, prior, owner); err != nil {
-				slog.Error("tui history fork prior lease release failed")
-				_ = svc.ReleaseLease(ctx, sess.ID, owner)
-				return historyForkDoneMsg{err: fmt.Errorf("release prior session lease: %w", err)}
+			var priorErr error
+			if releaseFn != nil {
+				priorErr = releaseFn(ctx, prior, owner)
+			} else {
+				priorErr = svc.ReleaseLease(ctx, prior, owner)
+			}
+			if priorErr != nil {
+				slog.Error("tui history fork prior lease release failed", "error", redact.Error(priorErr))
+				leftover := appendReleaseID(nil, prior)
+				leftover = releaseLeaseCollect(svc, releaseFn, ctx, sess.ID, owner, leftover)
+				return historyForkDoneMsg{err: fmt.Errorf("release prior session lease: %w", priorErr), releaseIDs: leftover}
 			}
 		}
 		return historyForkDoneMsg{sessionID: sess.ID}
@@ -536,14 +534,14 @@ func (m model) retryIncompleteSessionDeletesCmd() tea.Cmd {
 		defer cancel()
 		ops, err := storeDB.ListIncompleteSessionDeleteOps()
 		if err != nil {
-			slog.Error("tui list incomplete session delete ops failed")
+			slog.Error("tui list incomplete session delete ops failed", "error", redact.Error(err))
 			return sessionDeleteRetryResultMsg{err: err}
 		}
 		var firstErr error
 		retried := 0
 		for _, op := range ops {
 			if err := svc.ResumeIncompleteDelete(ctx, op); err != nil {
-				slog.Error("tui incomplete session delete retry failed")
+				slog.Error("tui incomplete session delete retry failed", "error", redact.Error(err))
 				if firstErr == nil {
 					firstErr = err
 				}
@@ -591,6 +589,7 @@ func (m model) openHeroSessionFromHistory(sessionID string) (model, tea.Cmd) {
 	m, resetCmd := m.resetChatSession()
 	m.heroLeasedSessionID = sessionID
 	m.sessionLeaseLost = false
+	m.bumpLeaseReleaseEpoch(sessionID)
 	m.heroLeaseNextHeartbeat = time.Now().Add(sessionLeaseHeartbeatInterval)
 	m, enterCmd := m.enterConversation()
 	pm := &m
@@ -616,6 +615,7 @@ func (m model) emptyChatAfterCurrentSessionMutation() (model, tea.Cmd) {
 	}
 	prior := cur
 	m, resetCmd := m.resetChatSession()
+	m.trackPendingLeaseRelease(prior)
 	m, enterCmd := m.enterConversation()
 	m.screen = screenConversation
 	return m, tea.Batch(resetCmd, enterCmd, m.releaseHeroChatLeaseCmd(prior))
@@ -649,7 +649,7 @@ func (m model) handleSessionRecoverStatus(msg sessionRecoverStatusMsg) (model, t
 		if m.convError == "" {
 			m.convError = msg.err.Error()
 		}
-		slog.Error("tui session recover status failed")
+		slog.Error("tui session recover status failed", "error", redact.Error(msg.err))
 		return m, nil
 	case msg.attachLive:
 		m.convError = strings.TrimSpace(msg.message)
