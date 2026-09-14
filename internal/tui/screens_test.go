@@ -46,6 +46,7 @@ func TestChatFooterUsesRealBindingsAndIncludesAllHints(t *testing.T) {
 	m = EnterConversationForTest(m)
 
 	want := "tab focus · alt+m mode · / commands · enter newline · alt+enter send · esc navbar · ctrl+c interrupt · alt+r/i copy · ↑↓ scroll · alt+q quit"
+	wantChat := want + " · alt+a attach · alt+v clipboard"
 	for _, state := range []struct {
 		screen    screen
 		streaming bool
@@ -61,8 +62,12 @@ func TestChatFooterUsesRealBindingsAndIncludesAllHints(t *testing.T) {
 		m.screen = state.screen
 		m.streaming = state.streaming
 		m.slashOverlayDismissed = !state.overlay
-		if got := m.footerHints(); got != want {
-			t.Fatalf("footer for screen=%v streaming=%t overlay=%t = %q, want %q", state.screen, state.streaming, state.overlay, got, want)
+		expected := want
+		if state.screen == screenConversation {
+			expected = wantChat
+		}
+		if got := m.footerHints(); got != expected {
+			t.Fatalf("footer for screen=%v streaming=%t overlay=%t = %q, want %q", state.screen, state.streaming, state.overlay, got, expected)
 		}
 	}
 }
@@ -115,8 +120,8 @@ func TestFooterRemainsVisibleWhenContentAreaIsShort(t *testing.T) {
 			t.Fatalf("footer line %d=%q want %q\n%s", i, got, want, strings.Join(viewLines, "\n"))
 		}
 	}
-	if got := strings.Join(viewLines[start:], " · "); got != fixedFooterHints {
-		t.Fatalf("footer=%q want %q", got, fixedFooterHints)
+	if got := strings.Join(viewLines[start:], " · "); got != m.footerHints() {
+		t.Fatalf("footer=%q want %q", got, m.footerHints())
 	}
 }
 

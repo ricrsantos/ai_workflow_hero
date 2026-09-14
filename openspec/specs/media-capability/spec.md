@@ -23,7 +23,7 @@ Before submitting a turn with attachments, Hero SHALL require `image_input_nativ
 
 #### Scenario: Blocked turn keeps chips
 - **WHEN** the user submits attachments on an incapable model
-- **THEN** Free Chat shows an inline error identifying model and harness, does not call Execute, and leaves chips in the composer
+- **THEN** Chat shows an inline error identifying model and harness, does not call Execute, and leaves chips in the composer
 
 #### Scenario: Switching to a capable model unblocks
 - **WHEN** the user switches to a model with image input capability and resubmits

@@ -116,7 +116,7 @@ type model struct {
 	nextUserOrigin           string // Telegram origin applied to the next user+agent pair
 	chatInputFocused         bool
 
-	// Free Chat multimodal state. Workers exchange only metadata and paths
+	// Conversation multimodal state. Workers exchange only metadata and paths
 	// through Bubble Tea messages; they never mutate these fields directly.
 	attachments               []tuiAttachment
 	attachmentPicker          filepicker.Model

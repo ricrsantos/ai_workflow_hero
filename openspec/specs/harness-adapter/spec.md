@@ -150,7 +150,7 @@ When TUI Execute completes without error and the agent transcript has no substan
 
 ### Requirement: Adapters SHALL translate shared attachments without silent loss
 
-Every Free Chat adapter (Codex, OpenCode, Cursor, Claude) SHALL accept `ExecuteRequest.Attachments` and translate them to the harness-native input form after capability admission. If translation or native support is unavailable, the adapter SHALL fail with an actionable diagnostic naming harness and model. Adapters SHALL NEVER silently drop attachments (PRD-C14-001 §§2.9–2.12; ADR-079).
+Every adapter used by TUI Chat (Codex, OpenCode, Cursor, Claude) SHALL accept `ExecuteRequest.Attachments` and translate them to the harness-native input form after capability admission. If translation or native support is unavailable, the adapter SHALL fail with an actionable diagnostic naming harness and model. Adapters SHALL NEVER silently drop attachments (PRD-C14-001 §§2.9–2.12; ADR-079).
 
 #### Scenario: Codex native localImage
 - **WHEN** Codex schema probing exposes `localImage` and attachments are present
@@ -186,7 +186,7 @@ During a turn, adapters SHALL detect image files written by tools and expose the
 
 #### Scenario: Tool-written PNG appears once
 - **WHEN** a tool writes `design-export.png` during a turn and the same bytes are also mentioned in a tool result
-- **THEN** Free Chat shows a single tool-sourced asset card after the turn’s text output
+- **THEN** Chat shows a single tool-sourced asset card after the turn’s text output
 
 #### Scenario: Detection does not stall completion
 - **WHEN** tool-written detection runs

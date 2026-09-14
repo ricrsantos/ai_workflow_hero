@@ -22,7 +22,7 @@ Hero SHALL define `Attachment`, `Asset`, `MediaKind`, and `MediaCapability` in `
 `conversation.Input` and `harness.ExecuteRequest` SHALL accept `Attachments []Attachment`. `harness.ExecutionResult` SHALL accept `Assets []Asset`. `harness.StreamDelta` SHALL support `Asset *Asset` with `StreamKindAsset`. Final result assets SHALL repair partial stream loss using the existing text-repair pattern (PRD-C14-001 §2.1).
 
 #### Scenario: Image-only input is valid
-- **WHEN** Free Chat submits attachments with empty text
+- **WHEN** Chat submits attachments with empty text in any conversational mode
 - **THEN** the conversation input remains valid and Execute receives the attachments
 
 #### Scenario: Stream asset loss is repaired
@@ -31,7 +31,7 @@ Hero SHALL define `Attachment`, `Asset`, `MediaKind`, and `MediaCapability` in `
 
 ### Requirement: Part order SHALL be images then text
 
-When a turn includes both text and attachments, adapters SHALL receive images first, then text, matching Free Chat send semantics (PRD-C14-001 §2.5).
+When a turn includes both text and attachments, adapters SHALL receive images first, then text, matching Chat send semantics (PRD-C14-001 §2.5).
 
 #### Scenario: Mixed turn ordering
 - **WHEN** a user sends two images and a caption

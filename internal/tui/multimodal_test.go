@@ -130,21 +130,119 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
-func TestFreeChatAttachmentShortcutsAndSlashBoundary(t *testing.T) {
-	free := EnterConversationForTest(NewTestModel(nil))
-	free.freeChatMode = true
-	next, _ := HandleTestKey(free, "alt+a")
-	if !next.attachmentPickerActive {
-		t.Fatal("Alt+A should open the image picker in Free Chat")
+func TestChatAttachmentShortcutsAndSlashWorkInEveryConversationMode(t *testing.T) {
+	modes := []struct {
+		name         string
+		freeChat     bool
+		researchLive bool
+		runtimeAgent string
+	}{
+		{name: "free chat", freeChat: true},
+		{name: "research", researchLive: true},
+		{name: "workflow agent", runtimeAgent: agentOrchestration},
 	}
 
-	workflow := EnterConversationForTest(NewTestModel(nil))
-	next, _ = HandleTestKey(workflow, "alt+a")
-	if next.attachmentPickerActive || !strings.Contains(StatusTextForTest(next), "Free Chat only") {
-		t.Fatalf("workflow Alt+A should be ignored with a diagnostic: picker=%v status=%q", next.attachmentPickerActive, StatusTextForTest(next))
+	for _, mode := range modes {
+		t.Run(mode.name, func(t *testing.T) {
+			m := EnterConversationForTest(NewTestModel(nil))
+			m.freeChatMode = mode.freeChat
+			m.researchLive = mode.researchLive
+			m.runtimeAgentName = mode.runtimeAgent
+
+			next, _ := HandleTestKey(m, "alt+a")
+			if !next.attachmentPickerActive {
+				t.Fatal("Alt+A should open the image picker")
+			}
+
+			m = EnterConversationForTest(NewTestModel(nil))
+			m.freeChatMode = mode.freeChat
+			m.researchLive = mode.researchLive
+			m.runtimeAgentName = mode.runtimeAgent
+			next, _, handled := m.dispatchExactHeroSlash("/attach")
+			if !handled || !next.attachmentPickerActive {
+				t.Fatal("/attach should open the image picker")
+			}
+		})
 	}
-	if _, _, handled := workflow.dispatchExactHeroSlash("/attach"); !handled {
-		t.Fatal("workflow /attach should be handled as a blocked command")
+}
+
+func TestBracketedImagePathPasteWorksInEveryConversationMode(t *testing.T) {
+	modes := []struct {
+		name         string
+		freeChat     bool
+		researchLive bool
+		runtimeAgent string
+	}{
+		{name: "free chat", freeChat: true},
+		{name: "research", researchLive: true},
+		{name: "workflow agent", runtimeAgent: agentOrchestration},
+	}
+
+	for _, mode := range modes {
+		t.Run(mode.name, func(t *testing.T) {
+			m := EnterConversationForTest(NewTestModel(nil))
+			m.freeChatMode = mode.freeChat
+			m.researchLive = mode.researchLive
+			m.runtimeAgentName = mode.runtimeAgent
+			path := "/tmp/" + strings.ReplaceAll(mode.name, " ", "-") + ".png"
+
+			next, cmd := HandleTestKeyMsg(m, tea.KeyMsg{Paste: true, Runes: []rune(path)})
+			if len(next.attachments) != 1 || next.attachments[0].attachment.Path != path {
+				t.Fatalf("pasted path attachment=%+v, want %q", next.attachments, path)
+			}
+			if cmd == nil {
+				t.Fatal("bracketed image-path paste should start asynchronous validation")
+			}
+		})
+	}
+}
+
+func TestHeroControlSlashRejectsStagedAttachments(t *testing.T) {
+	m := EnterConversationForTest(NewTestModel(nil))
+	m = SetAttachmentsForTest(m, []harness.Attachment{{
+		Kind: harness.MediaKindImage,
+		Name: "control.png",
+		Path: "/session/control.png",
+	}})
+	m = SetConversationInput(m, "/hero-start")
+
+	next, cmd := SubmitConversationForTest(m)
+	if cmd != nil || IsConversationStreaming(next) {
+		t.Fatal("Hero control command with an attachment must not execute")
+	}
+	if len(next.attachments) != 1 {
+		t.Fatalf("control rejection should preserve the chip: %+v", next.attachments)
+	}
+	if !strings.Contains(StatusTextForTest(next), "control commands") {
+		t.Fatalf("status=%q", StatusTextForTest(next))
+	}
+}
+
+func TestWorkflowAttachmentReachesHarnessAndClearsAfterSuccess(t *testing.T) {
+	m, h, _ := newConversationTestModel(t)
+	m = EnterConversationForTest(m)
+	m.runtimeAgentName = agentOrchestration
+	m.runtimeHarnessID = "streaming"
+	m.runtimeModelSlug = "vision"
+	m = SetAttachmentsForTest(m, []harness.Attachment{{
+		Kind: harness.MediaKindImage,
+		Name: "workflow.png",
+		Path: "/session/workflow.png",
+	}})
+	m = SetConversationInput(m, "describe this workflow image")
+
+	next, cmd := SubmitConversationForTest(m)
+	if !IsConversationStreaming(next) || cmd == nil {
+		t.Fatal("workflow attachment submission should start an asynchronous turn")
+	}
+	next = drainConversationStream(t, next, cmd)
+
+	got := h.LastAttachments()
+	if len(got) != 1 || got[0].Name != "workflow.png" {
+		t.Fatalf("harness attachments=%+v", got)
+	}
+	if len(next.attachments) != 0 {
+		t.Fatalf("successful workflow turn left composer chips behind: %+v", next.attachments)
 	}
 }
 

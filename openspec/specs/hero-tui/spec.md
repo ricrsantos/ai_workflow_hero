@@ -102,17 +102,21 @@ Missing catalog, stale-cache fallback, and invalidated-value warnings SHALL use 
 - **WHEN** the status line wraps a multi-byte warning, icon, or model name in a narrow terminal
 - **THEN** rendering completes without slicing invalid UTF-8 or dropping property labels
 
-### Requirement: Free Chat composer SHALL support image attachments only
+### Requirement: Chat composer SHALL support image attachments in every conversational mode
 
-Image attachment UX SHALL be available in Free Chat and SHALL NOT appear in Research or workflow-stage sessions. Bindings: `Alt+A`/`/attach` open a filtered file picker; `Alt+V`/`/attach-clipboard` capture via native OS clipboard APIs (not OSC 52); `/attach <path>` attaches an explicit path; bracketed paste of a filesystem path offers attachment. Planning validates `Alt+A`/`Alt+V` as free relative to existing Alt bindings (PRD-C14-001 §2.5; UI-C14-001 §§2,4,7).
+Image attachment UX SHALL be available whenever the local Chat composer is active, including Free Chat, Research, orchestration, and workflow-stage sessions. It SHALL remain unavailable during Hero control commands, approval/rejection prompts, ToDo forms, and remote Telegram command routing. Bindings: `Alt+A`/`/attach` open a filtered file picker; `Alt+V`/`/attach-clipboard` capture via native OS clipboard APIs (not OSC 52); `/attach <path>` attaches an explicit path; bracketed paste of a filesystem path offers attachment. Planning validates `Alt+A`/`Alt+V` as free relative to existing Alt bindings (PRD-C14-001 §2.5; UI-C14-001 §§2,4,7).
 
-#### Scenario: Alt+A opens picker in Free Chat
-- **WHEN** Free Chat is focused and the user presses Alt+A
+#### Scenario: Alt+A opens picker in Chat
+- **WHEN** Chat is focused in any conversational mode and the user presses Alt+A
 - **THEN** a Bubbles file picker filtered to png/jpeg/gif/webp opens and Escape returns focus to the text input
 
-#### Scenario: Research ignores attach bindings
-- **WHEN** a Research or workflow-stage session is active
-- **THEN** attach keybindings/slash commands do not enable multimodal send for that session
+#### Scenario: Research and workflow sessions accept attachments
+- **WHEN** a Research, orchestration, or workflow-stage Chat session is active and the user invokes an attachment binding
+- **THEN** the attachment is staged for that conversational turn and follows the same validation and capability admission as Free Chat
+
+#### Scenario: Hero controls reject attachments
+- **WHEN** the user submits an image together with a Hero control command or approval/rejection response
+- **THEN** the command is not executed and Chat tells the user that control commands do not accept attachments
 
 #### Scenario: Clipboard capture uses native APIs
 - **WHEN** the user invokes Alt+V and the OS clipboard contains a PNG

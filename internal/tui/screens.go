@@ -561,7 +561,7 @@ func (m model) footerHints() string {
 		}
 		return "tab navbar · ↑↓ navigate · enter " + enter + " · esc chat · alt+q quit"
 	}
-	if m.screen == screenConversation && m.freeChatMode {
+	if m.multimodalConversation() {
 		hints := fixedFooterHints + " · alt+a attach · alt+v clipboard"
 		if len(m.attachments) > 0 {
 			hints += " · alt+c chips"

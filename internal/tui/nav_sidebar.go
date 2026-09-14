@@ -451,11 +451,22 @@ func (m model) renderNavSidebar(height int) string {
 		if menuH < 0 {
 			menuH = 0
 		}
+		showRangeHint := true
+		// In a short terminal, the new Chat attachment hints can consume one
+		// extra frame row. Keep live-agent labels visible by sacrificing the
+		// secondary numeric shortcut row; navigation remains available through
+		// Tab and the arrow keys.
+		if strings.TrimSpace(m.agentsSidebarLines(innerW)[1]) != "" && len(navigationLines) <= upperH {
+			menuH = upperH
+			showRangeHint = false
+		}
 		lines = fitNavSidebarNavigation(navigationLines, menuH, len(m.visibleNavScreens()))
 		for len(lines) < menuH {
 			lines = append(lines, strings.Repeat(" ", innerW))
 		}
-		lines = append(lines, rangeHint)
+		if showRangeHint {
+			lines = append(lines, rangeHint)
+		}
 	}
 	lines = append(lines, timerLines...)
 

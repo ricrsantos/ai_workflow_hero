@@ -650,8 +650,10 @@ they reach the TUI; workers send immutable messages and never mutate Bubble Tea
 maps directly. Tool-written images are correlated within a turn and
 deduplicated by content hash. Expanded mosaics are re-rendered by async
 commands after WindowSizeMsg; the card spinner is model state, not View I/O.
-C14 attachments are enabled only in Free Chat; Research and workflow-stage
-composers ignore the attachment keymap and slash commands.
+C14 attachment transport is shared by every local TUI Chat composer, including
+Free Chat, Research, orchestration, and workflow-stage conversations. Hero
+control commands, approval/rejection prompts, ToDo forms, and Telegram command
+routing remain text-only.
 
 ---
 
@@ -754,7 +756,7 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/adapters/opencode` | OpenCode serve adapter: HTTP+SSE, ResumeSession, idle/gone SSE probe, serve lifecycle (PID registry, `exec.Command` not Execute-scoped), orphan reap, C5 properties, file/image parts and tool-image correlation |
 | `internal/adapters/codex` | Codex app-server adapter (stdio JSON-RPC, thread/turn, mid-turn reconnect+resume, registry, auth, C5 properties, stream map, CheckHealth, ResetAppServer, PrepareHeroStart, image schema/input/output normalization) |
 | `internal/adapters/claude` | Claude CLI NDJSON adapter, stream-json image spike/native/degraded input, tool-result and workspace image detection |
-| `internal/tui` | Bubble Tea terminal UI, Free Chat attachment chips, asset cards, async previews, save actions |
+| `internal/tui` | Bubble Tea terminal UI, Chat attachment chips, asset cards, async previews, save actions |
 | `internal/harnessmgr` | Adapter registry (cursor + opencode + codex), fallback chain, boot ListModels skip for lazy children |
 | `internal/tui` | Bubble Tea terminal UI |
 | `internal/todos` | `## Pending Features` parse/display; recoverable SQLite→file projection via `todo_projection_ops` |

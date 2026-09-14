@@ -127,7 +127,7 @@
   ".workflow-hero/docs/workflow-help.md": "741d74dcc98d719b09a2c7b8976cc5939788b956169ed806e27c55ca237b81ba",
   ".workflow-hero/models/anthropic.yml": "04e858662f9cbf391839c759152a87ef55a11dc7e753abf989ff93eb15d96953",
   ".workflow-hero/models/claude.yml": "20029fa42d42667762f768b71410a09e035827d886040140aa5ea9966581f409",
-  ".workflow-hero/models/codex.yml": "ef0c7ac135b79ded7cf5e2a0bff8ea35af2a65976fd151a8727ae0c63f031cde",
+  ".workflow-hero/models/codex.yml": "dc0d5b19fd1109a42b0d8a511f56928555534c22300dabec1655708fc4b98070",
   ".workflow-hero/models/cursor.yml": "305c5cbc39119fc691a56063b16a55081950ceb19d9b8f7c527c17d64c1c5cb1",
   ".workflow-hero/models/google.yml": "1a2f1d3a34ee2a04160dcb213341e2e3e475d99979a83bec50194db49e8ce547",
   ".workflow-hero/models/moonshot.yml": "0104d6f97159153d4ac6b4c29e2109bb719b9727cec8197d9db850e8319ac70b",

@@ -2373,3 +2373,22 @@ catalog, and TUI regressions.
 **Verification**: `gofmt`; focused tests; full `go test ./...`;
 `go test -race ./internal/modelprops ./internal/tui`; `go vet ./...`; and
 `git diff --check` all passed.
+
+## 2026-09-14 — TUI image attachments across conversational modes
+
+**Outcome**: Image input is now available from every local TUI Chat composer,
+including Free Chat, Research, orchestration, and workflow-stage conversations.
+Hero control commands, approval/rejection prompts, ToDo forms, Telegram command
+routing, and other non-composer control surfaces remain text-only.
+
+**Implementation**: Generalized picker, clipboard, explicit-path, bracketed-
+paste, asset-reattachment, footer-hint, and attachment-chip behavior from the
+Free Chat gate to the shared Chat surface. Workflow attachments use the
+existing capability admission and adapter transport contract, and successful
+workflow Execute clears the originating chips. Short-terminal navigation
+preserves live-agent labels when the expanded footer occupies an extra row.
+Updated the living OpenSpec, architecture overview, testing guide, and current
+state; historical C14 documents remain unchanged as archived scope records.
+
+**Verification**: Focused TUI attachment/footer/navigation tests passed;
+`gofmt`, `git diff --check`, and full `go test ./...` passed.

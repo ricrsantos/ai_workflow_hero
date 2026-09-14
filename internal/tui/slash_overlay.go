@@ -61,6 +61,22 @@ func (m model) chatFollowUpControlSlash(text string) bool {
 	}
 }
 
+// attachmentControlSlash reports whether a slash input is a Hero/UI control
+// command that must remain text-only. /attach commands are the one exception:
+// they stage an image for the next ordinary Chat turn.
+func attachmentControlSlash(text string) bool {
+	token := strings.ToLower(chatSlashToken(text))
+	switch token {
+	case "", "/attach", "/attach-clipboard":
+		return false
+	case "/model", "/hero-model", "/harness", "/hero-harness", "/refresh",
+		"/version", "/new-chat", "/harness-reset":
+		return true
+	default:
+		return strings.HasPrefix(token, "/hero-")
+	}
+}
+
 func (m model) chatSlashOverlayActive() bool {
 	if m.streaming || m.slashOverlayDismissed {
 		return false

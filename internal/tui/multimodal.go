@@ -93,14 +93,14 @@ func (m model) mediaStartupCleanupCmd() tea.Cmd {
 	}
 }
 
-func (m model) multimodalFreeChat() bool {
-	return m.freeChatMode && m.screen == screenConversation && !m.researchLive && !m.workflowAgentActive()
+func (m model) multimodalConversation() bool {
+	return m.screen == screenConversation && !m.todoControlActive() && !m.awaitingRejectReason
 }
 
 // attachmentPermissionProfile reads the persisted policy from the Hero
-// configuration root. Free Chat intentionally executes in the current working
-// directory, so using executeDir here would skip ~/.workflow-hero/config and
-// silently fall back to Ask.
+// configuration root. Chat execution may use a different workspace, so using
+// executeDir here would skip the project configuration and silently fall back
+// to Ask.
 func (m model) attachmentPermissionProfile() harness.PermissionProfile {
 	profile := harness.PermissionProfileAsk
 	configRoot := ""
@@ -127,8 +127,8 @@ func (m model) allowExternalAttachmentPaths() bool {
 }
 
 func (m model) openAttachmentPicker() (model, tea.Cmd) {
-	if !m.multimodalFreeChat() {
-		return m.setStatusResult(false, "attach", "image attachments are available in Free Chat only"), nil
+	if !m.multimodalConversation() {
+		return m.setStatusResult(false, "attach", "image attachments are available in Chat only"), nil
 	}
 	picker := filepicker.New()
 	picker.AllowedTypes = []string{".png", ".jpg", ".jpeg", ".gif", ".webp"}
@@ -164,8 +164,8 @@ func (m model) handleAttachmentPickerKey(msg tea.KeyMsg) (model, tea.Cmd) {
 }
 
 func (m model) queueAttachmentPath(path string) (model, tea.Cmd) {
-	if !m.multimodalFreeChat() {
-		return m.setStatusResult(false, "attach", "image attachments are available in Free Chat only"), nil
+	if !m.multimodalConversation() {
+		return m.setStatusResult(false, "attach", "image attachments are available in Chat only"), nil
 	}
 	if len(m.attachments) >= media.DefaultMaxAttachmentsPerTurn {
 		return m.setStatusResult(false, "attach", "a turn can contain at most 5 images"), nil
@@ -251,8 +251,8 @@ func safeAttachmentError(err error) error {
 }
 
 func (m model) startClipboardAttachment() (model, tea.Cmd) {
-	if !m.multimodalFreeChat() {
-		return m.setStatusResult(false, "attach", "image attachments are available in Free Chat only"), nil
+	if !m.multimodalConversation() {
+		return m.setStatusResult(false, "attach", "image attachments are available in Chat only"), nil
 	}
 	if len(m.attachments) >= media.DefaultMaxAttachmentsPerTurn {
 		return m.setStatusResult(false, "attach", "a turn can contain at most 5 images"), nil
@@ -707,7 +707,7 @@ func (m model) assetCopyPathCmd() tea.Cmd {
 }
 
 func (m model) attachSelectedAsset() model {
-	if m.assetCursor < 0 || m.assetCursor >= len(m.assets) || !m.multimodalFreeChat() {
+	if m.assetCursor < 0 || m.assetCursor >= len(m.assets) || !m.multimodalConversation() {
 		return m
 	}
 	if len(m.attachments) >= media.DefaultMaxAttachmentsPerTurn {

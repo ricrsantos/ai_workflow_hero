@@ -1256,6 +1256,9 @@ func (m model) submitConversation() (model, tea.Cmd) {
 		return m, nil
 	}
 	if m.todoControlUsesComposer() {
+		if len(m.attachments) > 0 {
+			return m.setStatusWarning("attach", "attachments cannot be added to Hero control commands"), nil
+		}
 		return m.submitTodoControlComposer()
 	}
 	text := strings.TrimSpace(m.input)
@@ -1267,6 +1270,9 @@ func (m model) submitConversation() (model, tea.Cmd) {
 	}
 	if m.convService != nil {
 		slog.Debug("conversation turn classified", "kind", m.convService.Classify(text).Kind)
+	}
+	if len(m.attachments) > 0 && attachmentControlSlash(text) {
+		return m.setStatusWarning("attach", "attachments cannot be added to Hero control commands"), nil
 	}
 
 	if m.awaitingRejectReason {
@@ -1284,7 +1290,7 @@ func (m model) submitConversation() (model, tea.Cmd) {
 	// while the agent is still asking in Chat.
 	if m.chatFollowUpControlSlash(text) {
 		if len(m.attachments) > 0 {
-			return m.setStatusWarning("attach", "attachments are available for Free Chat turns only"), nil
+			return m.setStatusWarning("attach", "attachments cannot be added to Hero control commands"), nil
 		}
 		return m.submitChatFollowUp(text)
 	}
@@ -1420,16 +1426,30 @@ func controlSlashFollowUpPrompt(text string) string {
 func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 	trimmed := strings.TrimSpace(text)
 	lower := strings.ToLower(trimmed)
+	attachmentSlash := lower == "/attach" || lower == "/attach-clipboard" || strings.HasPrefix(lower, "/attach ")
+	if attachmentSlash && strings.HasPrefix(strings.ToLower(strings.TrimSpace(m.nextUserOrigin)), "telegram:") {
+		m = m.clearChatInput()
+		m = m.setStatusResult(false, "attach", "image attachments are not accepted from Telegram")
+		return m, nil, true
+	}
+	if lower == "/attach" {
+		m = m.clearChatInput()
+		next, cmd := m.openAttachmentPicker()
+		return next, cmd, true
+	}
+	if lower == "/attach-clipboard" {
+		m = m.clearChatInput()
+		next, cmd := m.startClipboardAttachment()
+		return next, cmd, true
+	}
+	if strings.HasPrefix(lower, "/attach ") {
+		m = m.clearChatInput()
+		path := strings.TrimSpace(trimmed[len("/attach "):])
+		next, cmd := m.queueAttachmentPath(path)
+		return next, cmd, true
+	}
 	if m.freeChatMode {
 		switch lower {
-		case "/attach":
-			m = m.clearChatInput()
-			next, cmd := m.openAttachmentPicker()
-			return next, cmd, true
-		case "/attach-clipboard":
-			m = m.clearChatInput()
-			next, cmd := m.startClipboardAttachment()
-			return next, cmd, true
 		case slashModel, "/hero-model":
 			m = m.clearChatInput()
 			next, cmd := m.openModelPicker()
@@ -1451,12 +1471,6 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 			next, cmd := m.beginAction(slashVersion, m.versionCmd())
 			return next, cmd, true
 		default:
-			if strings.HasPrefix(lower, "/attach ") {
-				m = m.clearChatInput()
-				path := strings.TrimSpace(trimmed[len("/attach "):])
-				next, cmd := m.queueAttachmentPath(path)
-				return next, cmd, true
-			}
 			if strings.HasPrefix(lower, "/hero") {
 				m = m.clearChatInput()
 				m = m.setStatusResult(false, lower, "not available in free chat")
@@ -1464,11 +1478,6 @@ func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 			}
 			return m, nil, false
 		}
-	}
-	if strings.HasPrefix(lower, "/attach") {
-		m = m.clearChatInput()
-		m = m.setStatusResult(false, "attach", "image attachments are available in Free Chat only")
-		return m, nil, true
 	}
 	switch lower {
 	case "/hero-approve":
@@ -2523,7 +2532,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.afterExecuteTelegramDrain(replyCmd)
 		}
-		if trackedExecute && executeMeta.Freechat && len(executeMeta.Attachments) > 0 {
+		if trackedExecute && len(executeMeta.Attachments) > 0 {
 			// Only clear the chips after the provider accepted the turn. This
 			// also covers adapters that reject image input with their own safe
 			// provider-specific error.
