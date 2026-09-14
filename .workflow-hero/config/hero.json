@@ -1,14 +1,14 @@
 {
   "cli": {
-    "version": "3.2.0_db9315f",
+    "version": "3.2.0_0fe41f8",
     "installedAt": "2026-08-04T19:30:24Z",
     "tools": [
       "cursor"
     ]
   },
   "assets": {
-    "version": "3.2.0_db9315f",
-    "installedAt": "2026-09-12T02:44:47Z"
+    "version": "3.2.0_0fe41f8",
+    "installedAt": "2026-09-14T12:33:50Z"
   },
   "harnesses": {
     "claude": {
@@ -19,7 +19,7 @@
     },
     "codex": {
       "enabled": true,
-      "model": "gpt-5.6-luna",
+      "model": "gpt-5.6-sol",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     },
@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "claude",
-    "model": "opus"
+    "harness": "codex",
+    "model": "gpt-5.6-sol"
   },
   "chat_verbosity": "debug",
   "telegram": {
@@ -71,7 +71,7 @@
         "th": "off"
       },
       "gpt-5.6-sol": {
-        "ef": "medium",
+        "ef": "low",
         "th": "off"
       },
       "gpt-5.6-terra": {

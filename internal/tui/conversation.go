@@ -1762,7 +1762,9 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 	}
 	profile := harness.PermissionProfileAsk
 	if svc != nil {
-		if hero, err := install.LoadHeroJSON(projectDir); err == nil {
+		// ProjectDir owns Hero configuration. In `hero chat`, ExecuteDir is the
+		// caller's workspace and intentionally differs from this config root.
+		if hero, err := install.LoadHeroJSON(svc.ProjectDir); err == nil {
 			profile = install.HarnessPermissionProfile(hero, pair.HarnessID)
 		} else {
 			slog.Debug("tui permission profile load failed; using ask", "error", redact.Error(err))

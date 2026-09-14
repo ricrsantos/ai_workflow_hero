@@ -35,8 +35,9 @@ func (b PermissionBridge) logger() *slog.Logger {
 	return slog.Default()
 }
 
-// Run handles one JSON-RPC permission request. A token is consumed before the
-// TUI callback runs, so replay cannot create an additional approval prompt.
+// Run handles permission requests from one authenticated MCP connection. The
+// execution token is consumed before the first callback; subsequent requests
+// on that connection remain trusted until Execute closes the bridge.
 func (b PermissionBridge) Run(ctx context.Context) error {
 	if b.Reader == nil || b.Writer == nil || b.Token == nil || b.Request == nil {
 		return errors.New("Claude permission bridge is not configured")
@@ -46,47 +47,53 @@ func (b PermissionBridge) Run(ctx context.Context) error {
 	}
 	scanner := bufio.NewScanner(b.Reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxNDJSONLineBytes)
-	if !scanner.Scan() {
-		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("read Claude permission bridge: %w", err)
+	authenticated := false
+	for scanner.Scan() {
+		raw := append([]byte(nil), scanner.Bytes()...)
+		if err := ValidatePermissionToolRequest(raw); err != nil {
+			b.logger().Error("claude permission bridge rejected request", "error", err)
+			return err
 		}
+		request, err := decodeBridgeRequest(raw)
+		if err != nil {
+			return err
+		}
+		if !authenticated {
+			if err := b.Token.Consume(request.Token); err != nil {
+				b.logger().Error("claude permission bridge rejected token", "error", err)
+				return err
+			}
+			authenticated = true
+		}
+		b.logger().Info("claude permission decision requested", "tool", request.ToolName)
+		response, callbackErr := b.Request(ctx, harness.PermissionRequest{
+			ID:          request.ID,
+			Title:       "Claude permission: " + request.ToolName,
+			Description: "Claude requests permission to use " + request.ToolName + ".",
+			HarnessType: "claude.permission_prompt",
+			SessionID:   b.SessionID,
+		})
+		if callbackErr != nil {
+			response = harness.PermissionResponse{Approved: false, Reason: "permission decision unavailable"}
+		}
+		decision, err := encodeBridgeDecision(request.ID, request.Input, response)
+		if err != nil {
+			return err
+		}
+		if _, err := b.Writer.Write(append(decision, '\n')); err != nil {
+			return fmt.Errorf("write Claude permission decision: %w", err)
+		}
+		if callbackErr != nil {
+			return fmt.Errorf("Claude permission decision: %w", callbackErr)
+		}
+		b.logger().Info("claude permission decision forwarded", "approved", response.Approved)
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read Claude permission bridge: %w", err)
+	}
+	if !authenticated {
 		return io.EOF
 	}
-	raw := append([]byte(nil), scanner.Bytes()...)
-	if err := ValidatePermissionToolRequest(raw); err != nil {
-		b.logger().Error("claude permission bridge rejected request", "error", err)
-		return err
-	}
-	request, err := decodeBridgeRequest(raw)
-	if err != nil {
-		return err
-	}
-	if err := b.Token.Consume(request.Token); err != nil {
-		b.logger().Error("claude permission bridge rejected token", "error", err)
-		return err
-	}
-	b.logger().Info("claude permission decision requested", "tool", request.ToolName)
-	response, callbackErr := b.Request(ctx, harness.PermissionRequest{
-		ID:          request.ID,
-		Title:       "Claude permission: " + request.ToolName,
-		Description: "Claude requests permission to use " + request.ToolName + ".",
-		HarnessType: "claude.permission_prompt",
-		SessionID:   b.SessionID,
-	})
-	if callbackErr != nil {
-		response = harness.PermissionResponse{Approved: false, Reason: "permission decision unavailable"}
-	}
-	decision, err := encodeBridgeDecision(request.ID, request.Input, response)
-	if err != nil {
-		return err
-	}
-	if _, err := b.Writer.Write(append(decision, '\n')); err != nil {
-		return fmt.Errorf("write Claude permission decision: %w", err)
-	}
-	if callbackErr != nil {
-		return fmt.Errorf("Claude permission decision: %w", callbackErr)
-	}
-	b.logger().Info("claude permission decision forwarded", "approved", response.Approved)
 	return nil
 }
 

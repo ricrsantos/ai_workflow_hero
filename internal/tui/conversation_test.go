@@ -24,26 +24,27 @@ type streamingCall struct {
 }
 
 type streamingHarness struct {
-	mu              sync.Mutex
-	deltas          []string
-	events          []harness.StreamDelta
-	sessionIDs      []string
-	executeCount    int
-	sessionID       string
-	cancelCalled    bool
-	lastCancelSID   string
-	lastPrompt      string
-	lastSessionID   string
-	lastModel       string
-	lastMode        string
-	lastStageName   string
-	lastAgentName   string
-	lastProps       map[string]string
-	lastAttachments []harness.Attachment
-	err             error
-	release         chan struct{}
-	skipRelease     int // wait on release only after this many Executes
-	calls           []streamingCall
+	mu                    sync.Mutex
+	deltas                []string
+	events                []harness.StreamDelta
+	sessionIDs            []string
+	executeCount          int
+	sessionID             string
+	cancelCalled          bool
+	lastCancelSID         string
+	lastPrompt            string
+	lastSessionID         string
+	lastModel             string
+	lastMode              string
+	lastStageName         string
+	lastAgentName         string
+	lastProps             map[string]string
+	lastPermissionProfile harness.PermissionProfile
+	lastAttachments       []harness.Attachment
+	err                   error
+	release               chan struct{}
+	skipRelease           int // wait on release only after this many Executes
+	calls                 []streamingCall
 }
 
 func (h *streamingHarness) Name() string                      { return "streaming" }
@@ -61,6 +62,7 @@ func (h *streamingHarness) Execute(_ context.Context, req harness.ExecuteRequest
 	h.lastStageName = req.StageName
 	h.lastAgentName = req.AgentName
 	h.lastProps = harness.CloneProperties(req.Properties)
+	h.lastPermissionProfile = req.PermissionProfile
 	h.lastAttachments = append([]harness.Attachment(nil), req.Attachments...)
 	h.executeCount++
 	h.calls = append(h.calls, streamingCall{
@@ -1501,6 +1503,36 @@ func TestConversationSubmitWithoutStage(t *testing.T) {
 	view := ViewForTest(next)
 	if !strings.Contains(view, "Chat") || !strings.Contains(view, "pong") {
 		t.Fatalf("view=%q", view)
+	}
+}
+
+func TestFreeChatLoadsPermissionProfileFromConfigRoot(t *testing.T) {
+	configRoot := t.TempDir()
+	workDir := t.TempDir()
+	configDir := filepath.Join(configRoot, ".workflow-hero", "config")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "hero.json"), []byte(`{
+  "harnesses": {"cursor": {"enabled": true, "model": "composer-2.5", "permission_profile": "auto-all"}},
+  "freechat_default": {"harness": "cursor", "model": "composer-2.5"}
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServiceInstalledNoCycle(t, configRoot)
+	svc.WorkDir = workDir
+	h := &streamingHarness{deltas: []string{"done"}}
+	svc.Harness = h
+
+	m := withDefaultChatModel(NewTestModel(svc))
+	m.freeChatMode = true
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "run")
+	next, cmd := SubmitConversationForTest(m)
+	_ = drainConversationStream(t, next, cmd)
+
+	if h.lastPermissionProfile != harness.PermissionProfileAutoAll {
+		t.Fatalf("permission profile=%q, want %q", h.lastPermissionProfile, harness.PermissionProfileAutoAll)
 	}
 }
 

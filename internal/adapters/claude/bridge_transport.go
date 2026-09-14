@@ -211,6 +211,13 @@ func RunPermissionMCPHelper(ctx context.Context, reader io.Reader, writer io.Wri
 	}
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxNDJSONLineBytes)
+	var conn net.Conn
+	defer func() {
+		if conn != nil {
+			_ = conn.Close()
+		}
+	}()
+	var decisions *bufio.Reader
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -228,16 +235,17 @@ func RunPermissionMCPHelper(ctx context.Context, reader io.Reader, writer io.Wri
 			}
 			continue
 		}
-		conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", address)
-		if err != nil {
-			return fmt.Errorf("connect Claude permission bridge: %w", err)
+		if conn == nil {
+			conn, err = (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", address)
+			if err != nil {
+				return fmt.Errorf("connect Claude permission bridge: %w", err)
+			}
+			decisions = bufio.NewReader(conn)
 		}
 		if _, err := conn.Write(append(response, '\n')); err != nil {
-			_ = conn.Close()
 			return fmt.Errorf("forward Claude permission request: %w", err)
 		}
-		decision, err := bufio.NewReader(conn).ReadBytes('\n')
-		_ = conn.Close()
+		decision, err := decisions.ReadBytes('\n')
 		if err != nil {
 			return fmt.Errorf("read Claude permission decision: %w", err)
 		}

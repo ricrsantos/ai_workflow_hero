@@ -520,7 +520,10 @@ func (a *Adapter) command(dir string, req harness.ExecuteRequest) (Invocation, e
 	}
 	switch req.PermissionProfile {
 	case harness.PermissionProfileAsk:
-		invocation.Args = append(invocation.Args, "--permission-prompt-tool", PermissionPromptToolName)
+		invocation.Args = append(invocation.Args,
+			"--allowedTools", PermissionPromptToolName,
+			"--permission-prompt-tool", PermissionPromptToolName,
+		)
 	case harness.PermissionProfileAutoProject:
 		invocation.Args = append(invocation.Args, "--permission-mode", "acceptEdits")
 	case harness.PermissionProfileAutoAll:

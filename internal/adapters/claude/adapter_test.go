@@ -254,7 +254,8 @@ func TestAdapterAskAddsProvenPermissionPromptTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsString(launcher.invocation.Args, "--permission-prompt-tool") || !containsString(launcher.invocation.Args, PermissionPromptToolName) {
+	if !containsArgPair(launcher.invocation.Args, "--allowedTools", PermissionPromptToolName) ||
+		!containsArgPair(launcher.invocation.Args, "--permission-prompt-tool", PermissionPromptToolName) {
 		t.Fatalf("ask args=%q", launcher.invocation.Args)
 	}
 	if result.NativeModel != "claude-sonnet-4-20250514" || result.EffectiveProperties["ef"] != "high" {

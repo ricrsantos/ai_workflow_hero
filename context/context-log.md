@@ -4,6 +4,14 @@
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.
 
+## 2026-09-14 — Claude Free Chat permission and YOLO repair
+
+**Problem**: `hero chat` loaded the active harness permission profile from the execution workspace (`svc.WorkDir`) instead of the global configuration root (`svc.ProjectDir`), silently falling back to `ask`; Claude's private MCP permission tool was not explicitly allowed and its transport accepted only one decision per turn.
+
+**Change**: Free Chat now reads `hero.json` from `svc.ProjectDir` while still executing Claude in `svc.WorkDir`. Claude ask adds `--allowedTools mcp__hero_permissions__approval_prompt`, keeps one authenticated helper connection for all sequential permission requests in a turn, and preserves token replay rejection across connections. Added TUI config-root and multi-decision bridge regressions.
+
+**Verification**: Focused Claude/TUI tests and their race variants pass; full repository tests pass.
+
 ## 2026-09-12 — Validation loop: repro modes, async gate, and ceilings
 
 **Problem**: The C15 handoff made QA→Implementation deterministic, but three things could still stall or freeze a cycle. (1) The repro contract was Go-only and fail-closed: `repro.package` had to be `./go/path` and `repro.test` a `Test*` name, and the gate ran `go test` literally. In any non-Go project — and for Browser UI visual failures anywhere — QA/Judge/BUI/E2E could not emit a valid report, so every failure was rejected with nothing persisted. (2) The gate ran inside the Bubble Tea `Update` loop with a 2-minute timeout per finding and no aggregate cap, so a wave with several findings froze the TUI for minutes. (3) Nothing bounded an individual finding: `EscalateIfExhausted` had no production caller, the stage budget was only checked at `StartStage`, and a finding could be reopened indefinitely.
