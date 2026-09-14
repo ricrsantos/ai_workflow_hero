@@ -231,6 +231,126 @@ func TestModelsUsePersistedListBeforeCatalog(t *testing.T) {
 	}
 }
 
+func TestModelListStateUsesCatalogWhileHarnessRefreshIsPending(t *testing.T) {
+	dir := t.TempDir()
+	svc, st := newTestService(t, dir)
+	svc.Catalog = Catalog{
+		"catalog/model": {Provider: "codex"},
+	}
+	if _, err := st.BeginRefresh("codex"); err != nil {
+		t.Fatal(err)
+	}
+
+	state := svc.ModelListState("codex")
+	if state.Source != ModelListSourceCatalog || state.Authoritative || !state.Pending {
+		t.Fatalf("pending state=%+v", state)
+	}
+	if len(state.Models) != 1 || state.Models[0] != "catalog/model" {
+		t.Fatalf("catalog fallback models=%v", state.Models)
+	}
+}
+
+func TestModelListStateTreatsEmptyHarnessResponseAsAuthoritative(t *testing.T) {
+	dir := t.TempDir()
+	svc, st := newTestService(t, dir)
+	svc.Catalog = Catalog{
+		"stale/model": {Provider: "codex"},
+	}
+	if err := st.UpsertModelList("codex", []string{}, "2026-09-14T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+
+	state := svc.ModelListState("codex")
+	if state.Source != ModelListSourceCache || !state.Authoritative || len(state.Models) != 0 {
+		t.Fatalf("empty cached response must remain authoritative: %+v", state)
+	}
+	if got := svc.Models("codex"); len(got) != 0 {
+		t.Fatalf("stale catalog leaked after empty response: %v", got)
+	}
+}
+
+func TestRefreshReconcilesCatalogToLiveInventory(t *testing.T) {
+	dir := t.TempDir()
+	svc, _ := newTestService(t, dir)
+	svc.Catalog = Catalog{
+		"static/model": {
+			Provider:      "codex",
+			Input:         1.25,
+			CacheWrite:    2.5,
+			CacheRead:     0.125,
+			Output:        10,
+			ContextWindow: 272000,
+			Currency:      "usd",
+			Unit:          "per_1m_tokens",
+			HasPricing:    true,
+			Properties: map[string]CatalogProperty{
+				"ef": {Available: true, Values: []string{"low", "high"}, Default: "low", HasProperty: true},
+			},
+		},
+		"stale/model": {Provider: "codex"},
+	}
+	adapter := &fakeListOnlyAdapter{
+		name:   "codex",
+		models: []string{"static/model", "live/model"},
+	}
+	svc.Registry = &fakeRegistry{
+		adapters: map[string]harness.HarnessAdapter{"codex": adapter},
+		calls:    map[string]int{},
+	}
+
+	summaries := svc.Refresh(context.Background(), []string{"codex"})
+	if len(summaries) != 1 || summaries[0].Err != nil {
+		t.Fatalf("refresh summaries=%+v", summaries)
+	}
+	state := svc.ModelListState("codex")
+	if state.Source != ModelListSourceLive || !state.Authoritative {
+		t.Fatalf("live state=%+v", state)
+	}
+	if len(state.Models) != 2 || state.Models[0] != "static/model" || state.Models[1] != "live/model" {
+		t.Fatalf("live models=%v", state.Models)
+	}
+
+	cat := svc.catalogForHarness("codex")
+	if cat.HasModel("stale/model") {
+		t.Fatal("static-only model must be excluded from reconciled catalog")
+	}
+	static := cat["static/model"]
+	if static.Input != 1.25 || static.CacheWrite != 2.5 || static.CacheRead != 0.125 || static.Output != 10 || static.ContextWindow != 272000 {
+		t.Fatalf("static metadata was not preserved: %+v", static)
+	}
+	live := cat["live/model"]
+	if live.Provider != "codex" || live.Input != 0 || live.CacheWrite != 0 || live.CacheRead != 0 || live.Output != 0 || live.ContextWindow != 0 {
+		t.Fatalf("live-only defaults=%+v", live)
+	}
+	for _, key := range harness.PropertyKeys() {
+		property, ok := live.Properties[key]
+		if !ok || property.Available || property.Default != "na" || len(property.Values) != 1 || property.Values[0] != "na" || !property.FallbackOnly {
+			t.Fatalf("live-only %s metadata=%+v present=%v", key, property, ok)
+		}
+	}
+}
+
+func TestRefreshEmptyLiveInventoryRemovesCatalogRows(t *testing.T) {
+	dir := t.TempDir()
+	svc, _ := newTestService(t, dir)
+	svc.Catalog = Catalog{"stale/model": {Provider: "codex"}}
+	svc.Registry = &fakeRegistry{
+		adapters: map[string]harness.HarnessAdapter{
+			"codex": &fakeListOnlyAdapter{name: "codex", models: nil},
+		},
+		calls: map[string]int{},
+	}
+
+	svc.Refresh(context.Background(), []string{"codex"})
+	state := svc.ModelListState("codex")
+	if !state.Authoritative || len(state.Models) != 0 || state.Source != ModelListSourceLive {
+		t.Fatalf("empty live state=%+v", state)
+	}
+	if svc.catalogForHarness("codex").HasModel("stale/model") {
+		t.Fatal("empty live inventory must remove static-only rows")
+	}
+}
+
 func TestSnapshotUsesStaleCacheAfterRefreshFailure(t *testing.T) {
 	dir := t.TempDir()
 	svc, st := newTestService(t, dir)

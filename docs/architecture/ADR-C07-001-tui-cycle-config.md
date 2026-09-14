@@ -68,7 +68,7 @@
 
 **Context:** Loading YAML, validating capabilities, writing files, synchronizing SQLite, and starting harness preflight can block or perform external work. Blocking Bubble Tea's event loop would make the Config screen unresponsive.
 
-**Decision:** Implement Config as an Elm Architecture screen. Window size, theme, focus, dirty state, validation messages, and transitions are handled as messages. File I/O, catalog refresh, atomic writes, SQLite synchronization, retry calls, and `/hero-start` preflight run in `tea.Cmd` workers and return typed messages. Key bindings use centralized `key.Binding` values and `key.Matches`.
+**Decision:** Implement Config as an Elm Architecture screen. Window size, theme, focus, dirty state, validation messages, and transitions are handled as messages. File I/O, Harness model-list/catalog refresh, atomic writes, SQLite synchronization, retry calls, and `/hero-start` preflight run in `tea.Cmd` workers and return typed messages. Config renders the catalog/cache fallback while discovery is pending, then uses the exact successful Harness inventory; live-only rows use the full catalog-shaped unknown/`na` metadata. Key bindings use centralized `key.Binding` values and `key.Matches`.
 
 **Consequences:**
 
@@ -76,3 +76,4 @@
 - View functions remain pure, use `strings.Builder`, and calculate widths with Lip Gloss/ANSI-aware helpers.
 - Responsive rendering must hide lower-priority controls or show an intentional too-small warning.
 - TUI tests can exercise state transitions with temporary files and typed messages without live harnesses.
+- A stale configured model can remain in the draft for a non-destructive save, but is warned about and is not reintroduced into the selectable model rows after an authoritative Harness response.

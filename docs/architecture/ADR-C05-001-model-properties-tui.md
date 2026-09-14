@@ -46,6 +46,8 @@ Decision:
 5. Start background refresh for every enabled harness when `/hero-model` opens, not at TUI boot.
 6. Apply completed refresh results on the next selector opening so the active list never moves beneath the user's cursor.
 7. Do not start OpenCode at TUI boot solely for metadata preloading.
+8. Treat a successful `ListModels` response as an exact Harness inventory, including an empty response. Build a derived, Harness-scoped catalog view from that inventory: drop static rows that are absent, copy matching catalog metadata, and synthesize live-only rows with the complete catalog shape and explicit zero/unknown/`na` values.
+9. Keep the embedded/installed static catalog immutable as the fallback source. A failed or pending refresh uses the best available cache/catalog view; reconciliation never overwrites the fallback data.
 
 Consequences:
 
@@ -53,6 +55,8 @@ Consequences:
 - A user can select a model immediately from cache or catalog while refresh runs.
 - SQLite schema/version migration is required for the cache.
 - Cache data is project-specific and must not be treated as a global provider catalog.
+- A successful live inventory cannot be polluted by stale catalog IDs, even when the catalog contains a model for another Harness or an older provider snapshot.
+- Config can preserve a stale value already present in YAML for a non-destructive save, while keeping that value out of the selectable rows and displaying a warning.
 
 ## ADR-040: Per-harness/model property persistence in hero.json
 

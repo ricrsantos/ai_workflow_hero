@@ -89,6 +89,8 @@ Harnesses enabled in the project are selectable regardless of PATH availability.
 
 Known model capabilities determine which `fs`, `th`, and `ef` controls are shown. An explicit saved UI choice is styled as configured and is not replaced by a later catalog default. Unknown capability metadata produces a warning and preserves compatible YAML values. Save remains possible; execution availability errors use the existing harness error copy.
 
+The model picker uses the local catalog (or the last persisted model-list cache) immediately while Harness discovery is pending or unavailable. Once a Harness returns a successful model list, that list becomes authoritative: catalog-only rows disappear, live-only rows are offered with unknown/`na` metadata, and an explicitly empty response produces no selectable rows. If the current YAML model is no longer returned, Config preserves it for non-destructive editing and shows a warning, but does not offer it as a new picker choice.
+
 ## 7. Editing states
 
 The screen has these user-visible states:

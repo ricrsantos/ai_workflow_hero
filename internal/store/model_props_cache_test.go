@@ -199,8 +199,14 @@ func TestCacheCrossProjectIsolation(t *testing.T) {
 
 func TestModelListCacheUpsertAndRead(t *testing.T) {
 	st := newStoreAt(t, t.TempDir())
+	if _, _, found, err := st.ModelListSnapshot("cursor"); err != nil || found {
+		t.Fatalf("missing model-list row found=%v err=%v", found, err)
+	}
 	if err := st.UpsertModelList("cursor", []string{"composer-2.5", "grok-4.6"}, "2026-08-17T10:00:00Z"); err != nil {
 		t.Fatal(err)
+	}
+	if _, _, found, err := st.ModelListSnapshot("cursor"); err != nil || !found {
+		t.Fatalf("stored model-list row found=%v err=%v", found, err)
 	}
 	models, ts, err := st.ModelList("cursor")
 	if err != nil || len(models) != 2 || models[1] != "grok-4.6" {
@@ -212,6 +218,13 @@ func TestModelListCacheUpsertAndRead(t *testing.T) {
 	models, ts, _ = st.ModelList("cursor")
 	if len(models) != 1 || ts != "2026-08-17T11:00:00Z" {
 		t.Fatalf("replacement failed: %v %s", models, ts)
+	}
+	if err := st.UpsertModelList("cursor", []string{}, "2026-08-17T12:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	models, ts, found, err := st.ModelListSnapshot("cursor")
+	if err != nil || !found || len(models) != 0 || ts != "2026-08-17T12:00:00Z" {
+		t.Fatalf("empty model-list response lost presence: models=%v ts=%s found=%v err=%v", models, ts, found, err)
 	}
 	if _, _, err := st.ModelList("opencode"); err != nil {
 		t.Fatalf("missing row must be a clean miss: %v", err)

@@ -2352,3 +2352,24 @@ Added `TestTelegramConfigWizardSuppressesAutomaticStatus`.
 
 **Verification**: `gofmt`; targeted Telegram TUI tests; `go test ./...`;
 `git diff --check`.
+
+## 2026-09-14 — Config model inventory follows Harness authority
+
+**Problem**: Config merged static model catalog rows with Harness discovery. A
+provider snapshot could therefore expose stale or foreign IDs such as
+`gpt-5.3-codex`, even when Codex's `ListModels` response did not contain them.
+
+**Implementation**: Added source-aware model-list state with live, project-cache,
+and catalog precedence. The catalog remains the immediate fallback while
+discovery is pending or unavailable. A successful Harness list, including an
+empty list, is authoritative; the active catalog view is derived to contain
+exactly those IDs. Existing metadata is retained for matches, and live-only
+models receive the full catalog-shaped zero/unknown/`na` representation without
+mutating the static catalog. Config excludes stale rows from the picker while
+preserving an existing YAML value for non-destructive Save and warning about it.
+Removed the stale Codex `gpt-5.3-codex` static row and added store, service,
+catalog, and TUI regressions.
+
+**Verification**: `gofmt`; focused tests; full `go test ./...`;
+`go test -race ./internal/modelprops ./internal/tui`; `go vet ./...`; and
+`git diff --check` all passed.

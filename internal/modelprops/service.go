@@ -25,41 +25,52 @@ type Service struct {
 
 	mu      sync.Mutex
 	pending map[string]int64 // harness → in-flight refresh generation
+	// liveModelLists keeps a successful response available immediately even
+	// when persistence is unavailable. The project store remains the durable
+	// source across TUI restarts.
+	liveModelLists map[string]liveModelList
 	// refreshErrors records the latest explicit live-refresh failure per
 	// harness so a later local snapshot can explain stale cache data.
 	refreshErrors map[string]error
+	// modelListErrors tracks listing failures separately from capability
+	// discovery failures. A model list can be authoritative even when optional
+	// property discovery fails for one or more rows.
+	modelListErrors map[string]error
 }
 
 // NewService builds the model-property service for a project. Registry may be
 // nil (tests); the embedded catalog is always available.
 func NewService(projectDir string, st *store.Store, reg harnessmgr.Registry, embedded fs.FS) *Service {
 	return &Service{
-		ProjectDir:    projectDir,
-		Store:         st,
-		Registry:      reg,
-		Catalog:       LoadCatalog(embedded, projectDir),
-		pending:       map[string]int64{},
-		refreshErrors: map[string]error{},
+		ProjectDir:      projectDir,
+		Store:           st,
+		Registry:        reg,
+		Catalog:         LoadCatalog(embedded, projectDir),
+		pending:         map[string]int64{},
+		liveModelLists:  map[string]liveModelList{},
+		refreshErrors:   map[string]error{},
+		modelListErrors: map[string]error{},
 	}
 }
 
-// Snapshot returns the best local view immediately: project cache first, then
-// catalog, then unknown/na (ADR-039). No harness API is touched here, so
-// `/hero-model` never blocks and OpenCode is never started at TUI boot.
+// Snapshot returns the best local view immediately: in-process live data,
+// project cache, catalog, then unknown/na (ADR-039). No harness API is touched
+// here, so `/hero-model` never blocks and OpenCode is never started at TUI boot.
 func (s *Service) Snapshot(harnessID, modelID string) Snapshot {
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
 	modelID = strings.TrimSpace(modelID)
 	s.mu.Lock()
 	refreshErr := s.refreshErrors[harnessID]
 	s.mu.Unlock()
+	cat := s.catalogForHarness(harnessID)
 	var snap Snapshot
 	if s.Store != nil {
 		if row, ok, err := s.Store.Capabilities(harnessID, modelID); err == nil && ok {
-			snap = Resolve(harnessID, modelID, nil, refreshErr, &row, true, s.Catalog)
+			snap = Resolve(harnessID, modelID, nil, refreshErr, &row, true, cat)
 			return applyCursorSlugLocks(snap)
 		}
 	}
-	snap = Resolve(harnessID, modelID, nil, refreshErr, nil, false, s.Catalog)
+	snap = Resolve(harnessID, modelID, nil, refreshErr, nil, false, cat)
 	return applyCursorSlugLocks(snap)
 }
 
@@ -72,14 +83,30 @@ func (s *Service) SnapshotCacheOnly(harnessID, modelID string) Snapshot {
 	s.mu.Lock()
 	refreshErr := s.refreshErrors[harnessID]
 	s.mu.Unlock()
+	cat := s.catalogForHarness(harnessID)
 	if s.Store != nil {
 		if row, ok, err := s.Store.Capabilities(harnessID, modelID); err == nil && ok {
-			snap := Resolve(harnessID, modelID, nil, refreshErr, &row, true, s.Catalog)
+			snap := Resolve(harnessID, modelID, nil, refreshErr, &row, true, cat)
 			return applyCursorSlugLocks(snap)
 		}
 	}
-	snap := Resolve(harnessID, modelID, nil, refreshErr, nil, false, s.Catalog)
+	snap := Resolve(harnessID, modelID, nil, refreshErr, nil, false, cat)
 	return applyCursorSlugLocks(snap)
+}
+
+// catalogForHarness returns a reconciled catalog when a successful Harness
+// inventory exists. Static catalog entries absent from that inventory are not
+// allowed to enrich the active model view, while live-only rows still receive
+// the standard unknown/na metadata shape.
+func (s *Service) catalogForHarness(harnessID string) Catalog {
+	if s == nil {
+		return nil
+	}
+	state := s.ModelListState(harnessID)
+	if !state.Authoritative {
+		return s.Catalog
+	}
+	return s.Catalog.ReconcileForHarness(harnessID, state.Models)
 }
 
 func enrichCapabilitiesFromCatalog(cat Catalog, harnessID, modelID string, caps harness.ModelCapabilities) harness.ModelCapabilities {
@@ -137,23 +164,10 @@ func applyCursorSlugLocks(snap Snapshot) Snapshot {
 }
 
 // Models returns the best immediately available model rows for a harness.
-// A successful live list is persisted in the project store and wins on the
-// next picker opening; an absent cache falls back to the local catalog without
-// starting a harness process.
+// Successful in-process live data wins, followed by the persisted project
+// cache and the local catalog; no Harness process is started by this method.
 func (s *Service) Models(harnessID string) []string {
-	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
-	if s == nil || harnessID == "" {
-		return nil
-	}
-	if s.Store != nil {
-		if models, _, err := s.Store.ModelList(harnessID); err == nil && len(models) > 0 {
-			return uniqueModelIDs(models)
-		}
-	}
-	if s.Catalog == nil {
-		return nil
-	}
-	return uniqueModelIDs(s.Catalog.ModelsForHarness(harnessID))
+	return s.ModelListState(harnessID).Models
 }
 
 // CachedModels returns only a persisted API model list.  It is separate from
@@ -165,7 +179,7 @@ func (s *Service) CachedModels(harnessID string) []string {
 	if s == nil || s.Store == nil || harnessID == "" {
 		return nil
 	}
-	models, _, err := s.Store.ModelList(harnessID)
+	models, _, _, err := s.Store.ModelListSnapshot(harnessID)
 	if err != nil {
 		return nil
 	}
@@ -256,11 +270,13 @@ func (s *Service) refreshHarness(ctx context.Context, harnessID string) RefreshS
 
 	if s.Registry == nil {
 		summary.Err = fmt.Errorf("harness registry unavailable")
+		s.setModelListError(harnessID, summary.Err)
 		return summary
 	}
 	adapter, err := s.Registry.Adapter(harnessID)
 	if err != nil {
 		summary.Err = err
+		s.setModelListError(harnessID, summary.Err)
 		slog.Debug("modelprops refresh adapter unavailable", "harness", harnessID, "error", err)
 		return summary
 	}
@@ -272,12 +288,15 @@ func (s *Service) refreshHarness(ctx context.Context, harnessID string) RefreshS
 		models, listErr := lister.ListModels(ctx)
 		if listErr != nil {
 			summary.Err = listErr
+			s.setModelListError(harnessID, listErr)
 			slog.Error("modelprops refresh list models failed", "harness", harnessID, "error", listErr)
 		} else {
 			models = uniqueModelIDs(models)
 			summary.Models = len(models)
+			refreshedAt := time.Now().UTC().Format(time.RFC3339)
+			s.setLiveModelList(harnessID, models, refreshedAt)
 			if s.Store != nil {
-				if err := s.Store.UpsertModelList(harnessID, models, time.Now().UTC().Format(time.RFC3339)); err != nil {
+				if err := s.Store.UpsertModelList(harnessID, models, refreshedAt); err != nil {
 					summary.Err = firstRefreshError(summary.Err, err)
 					slog.Error("modelprops refresh persist model list failed", "harness", harnessID, "error", err)
 				}

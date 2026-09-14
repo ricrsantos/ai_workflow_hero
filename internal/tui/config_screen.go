@@ -161,8 +161,8 @@ func (m model) handleConfigMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.fieldErrors = nil
 		// Config is an explicit request to choose agent models. Start the C5
 		// refresh here (never at TUI boot) so OpenCode/Codex lists are persisted
-		// for this form without blocking its initial render. Until it completes,
-		// configModelChoices uses the cache and embedded catalog.
+		// for this form without blocking its initial render. Until a successful
+		// list exists, configModelChoices uses the last cache or catalog fallback.
 		if enabled := m.enabledHarnessIDs(); m.propsSvc != nil && !m.propsRefreshBusy && len(enabled) > 0 {
 			m.propsRefreshBusy = true
 			return m, m.startModelPropsRefresh(enabled)
@@ -395,20 +395,38 @@ func (m model) configCapabilityWarning(field configField) string {
 	if m.propsSvc == nil || field.kind != "model" || field.agent == "" {
 		return ""
 	}
+	harnessID, modelID := m.configModelFieldPair(field)
+	if m.propsSvc.Snapshot(harnessID, modelID).Source != modelprops.SourceUnknown {
+		return ""
+	}
+	return "⚠ Missing capability data; configured properties are preserved."
+}
+
+func (m model) configModelAvailabilityWarning(field configField) string {
+	if m.propsSvc == nil || field.kind != "model" || field.agent == "" {
+		return ""
+	}
+	harnessID, modelID := m.configModelFieldPair(field)
+	state := m.propsSvc.ModelListState(harnessID)
+	if !state.Authoritative || containsModelID(state.Models, modelID) {
+		return ""
+	}
+	return fmt.Sprintf("⚠ Model %q was not returned by %s; configured value is preserved.", modelID, harnessDisplayName(harnessID))
+}
+
+func (m model) configModelFieldPair(field configField) (harnessID, modelID string) {
 	isSubagent := strings.HasSuffix(field.agent, ":subagent")
 	agentName := strings.TrimSuffix(field.agent, ":subagent")
 	agent := m.config.draft.FallbackModel
 	if agentName != "fallback_model" {
 		agent = m.config.draft.Agents[agentName]
 	}
-	model := agent.Model
+	harnessID = agent.Harness
+	modelID = agent.Model
 	if isSubagent {
-		model = agent.Subagent.Model
+		modelID = agent.Subagent.Model
 	}
-	if m.propsSvc.Snapshot(agent.Harness, model).Source != modelprops.SourceUnknown {
-		return ""
-	}
-	return "⚠ Missing capability data; configured properties are preserved."
+	return harnessID, modelID
 }
 
 func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -882,11 +900,9 @@ func (m model) cycleConfigChoice(field configField) model {
 	return m
 }
 
-// configModelChoices returns every locally known model for an enabled harness.
-// Boot deliberately avoids launching managed OpenCode/Codex processes, so
-// modelOptions alone can contain only Cursor rows. modelsForHarness adds the
-// persisted capability cache and embedded catalog, which keeps Config usable
-// immediately and lets the asynchronous refresh replace that local view later.
+// configModelChoices returns only the successful Harness inventory when one is
+// available. Before that inventory exists, boot options, cache, and the local
+// catalog keep Config usable while the asynchronous refresh runs.
 // cycleConfigVerificationChoice advances a verification field through its
 // explicit option list. "auto" removes the key so the project keeps deciding.
 func (m model) cycleConfigVerificationChoice(field configField) model {
@@ -923,7 +939,17 @@ func (m model) cycleConfigVerificationChoice(field configField) model {
 }
 
 func (m model) configModelChoices(harnessID, current string) []string {
+	if live, ok := m.authoritativeModelChoices(harnessID); ok {
+		return live
+	}
 	return m.modelChoicesForHarness(harnessID, current, nil)
+}
+
+// configModelValidationChoices keeps an existing configured value valid for
+// save purposes even after a successful Harness refresh no longer returns it.
+// The picker itself never presents that stale value as a new selectable row.
+func (m model) configModelValidationChoices(harnessID, current string) []string {
+	return modelChoicesWithCurrent(m.configModelChoices(harnessID, current), current)
 }
 
 // configPropertyChoices returns the workflow values the focused thinking/effort
@@ -1096,7 +1122,7 @@ func (m model) configSaveCmd(start bool) tea.Cmd {
 func (m model) configValidationOptions() workflowconfig.ValidationOptions {
 	opts := workflowconfig.ValidationOptions{}
 	opts.ModelKnown = func(harnessID, modelID string) (bool, bool) {
-		choices := m.configModelChoices(harnessID, modelID)
+		choices := m.configModelValidationChoices(harnessID, modelID)
 		if len(choices) == 0 {
 			return false, false
 		}
@@ -1300,6 +1326,9 @@ func (m model) renderConfig() string {
 		}
 		if message, ok := m.config.fieldErrors[field.path]; ok {
 			line += "\n" + errorStyle.Render("    ✗ "+message)
+		}
+		if warning := m.configModelAvailabilityWarning(field); warning != "" {
+			line += "\n" + warnStyle.Render("    "+warning)
 		}
 		if warning := m.configCapabilityWarning(field); warning != "" {
 			line += "\n" + warnStyle.Render("    "+warning)

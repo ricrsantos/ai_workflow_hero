@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
@@ -16,9 +17,17 @@ const configModelPickerMax = 8
 func (m model) openConfigModelPicker(field configField) model {
 	agent := m.configAgentForField(field)
 	current := m.configFieldValue(field)
+	state := modelprops.ModelListState{}
+	if m.propsSvc != nil {
+		state = m.propsSvc.ModelListState(agent.Harness)
+	}
 	choices := m.configModelChoices(agent.Harness, current)
 	if len(choices) == 0 {
-		m.config.message = "⚠ Model catalog unavailable; existing YAML model retained."
+		if state.Authoritative {
+			m.config.message = fmt.Sprintf("⚠ %s reported no available models; existing YAML model retained.", harnessDisplayName(agent.Harness))
+		} else {
+			m.config.message = "⚠ Model catalog unavailable; existing YAML model retained."
+		}
 		return m
 	}
 	m.config.modelPicker = true
@@ -26,8 +35,21 @@ func (m model) openConfigModelPicker(field configField) model {
 	m.config.pickerItems = choices
 	m.config.pickerIndex = configChoiceIndex(choices, current)
 	m.config.pickerOffset = 0
-	m.config.message = ""
+	m.config.message = configModelPickerMessage(state, agent.Harness, current, choices)
 	return m.ensureConfigModelPickerVisible()
+}
+
+func configModelPickerMessage(state modelprops.ModelListState, harnessID, current string, choices []string) string {
+	if state.Authoritative && !containsModelID(choices, current) && strings.TrimSpace(current) != "" {
+		return fmt.Sprintf("⚠ Model %q was not returned by %s; configured value is preserved.", current, harnessDisplayName(harnessID))
+	}
+	if state.Pending && state.Source == modelprops.ModelListSourceCatalog {
+		return fmt.Sprintf("⚠ Harness model list is still loading; showing the local catalog for %s.", harnessDisplayName(harnessID))
+	}
+	if state.Err != nil {
+		return fmt.Sprintf("⚠ Harness refresh failed; showing the last known local list for %s.", harnessDisplayName(harnessID))
+	}
+	return ""
 }
 
 func (m model) closeConfigModelPicker() model {

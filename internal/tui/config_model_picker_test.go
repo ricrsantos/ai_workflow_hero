@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
+	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
@@ -26,6 +27,47 @@ func TestConfigModelPickerListsModelsAlphabetically(t *testing.T) {
 		if strings.ToLower(items[i-1]) > strings.ToLower(items[i]) {
 			t.Fatalf("picker items are not alphabetical at %d: %q then %q", i, items[i-1], items[i])
 		}
+	}
+}
+
+func TestConfigModelPickerUsesSuccessfulHarnessInventoryOnly(t *testing.T) {
+	m, _ := newPickerTestModel(t)
+	m.width, m.height = 120, 40
+	m.screen = screenConfig
+	m.config.doc = &workflowconfig.Document{}
+	m.config.draft = workflowconfig.ManagedConfig{
+		Agents: map[string]workflowconfig.AgentModelConfig{
+			"orchestration_agent": {Harness: "codex", Model: "gpt-5.3-codex"},
+			"context_agent":       {Harness: "cursor", Model: "composer-2.5"},
+		},
+	}
+	m.propsSvc.Catalog = modelprops.Catalog{
+		"gpt-5.3-codex": {Provider: "codex"},
+		"gpt-5.6-luna":  {Provider: "codex"},
+		"stale/model":   {Provider: "codex"},
+	}
+	if err := m.svc.Store.UpsertModelList("codex", []string{"gpt-5.6-luna"}, "2026-09-14T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	m = focusConfigPath(t, m, "agents.orchestration_agent.model")
+
+	next, _ := m.handleConfigKey(tea.KeyMsg{Type: tea.KeyEnter})
+	got := next.(model)
+	if !got.config.modelPicker {
+		t.Fatal("successful Harness inventory must open the picker")
+	}
+	if len(got.config.pickerItems) != 1 || got.config.pickerItems[0] != "gpt-5.6-luna" {
+		t.Fatalf("picker leaked catalog rows: %v", got.config.pickerItems)
+	}
+	if !strings.Contains(got.config.message, "gpt-5.3-codex") || !strings.Contains(got.config.message, "not returned") {
+		t.Fatalf("stale configured model warning=%q", got.config.message)
+	}
+	if got.config.draft.Agents["orchestration_agent"].Model != "gpt-5.3-codex" {
+		t.Fatal("opening the picker must preserve a stale configured value")
+	}
+	known, present := got.configValidationOptions().ModelKnown("codex", "gpt-5.3-codex")
+	if !known || !present {
+		t.Fatal("an existing stale model must remain valid for a non-destructive Config save")
 	}
 }
 

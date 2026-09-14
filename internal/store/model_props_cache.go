@@ -46,22 +46,31 @@ ON CONFLICT(harness) DO UPDATE SET models_json = excluded.models_json, refreshed
 // ModelList reads the cached model list for a harness regardless of age.
 // Returns (nil, "", nil) when no row exists.
 func (s *Store) ModelList(harness string) ([]string, string, error) {
+	models, refreshedAt, _, err := s.ModelListSnapshot(harness)
+	return models, refreshedAt, err
+}
+
+// ModelListSnapshot reads the cached model list and reports whether a row was
+// found. The found bit matters because a successful Harness response may be an
+// empty list, which must not be confused with a cache miss and replaced by the
+// static catalog.
+func (s *Store) ModelListSnapshot(harness string) ([]string, string, bool, error) {
 	harness = strings.TrimSpace(harness)
 	var raw, refreshedAt string
 	err := s.db.QueryRow(`
 SELECT models_json, refreshed_at FROM model_list_cache WHERE harness = ?`, harness).
 		Scan(&raw, &refreshedAt)
 	if err == sql.ErrNoRows {
-		return nil, "", nil
+		return nil, "", false, nil
 	}
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 	var models []string
 	if err := json.Unmarshal([]byte(raw), &models); err != nil {
-		return nil, "", fmt.Errorf("unmarshal cached model list: %w", err)
+		return nil, "", false, fmt.Errorf("unmarshal cached model list: %w", err)
 	}
-	return models, refreshedAt, nil
+	return models, refreshedAt, true, nil
 }
 
 // UpsertCapabilities replaces the cached normalized capabilities for one

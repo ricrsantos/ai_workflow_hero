@@ -83,6 +83,10 @@ Property values are dynamic strings supplied by the selected harness or a local 
 10. A cache MAY be used regardless of age when the API fails. The cache timestamp MUST be retained so stale data can be identified in warnings or diagnostics.
 11. If no API, cache, or local catalog is available, the TUI MUST continue without failing silently and MUST show a yellow warning.
 12. The local catalog MAY provide model IDs as well as property metadata when live model listing and cache are unavailable.
+13. While a live model-list refresh is pending, the TUI MUST use the best existing local source immediately; it MUST NOT block the selector on Harness I/O.
+14. A successful Harness model-list response MUST be authoritative for model IDs, including an explicitly empty response. The TUI MUST NOT merge catalog, cache, boot, or current-config-only IDs into that successful list.
+15. After a successful response, the active catalog view MUST contain exactly the Harness model IDs. Static rows absent from the response MUST be excluded, and live-only rows MUST be materialized with the catalog schema, zero/unknown pricing and context values where unavailable, and `na`/unavailable values for unsupported C5 properties.
+16. Reconciliation MUST be derived without destroying the static catalog fallback, so a later refresh failure can still use the last known cache or local catalog.
 
 ### 4.3 Property values and defaults
 

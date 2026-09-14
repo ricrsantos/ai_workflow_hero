@@ -228,6 +228,8 @@ Default entry: `hero` / `hero tui` (requires `FindProjectRoot` / a project `.wor
 | `herocmd.go` | `/hero-*` slash dispatch and orchestrator prompt assembly |
 | `palette.go` / `slash_overlay.go` | Command palette and Chat `/` autocomplete |
 | `harness_boot.go` / `model_gate.go` | Harness availability, model picker at boot |
+| `model_picker.go` / `config_model_picker.go` | Harness model inventory selection: catalog/cache fallback while discovery is pending, exact successful Harness inventory afterward, and stale-config warnings |
+| `internal/modelprops` | Source-aware model-list state, background refresh, project cache, provider-scoped catalog reconciliation, and complete unknown/`na` rows for live-only models |
 | `telegram_config.go` / `telegram_model_selection.go` | Address-scoped Telegram cycle-config draft, `/hero-config` commands, and numbered remote model/property selection |
 | `agentlabels.go` / `chat_format.go` | Live agents box and `[LABEL - model]` transcript |
 | `contextbar.go` | Session occupancy bar (`ContextTokens` from last model call only) vs `models/*.yml`; billed run totals never fill the bar; freechat and cycle-agent sessions are separate |
@@ -380,6 +382,17 @@ Agents: `orchestration_agent`, `discover_agent`, `planning_agent`, `context_agen
 ```
 
 **SQLite** (`internal/store`) holds cycles, stages, events, metrics, artifact metadata, harness session references, the accumulated active-cycle timer, and (schema v12 / C16) durable session aggregates, ordered normalized transcript events, asset references, continuation leases, and delete-op recovery — without repurposing cycle audit `conversation` rows.
+
+Model inventory flow is source-aware and Harness-scoped:
+
+```text
+successful Harness ListModels ──► exact active inventory ──► reconciled catalog
+             │                                      ├─ drop static-only rows
+             │                                      └─ add live-only rows as zero/unknown/na
+             └─ failure/pending ──► project cache ──► static catalog fallback
+```
+
+The reconciled view is derived in `internal/modelprops` and never mutates the embedded/installed catalog. This keeps Config responsive during discovery while preventing stale provider rows from remaining selectable after a successful Harness response.
 
 ### Telegram plugin (C09, landed)
 

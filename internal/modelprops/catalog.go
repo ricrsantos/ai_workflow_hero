@@ -24,6 +24,9 @@ type CatalogProperty struct {
 	Default     string   `yaml:"default"`
 	HasDefault  bool
 	HasProperty bool
+	// FallbackOnly marks the explicit na shape synthesized for a live model
+	// whose metadata is absent. It must not override richer API/cache data.
+	FallbackOnly bool
 }
 
 // UnmarshalYAML keeps a strict, panic-free parse of the optional property block.
@@ -113,15 +116,24 @@ func (m CatalogMediaCapability) Capability() harness.MediaCapability {
 	}
 }
 
-// CatalogModel is one model row from a catalog file. Pricing fields are ignored
-// by this parser so pricing-only entries keep loading unchanged.
+// CatalogModel is one model row from a catalog file. It keeps the complete
+// model-shaped metadata so a live-only Harness row can be represented with the
+// same fields and explicit zero/na values as a static catalog row.
 type CatalogModel struct {
 	// Provider is the catalog file's native provider marker.  It is used only
 	// to keep catalog model rows scoped to the harness that owns them; the
 	// native model ID remains the map key and is never rewritten.
-	Provider   string
-	Properties map[string]CatalogProperty
-	Media      CatalogMediaCapability
+	Provider      string
+	Input         float64
+	CacheWrite    float64
+	CacheRead     float64
+	Output        float64
+	ContextWindow int64
+	Currency      string
+	Unit          string
+	HasPricing    bool
+	Properties    map[string]CatalogProperty
+	Media         CatalogMediaCapability
 }
 
 // Catalog maps native model IDs to catalog metadata.
@@ -129,13 +141,20 @@ type Catalog map[string]CatalogModel
 
 type catalogFile struct {
 	Provider string                  `yaml:"provider"`
+	Currency string                  `yaml:"currency"`
+	Unit     string                  `yaml:"unit"`
 	Media    CatalogMediaCapability  `yaml:"media"`
 	Models   map[string]catalogEntry `yaml:"models"`
 }
 
 type catalogEntry struct {
-	Properties map[string]CatalogProperty `yaml:"properties"`
-	Media      CatalogMediaCapability     `yaml:"media"`
+	Input         float64                    `yaml:"input"`
+	CacheWrite    float64                    `yaml:"cache_write"`
+	CacheRead     float64                    `yaml:"cache_read"`
+	Output        float64                    `yaml:"output"`
+	ContextWindow int64                      `yaml:"context_window"`
+	Properties    map[string]CatalogProperty `yaml:"properties"`
+	Media         CatalogMediaCapability     `yaml:"media"`
 }
 
 // CatalogPropertyKeys returns the property keys defined for a model in
@@ -263,9 +282,17 @@ func mergeCatalogYAML(cat Catalog, data []byte) {
 			continue
 		}
 		model := CatalogModel{
-			Provider:   strings.TrimSpace(file.Provider),
-			Properties: map[string]CatalogProperty{},
-			Media:      file.Media,
+			Provider:      strings.TrimSpace(file.Provider),
+			Input:         entry.Input,
+			CacheWrite:    entry.CacheWrite,
+			CacheRead:     entry.CacheRead,
+			Output:        entry.Output,
+			ContextWindow: entry.ContextWindow,
+			Currency:      strings.TrimSpace(file.Currency),
+			Unit:          strings.TrimSpace(file.Unit),
+			HasPricing:    file.Currency != "" || file.Unit != "" || entry.Input != 0 || entry.CacheWrite != 0 || entry.CacheRead != 0 || entry.Output != 0,
+			Properties:    map[string]CatalogProperty{},
+			Media:         file.Media,
 		}
 		if entry.Media.HasCapability {
 			model.Media = entry.Media
@@ -286,11 +313,39 @@ func mergeCatalogYAML(cat Catalog, data []byte) {
 				if !model.Media.HasCapability {
 					model.Media = previous.Media
 				}
+				if model.ContextWindow == 0 {
+					model.ContextWindow = previous.ContextWindow
+				}
+				if !model.HasPricing {
+					model.Input = previous.Input
+					model.CacheWrite = previous.CacheWrite
+					model.CacheRead = previous.CacheRead
+					model.Output = previous.Output
+					model.Currency = previous.Currency
+					model.Unit = previous.Unit
+					model.HasPricing = previous.HasPricing
+				}
 			}
 		}
 		if !model.Media.HasCapability {
 			if previous, ok := cat[id]; ok {
 				model.Media = previous.Media
+			}
+		}
+		if model.ContextWindow == 0 {
+			if previous, ok := cat[id]; ok {
+				model.ContextWindow = previous.ContextWindow
+			}
+		}
+		if !model.HasPricing {
+			if previous, ok := cat[id]; ok {
+				model.Input = previous.Input
+				model.CacheWrite = previous.CacheWrite
+				model.CacheRead = previous.CacheRead
+				model.Output = previous.Output
+				model.Currency = previous.Currency
+				model.Unit = previous.Unit
+				model.HasPricing = previous.HasPricing
 			}
 		}
 		// Keep a provider-scoped copy as well as the legacy unqualified key.
@@ -474,4 +529,83 @@ func (c Catalog) ModelsForHarness(harnessID string) []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+// ReconcileForHarness builds the active catalog view for a successful Harness
+// inventory. Static rows that are not present in models are omitted; live-only
+// rows are materialized with complete unknown/na metadata. The source catalog
+// is never mutated, so it remains available as the fallback for a future
+// project without a successful Harness response.
+func (c Catalog) ReconcileForHarness(harnessID string, models []string) Catalog {
+	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	out := make(Catalog)
+	if harnessID == "" {
+		return out
+	}
+	for _, modelID := range uniqueModelIDs(models) {
+		model, ok := c.catalogModelForHarness(harnessID, modelID)
+		if !ok {
+			model = unknownCatalogModel(harnessID)
+		}
+		// The reconciled row belongs to the selected native Harness even when
+		// its metadata was copied from an allowed shared provider catalog.
+		model.Provider = harnessID
+		model = cloneCatalogModel(model)
+		out[modelID] = model
+		out[catalogScopedKey(harnessID, modelID)] = cloneCatalogModel(model)
+	}
+	return out
+}
+
+func (c Catalog) catalogModelForHarness(harnessID, modelID string) (CatalogModel, bool) {
+	for _, candidate := range catalogBaseModelCandidates(modelID) {
+		for _, provider := range catalogProvidersForHarness(harnessID) {
+			if model, ok := c[catalogScopedKey(provider, candidate)]; ok {
+				return cloneCatalogModel(model), true
+			}
+		}
+		model, ok := c[strings.TrimSpace(candidate)]
+		if ok && catalogProviderMatchesHarness(model.Provider, harnessID) {
+			return cloneCatalogModel(model), true
+		}
+	}
+	return CatalogModel{}, false
+}
+
+func unknownCatalogModel(provider string) CatalogModel {
+	properties := make(map[string]CatalogProperty, len(harness.PropertyKeys()))
+	for _, key := range harness.PropertyKeys() {
+		properties[key] = CatalogProperty{
+			Available:    false,
+			Values:       []string{"na"},
+			Default:      "na",
+			HasDefault:   true,
+			HasProperty:  true,
+			FallbackOnly: true,
+		}
+	}
+	return CatalogModel{
+		Provider:   provider,
+		Currency:   "usd",
+		Unit:       "per_1m_tokens",
+		Properties: properties,
+	}
+}
+
+func cloneCatalogModel(model CatalogModel) CatalogModel {
+	model.Properties = cloneCatalogProperties(model.Properties)
+	model.Media.SupportedImageMIMETypes = append([]string(nil), model.Media.SupportedImageMIMETypes...)
+	return model
+}
+
+func cloneCatalogProperties(properties map[string]CatalogProperty) map[string]CatalogProperty {
+	if properties == nil {
+		return nil
+	}
+	out := make(map[string]CatalogProperty, len(properties))
+	for key, property := range properties {
+		property.Values = append([]string(nil), property.Values...)
+		out[key] = property
+	}
+	return out
 }

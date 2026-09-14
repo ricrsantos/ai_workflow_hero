@@ -147,6 +147,10 @@ func TestCatalogPartialAndAbsentFixtures(t *testing.T) {
 	if !cat.HasModel("acme/absent") {
 		t.Fatal("pricing-only entry must remain selectable")
 	}
+	partial := cat["acme/partial"]
+	if partial.Input != 1 || partial.Output != 2 || partial.ContextWindow != 128000 || !partial.HasPricing {
+		t.Fatalf("complete model metadata was not retained: %+v", partial)
+	}
 	if p, ok := cat.CatalogValues("acme/absent", "fs"); ok && p.HasProperty {
 		t.Fatal("absent model must expose no property metadata")
 	}

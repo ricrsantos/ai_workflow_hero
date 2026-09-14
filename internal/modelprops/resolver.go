@@ -155,7 +155,7 @@ func Resolve(harnessID, modelID string, api *harness.ModelCapabilities, apiErr e
 // model_options responses that only echo the current default).
 func mergePropertyCapability(cap harness.PropertyCapability, cat CatalogProperty) harness.PropertyCapability {
 	cap.Key = strings.TrimSpace(cap.Key)
-	if !cat.HasProperty {
+	if !cat.HasProperty || cat.FallbackOnly {
 		return cap
 	}
 	if !cat.Available {

@@ -192,11 +192,13 @@ func (m model) listModelsForHarnessCmd(harnessID string) tea.Cmd {
 }
 
 func (m model) modelsForHarness(harnessID string) []string {
-	// A completed explicit refresh is authoritative on the next opening.  Read
-	// only the persisted list here so an in-memory boot list does not mask it.
+	// A successful Harness list is authoritative on the next opening. Keep an
+	// explicitly empty result authoritative too, so a stale catalog cannot
+	// silently repopulate a Harness that reported no models.
 	if m.propsSvc != nil {
-		if cached := m.propsSvc.CachedModels(harnessID); len(cached) > 0 {
-			return cached
+		state := m.propsSvc.ModelListState(harnessID)
+		if state.Authoritative {
+			return append([]string(nil), state.Models...)
 		}
 	}
 	var out []string
@@ -229,12 +231,18 @@ func (m model) modelsForHarness(harnessID string) []string {
 	return nil
 }
 
-// modelChoicesForHarness returns the union of live API rows, persisted cache,
-// boot-time options, embedded catalog, and an optional configured model slug.
-// It is used for local configuration choices, where a local fallback is useful.
-// Lists are deduplicated case-insensitively and sorted alphabetically.
+// modelChoicesForHarness returns the authoritative live/cache list when one is
+// available. Without a successful Harness list it falls back to boot options,
+// the local catalog, and an optional configured model slug. Lists are
+// deduplicated case-insensitively and sorted alphabetically.
 func (m model) modelChoicesForHarness(harnessID, current string, live []string) []string {
 	harnessID = strings.TrimSpace(strings.ToLower(harnessID))
+	if live != nil {
+		return liveModelChoices(live)
+	}
+	if models, ok := m.authoritativeModelChoices(harnessID); ok {
+		return modelChoicesWithCurrent(models, current)
+	}
 	seen := make(map[string]bool)
 	filtered := make([]string, 0, len(live)+16)
 	add := func(slug string) {
@@ -271,6 +279,48 @@ func (m model) modelChoicesForHarness(harnessID, current string, live []string) 
 		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
 	})
 	return filtered
+}
+
+func (m model) authoritativeModelChoices(harnessID string) ([]string, bool) {
+	if m.propsSvc == nil {
+		return nil, false
+	}
+	state := m.propsSvc.ModelListState(harnessID)
+	if !state.Authoritative {
+		return nil, false
+	}
+	return liveModelChoices(state.Models), true
+}
+
+func modelChoicesWithCurrent(models []string, current string) []string {
+	out := liveModelChoices(models)
+	current = strings.TrimSpace(current)
+	if current == "" {
+		return out
+	}
+	for _, model := range out {
+		if strings.EqualFold(model, current) {
+			return out
+		}
+	}
+	out = append(out, current)
+	slices.SortFunc(out, func(a, b string) int {
+		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+	})
+	return out
+}
+
+func containsModelID(models []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, model := range models {
+		if strings.EqualFold(strings.TrimSpace(model), target) {
+			return true
+		}
+	}
+	return false
 }
 
 // liveModelChoices normalizes one successful adapter response without adding

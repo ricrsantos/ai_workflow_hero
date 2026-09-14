@@ -13,7 +13,7 @@ func TestEmbeddedCodexCatalogNativeIDs(t *testing.T) {
 	cat := LoadCatalogFromFS(assets.FS, "models")
 	for _, id := range []string{
 		"gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
-		"gpt-5.3-codex", "gpt-5.3-codex-spark",
+		"gpt-5.3-codex-spark",
 	} {
 		if !cat.HasModel(id) {
 			t.Fatalf("missing Codex-native catalog id %q", id)
@@ -39,9 +39,14 @@ func TestEmbeddedCodexCatalogNativeIDs(t *testing.T) {
 
 	codexIDs := cat.ModelsForHarness("codex")
 	joined := strings.Join(codexIDs, ",")
-	for _, want := range []string{"gpt-5.4", "gpt-5.3-codex"} {
+	for _, want := range []string{"gpt-5.4", "gpt-5.3-codex-spark"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("ModelsForHarness(codex) missing %q: %v", want, codexIDs)
+		}
+	}
+	for _, id := range codexIDs {
+		if strings.EqualFold(id, "gpt-5.3-codex") {
+			t.Fatalf("OpenAI-only gpt-5.3-codex leaked into Codex catalog: %v", codexIDs)
 		}
 	}
 	// Cursor / OpenCode rows must remain resolvable.
@@ -82,14 +87,14 @@ func TestUnknownCodexIDCostUnsetNoPanic(t *testing.T) {
 func TestCatalogModelsForHarnessCodex(t *testing.T) {
 	cat := testCatalogFromFS(t, map[string]string{
 		"models/openai.yml": "provider: openai\nmodels:\n  gpt-5.3-codex: {}\n  gpt-5-mini: {}\n",
-		"models/codex.yml":  "provider: codex\nmodels:\n  gpt-5.4: {}\n  gpt-5.3-codex: {}\n",
+		"models/codex.yml":  "provider: codex\nmodels:\n  gpt-5.4: {}\n",
 	})
 	got := cat.ModelsForHarness("codex")
-	want := "gpt-5.3-codex,gpt-5.4"
+	want := "gpt-5.4"
 	if strings.Join(got, ",") != want {
-		t.Fatalf("codex rows=%v want %s (codex.yml must win provider)", got, want)
+		t.Fatalf("codex rows=%v want %s (OpenAI rows must not leak)", got, want)
 	}
-	if !strings.EqualFold(cat["gpt-5.3-codex"].Provider, "codex") {
-		t.Fatalf("shared id provider=%q", cat["gpt-5.3-codex"].Provider)
+	if !strings.EqualFold(cat["gpt-5.3-codex"].Provider, "openai") {
+		t.Fatalf("OpenAI-only row provider=%q", cat["gpt-5.3-codex"].Provider)
 	}
 }

@@ -1,6 +1,7 @@
 # Codex-native model catalog (capability + context for C5 / context bar).
 # Installed overlay: .workflow-hero/models/codex.yml
-# Model IDs match Codex app-server ListModels (PRD-C06-001 §4.8; design D12).
+# Model IDs are a Codex reference snapshot (PRD-C06-001 §4.8; design D12).
+# A successful Codex app-server ListModels response is authoritative.
 # Pricing from https://developers.openai.com/api/docs/pricing (Standard short-context, 2026-08-25).
 # For GPT-5.6 tiers cache_write is 1.25x input (OpenAI prompt-cache write surcharge).
 # Long-context (>272K input) is 2x input / 1.5x output for the full request — not modeled here.
@@ -125,25 +126,6 @@ models:
       ef:
         available: true
         values: ["none", "low", "medium", "high", "xhigh", "max"]
-        default: "medium"
-      th:
-        available: true
-        values: ["off", "on", "detailed"]
-        default: "off"
-  gpt-5.3-codex:
-    input: 1.75
-    cache_write: 0.00
-    cache_read: 0.175
-    output: 14.00
-    context_window: 400000
-    properties:
-      fs:
-        available: false
-        values: ["na"]
-        default: "na"
-      ef:
-        available: true
-        values: ["low", "medium", "high", "xhigh"]
         default: "medium"
       th:
         available: true
