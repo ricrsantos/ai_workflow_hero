@@ -43,8 +43,9 @@ func (a *Adapter) currentMediaCapability() harness.MediaCapability {
 }
 
 // DiscoverMediaCapability combines the installed app-server schema with the
-// native model/list response. A missing schema is represented as a known
-// unsupported model so an attachment turn cannot reach turn/start silently.
+// native model/list response. A model listing proves identity, but a missing
+// localImage schema does not prove model incompatibility; returning an error
+// leaves the TUI execute path free to try the known transport optimistically.
 func (a *Adapter) DiscoverMediaCapability(ctx context.Context, modelID string) (harness.MediaCapability, error) {
 	modelID = strings.TrimSpace(modelID)
 	if modelID == "" {
@@ -70,6 +71,13 @@ func (a *Adapter) DiscoverMediaCapability(ctx context.Context, modelID string) (
 	a.mu.Lock()
 	schema := a.multimodalSchema
 	a.mu.Unlock()
+	if !schema.SupportsNativeInput() {
+		reason := strings.TrimSpace(schema.Diagnostic)
+		if reason == "" {
+			reason = "the installed app-server schema does not expose localImage"
+		}
+		return harness.MediaCapability{}, fmt.Errorf("discover Codex image capability for model %q: %s", modelID, reason)
+	}
 	capability := a.MediaTransportCapability()
 	capability.ImageInputNative = schema.SupportsNativeInput()
 	capability.ImageOutputNative = schema.SupportsImageOutput()

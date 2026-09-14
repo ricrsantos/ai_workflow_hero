@@ -356,6 +356,38 @@ func TestExecute_MockStdioStreamsAndUsage(t *testing.T) {
 	}
 }
 
+func TestExecute_AttachmentAttemptsWhenAppServerSchemaIsAbsent(t *testing.T) {
+	peer := newMockPeer()
+	var turnInput []any
+	peer.onTurn = func(params map[string]any) {
+		turnInput, _ = params["input"].([]any)
+	}
+	a := codex.NewAdapter(t.TempDir(), nil)
+	a.LookPath = func(string) (string, error) { return "/mock/codex", nil }
+	a.Runner = peer
+	a.SetMediaCapability(harness.MediaCapability{ImageInputNative: true})
+
+	_, err := a.Execute(context.Background(), harness.ExecuteRequest{
+		Prompt: "describe this",
+		Model:  "gpt-5.4",
+		Attachments: []harness.Attachment{{
+			Kind:     harness.MediaKindImage,
+			MIMEType: "image/png",
+			Path:     "/tmp/hero-luna.png",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error=%v", err)
+	}
+	if len(turnInput) != 2 {
+		t.Fatalf("turn input=%+v want image and text", turnInput)
+	}
+	imageInput, ok := turnInput[0].(map[string]any)
+	if !ok || imageInput["type"] != codex.CodexLocalImageInputType || imageInput["path"] != "/tmp/hero-luna.png" {
+		t.Fatalf("first turn input=%+v want localImage", turnInput[0])
+	}
+}
+
 func TestExecute_ReconnectsAfterConnectionClosed(t *testing.T) {
 	peer := newMockPeer()
 	peer.dropFirstTurn = true

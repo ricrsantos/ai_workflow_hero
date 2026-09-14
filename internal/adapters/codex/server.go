@@ -363,8 +363,9 @@ func (a *Adapter) handshake(ctx context.Context, rpc *rpcConn) error {
 	if err := rpc.Call(ctx, "initialize", params, &result); err != nil {
 		return fmt.Errorf("initialize: %w", err)
 	}
-	// Missing schema data remains a degraded zero capability. Attachment turns
-	// therefore fail closed before turn/start instead of becoming text-only.
+	// Missing schema data remains a degraded zero capability. The TUI may still
+	// attempt an attachment turn when the app-server transport is known; the
+	// actual turn/start response is then the final compatibility authority.
 	raw, _ := json.Marshal(result)
 	a.mu.Lock()
 	a.multimodalSchema = ProbeCodexAppServerSchema(raw)

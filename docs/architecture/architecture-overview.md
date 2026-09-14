@@ -623,7 +623,8 @@ internal/tui ── immutable Attachment refs ──► internal/conversation
     ▼                                           ▼
 session assets (0600, SHA-256, manifest)   media.Registry admission
                                                 │
-                                  transport ∩ discovery/catalog
+                         known intersection or optimistic transport
+                              (when model metadata is unknown)
                                                 │
                                      admitted adapter capability
                                                 │
@@ -644,8 +645,11 @@ session assets (0600, SHA-256, manifest)   media.Registry admission
 owns validation, session-scoped storage, retention, capability admission,
 Unicode mosaic rendering, and opt-in terminal preview helpers. The TUI asks
 adapters for transport facts and lazy model discovery, registers explicit
-catalog facts only when present, and sets the admitted intersection immediately
-before Execute. Adapter output paths are copied into the session store before
+catalog facts only when present, and sets the known intersection — or the known
+transport for a bounded optimistic attempt — immediately before Execute. A
+known unsupported intersection and an unknown transport block before Execute;
+a provider rejection is surfaced without fallback/retry. Adapter output paths
+are copied into the session store before
 they reach the TUI; workers send immutable messages and never mutate Bubble Tea
 maps directly. Tool-written images are correlated within a turn and
 deduplicated by content hash. Expanded mosaics are re-rendered by async

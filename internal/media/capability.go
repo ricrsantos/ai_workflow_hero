@@ -47,8 +47,9 @@ type modelKey struct {
 }
 
 // Registry combines adapter transport capabilities with native model
-// capabilities. A pair is known only when both sides have been registered;
-// missing data therefore fails closed as required by ADR-079.
+// capabilities. A pair is known only when both sides have been registered.
+// Strict callers can still fail closed on incomplete pairs; execute callers
+// may use AdmitForExecute to make a bounded attempt when transport is known.
 type Registry struct {
 	mu         sync.RWMutex
 	transports map[string]capabilityEntry
@@ -243,6 +244,15 @@ type AdmissionError struct {
 	MaxAttachmentBytes int64
 }
 
+// AdmissionResult describes a successful attachment admission. Optimistic is
+// true when the registry could prove that the harness can carry an image but
+// could not prove the selected model's image capability. In that case the
+// provider is the authority and any rejection is returned by Execute.
+type AdmissionResult struct {
+	Capability harness.MediaCapability
+	Optimistic bool
+}
+
 // Error returns actionable guidance that names the selected harness and model.
 func (e *AdmissionError) Error() string {
 	if e == nil {
@@ -289,19 +299,60 @@ func (r *Registry) Admit(harnessID, modelID string, req harness.ExecuteRequest) 
 			Reason:  AdmissionReasonUnknown,
 		}
 	}
-	if !capability.ImageInputNative && !capability.ImageInputFileReference {
-		return &AdmissionError{
+	return validateAttachmentAdmission(normalizedHarness, normalizedModel, capability, req.Attachments)
+}
+
+// AdmitForExecute admits an attachment-bearing Execute using a conservative
+// optimistic branch. A known model capability is always authoritative. When
+// model metadata is missing, the request may proceed only if the harness
+// transport itself is known to support an image input form; the adapter then
+// owns the final compatibility decision.
+//
+// This method intentionally does not retry, invoke fallback, or mutate the
+// request. It is the execute-path counterpart to the strict Admit API.
+func (r *Registry) AdmitForExecute(harnessID, modelID string, req harness.ExecuteRequest) (AdmissionResult, error) {
+	if len(req.Attachments) == 0 {
+		return AdmissionResult{}, nil
+	}
+
+	normalizedHarness := normalizeHarnessID(harnessID)
+	normalizedModel := strings.TrimSpace(modelID)
+	capability, known := r.Lookup(normalizedHarness, normalizedModel)
+	if known {
+		if err := validateAttachmentAdmission(normalizedHarness, normalizedModel, capability, req.Attachments); err != nil {
+			return AdmissionResult{}, err
+		}
+		return AdmissionResult{Capability: capability}, nil
+	}
+
+	transport, transportKnown := r.transportCapability(normalizedHarness)
+	if !transportKnown || !transport.SupportsImageInput("") {
+		return AdmissionResult{}, &AdmissionError{
 			Harness: normalizedHarness,
 			Model:   normalizedModel,
+			Reason:  AdmissionReasonUnknown,
+		}
+	}
+	if err := validateAttachmentAdmission(normalizedHarness, normalizedModel, transport, req.Attachments); err != nil {
+		return AdmissionResult{}, err
+	}
+	return AdmissionResult{Capability: transport, Optimistic: true}, nil
+}
+
+func validateAttachmentAdmission(harnessID, modelID string, capability harness.MediaCapability, attachments []harness.Attachment) error {
+	if !capability.ImageInputNative && !capability.ImageInputFileReference {
+		return &AdmissionError{
+			Harness: harnessID,
+			Model:   modelID,
 			Reason:  AdmissionReasonUnsupported,
 		}
 	}
 
-	for index, attachment := range req.Attachments {
+	for index, attachment := range attachments {
 		if !capability.SupportsImageInput(attachment.MIMEType) {
 			return &AdmissionError{
-				Harness:         normalizedHarness,
-				Model:           normalizedModel,
+				Harness:         harnessID,
+				Model:           modelID,
 				Reason:          AdmissionReasonMIMEType,
 				AttachmentIndex: index,
 				MIMEType:        strings.TrimSpace(attachment.MIMEType),
@@ -309,8 +360,8 @@ func (r *Registry) Admit(harnessID, modelID string, req harness.ExecuteRequest) 
 		}
 		if capability.MaxAttachmentBytes > 0 && attachment.Size > capability.MaxAttachmentBytes {
 			return &AdmissionError{
-				Harness:            normalizedHarness,
-				Model:              normalizedModel,
+				Harness:            harnessID,
+				Model:              modelID,
 				Reason:             AdmissionReasonSize,
 				AttachmentIndex:    index,
 				MaxAttachmentBytes: capability.MaxAttachmentBytes,
@@ -318,6 +369,22 @@ func (r *Registry) Admit(harnessID, modelID string, req harness.ExecuteRequest) 
 		}
 	}
 	return nil
+}
+
+func (r *Registry) transportCapability(harnessID string) (harness.MediaCapability, bool) {
+	if r == nil || harnessID == "" {
+		return harness.MediaCapability{}, false
+	}
+	r.mu.RLock()
+	entry, ok := r.transports[harnessID]
+	if ok {
+		entry.capability = cloneCapability(entry.capability)
+	}
+	r.mu.RUnlock()
+	if !ok || !entry.known {
+		return harness.MediaCapability{}, false
+	}
+	return entry.capability, true
 }
 
 // AdmitRequest is the request-preserving form of Admit. It returns a copy of

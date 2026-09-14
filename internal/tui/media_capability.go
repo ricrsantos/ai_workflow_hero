@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 
@@ -74,21 +73,18 @@ func (m model) prepareMediaCapability(ctx context.Context, adapter harness.Harne
 	}
 }
 
-// applyAdmittedMediaCapability copies the intersection into the concrete
-// adapter after admission and immediately before Execute. The optional setter
-// keeps injected fixture adapters compatible with the production boundary.
-func (m model) applyAdmittedMediaCapability(adapter harness.HarnessAdapter, harnessID, modelID string) error {
+// applyAdmittedMediaCapability copies the admitted capability into the
+// concrete adapter immediately before Execute. The optional setter keeps
+// injected fixture adapters compatible with the production boundary. The
+// capability comes from admission directly because optimistic admission is
+// intentionally not represented as a known registry pair.
+func (m model) applyAdmittedMediaCapability(adapter harness.HarnessAdapter, capability harness.MediaCapability) {
 	if m.mediaRegistry == nil || adapter == nil {
-		return nil
-	}
-	capability, known := m.mediaRegistry.Lookup(harnessID, modelID)
-	if !known {
-		return fmt.Errorf("media capability for %s/%s is unknown after admission", harnessID, modelID)
+		return
 	}
 	if setter, ok := adapter.(harness.MediaCapabilitySetter); ok {
 		setter.SetMediaCapability(capability)
 	}
-	return nil
 }
 
 func (m model) mediaAdmissionEnabled() bool {

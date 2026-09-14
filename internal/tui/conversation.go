@@ -1848,12 +1848,14 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 	req = harness.NormalizeExecuteRequest(req)
 	if len(req.Attachments) > 0 && m.mediaAdmissionEnabled() {
 		m.prepareMediaCapability(ctx, pair.Adapter, pair.HarnessID, pair.Model)
-		if err := m.mediaRegistry.Admit(pair.HarnessID, pair.Model, req); err != nil {
+		admission, err := m.mediaRegistry.AdmitForExecute(pair.HarnessID, pair.Model, req)
+		if err != nil {
 			return nil, pair.HarnessID, err
 		}
-		if err := m.applyAdmittedMediaCapability(pair.Adapter, pair.HarnessID, pair.Model); err != nil {
-			return nil, pair.HarnessID, err
+		if admission.Optimistic {
+			slog.Debug("tui media capability admitted optimistically", "harness", pair.HarnessID, "model", pair.Model)
 		}
+		m.applyAdmittedMediaCapability(pair.Adapter, admission.Capability)
 	}
 	res, err := pair.Adapter.Execute(ctx, req)
 	return res, pair.HarnessID, err

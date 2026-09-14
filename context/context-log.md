@@ -2392,3 +2392,23 @@ state; historical C14 documents remain unchanged as archived scope records.
 
 **Verification**: Focused TUI attachment/footer/navigation tests passed;
 `gofmt`, `git diff --check`, and full `go test ./...` passed.
+
+## 2026-09-14 — Multimodal admission uses bounded optimistic execution
+
+**Problem**: The TUI treated missing or stale model modality metadata as an
+explicit image rejection. Codex additionally blocked `turn/start` when its
+`initialize` response did not contain the optional multimodal schema, even
+though the app-server transport can construct a native `localImage` input.
+
+**Implementation**: Added `media.Registry.AdmitForExecute`, which preserves
+strict blocking for known unsupported models and unknown transports, while
+allowing one unchanged attachment-bearing Execute when transport is known and
+only the model fact is unknown. Provider errors naturally remain visible in
+the existing TUI error path and attachment chips are cleared only after
+success. Codex now treats absent schema as unknown during discovery and lets
+an admitted native `localImage` request reach `turn/start`; Cursor, OpenCode,
+and Claude use the same registry policy for unknown model metadata.
+
+**Verification**: Added registry, Codex app-server, and TUI acceptance
+regressions. Focused tests and the full `go test ./...` suite pass; `git diff
+--check` is clean.

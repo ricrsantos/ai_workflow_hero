@@ -150,11 +150,15 @@ When TUI Execute completes without error and the agent transcript has no substan
 
 ### Requirement: Adapters SHALL translate shared attachments without silent loss
 
-Every adapter used by TUI Chat (Codex, OpenCode, Cursor, Claude) SHALL accept `ExecuteRequest.Attachments` and translate them to the harness-native input form after capability admission. If translation or native support is unavailable, the adapter SHALL fail with an actionable diagnostic naming harness and model. Adapters SHALL NEVER silently drop attachments (PRD-C14-001 §§2.9–2.12; ADR-079).
+Every adapter used by TUI Chat (Codex, OpenCode, Cursor, Claude) SHALL accept `ExecuteRequest.Attachments` and translate them to the harness-native input form after strict or optimistic capability admission. If translation or native support is unavailable, the adapter SHALL fail with an actionable diagnostic naming harness and model. Adapters SHALL NEVER silently drop attachments (PRD-C14-001 §§2.9–2.12; ADR-079).
+
+#### Scenario: Optimistic admission delegates unknown model support
+- **WHEN** the harness transport is image-capable but reliable model modality metadata is unavailable
+- **THEN** the adapter receives the original attachments for one logical Execute and returns any provider rejection without fallback or silent attachment removal
 
 #### Scenario: Codex native localImage
-- **WHEN** Codex schema probing exposes `localImage` and attachments are present
-- **THEN** each attachment is sent as a `localImage` entry in ordered `turn/start.input` before text
+- **WHEN** Codex transport admission allows attachments and they are present
+- **THEN** each attachment is sent as a `localImage` entry in ordered `turn/start.input` before text; if schema discovery was unavailable, `turn/start` remains the provider compatibility check
 
 #### Scenario: OpenCode prefers file URI
 - **WHEN** OpenCode can read the materialized absolute path

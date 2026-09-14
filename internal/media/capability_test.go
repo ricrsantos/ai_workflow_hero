@@ -210,3 +210,47 @@ func TestAdmitRejectsMIMEAndSizeUsingEffectiveCapability(t *testing.T) {
 		t.Fatalf("size admission error=%v", err)
 	}
 }
+
+func TestAdmitForExecuteUsesTransportOptimisticallyForUnknownModel(t *testing.T) {
+	registry := NewRegistry()
+	registry.RegisterTransport("codex", harness.MediaCapability{
+		ImageInputNative:        true,
+		SupportedImageMIMETypes: []string{"image/png"},
+		MaxAttachmentBytes:      100,
+	})
+	req := harness.ExecuteRequest{Attachments: []harness.Attachment{{MIMEType: "image/png", Size: 20}}}
+
+	result, err := registry.AdmitForExecute("codex", "gpt-5.6-luna", req)
+	if err != nil {
+		t.Fatalf("AdmitForExecute() error=%v", err)
+	}
+	if !result.Optimistic {
+		t.Fatal("unknown model admission was not marked optimistic")
+	}
+	if !result.Capability.ImageInputNative || result.Capability.MaxAttachmentBytes != 100 {
+		t.Fatalf("admitted capability=%+v", result.Capability)
+	}
+	if _, known := registry.Lookup("codex", "gpt-5.6-luna"); known {
+		t.Fatal("optimistic admission must not invent a known model capability")
+	}
+}
+
+func TestAdmitForExecuteKeepsExplicitUnsupportedModelBlocked(t *testing.T) {
+	registry := NewRegistry()
+	registry.RegisterTransport("codex", harness.MediaCapability{ImageInputNative: true})
+	registry.RegisterModel("codex", "text-only", harness.MediaCapability{})
+
+	result, err := registry.AdmitForExecute("codex", "text-only", harness.ExecuteRequest{
+		Attachments: []harness.Attachment{{MIMEType: "image/png", Size: 20}},
+	})
+	if err == nil {
+		t.Fatalf("AdmitForExecute() result=%+v want explicit unsupported error", result)
+	}
+	var admissionErr *AdmissionError
+	if !errors.As(err, &admissionErr) || admissionErr.Reason != AdmissionReasonUnsupported {
+		t.Fatalf("error=%T %v want unsupported AdmissionError", err, err)
+	}
+	if result.Optimistic {
+		t.Fatal("explicit unsupported model was admitted optimistically")
+	}
+}

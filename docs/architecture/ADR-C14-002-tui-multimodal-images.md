@@ -35,11 +35,11 @@
 
 ## ADR-079: Explicit capability failure — blocked turn with actionable error when model does not support images
 
-**Context:** Silently dropping an attachment or converting it to a fabricated text description misleads the user and corrupts the conversation semantic. The idea note (§4.3) requires closed failure.
+**Context:** Silently dropping an attachment or converting it to a fabricated text description misleads the user and corrupts the conversation semantic. The original fail-closed rule also produced false negatives when a harness could carry images but its model/schema discovery was absent or stale.
 
-**Decision:** Before submitting a turn that contains one or more attachments, Hero checks the active harness+model capability. If neither `image_input_native` nor `image_input_file_reference` is available (or if the capability is unknown), the turn is blocked and an actionable error is displayed identifying the harness and model. The attachment chips remain in the composer; the user may remove them or switch to a capable model. The fallback chain is not invoked silently; any fallback path must be documented explicitly in a future PRD.
+**Decision:** Before submitting a turn that contains one or more attachments, Hero checks the active harness+model capability. A known unsupported intersection, or an unknown harness transport, blocks the turn with an actionable error identifying the harness and model. If the transport is known to carry images but model-side capability is unknown, Hero admits the request optimistically, sends the unchanged attachments in one logical Execute, and treats an explicit provider rejection as the final result. The TUI does not invoke fallback or automatic retry; existing adapter-level connection recovery remains governed by the adapter contract. Attachment chips remain after either a local block or provider rejection and are cleared only after successful Execute.
 
-**Consequences:** Users receive clear feedback. No silent data loss. The capability registry must be populated for every supported harness/model combination and conservatively default to "unsupported" for unknowns.
+**Consequences:** Users receive clear feedback without false-negative blocks caused by stale discovery. No silent data loss or hidden fallback is possible. Transport capabilities remain mandatory, while model discovery/catalog improves diagnostics and can still explicitly block unsupported models. Cursor/Claude file-reference paths remain labeled as degraded where native image interpretation is not proven.
 
 ---
 

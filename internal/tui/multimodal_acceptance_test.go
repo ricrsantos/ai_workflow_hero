@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -58,6 +59,69 @@ func TestC14AcceptancePickerChipToHarnessSend(t *testing.T) {
 	}
 	if !strings.HasPrefix(attachments[0].Path, filepath.Join(dataHome, "hero", "sessions")) {
 		t.Fatalf("attachment was not materialized under XDG data: %q", attachments[0].Path)
+	}
+}
+
+func TestC14AcceptanceUnknownModelAttemptsKnownImageTransport(t *testing.T) {
+	svc, h := newConversationTestService(t)
+	m := newModel(svc)
+	m.freeChatMode = true
+	m = EnterConversationForTest(m)
+	m = SetChatHarnessIDForTest(m, "streaming")
+	m = SetChatModelSlugForTest(m, "gpt-5.6-luna")
+	m = SetMediaRegistryForTest(m, func() *media.Registry {
+		registry := media.NewRegistry()
+		registry.RegisterTransport("streaming", harness.MediaCapability{ImageInputNative: true})
+		return registry
+	}())
+	m = SetAttachmentsForTest(m, []harness.Attachment{{
+		Kind: harness.MediaKindImage, Name: "luna.png", MIMEType: "image/png", Path: "/session/luna.png",
+	}})
+	m = SetConversationInput(m, "describe this image")
+	m, cmd := SubmitConversationForTest(m)
+	if cmd == nil {
+		t.Fatal("optimistic image turn did not return a command")
+	}
+	m = drainConversationStream(t, m, cmd)
+	if h.ExecuteCount() != 1 {
+		t.Fatalf("execute_count=%d want 1", h.ExecuteCount())
+	}
+	if got := h.LastAttachments(); len(got) != 1 || got[0].Name != "luna.png" {
+		t.Fatalf("attachments=%+v", got)
+	}
+	if len(m.attachments) != 0 {
+		t.Fatalf("successful optimistic turn kept chips: %+v", m.attachments)
+	}
+}
+
+func TestC14AcceptanceOptimisticProviderRejectionKeepsAttachmentChip(t *testing.T) {
+	svc, h := newConversationTestService(t)
+	h.err = errors.New("provider rejected image input")
+	m := newModel(svc)
+	m.freeChatMode = true
+	m = EnterConversationForTest(m)
+	m = SetChatHarnessIDForTest(m, "streaming")
+	m = SetChatModelSlugForTest(m, "gpt-5.6-luna")
+	registry := media.NewRegistry()
+	registry.RegisterTransport("streaming", harness.MediaCapability{ImageInputNative: true})
+	m = SetMediaRegistryForTest(m, registry)
+	m = SetAttachmentsForTest(m, []harness.Attachment{{
+		Kind: harness.MediaKindImage, Name: "rejected.png", MIMEType: "image/png", Path: "/session/rejected.png",
+	}})
+	m = SetConversationInput(m, "describe this image")
+	m, cmd := SubmitConversationForTest(m)
+	if cmd == nil {
+		t.Fatal("optimistic image turn did not return a command")
+	}
+	m = drainConversationStream(t, m, cmd)
+	if h.ExecuteCount() != 1 {
+		t.Fatalf("execute_count=%d want 1", h.ExecuteCount())
+	}
+	if !strings.Contains(ConversationErrorForTest(m), "provider rejected image input") {
+		t.Fatalf("conversation error=%q", ConversationErrorForTest(m))
+	}
+	if len(m.attachments) != 1 || m.attachments[0].attachment.Name != "rejected.png" {
+		t.Fatalf("provider rejection removed chip: %+v", m.attachments)
 	}
 }
 

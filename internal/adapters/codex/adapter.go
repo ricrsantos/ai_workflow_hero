@@ -5,6 +5,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -372,14 +373,22 @@ func (a *Adapter) runTurnOnce(
 	}
 
 	if len(req.Attachments) > 0 {
-		if !a.currentMediaCapability().SupportsImageInput("") {
+		capability := a.currentMediaCapability()
+		if !capability.SupportsImageInput("") {
 			return nil, fmt.Errorf("Codex model %q does not support image input; capability admission is required before Execute", strings.TrimSpace(req.Model))
 		}
 		a.mu.Lock()
 		schema := a.multimodalSchema
 		a.mu.Unlock()
 		if _, err := BuildCodexTurnStartInput(schema, req.Attachments, req.Prompt); err != nil {
-			return nil, fmt.Errorf("Codex model %q: %w", strings.TrimSpace(req.Model), err)
+			var degraded *CodexMultimodalDegradedError
+			if !errors.As(err, &degraded) || !capability.ImageInputNative {
+				return nil, fmt.Errorf("Codex model %q: %w", strings.TrimSpace(req.Model), err)
+			}
+			// The TUI admitted the request against the known app-server
+			// transport, but this Codex release did not expose a usable
+			// multimodal schema during initialize. Keep the localImage
+			// payload and let turn/start be the final compatibility authority.
 		}
 	}
 	if turnState != nil && turnState.assetStore == nil {
