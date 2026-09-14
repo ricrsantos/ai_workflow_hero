@@ -269,6 +269,8 @@ Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `�
 
 - **2026-09-09 — Cursor trust detector hardened**: `IsTrustFailure` ignores NDJSON assistant/tool chatter (C9 auth pattern); typed `TrustError`; TUI hint no longer recommends bare `cursor agent --trust` (Hero already passes `--trust`).
 
+- **2026-09-14 — Telegram config wizard status suppression**: Automatic Telegram status reports are suppressed while the address-scoped cycle configuration wizard is active, including its nested model/property picker. The explicit `/status` command remains available, and the wizard's next prompt is the only response generated for each answer.
+
 ## Known Technical Debt
 
 - No GitHub Actions / CI/CD release automation in V1 (ADR-010; deferred to V2 GoReleaser or equivalent).

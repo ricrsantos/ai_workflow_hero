@@ -68,6 +68,11 @@ func (m model) telegramStatusText(at time.Time) string {
 // An idle TUI has no useful automatic update, so the empty result suppresses
 // the outbound message while the scheduler still advances to the next slot.
 func (m model) telegramAutoReportText(at time.Time) string {
+	// The configuration wizard already replies with its next prompt. A status
+	// report alongside that prompt makes the remote interaction ambiguous.
+	if m.telegram != nil && m.telegram.configWizard != nil {
+		return ""
+	}
 	return m.telegramStatusTextAt(at, false)
 }
 

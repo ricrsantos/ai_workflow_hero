@@ -2328,3 +2328,19 @@ scopes without replacing the composer or changing its frame/status styling.
 **Verification**: `go test ./internal/tui -count=1 -run
 'TestConversation(HomeEnd|Caret|ArrowKeys|VerticalArrows|FocusCaret|EnterInsertsNewline)|TestInputVisualLines|TestWrapOutputLine'`;
 `go test ./... -count=1`; `git diff --check`.
+
+## 2026-09-14 — Telegram config wizard status suppression
+
+**Outcome**: Removed automatic Telegram status messages while the address-scoped
+cycle configuration wizard is active. This covers the nested remote model and
+property selection because it remains owned by the same wizard draft. The wizard
+prompt continues to be sent after each answer; an explicit `/status` request is
+still answered normally.
+
+**Implementation**: `telegramAutoReportText` now returns an empty message when a
+configuration wizard exists, covering interval reports and the immediate status
+path used by remote harness turns without changing the explicit status command.
+Added `TestTelegramConfigWizardSuppressesAutomaticStatus`.
+
+**Verification**: `gofmt`; targeted Telegram TUI tests; `go test ./...`;
+`git diff --check`.

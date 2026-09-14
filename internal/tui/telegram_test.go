@@ -320,6 +320,47 @@ func TestTelegramStatusCommandAllowsIdleButAutoReportSkipsIt(t *testing.T) {
 	}
 }
 
+func TestTelegramConfigWizardSuppressesAutomaticStatus(t *testing.T) {
+	now := time.Now()
+	var outbound []string
+	m := NewTestModel(nil)
+	m.status = cycle.StatusView{CycleNumber: 3, Title: "Active cycle", Status: "active"}
+	m.telegram = &telegramState{
+		connected:         true,
+		paired:            true,
+		autoReportMinutes: 1,
+		nextAutoReportAt:  now.Add(-time.Second),
+		recordOutbound: func(text string) {
+			outbound = append(outbound, text)
+		},
+		configWizard: &telegramConfigWizard{
+			address: "proj",
+			step:    telegramConfigTitle,
+		},
+	}
+
+	if got := m.telegramAutoReportText(now); got != "" {
+		t.Fatalf("wizard automatic status=%q want empty", got)
+	}
+	if cmd := m.maybeTelegramAutoReport(now); cmd != nil {
+		_ = cmd()
+	}
+	if len(outbound) != 0 {
+		t.Fatalf("wizard automatic status outbound=%q", outbound)
+	}
+
+	_, cmd := m.handleTelegramInbound(telegramInboundMsg{
+		text:    telegramStatusCommand,
+		address: "proj",
+	})
+	if cmd != nil {
+		_ = cmd()
+	}
+	if len(outbound) != 1 || !strings.Contains(outbound[0], "Cycle C3: Active cycle") {
+		t.Fatalf("explicit /status outbound=%q", outbound)
+	}
+}
+
 func TestTelegramInterruptCancelsActiveConversation(t *testing.T) {
 	m, h, _ := newConversationTestModel(t)
 	outbound := []string{}
