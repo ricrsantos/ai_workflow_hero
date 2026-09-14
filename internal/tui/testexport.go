@@ -211,6 +211,7 @@ func BeginHeroRejectExecuteForTest(m model, reason string) (model, tea.Cmd) {
 func SetConversationInput(m model, input string) model {
 	m.input = input
 	m.inputCursor = runeLen(input)
+	m.inputCursorPreviousLine = false
 	m.inputVerticalColumn = 0
 	m.inputVerticalColumnSet = false
 	m.chatInputFocused = true

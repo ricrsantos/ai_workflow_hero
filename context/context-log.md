@@ -2312,3 +2312,19 @@ sibling family pattern in the same file. `last_updated` bumped to 2026-09-13;
 **Validation**: `opencode models --verbose` ID diff (34/34 match, shape check);
 `go test ./internal/modelprops/... ./internal/common/... ./internal/adapters/opencode/...`;
 full `go test ./...` green (no FAIL).
+
+## 2026-09-14 — Chat composer cursor, word wrap, and line navigation
+
+**Outcome**: The custom Chat composer now derives rendering, vertical movement,
+scroll visibility, and Home/End navigation from one terminal-cell-aware visual
+line layout. Soft wrap prefers whitespace so whole words move to the next row,
+with hard wrap only for words wider than the composer. The focused block caret
+styles the current character in place (and a blank only at end-of-line), so it
+does not shift the remaining text. Home/End move to the current displayed row;
+Ctrl+Home/Ctrl+End retain whole-input navigation. Added regression coverage for
+word/hard/newline/wide-rune wrapping, in-place caret width, and both navigation
+scopes without replacing the composer or changing its frame/status styling.
+
+**Verification**: `go test ./internal/tui -count=1 -run
+'TestConversation(HomeEnd|Caret|ArrowKeys|VerticalArrows|FocusCaret|EnterInsertsNewline)|TestInputVisualLines|TestWrapOutputLine'`;
+`go test ./... -count=1`; `git diff --check`.

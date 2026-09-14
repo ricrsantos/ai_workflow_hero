@@ -1120,6 +1120,7 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputCursor--
 		}
 		m.inputVerticalColumnSet = false
+		m.inputCursorPreviousLine = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "right":
@@ -1127,15 +1128,22 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.inputCursor++
 		}
 		m.inputVerticalColumnSet = false
+		m.inputCursorPreviousLine = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "home":
+		return m.moveInputCursorToVisualLineBoundary(false), nil
+	case "end":
+		return m.moveInputCursorToVisualLineBoundary(true), nil
+	case "ctrl+home":
 		m.inputCursor = 0
+		m.inputCursorPreviousLine = false
 		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
-	case "end":
+	case "ctrl+end":
 		m.inputCursor = runeLen(m.input)
+		m.inputCursorPreviousLine = false
 		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
@@ -1199,6 +1207,7 @@ func (m model) insertRunesAtCursor(rs []rune) model {
 	out = append(out, runes[cur:]...)
 	m.input = string(out)
 	m.inputCursor = cur + len(rs)
+	m.inputCursorPreviousLine = false
 	m.inputVerticalColumnSet = false
 	return m
 }
@@ -1211,6 +1220,7 @@ func (m model) deleteRuneBeforeCursor() model {
 	cur := m.inputCursor
 	m.input = string(append(runes[:cur-1], runes[cur:]...))
 	m.inputCursor = cur - 1
+	m.inputCursorPreviousLine = false
 	m.inputVerticalColumnSet = false
 	return m
 }
@@ -1222,6 +1232,7 @@ func (m model) deleteRuneAtCursor() model {
 	}
 	cur := m.inputCursor
 	m.input = string(append(runes[:cur], runes[cur+1:]...))
+	m.inputCursorPreviousLine = false
 	m.inputVerticalColumnSet = false
 	return m
 }
@@ -4016,7 +4027,7 @@ func (m model) inputLinesWithCaret(contentW int) []string {
 	}
 
 	lines := inputVisualLines(m.input, contentW)
-	cursorLine, cursorColumn := inputCursorVisualPosition(lines, cur)
+	cursorLine, cursorColumn := inputCursorVisualPositionWithAffinity(lines, cur, m.inputCursorPreviousLine)
 	rendered := make([]string, 0, len(lines))
 	for i, line := range lines {
 		lineRunes := runes[line.start:line.end]
@@ -4028,8 +4039,16 @@ func (m model) inputLinesWithCaret(contentW int) []string {
 		if cursorColumn > len(lineRunes) {
 			cursorColumn = len(lineRunes)
 		}
+		caretChar := " "
+		caretEnd := cursorColumn
+		if cursorColumn < len(lineRunes) {
+			caretChar = string(lineRunes[cursorColumn])
+			caretEnd++
+		}
 		rendered = append(rendered,
-			chatInText.Render(string(lineRunes[:cursorColumn]))+m.renderInputCaret()+chatInText.Render(string(lineRunes[cursorColumn:])),
+			chatInText.Render(string(lineRunes[:cursorColumn]))+
+				m.renderInputCaret(caretChar)+
+				chatInText.Render(string(lineRunes[caretEnd:])),
 		)
 	}
 	return rendered
@@ -4108,14 +4127,14 @@ func truncateDisplayWidth(s string, maxCells int) string {
 	return clipped + ellipsis
 }
 
-func (m model) renderInputCaret() string {
+func (m model) renderInputCaret(char string) string {
 	if m.streaming {
 		return ""
 	}
 	if m.chatInputFocused && m.shellFocus == shellFocusContent {
-		return caretFilledStyle.Render(" ")
+		return caretFilledStyle.Render(char)
 	}
-	return caretHollowStyle.Render("▮")
+	return caretHollowStyle.Render(char)
 }
 
 func (m model) contentAreaHeight() int {
@@ -4273,7 +4292,7 @@ func (m model) ensureInputCaretVisible() model {
 	lines := m.inputLinesWithCaret(contentW)
 	cur := m.clampInputCursor().inputCursor
 	visualLines := inputVisualLines(m.input, contentW)
-	caretLine, _ := inputCursorVisualPosition(visualLines, cur)
+	caretLine, _ := inputCursorVisualPositionWithAffinity(visualLines, cur, m.inputCursorPreviousLine)
 	if caretLine < m.inputScrollOffset {
 		m.inputScrollOffset = caretLine
 	}

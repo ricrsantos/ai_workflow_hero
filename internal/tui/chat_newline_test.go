@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestConversationEnterInsertsNewlineWithoutSubmit(t *testing.T) {
@@ -133,5 +134,87 @@ func TestConversationVerticalArrowsFollowSoftWraps(t *testing.T) {
 	next, _ = HandleTestKey(next, "down")
 	if got, want := InputCursorForTest(next), width+4; got != want {
 		t.Fatalf("down across soft wrap cursor=%d want %d", got, want)
+	}
+}
+
+func TestInputVisualLinesWrapWholeWordsAndHardWrapLongWords(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		width int
+		want  []string
+	}{
+		{name: "whole words", input: "one two three", width: 9, want: []string{"one two ", "three"}},
+		{name: "long word", input: "supercalifragilistic", width: 5, want: []string{"super", "calif", "ragil", "istic"}},
+		{name: "explicit newline", input: "one two\nthree four", width: 20, want: []string{"one two", "three four"}},
+		{name: "wide runes", input: "ab界 cd", width: 4, want: []string{"ab界", " cd"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runes := []rune(tt.input)
+			lines := inputVisualLines(tt.input, tt.width)
+			got := make([]string, 0, len(lines))
+			for _, line := range lines {
+				got = append(got, string(runes[line.start:line.end]))
+			}
+			if strings.Join(got, "|") != strings.Join(tt.want, "|") {
+				t.Fatalf("lines=%q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConversationHomeEndUseCurrentVisualLine(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetWidth(m, 30)
+	width := m.chatContentWidth()
+	input := strings.Repeat("a", width) + " second"
+	m = SetConversationInput(m, input)
+
+	m, _ = HandleTestKey(m, "ctrl+home")
+	m, _ = HandleTestKey(m, "right")
+	m, _ = HandleTestKey(m, "end")
+	if got, want := InputCursorForTest(m), width; got != want {
+		t.Fatalf("end cursor=%d want first visual-line end %d", got, want)
+	}
+	lines := inputVisualLines(input, width)
+	line, _ := inputCursorVisualPositionWithAffinity(lines, m.inputCursor, m.inputCursorPreviousLine)
+	if line != 0 {
+		t.Fatalf("end rendered on visual line %d want 0", line)
+	}
+
+	m, _ = HandleTestKey(m, "ctrl+end")
+	m, _ = HandleTestKey(m, "home")
+	if got, want := InputCursorForTest(m), width; got != want {
+		t.Fatalf("home cursor=%d want visual-line start %d", got, want)
+	}
+	m, _ = HandleTestKey(m, "end")
+	if got, want := InputCursorForTest(m), runeLen(input); got != want {
+		t.Fatalf("end cursor=%d want visual-line end %d", got, want)
+	}
+	m, _ = HandleTestKey(m, "ctrl+home")
+	if got := InputCursorForTest(m); got != 0 {
+		t.Fatalf("ctrl+home cursor=%d want input start", got)
+	}
+	m, _ = HandleTestKey(m, "ctrl+end")
+	if got, want := InputCursorForTest(m), runeLen(input); got != want {
+		t.Fatalf("ctrl+end cursor=%d want input end %d", got, want)
+	}
+}
+
+func TestConversationCaretOverlaysCurrentCharacter(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m = SetConversationInput(m, "abcd")
+	m.inputCursor = 1
+
+	line := m.inputLinesWithCaret(20)[0]
+	if got := lipgloss.Width(line); got != len("abcd") {
+		t.Fatalf("rendered width=%d want %d; caret must not add a cell", got, len("abcd"))
+	}
+	if plain := stripANSI(line); plain != "abcd" {
+		t.Fatalf("rendered text=%q want original text", plain)
 	}
 }

@@ -167,6 +167,7 @@ func (m model) insertChatSlashSelection() model {
 	label := items[idx].label
 	m.input = label
 	m.inputCursor = runeLen(label)
+	m.inputCursorPreviousLine = false
 	m.inputVerticalColumnSet = false
 	m.slashOverlayDismissed = true
 	m.slashOverlayIndex = 0
@@ -192,6 +193,7 @@ func (m model) applyChatSlashSelection() (model, tea.Cmd) {
 func (m model) clearChatInput() model {
 	m.input = ""
 	m.inputCursor = 0
+	m.inputCursorPreviousLine = false
 	m.inputVerticalColumn = 0
 	m.inputVerticalColumnSet = false
 	m.inputScrollOffset = 0

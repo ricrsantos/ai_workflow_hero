@@ -262,11 +262,13 @@ func (m model) handleHarnessQuestionComposer(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		return m, nil
 	case "home":
 		m.inputCursor = 0
+		m.inputCursorPreviousLine = false
 		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	case "end":
 		m.inputCursor = runeLen(m.input)
+		m.inputCursorPreviousLine = false
 		m.inputVerticalColumnSet = false
 		m = m.ensureInputCaretVisible()
 		return m, nil

@@ -103,8 +103,9 @@ type model struct {
 	freechatSessionHarnessID string // harness that owns freechatSessionID
 	transcript               []convMessage
 	input                    string
-	inputCursor              int // rune offset into input
-	inputVerticalColumn      int // preferred visual column while moving up/down
+	inputCursor              int  // rune offset into input
+	inputCursorPreviousLine  bool // soft-wrap boundary is shown on the preceding visual line
+	inputVerticalColumn      int  // preferred visual column while moving up/down
 	inputVerticalColumnSet   bool
 	streaming                bool
 	streamInterrupted        bool
