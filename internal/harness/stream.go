@@ -35,8 +35,12 @@ const (
 
 // StreamDelta is a live event emitted during Execute when Stream is true.
 type StreamDelta struct {
-	Kind        StreamKind
-	Text        string
+	Kind StreamKind
+	Text string
+	// ReplaceText marks Text as an authoritative snapshot of the logical
+	// message accumulated so far. Consumers replace that message instead of
+	// appending Text. Adapters use this to repair gaps in lossy live deltas.
+	ReplaceText bool
 	AgentName   string // Hero agent id (qa_agent) or empty for the parent session
 	Model       string // kebab model slug when known
 	CallID      string // Task call_id when attributed to a subagent

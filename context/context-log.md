@@ -1,5 +1,13 @@
 # Context Log
 
+## 2026-09-14 — Codex live response gap repair
+
+**Problem**: Codex `item/agentMessage/delta` could omit a span under app-server backpressure. The adapter retained the correct `item/completed` snapshot for `ExecutionResult.Output`, but the TUI displayed the corrupted partial text until the entire turn completed.
+
+**Fix**: Added `StreamDelta.ReplaceText` for authoritative logical-message snapshots. On a non-prefix Codex completion snapshot, the adapter rebuilds the ordered agent-message text and emits an immediate replacement; the TUI replaces the owning parent turn and invalidates its response/layout cache. Normal prefix/suffix streaming is unchanged.
+
+**Validation**: `go test ./internal/adapters/codex ./internal/tui ./internal/harness -count=1`; `go test ./...`.
+
 > Short-term project memory for this repository (the Hero CLI + Runtime assets themselves).
 >
 > Keep only information relevant to the last 3–5 work sessions/cycles. Permanent facts belong in `context/current-state.md`.

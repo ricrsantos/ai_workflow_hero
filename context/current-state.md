@@ -44,6 +44,8 @@ Quit/restart while streaming uses two-phase cancel: `pendingQuitAfterInterrupt` 
 
 Mid-turn harness disconnects emit `⚠ connection closed; reconnecting…` / `✓ harness reconnected` via shared `harness` stream deltas. Codex restarts `app-server` and resumes the thread; OpenCode keeps SSE/serve recovery and surfaces the same copy; Cursor retries process/transport failures with the same `SessionID`. The TUI health path never auto-cancels; disconnect recovery stays inside adapter Execute.
 
+Codex completed `agentMessage` snapshots repair gaps in lossy live deltas immediately. The shared stream contract marks authoritative replacement text, and the TUI replaces only the owning agent turn while preserving sibling/subagent rows; `ExecutionResult.Output` remains the final reconciliation fallback.
+
 ## Scope (implementation routing)
 
 | Field | Value |

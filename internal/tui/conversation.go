@@ -2988,7 +2988,11 @@ func (m model) appendStreamDeltaForTurn(d harness.StreamDelta, turnIndex int) mo
 			m.appendAttributed(convRoleAgent, d)
 			return m
 		}
-		m.appendAgentDelta(d.Text)
+		if d.ReplaceText {
+			m.replaceAgentTextForTurn(turnIndex, d.Text)
+		} else {
+			m.appendAgentDelta(d.Text)
+		}
 		if m.agentMsgIndex >= 0 && m.agentMsgIndex < len(m.transcript) {
 			if m.transcript[m.agentMsgIndex].agentName == "" {
 				m.transcript[m.agentMsgIndex].agentName = d.AgentName
@@ -3429,6 +3433,15 @@ func (m *model) appendAgentDelta(delta string) {
 	}
 	m.transcript[m.agentMsgIndex].content += delta
 	m.invalidateResponseCache(m.agentMsgIndex)
+}
+
+func (m *model) replaceAgentTextForTurn(turnIndex int, text string) {
+	if turnIndex < 0 || turnIndex >= len(m.transcript) || m.transcript[turnIndex].role != convRoleAgent {
+		m.appendAgentDelta(text)
+		return
+	}
+	m.transcript[turnIndex].content = text
+	m.invalidateResponseCache(turnIndex)
 }
 
 func (m *model) invalidateResponseCache(index int) {

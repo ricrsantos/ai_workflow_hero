@@ -96,11 +96,17 @@ func TestAgentMessageCompletedRepairsGapInLiveDeltas(t *testing.T) {
 	a := NewAdapter(t.TempDir(), nil)
 	st := newTurnStreamState()
 	var streamed string
+	var replacements int
 	var buf strings.Builder
 	req := harness.ExecuteRequest{
 		OnStreamDelta: func(d harness.StreamDelta) {
 			if d.Kind == harness.StreamKindText {
-				streamed += d.Text
+				if d.ReplaceText {
+					streamed = d.Text
+					replacements++
+				} else {
+					streamed += d.Text
+				}
 			}
 		},
 	}
@@ -118,11 +124,55 @@ func TestAgentMessageCompletedRepairsGapInLiveDeltas(t *testing.T) {
 	})
 	_ = a.handleNotification(context.Background(), "item/completed", completed, "thr", req, &buf, st)
 
-	if streamed != partial {
-		t.Fatalf("live text=%q want unchanged partial stream", streamed)
+	if streamed != full {
+		t.Fatalf("live text=%q want repaired snapshot %q", streamed, full)
+	}
+	if replacements != 1 {
+		t.Fatalf("replacement snapshots=%d want 1", replacements)
 	}
 	if got := st.output(buf.String()); got != full {
 		t.Fatalf("final output=%q want repaired %q", got, full)
+	}
+}
+
+func TestAgentMessageSnapshotRepairPreservesMultipleItemOrder(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil)
+	st := newTurnStreamState()
+	var streamed string
+	req := harness.ExecuteRequest{OnStreamDelta: func(d harness.StreamDelta) {
+		if d.Kind != harness.StreamKindText {
+			return
+		}
+		if d.ReplaceText {
+			streamed = d.Text
+			return
+		}
+		streamed += d.Text
+	}}
+
+	firstDelta, _ := json.Marshal(map[string]any{
+		"threadId": "thr", "itemId": "m1", "delta": "Primeira mensagem com trecho ausente.",
+	})
+	_ = a.handleNotification(context.Background(), "item/agentMessage/delta", firstDelta, "thr", req, nil, st)
+	firstCompleted, _ := json.Marshal(map[string]any{
+		"threadId": "thr",
+		"item": map[string]any{
+			"type": "agentMessage", "id": "m1", "text": "Primeira mensagem completa, sem trecho ausente.",
+		},
+	})
+	_ = a.handleNotification(context.Background(), "item/completed", firstCompleted, "thr", req, nil, st)
+
+	secondDelta, _ := json.Marshal(map[string]any{
+		"threadId": "thr", "itemId": "m2", "delta": "Segunda mensagem.",
+	})
+	_ = a.handleNotification(context.Background(), "item/agentMessage/delta", secondDelta, "thr", req, nil, st)
+
+	want := "Primeira mensagem completa, sem trecho ausente.\nSegunda mensagem."
+	if streamed != want {
+		t.Fatalf("live text=%q want %q", streamed, want)
+	}
+	if got := st.output(""); got != want {
+		t.Fatalf("final output=%q want %q", got, want)
 	}
 }
 

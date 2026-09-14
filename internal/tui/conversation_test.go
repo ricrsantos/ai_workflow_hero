@@ -1026,6 +1026,37 @@ func TestExecuteDoneReconcilesTruncatedParentOutput(t *testing.T) {
 	}
 }
 
+func TestAuthoritativeTextSnapshotReplacesOnlyOwningTurn(t *testing.T) {
+	m := NewTestModel(nil)
+	m = EnterConversationForTest(m)
+	m.transcript = []convMessage{
+		{role: convRoleUser, content: "q"},
+		{role: convRoleAgent, content: "texto corrompido", responseLinesValid: true},
+		{role: convRoleAgent, content: "sub work", callID: "task-1"},
+	}
+	m.agentMsgIndex = 1
+	m.transcriptGen = 4
+
+	m = m.appendStreamDeltaForTurn(harness.StreamDelta{
+		Kind:        harness.StreamKindText,
+		Text:        "texto completo e correto",
+		ReplaceText: true,
+	}, 1)
+
+	if got := m.transcript[1].content; got != "texto completo e correto" {
+		t.Fatalf("parent text=%q", got)
+	}
+	if m.transcript[1].responseLinesValid {
+		t.Fatal("replacement must invalidate rendered response cache")
+	}
+	if got := m.transcript[2].content; got != "sub work" {
+		t.Fatalf("sibling text changed: %q", got)
+	}
+	if m.transcriptGen != 5 {
+		t.Fatalf("transcript generation=%d want 5", m.transcriptGen)
+	}
+}
+
 func TestStreamDeltaMustDeliver(t *testing.T) {
 	if !streamDeltaMustDeliver(harness.StreamKindText) {
 		t.Fatal("text must deliver")

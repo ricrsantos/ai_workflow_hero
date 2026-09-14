@@ -197,9 +197,18 @@ func (st *turnStreamState) emitAuthoritativeText(key, full, harnessType, session
 		return
 	default:
 		// A completed item can repair a dropped span in the middle of a live
-		// stream. It cannot be appended safely: that would duplicate the whole
-		// message. Keep the final snapshot for ExecutionResult.Output instead.
+		// stream. It cannot be appended safely, so replace the accumulated
+		// agent-message text with the authoritative turn snapshot.
+		st.emittedText[key] = full
 		st.lastAgentKey = key
+		emit(harness.StreamDelta{
+			Kind:        harness.StreamKindText,
+			Text:        st.output(""),
+			ReplaceText: true,
+			HarnessType: harnessType,
+			SessionID:   sessionID,
+			Phase:       harness.StreamPhaseCompleted,
+		})
 		return
 	}
 	st.ensureItemSeparator(key, text, harnessType, sessionID, emit)
