@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -107,6 +108,176 @@ func TestEventsToTranscriptTelegramOrigin(t *testing.T) {
 	}
 	if occ["freechat"] == 0 {
 		t.Fatal("expected occupancy for restored session")
+	}
+}
+
+func TestEventsToTranscriptKeepsParentResponseAfterTurnDetails(t *testing.T) {
+	events := []store.SessionEvent{
+		{EventType: store.SessionEventUser, PayloadJSON: `{"text":"first prompt"}`},
+		{EventType: store.SessionEventAssistant, PayloadJSON: `{"text":"first response"}`},
+		{EventType: store.SessionEventThinking, PayloadJSON: `{"text":"first thinking"}`},
+		{EventType: store.SessionEventTool, PayloadJSON: `{"text":"first tool"}`},
+		{EventType: store.SessionEventAssistant, PayloadJSON: `{"text":"subagent result","call_id":"task-1"}`},
+		{EventType: store.SessionEventUser, PayloadJSON: `{"text":"second prompt"}`},
+		{EventType: store.SessionEventAssistant, PayloadJSON: `{"text":"second response"}`},
+		{EventType: store.SessionEventThinking, PayloadJSON: `{"text":"second thinking"}`},
+	}
+
+	transcript, _, _ := eventsToTranscript(events, nil)
+	want := []struct {
+		role    convRole
+		content string
+	}{
+		{convRoleUser, "first prompt"},
+		{convRoleThinking, "first thinking"},
+		{convRoleTool, "first tool"},
+		{convRoleAgent, "subagent result"},
+		{convRoleAgent, "first response"},
+		{convRoleUser, "second prompt"},
+		{convRoleThinking, "second thinking"},
+		{convRoleAgent, "second response"},
+	}
+	if len(transcript) != len(want) {
+		t.Fatalf("transcript length=%d want %d: %+v", len(transcript), len(want), transcript)
+	}
+	for i, expected := range want {
+		if transcript[i].role != expected.role || transcript[i].content != expected.content {
+			t.Fatalf("transcript[%d]=(%q,%q) want (%q,%q)", i, transcript[i].role, transcript[i].content, expected.role, expected.content)
+		}
+	}
+}
+
+func TestChatTranscriptRestoreStartsAtBottom(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+
+	next := m.applyChatTranscriptRestore(chatTranscriptRestoreMsg{
+		sessionID: "history-session",
+		session: store.Session{
+			ID:        "history-session",
+			Kind:      store.SessionKindFreechat,
+			Lifecycle: store.SessionLifecycleActive,
+		},
+		transcript: []convMessage{
+			{role: convRoleUser, content: "oldest-marker " + strings.Repeat("old ", 300)},
+			{role: convRoleAgent, content: strings.Repeat("new ", 300) + " newest-marker"},
+		},
+	})
+
+	maxOffset := next.maxTranscriptScroll()
+	if maxOffset == 0 {
+		t.Fatal("expected restored transcript to require scrolling")
+	}
+	if !next.transcriptFollowBottom {
+		t.Fatal("restored transcript must follow the bottom")
+	}
+	if next.transcriptScrollOffset != maxOffset {
+		t.Fatalf("restored transcript offset=%d want max=%d", next.transcriptScrollOffset, maxOffset)
+	}
+	view := ViewForTest(next)
+	if !strings.Contains(view, "newest-marker") {
+		t.Fatalf("restored view must show newest transcript content: %q", view)
+	}
+	if strings.Contains(view, "oldest-marker") {
+		t.Fatalf("restored view must not start at oldest transcript content: %q", view)
+	}
+}
+
+func TestLoadChatTranscriptEventsBackfillsNewestTurnBoundary(t *testing.T) {
+	svc := newTestServiceInstalledNoCycle(t, t.TempDir())
+	sessionSvc := conversation.NewSessionService(svc.Store, store.DefaultClock())
+	ctx := context.Background()
+	created, err := sessionSvc.EnsureFirstTurn(ctx, "", conversation.CreateSessionParams{
+		Kind:      store.SessionKindFreechat,
+		Title:     "restore",
+		HarnessID: "cursor",
+		Model:     "composer-2.5",
+	}, conversation.FirstTurnContent{Text: "restored prompt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const toolEvents = store.DefaultSessionEventPage
+	suffix := make([]store.AppendSessionEventInput, 0, toolEvents+1)
+	suffix = append(suffix, store.AppendSessionEventInput{
+		EventType:       store.SessionEventAssistant,
+		Origin:          store.SessionOriginLocal,
+		PayloadJSON:     `{"text":"restored response","occupancy_key":"freechat"}`,
+		ProviderEventID: "assistant-restore",
+	})
+	for i := 0; i < toolEvents; i++ {
+		suffix = append(suffix, store.AppendSessionEventInput{
+			EventType:   store.SessionEventTool,
+			Origin:      store.SessionOriginLocal,
+			PayloadJSON: fmt.Sprintf(`{"text":"tool-%d"}`, i),
+		})
+	}
+	for i := range suffix {
+		suffix[i].SessionID = created.SessionID
+		suffix[i].BoundSessionID = created.SessionID
+	}
+	if err := sessionSvc.PersistTranscriptSuffix(ctx, suffix, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewTestModel(svc)
+	m.sessionService = sessionSvc
+	restored, ok := m.loadChatTranscriptCmd(created.SessionID)().(chatTranscriptRestoreMsg)
+	if !ok || restored.err != nil {
+		t.Fatalf("restore msg=%T err=%v", restored, restored.err)
+	}
+	if len(restored.transcript) != toolEvents+2 {
+		t.Fatalf("restored transcript=%d want %d", len(restored.transcript), toolEvents+2)
+	}
+	if restored.transcript[0].role != convRoleUser || restored.transcript[0].content != "restored prompt" {
+		t.Fatalf("missing restored prompt: %+v", restored.transcript[0])
+	}
+	if restored.transcript[len(restored.transcript)-1].content != "restored response" {
+		t.Fatalf("parent response must remain after turn details: %+v", restored.transcript[len(restored.transcript)-1])
+	}
+	wantOccupancy := harness.EstimateUsage("restored promptrestored response", "").Occupancy()
+	if restored.occupancy[occupancyKeyFreechat] != wantOccupancy {
+		t.Fatalf("restored occupancy=%d want %d: %+v", restored.occupancy[occupancyKeyFreechat], wantOccupancy, restored.occupancy)
+	}
+
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m = m.applyChatTranscriptRestore(restored)
+	if m.contextUsedTokens != wantOccupancy {
+		t.Fatalf("context used=%d want restored occupancy=%d", m.contextUsedTokens, wantOccupancy)
+	}
+	if !strings.Contains(stripANSI(ViewForTest(m)), "restored response") {
+		t.Fatalf("bottom view must show restored response: %q", ViewForTest(m))
+	}
+}
+
+func TestApplyChatTranscriptRestoreSelectsCycleOccupancy(t *testing.T) {
+	key := cycleOccupancyKey("qa", "qa_agent")
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m = EnterConversationForTest(m)
+	m = m.applyChatTranscriptRestore(chatTranscriptRestoreMsg{
+		sessionID: "cycle-session",
+		session: store.Session{
+			ID:        "cycle-session",
+			Kind:      store.SessionKindStageAgent,
+			StageName: "qa",
+			AgentName: "qa_agent",
+		},
+		transcript: []convMessage{
+			{role: convRoleUser, content: "cycle prompt"},
+			{role: convRoleAgent, content: "cycle response", occupancyKey: key},
+		},
+		occupancy: map[string]int64{key: 321},
+	})
+	if m.contextUsedTokens != 321 {
+		t.Fatalf("cycle context used=%d want 321", m.contextUsedTokens)
+	}
+	if m.contextDisplayKey != key {
+		t.Fatalf("cycle display key=%q want %q", m.contextDisplayKey, key)
 	}
 }
 

@@ -2533,3 +2533,43 @@ split across key events, and `Enter` inserts `\n` without opening a viewer
 command.
 
 **Verification**: `gofmt`, `go test ./...`, and `git diff --check` pass.
+
+## 2026-09-15 — History transcript restore order and viewport
+
+**Problem**: Restored Chat sessions used durable event `seq` order directly.
+Because assistant snapshots replace one event in place while thinking/tool rows
+are appended later, the parent response could render before details that live
+Chat keeps immediately above it. Restored sessions also reset the scroll offset
+to zero even though the screen was marked as following the bottom.
+
+**Fix**: Reconstruct restored events by user turn and stably place parent
+assistant rows after thinking/tool/activity details, while keeping subagent
+responses and trailing asset/interruption markers in their existing roles. Chat
+restore now calculates `maxTranscriptScroll()` immediately after loading, so
+the viewport opens at the newest content.
+
+**Tests**: Added deterministic TUI regressions for multi-turn ordering,
+subagent preservation, and restore-at-bottom rendering.
+
+**Verification**: `gofmt`, targeted TUI tests, `go test ./...`, and
+`git diff --check` pass.
+
+## 2026-09-15 — Backfill restored turn anchors and occupancy
+
+**Problem**: A restored session with more than 200 detail events could return
+only the newest tool/thinking page. The user and parent assistant rows were
+older because assistant snapshots replace their original event in place, so
+the restored view showed neither the prompt nor the green response and had no
+occupancy sample.
+
+**Fix**: Chat restore still reads bounded pages, but walks backward until the
+newest page includes a user boundary. Occupancy is reconstructed from the
+restored user/assistant transcript, and the display key is selected from the
+session kind (with transcript/map fallbacks for older data). Existing
+per-turn ordering normalization and newest-offset behavior remain in place.
+
+**Tests**: Added a >200-event restore regression covering prompt, parent
+response, green bottom rendering, occupancy, and cycle-session key selection.
+
+**Verification**: `gofmt`, targeted TUI tests, `go test ./...`, and
+`git diff --check` pass.

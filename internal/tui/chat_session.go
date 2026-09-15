@@ -198,6 +198,11 @@ type chatTranscriptRestoreMsg struct {
 	err                    error
 }
 
+type restoredTranscriptEntry struct {
+	message   convMessage
+	eventType string
+}
+
 func newTuiOwnerID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -1238,7 +1243,8 @@ func (m model) loadChatTranscriptCmd(sessionID string) tea.Cmd {
 	svc := m.sessionService
 	storeDB := svc.Store
 	return func() tea.Msg {
-		events, err := svc.ListEventsNewest(context.Background(), sessionID, 0, store.DefaultSessionEventPage)
+		ctx := context.Background()
+		events, err := loadChatTranscriptEvents(ctx, svc, sessionID)
 		if err != nil {
 			return chatTranscriptRestoreMsg{sessionID: sessionID, err: err}
 		}
@@ -1247,7 +1253,7 @@ func (m model) loadChatTranscriptCmd(sessionID string) tea.Cmd {
 			return chatTranscriptRestoreMsg{sessionID: sessionID, err: err}
 		}
 		transcript, assets, occupancy := eventsToTranscript(events, assetRows)
-		sess, err := svc.GetSession(context.Background(), sessionID)
+		sess, err := svc.GetSession(ctx, sessionID)
 		if err != nil {
 			return chatTranscriptRestoreMsg{sessionID: sessionID, err: err}
 		}
@@ -1271,6 +1277,44 @@ func (m model) loadChatTranscriptCmd(sessionID string) tea.Cmd {
 			historicalContinuation: historical,
 		}
 	}
+}
+
+// loadChatTranscriptEvents reads bounded event pages newest-first and keeps
+// walking backwards until the newest turn has its user boundary. A turn can
+// contain hundreds of tool/thinking events, while its user and parent
+// assistant rows are persisted near the beginning of the turn. Restoring only
+// the newest page in that case produces a transcript made exclusively of
+// details, losing the prompt, response, and occupancy metadata needed by Chat.
+func loadChatTranscriptEvents(ctx context.Context, svc *conversation.SessionService, sessionID string) ([]store.SessionEvent, error) {
+	var all []store.SessionEvent
+	before := int64(0)
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		page, err := svc.ListEventsNewest(ctx, sessionID, before, store.DefaultSessionEventPage)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		all = append(page, all...)
+		if containsSessionEventType(page, store.SessionEventUser) || len(page) < store.DefaultSessionEventPage {
+			break
+		}
+		before = page[0].Seq
+	}
+	return all, nil
+}
+
+func containsSessionEventType(events []store.SessionEvent, eventType string) bool {
+	for _, ev := range events {
+		if ev.EventType == eventType {
+			return true
+		}
+	}
+	return false
 }
 
 func eventsToTranscript(events []store.SessionEvent, assetRows []store.SessionAsset) ([]convMessage, []harness.Asset, map[string]int64) {
@@ -1299,7 +1343,7 @@ func eventsToTranscript(events []store.SessionEvent, assetRows []store.SessionAs
 		}
 		assetByHash[asset.ContentHash] = asset
 	}
-	var transcript []convMessage
+	entries := make([]restoredTranscriptEntry, 0, len(events))
 	occupancy := make(map[string]int64)
 	var cardAssets []harness.Asset
 	for _, ev := range events {
@@ -1307,18 +1351,135 @@ func eventsToTranscript(events []store.SessionEvent, assetRows []store.SessionAs
 		if !ok {
 			continue
 		}
-		transcript = append(transcript, msg)
+		entries = append(entries, restoredTranscriptEntry{message: msg, eventType: ev.EventType})
 		if asset != nil {
 			cardAssets = append(cardAssets, *asset)
 		}
-		if key := strings.TrimSpace(msg.occupancyKey); key != "" && msg.role == convRoleAgent {
-			occ := harness.EstimateUsage(msg.content, "").Occupancy()
-			if occ > 0 {
-				occupancy[key] = occ
-			}
+	}
+	entries = normalizeRestoredTranscript(entries)
+	transcript := make([]convMessage, 0, len(entries))
+	for _, entry := range entries {
+		transcript = append(transcript, entry.message)
+	}
+	occupancy = restoredTranscriptOccupancy(entries)
+	return transcript, cardAssets, occupancy
+}
+
+// normalizeRestoredTranscript restores the same per-turn layout used by the
+// live Chat. The parent assistant row is kept after thinking/tool/activity
+// rows, while its persisted payload is updated in-place as stream snapshots
+// arrive. That replacement preserves the original seq, so raw seq order can
+// otherwise put the parent response before details that were shown before it.
+func normalizeRestoredTranscript(entries []restoredTranscriptEntry) []restoredTranscriptEntry {
+	if len(entries) < 2 {
+		return entries
+	}
+
+	out := make([]restoredTranscriptEntry, 0, len(entries))
+	turnStart := 0
+	for i := 1; i <= len(entries); i++ {
+		if i < len(entries) && entries[i].eventType != store.SessionEventUser {
+			continue
+		}
+		out = append(out, normalizeRestoredTranscriptTurn(entries[turnStart:i])...)
+		turnStart = i
+	}
+	return out
+}
+
+func normalizeRestoredTranscriptTurn(turn []restoredTranscriptEntry) []restoredTranscriptEntry {
+	if len(turn) < 2 {
+		return turn
+	}
+
+	var parent []restoredTranscriptEntry
+	for _, entry := range turn {
+		if entry.eventType == store.SessionEventAssistant && strings.TrimSpace(entry.message.callID) == "" {
+			parent = append(parent, entry)
 		}
 	}
-	return transcript, cardAssets, occupancy
+	if len(parent) == 0 {
+		return turn
+	}
+
+	leading := make([]restoredTranscriptEntry, 0, len(turn)-len(parent))
+	trailing := make([]restoredTranscriptEntry, 0)
+	for _, entry := range turn {
+		if entry.eventType == store.SessionEventAssistant && strings.TrimSpace(entry.message.callID) == "" {
+			continue
+		}
+		// Asset and interruption events are emitted after the parent row in the
+		// live transcript, so keep them after the restored response as well.
+		if entry.eventType == store.SessionEventAsset || entry.eventType == store.SessionEventInterruption {
+			trailing = append(trailing, entry)
+			continue
+		}
+		leading = append(leading, entry)
+	}
+
+	ordered := make([]restoredTranscriptEntry, 0, len(turn))
+	ordered = append(ordered, leading...)
+	ordered = append(ordered, parent...)
+	ordered = append(ordered, trailing...)
+	return ordered
+}
+
+// restoredTranscriptOccupancy reconstructs the best available window estimate
+// from the selected transcript. Persisted assistant snapshots carry the
+// occupancy key, while the corresponding user event may not (especially the
+// first turn), so associate an unkeyed user row with its turn's parent key.
+// This mirrors estimateTranscriptOccupancy without treating billed totals as
+// context-window usage.
+func restoredTranscriptOccupancy(entries []restoredTranscriptEntry) map[string]int64 {
+	textByKey := make(map[string]*strings.Builder)
+	appendTurn := func(turn []restoredTranscriptEntry) {
+		turnKey := ""
+		for _, entry := range turn {
+			if entry.message.role != convRoleAgent {
+				continue
+			}
+			if key := strings.TrimSpace(entry.message.occupancyKey); key != "" {
+				turnKey = key
+			}
+		}
+		for _, entry := range turn {
+			msg := entry.message
+			if msg.role != convRoleUser && msg.role != convRoleAgent {
+				continue
+			}
+			key := strings.TrimSpace(msg.occupancyKey)
+			if key == "" && msg.role == convRoleUser {
+				key = turnKey
+				if key == "" {
+					key = occupancyKeyFreechat
+				}
+			}
+			if key == "" || msg.content == "" {
+				continue
+			}
+			if textByKey[key] == nil {
+				textByKey[key] = &strings.Builder{}
+			}
+			textByKey[key].WriteString(msg.content)
+		}
+	}
+
+	turnStart := 0
+	for i := 1; i <= len(entries); i++ {
+		if i < len(entries) && entries[i].eventType != store.SessionEventUser {
+			continue
+		}
+		appendTurn(entries[turnStart:i])
+		turnStart = i
+	}
+
+	occupancy := make(map[string]int64, len(textByKey))
+	for key, text := range textByKey {
+		if occ := harness.EstimateUsage(text.String(), "").Occupancy(); occ > 0 {
+			occupancy[key] = occ
+		}
+	}
+	return occupancy
 }
 
 func eventToConvMessage(ev store.SessionEvent, assetByHash map[string]harness.Asset) (convMessage, *harness.Asset, bool) {
@@ -1466,6 +1627,54 @@ func jsonBoolField(payload map[string]json.RawMessage, key string) bool {
 	return json.Unmarshal(raw, &b) == nil && b
 }
 
+func restoredSessionOccupancyKey(sess store.Session, transcript []convMessage, occupancy map[string]int64) string {
+	candidates := make([]string, 0, 2)
+	switch sess.Kind {
+	case store.SessionKindFreechat:
+		candidates = append(candidates, occupancyKeyFreechat)
+	case store.SessionKindResearch:
+		stage := strings.TrimSpace(sess.StageName)
+		if stage == "" {
+			stage = stageResearch
+		}
+		agent := strings.TrimSpace(sess.AgentName)
+		if agent == "" {
+			agent = agentDiscover
+		}
+		candidates = append(candidates, cycleOccupancyKey(stage, agent))
+	case store.SessionKindOrchestration:
+		agent := strings.TrimSpace(sess.AgentName)
+		if agent == "" {
+			agent = agentOrchestration
+		}
+		candidates = append(candidates, cycleOccupancyKey(sess.StageName, agent))
+	case store.SessionKindStageAgent:
+		candidates = append(candidates, cycleOccupancyKey(sess.StageName, sess.AgentName))
+	}
+	for _, key := range candidates {
+		if key != "" {
+			if _, ok := occupancy[key]; ok {
+				return key
+			}
+		}
+	}
+	for i := len(transcript) - 1; i >= 0; i-- {
+		key := strings.TrimSpace(transcript[i].occupancyKey)
+		if key == "" {
+			continue
+		}
+		if _, ok := occupancy[key]; ok {
+			return key
+		}
+	}
+	if len(occupancy) == 1 {
+		for key := range occupancy {
+			return key
+		}
+	}
+	return ""
+}
+
 func (m model) applyChatTranscriptRestore(msg chatTranscriptRestoreMsg) model {
 	if msg.err != nil {
 		m.convError = msg.err.Error()
@@ -1484,11 +1693,8 @@ func (m model) applyChatTranscriptRestore(msg chatTranscriptRestoreMsg) model {
 	m.bumpTranscriptLayout()
 	m.assets = harness.MergeAssetsByContentHash(nil, msg.assets)
 	m.contextOccupancy = msg.occupancy
-	if len(msg.occupancy) > 0 {
-		if occ, ok := msg.occupancy[occupancyKeyFreechat]; ok {
-			m.contextUsedTokens = occ
-			m.contextDisplayKey = occupancyKeyFreechat
-		}
+	if key := restoredSessionOccupancyKey(msg.session, m.transcript, msg.occupancy); key != "" {
+		m = m.showOccupancyKey(key)
 	}
 	if slug := strings.TrimSpace(msg.model); slug != "" {
 		m.chatModelSlug = slug
@@ -1501,9 +1707,11 @@ func (m model) applyChatTranscriptRestore(msg chatTranscriptRestoreMsg) model {
 			m = m.persistHarnessSession(sid, msg.harnessID)
 		}
 	}
-	m.transcriptScrollOffset = 0
 	m.transcriptFollowBottom = true
-	return m
+	// Restore opens the same way a live stream is rendered: follow the newest
+	// transcript rows immediately instead of waiting for the next delta/resize
+	// to calculate the offset.
+	return m.maybeFollowTranscriptBottom()
 }
 
 func (m model) submitBlockedBySessionPersist() bool {
