@@ -151,20 +151,78 @@ func TestChatAttachmentShortcutsAndSlashWorkInEveryConversationMode(t *testing.T
 			m.researchLive = mode.researchLive
 			m.runtimeAgentName = mode.runtimeAgent
 
-			next, _ := HandleTestKey(m, "alt+a")
+			next, cmd := HandleTestKey(m, "alt+a")
 			if !next.attachmentPickerActive {
 				t.Fatal("Alt+A should open the image picker")
+			}
+			if cmd == nil {
+				t.Fatal("Alt+A should schedule an asynchronous directory load")
 			}
 
 			m = EnterConversationForTest(NewTestModel(nil))
 			m.freeChatMode = mode.freeChat
 			m.researchLive = mode.researchLive
 			m.runtimeAgentName = mode.runtimeAgent
-			next, _, handled := m.dispatchExactHeroSlash("/attach")
+			next, cmd, handled := m.dispatchExactHeroSlash("/attach")
 			if !handled || !next.attachmentPickerActive {
 				t.Fatal("/attach should open the image picker")
 			}
+			if cmd == nil {
+				t.Fatal("/attach should schedule an asynchronous directory load")
+			}
 		})
+	}
+}
+
+func TestAttachmentPickerLoadsDirectoryEntriesAndSupportsSelection(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	svc, _ := newConversationTestService(t)
+	svc.WorkDir = t.TempDir()
+	nestedDir := filepath.Join(svc.WorkDir, "images")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeAcceptancePNG(t, nestedDir, "nested.png")
+
+	m := NewTestModel(svc)
+	m.freeChatMode = true
+	m = EnterConversationForTest(m)
+	next, cmd := HandleTestKey(m, "alt+a")
+	if cmd == nil {
+		t.Fatal("Alt+A should schedule the initial directory load")
+	}
+
+	updated, _ := next.Update(cmd())
+	next = updated.(model)
+	if got := next.attachmentPicker.View(); !strings.Contains(got, "images") || strings.Contains(got, "Bummer. No Files Found.") {
+		t.Fatalf("initial picker view=%q, want the workspace directory entry", got)
+	}
+
+	next, cmd = HandleTestKey(next, "enter")
+	if cmd == nil {
+		t.Fatal("opening a directory should schedule another asynchronous load")
+	}
+	updated, _ = next.Update(cmd())
+	next = updated.(model)
+	if got := next.attachmentPicker.View(); !strings.Contains(got, "nested.png") {
+		t.Fatalf("nested picker view=%q, want the image entry", got)
+	}
+
+	next, cmd = HandleTestKey(next, "enter")
+	if next.attachmentPickerActive {
+		t.Fatal("selecting an image should close the picker")
+	}
+	if cmd == nil {
+		t.Fatal("selecting an image should schedule asynchronous validation")
+	}
+	materialized, ok := cmd().(attachmentMaterializedMsg)
+	if !ok || materialized.err != nil {
+		t.Fatalf("materialization message=%T %+v", materialized, materialized)
+	}
+	updated, _ = next.Update(materialized)
+	next = updated.(model)
+	if len(next.attachments) != 1 || next.attachments[0].pending || next.attachments[0].name != "nested.png" {
+		t.Fatalf("selected attachment=%+v, want a ready nested image", next.attachments)
 	}
 }
 

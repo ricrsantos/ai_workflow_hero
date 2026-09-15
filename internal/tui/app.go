@@ -807,6 +807,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleHistoryKey(msg)
 		}
 		return m.handleKey(msg)
+	default:
+		// Bubbles keeps the filepicker's directory-result message private, so
+		// it cannot be matched explicitly in this type switch. Forward any
+		// otherwise-unhandled message while the picker is mounted; this is what
+		// installs the directory entries returned by picker.Init and navigation.
+		if m.attachmentPickerActive {
+			return m.handleAttachmentPickerMsg(msg)
+		}
 	}
 	return m, nil
 }

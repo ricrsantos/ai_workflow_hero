@@ -154,12 +154,23 @@ func (m model) handleAttachmentPickerKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		m.chatInputFocused = true
 		return m, nil
 	}
-	picker, cmd := m.attachmentPicker.Update(msg)
-	m.attachmentPicker = picker
-	if selected, path := picker.DidSelectFile(msg); selected {
+	m, cmd := m.handleAttachmentPickerMsg(msg)
+	if selected, path := m.attachmentPicker.DidSelectFile(msg); selected {
 		m.attachmentPickerActive = false
 		return m.queueAttachmentPath(path)
 	}
+	return m, cmd
+}
+
+// handleAttachmentPickerMsg forwards asynchronous child messages to the
+// mounted Bubbles picker. Its directory result type is intentionally private
+// to Bubbles, so the root model must route otherwise-unhandled messages here.
+func (m model) handleAttachmentPickerMsg(msg tea.Msg) (model, tea.Cmd) {
+	if !m.attachmentPickerActive {
+		return m, nil
+	}
+	picker, cmd := m.attachmentPicker.Update(msg)
+	m.attachmentPicker = picker
 	return m, cmd
 }
 

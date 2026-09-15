@@ -114,6 +114,7 @@ Codex completed `agentMessage` snapshots repair gaps in lossy live deltas immedi
 ## Recent Decisions
 
 - **2026-09-14 — TUI attachments expanded beyond Free Chat**: Image picker, clipboard capture, explicit-path/bracketed-paste input, attachment chips, asset reattachment, capability admission, and successful-send cleanup now apply to every local conversational Chat mode, including Research and workflow-stage turns. Hero control commands, approval/rejection prompts, ToDo forms, Telegram command routing, and other non-composer control surfaces remain text-only. Short-terminal navigation preserves live-agent labels when the attachment footer consumes an extra row.
+- **2026-09-15 — TUI image picker async dispatch**: The shared Chat file picker now receives Bubbles' otherwise-unhandled asynchronous directory-result messages, including the initial `Init` load and subsequent navigation loads, so valid image entries render instead of the empty-directory placeholder. Regression coverage exercises a real temporary workspace through directory navigation and image selection.
 
 - **2026-09-12 — Evidence `...` is not parent traversal**: Finding `evidence` may include Go recursive commands (`go test ./...`, `go test ./pkg/...`). Only a `..` path segment (`../secret`, `foo/../bar`, `go test ../pkg`) is rejected. Unsafe-content persist errors surface as `invalid_enum`, not `invalid_json`.
 

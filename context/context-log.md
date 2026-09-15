@@ -2426,3 +2426,23 @@ and Claude use the same registry policy for unknown model metadata.
 **Verification**: Added registry, Codex app-server, and TUI acceptance
 regressions. Focused tests and the full `go test ./...` suite pass; `git diff
 --check` is clean.
+
+## 2026-09-15 — Chat image picker directory results
+
+**Problem**: Alt+A and `/attach` mounted the Bubbles `filepicker`, but its
+asynchronous `readDirMsg` stayed at the root Bubble Tea model. The picker
+therefore kept rendering `Bummer. No Files Found.` even when the execution
+workspace contained images.
+
+**Fix**: While the picker is active, the root model forwards otherwise-
+unhandled messages to the child picker and stores its returned model/command.
+This covers both `picker.Init()` and directory-navigation loads without
+depending on Bubbles' private message types.
+
+**Tests**: Shortcut/slash tests now verify that an async load is scheduled.
+`TestAttachmentPickerLoadsDirectoryEntriesAndSupportsSelection` uses a real
+temporary workspace to cover initial listing, navigation, and image
+materialization.
+
+**Verification**: `go test ./...`; focused `go test -race ./internal/tui`
+picker tests; `gofmt` and `git diff --check`.
