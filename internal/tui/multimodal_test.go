@@ -19,6 +19,7 @@ func TestDurableMediaPathsUseHeroSessionIDAndSurviveRetention(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataHome)
 	svc, h := newConversationTestService(t)
 	m := newModel(svc)
+	m.convSink = newRecordingSink()
 	m.freeChatMode = true
 	m = EnterConversationForTest(m)
 	m = SetChatHarnessIDForTest(m, "streaming")
@@ -95,6 +96,7 @@ func TestNewChatRotatesMediaSessionDirectory(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataHome)
 	svc, _ := newConversationTestService(t)
 	m := newModel(svc)
+	m.convSink = newRecordingSink()
 	m.freeChatMode = true
 	m = EnterConversationForTest(m)
 	path := writeAcceptancePNG(t, t.TempDir(), "first.png")

@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "codex",
-    "model": "gpt-5.6-luna"
+    "harness": "claude",
+    "model": "opus"
   },
   "chat_verbosity": "debug",
   "telegram": {
@@ -51,7 +51,7 @@
         "ef": "medium"
       },
       "opus": {
-        "ef": "medium"
+        "ef": "high"
       },
       "sonnet": {
         "ef": "high"

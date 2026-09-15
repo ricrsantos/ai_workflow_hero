@@ -470,19 +470,24 @@ func TestSubmitBlockedBySessionLeaseLost(t *testing.T) {
 	}
 }
 
-func TestConversationBatchPersistKeepsStreamWaiter(t *testing.T) {
+// A session-bind delta triggers a persist drain mid-stream. The relay must keep
+// delivering afterwards; back when a shared channel fed the transcript and this
+// handler dropped its reader, the channel filled and CloseAndWait deadlocked
+// after the harness had already exited.
+func TestConversationBatchPersistKeepsStreamFlowing(t *testing.T) {
 	m, _, _ := newConversationTestModel(t)
+	sink := newRecordingSink()
+	m.convSink = sink
 	m.streaming = true
-	ch := make(chan tea.Msg, 4)
-	m.convStreamCh = ch
 	m.runtimeAgentName = agentOrchestration
 	m.transcript = []convMessage{{role: convRoleAgent, content: ""}}
 	m.agentMsgIndex = 0
+	relay := newConversationStreamRelay("ex-1", sink)
 	m.executes = map[string]convExecute{
-		"ex-1": {ID: "ex-1", HarnessID: "cursor", AgentName: agentOrchestration, AgentMsgIndex: 0},
+		"ex-1": {ID: "ex-1", HarnessID: "cursor", AgentName: agentOrchestration, AgentMsgIndex: 0, relay: relay},
 	}
 
-	next, cmd := m.Update(conversationBatchMsg{messages: []tea.Msg{
+	next, _ := m.Update(conversationBatchMsg{messages: []tea.Msg{
 		streamDeltaMsg{
 			executeID: "ex-1",
 			delta: harness.StreamDelta{
@@ -498,14 +503,18 @@ func TestConversationBatchPersistKeepsStreamWaiter(t *testing.T) {
 	if !got.streaming {
 		t.Fatal("streaming must remain true")
 	}
-	if cmd == nil {
-		t.Fatal("session persist drain must keep a stream waiter")
-	}
 
-	ch <- executeDoneMsg{executeID: "ex-1"}
-	msg := runConversationCmd(cmd)
-	if msg == nil {
-		t.Fatal("stream waiter was dropped after binding persist; CloseAndWait would deadlock")
+	relay.Enqueue(harness.StreamDelta{Kind: harness.StreamKindText, Text: "after-bind"})
+	relay.CloseAndWait()
+
+	msg := awaitSinkMsg(t, sink.ch, 2*time.Second)
+	batch, ok := msg.(conversationBatchMsg)
+	if !ok || len(batch.messages) == 0 {
+		t.Fatalf("msg=%#v", msg)
+	}
+	sd, ok := batch.messages[0].(streamDeltaMsg)
+	if !ok || sd.delta.Text != "after-bind" {
+		t.Fatalf("stream stopped after binding persist: %#v", batch.messages[0])
 	}
 }
 

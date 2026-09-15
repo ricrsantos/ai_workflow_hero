@@ -182,7 +182,7 @@ func (m model) waitingForHarnessLine(rowW int) string {
 }
 
 func (m *model) conversationExecuteCmds() tea.Cmd {
-	cmds := []tea.Cmd{waitConvBatchMsg(m.convStreamCh), convWaitTickCmd()}
+	cmds := []tea.Cmd{convWaitTickCmd()}
 	if !m.testMode {
 		cmds = append(cmds, harnessHealthProbeCmd())
 	}
@@ -727,7 +727,6 @@ func joinRuntimePromptBodies(agentBody, cmdBody string) string {
 
 func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 	m.executes = nil
-	m.convStreamCh = nil
 	return m.startTaggedExecute(convRoleUser, userLabel, executePrompt, true)
 }
 
@@ -735,7 +734,6 @@ func (m model) beginConversationExecute(userLabel, executePrompt string) model {
 // itself. Its label must not be rendered as user input in the transcript.
 func (m model) beginSystemConversationExecute(label, executePrompt string) model {
 	m.executes = nil
-	m.convStreamCh = nil
 	return m.startTaggedExecute(convRoleSystem, label, executePrompt, true)
 }
 
@@ -845,11 +843,7 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 		HeroSessionID:   strings.TrimSpace(m.heroChatSessionID),
 	}
 
-	if m.convStreamCh == nil {
-		ch := make(chan tea.Msg, 512)
-		m.convStreamCh = ch
-	}
-	relay := newConversationStreamRelay(executeID, m.convStreamCh)
+	relay := newConversationStreamRelay(executeID, m.convSink)
 	execute := m.executes[executeID]
 	execute.relay = relay
 	m.executes[executeID] = execute
@@ -1812,11 +1806,10 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 		},
 		OnPermissionRequest: func(ctx context.Context, perm harness.PermissionRequest) (harness.PermissionResponse, error) {
 			respCh := make(chan harness.PermissionResponse, 1)
-			select {
-			case relay.out <- harnessPermissionRequestMsg{executeID: executeID, req: perm, respCh: respCh}:
-			case <-ctx.Done():
-				return harness.PermissionResponse{}, ctx.Err()
-			case <-relay.ctx.Done():
+			if err := ctx.Err(); err != nil {
+				return harness.PermissionResponse{}, err
+			}
+			if !relay.SendControl(harnessPermissionRequestMsg{executeID: executeID, req: perm, respCh: respCh}) {
 				return harness.PermissionResponse{}, context.Canceled
 			}
 			select {
@@ -1830,11 +1823,10 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 		},
 		OnQuestionRequest: func(ctx context.Context, qreq harness.QuestionRequest) (harness.QuestionResponse, error) {
 			respCh := make(chan harness.QuestionResponse, 1)
-			select {
-			case relay.out <- harnessQuestionRequestMsg{req: qreq, respCh: respCh}:
-			case <-ctx.Done():
-				return harness.QuestionResponse{Rejected: true}, ctx.Err()
-			case <-relay.ctx.Done():
+			if err := ctx.Err(); err != nil {
+				return harness.QuestionResponse{Rejected: true}, err
+			}
+			if !relay.SendControl(harnessQuestionRequestMsg{req: qreq, respCh: respCh}) {
 				return harness.QuestionResponse{Rejected: true}, context.Canceled
 			}
 			select {
@@ -1874,86 +1866,10 @@ func streamDeltaMustDeliver(kind harness.StreamKind) bool {
 	}
 }
 
-// deliverStreamDelta sends a harness delta to the conversation channel.
-// Text/thinking/warning/session block until accepted; tool/activity may drop
-// after a short wait so high-volume progress cannot stall the harness forever.
-func deliverStreamDelta(ch chan<- tea.Msg, executeID string, delta harness.StreamDelta) {
-	_ = deliverStreamDeltaContext(context.Background(), ch, executeID, delta)
-}
-
-func deliverStreamDeltaContext(ctx context.Context, ch chan<- tea.Msg, executeID string, delta harness.StreamDelta) bool {
-	msg := streamDeltaMsg{executeID: executeID, delta: delta}
-	if streamDeltaMustDeliver(delta.Kind) {
-		select {
-		case ch <- msg:
-			return true
-		case <-ctx.Done():
-			return false
-		}
-	}
-	select {
-	case ch <- msg:
-		return true
-	case <-ctx.Done():
-		return false
-	default:
-		timer := time.NewTimer(2 * time.Second)
-		defer timer.Stop()
-		select {
-		case ch <- msg:
-			return true
-		case <-ctx.Done():
-			return false
-		case <-timer.C:
-			slog.Warn("tui stream delta dropped under backpressure", "kind", delta.Kind)
-			return false
-		}
-	}
-}
-
-func waitConvMsg(ch <-chan tea.Msg) tea.Cmd {
-	return func() tea.Msg {
-		return <-ch
-	}
-}
-
 const (
 	conversationBatchWindow = 25 * time.Millisecond
 	conversationBatchMax    = 64
 )
-
-// waitConvBatchMsg coalesces short bursts of stream deltas into one Update.
-// Harnesses commonly emit many small deltas while the agent is thinking; a
-// 25ms window keeps the terminal responsive without making output feel delayed.
-func waitConvBatchMsg(ch <-chan tea.Msg) tea.Cmd {
-	return func() tea.Msg {
-		first := <-ch
-		if first == nil {
-			return nil
-		}
-		messages := []tea.Msg{first}
-		if isImmediateConversationMessage(first) {
-			return conversationBatchMsg{messages: messages}
-		}
-
-		timer := time.NewTimer(conversationBatchWindow)
-		defer timer.Stop()
-		for len(messages) < conversationBatchMax {
-			select {
-			case msg := <-ch:
-				if msg != nil {
-					messages = append(messages, msg)
-				}
-				if isImmediateConversationMessage(msg) {
-					return conversationBatchMsg{messages: messages}
-				}
-			case <-timer.C:
-				return conversationBatchMsg{messages: messages}
-			}
-		}
-		return conversationBatchMsg{messages: messages}
-	}
-}
 
 func isImmediateConversationMessage(msg tea.Msg) bool {
 	switch msg.(type) {
@@ -2084,9 +2000,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, loop)
 		}
 		m = *pm
-		if m.streaming && m.convStreamCh != nil {
-			cmds = append(cmds, waitConvBatchMsg(m.convStreamCh))
-		}
 		return m, combineTimerCmds(cmds...)
 
 	case sessionLeaseLostMsg:
@@ -2099,9 +2012,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.heroLeaseNextHeartbeat = time.Time{}
 		m.convError = "Session lease lost. Reopen the session from History to recover before sending."
 		slog.Error("tui session lease heartbeat lost")
-		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvBatchMsg(m.convStreamCh)
-		}
 		return m, nil
 
 	case sessionPersistErrMsg:
@@ -2140,9 +2050,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.convError = "Session persistence failed. Retry or cancel before sending."
 		}
 		slog.Error("tui session persist blocked further sends")
-		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvBatchMsg(m.convStreamCh)
-		}
 		return m, nil
 
 	case sessionPersistOKMsg:
@@ -2170,9 +2077,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if !msg.leaseAcquired || leaseAttached {
 			m.sessionPersistBlocked = false
-		}
-		if m.streaming && m.convStreamCh != nil {
-			cmds = append(cmds, waitConvBatchMsg(m.convStreamCh))
 		}
 		return m, combineTimerCmds(cmds...)
 
@@ -2244,9 +2148,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chatInputFocused = false
 			cmds = append(cmds, m.sessionRecoverCheckCmd(msg.sessionID, msg.nativeSessionID, msg.harnessID))
 		}
-		if m.streaming && m.convStreamCh != nil {
-			cmds = append(cmds, waitConvBatchMsg(m.convStreamCh))
-		}
 		return m, combineTimerCmds(cmds...)
 
 	case sessionRecoverStatusMsg:
@@ -2268,7 +2169,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionRecoverAttachDoneMsg:
 		m.streaming = false
-		m.convStreamCh = nil
 		m.liveAgents = nil
 		delete(m.executes, sessionRecoverLiveAttachExecuteID)
 		m.heroSessionRecoverNativeID = ""
@@ -2331,14 +2231,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if persistCmd != nil {
 			cmds = append(cmds, persistCmd)
 		}
-		// Nested handlers (session bind, persist drain, Telegram) used to
-		// return without waitConvBatchMsg. The first native session-id delta
-		// then dropped the stream reader, convStreamCh filled, and
-		// CloseAndWait deadlocked after Cursor had already exited — the TUI
-		// showed the full ORCH text and never dispatched QA after continue.
-		if m.streaming && m.convStreamCh != nil {
-			cmds = append(cmds, waitConvBatchMsg(m.convStreamCh))
-		}
 		if len(cmds) > 0 {
 			return m, combineTimerCmds(append(cmds, m.ensureTimerLoop())...)
 		}
@@ -2346,9 +2238,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case streamDeltaMsg:
 		if !m.acceptStreamDelta(msg) {
-			if m.streaming && m.convStreamCh != nil {
-				return m, waitConvBatchMsg(m.convStreamCh)
-			}
 			return m, nil
 		}
 		pm := &m
@@ -2356,9 +2245,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = *pm
 		m = m.maybeFollowTranscriptBottom()
 		m, persistCmd := m.drainSessionPersistCmd()
-		if m.streaming && m.convStreamCh != nil {
-			return m, combineTimerCmds(persistCmd, waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
-		}
 		return m, combineTimerCmds(persistCmd, m.ensureTimerLoop())
 
 	case executePairMsg:
@@ -2373,9 +2259,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.executes[msg.executeID] = ex
 		}
-		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvBatchMsg(m.convStreamCh)
-		}
 		return m, nil
 
 	case harnessPermissionRequestMsg:
@@ -2387,9 +2270,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.restartAIResponseTimer(time.Now())
 		var permissionCmd tea.Cmd
 		m, permissionCmd = m.telegramHarnessPermissionCmd(msg.req)
-		if m.streaming && m.convStreamCh != nil {
-			return m, combineTimerCmds(permissionCmd, waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
-		}
 		return m, combineTimerCmds(permissionCmd, m.ensureTimerLoop())
 
 	case harnessQuestionRequestMsg:
@@ -2404,9 +2284,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessQuestionMsg})
 		m = m.restartAIResponseTimer(time.Now())
 		m.chatInputFocused = true
-		if m.streaming && m.convStreamCh != nil {
-			return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), m.ensureTimerLoop())
-		}
 		return m, m.ensureTimerLoop()
 
 	case executeDoneMsg:
@@ -2483,7 +2360,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !siblingsRemain {
 			m = m.stopAITimer(time.Now())
 			m.streaming = false
-			m.convStreamCh = nil
 			m.chatInputFocused = true
 			m.liveAgents = nil
 			m.confirmPending = false
@@ -2523,8 +2399,8 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m = m.resetSessionTimer()
 			}
 			replyCmd := m.telegramTurnReplyCmd(m.telegramTurnOrigin(executeMeta), "", errText, !siblingsRemain)
-			if siblingsRemain && m.convStreamCh != nil {
-				return m, combineTimerCmds(waitConvBatchMsg(m.convStreamCh), replyCmd)
+			if siblingsRemain {
+				return m, replyCmd
 			}
 			if !siblingsRemain {
 				next, handoffCmd := m.maybeHandoffAfterExecute()
@@ -2701,9 +2577,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m, heroPersistCmd := m.drainSessionPersistCmd()
 		if siblingsRemain {
-			if m.convStreamCh != nil {
-				return m, combineTimerCmds(heroPersistCmd, waitConvBatchMsg(m.convStreamCh), replyCmd)
-			}
 			return m, combineTimerCmds(heroPersistCmd, replyCmd)
 		}
 		next, handoffCmd := m.maybeHandoffAfterExecute()
@@ -2730,7 +2603,6 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.streaming = false
 		m.streamInterrupted = true
-		m.convStreamCh = nil
 		m.chatInputFocused = true
 		m.liveAgents = nil
 		m.executes = nil
@@ -3228,9 +3100,6 @@ func (m model) handleHarnessPermissionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m = m.replyHarnessPermission(false)
 	default:
 		return m, nil
-	}
-	if m.streaming && m.convStreamCh != nil {
-		return m, waitConvBatchMsg(m.convStreamCh)
 	}
 	return m, nil
 }

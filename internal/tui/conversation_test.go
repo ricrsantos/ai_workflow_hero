@@ -191,6 +191,7 @@ func newConversationTestModel(t *testing.T) (model, *streamingHarness, *cycle.Se
 	t.Helper()
 	svc, h := newConversationTestService(t)
 	m := NewTestModel(svc)
+	m.convSink = newRecordingSink()
 	m = SetChatModelSlugForTest(m, "composer-2.5")
 	return m, h, svc
 }
@@ -260,26 +261,26 @@ func TestConversationScreenNavigation(t *testing.T) {
 func drainConversationStream(t *testing.T, m model, cmd tea.Cmd) model {
 	t.Helper()
 	next := m
+	sink := requireConversationSink(t, next)
+	dispatchConversationCmd(sink, cmd)
 	for IsConversationStreaming(next) {
-		msg := runConversationCmd(cmd)
-		if msg == nil {
+		msg, ok := awaitConversationMsg(sink, 5*time.Second)
+		if !ok {
 			t.Fatal("streaming stalled without message")
 		}
 		next2, nextCmd := next.Update(msg)
 		next = next2.(model)
-		cmd = nextCmd
-		if cmd == nil && IsConversationStreaming(next) {
-			t.Fatal("streaming stalled without follow-up cmd")
-		}
+		dispatchConversationCmd(sink, nextCmd)
 	}
-	for cmd != nil {
-		msg := runConversationCmd(cmd)
-		if msg == nil {
+	// Let trailing work (persist drains, handoffs) settle before returning.
+	for {
+		msg, ok := awaitConversationMsg(sink, 200*time.Millisecond)
+		if !ok {
 			break
 		}
 		next2, nextCmd := next.Update(msg)
 		next = next2.(model)
-		cmd = nextCmd
+		dispatchConversationCmd(sink, nextCmd)
 	}
 	return next
 }
@@ -288,31 +289,61 @@ func pumpConversationUntil(t *testing.T, m model, cmd tea.Cmd, timeout time.Dura
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	next := m
+	sink := requireConversationSink(t, next)
+	pending := cmd
 	for !pred(next) {
 		if time.Now().After(deadline) {
 			t.Fatal("timeout waiting for conversation predicate")
 		}
-		if cmd == nil {
-			if !IsConversationStreaming(next) {
-				t.Fatal("streaming ended before predicate")
-			}
-			time.Sleep(5 * time.Millisecond)
-			continue
-		}
-		msg := runConversationCmd(cmd)
-		if msg == nil {
-			if next.convStreamCh != nil {
-				cmd = waitConvBatchMsg(next.convStreamCh)
-			} else {
-				time.Sleep(5 * time.Millisecond)
-			}
+		dispatchConversationCmd(sink, pending)
+		pending = nil
+		msg, ok := awaitConversationMsg(sink, 20*time.Millisecond)
+		if !ok {
 			continue
 		}
 		next2, nextCmd := next.Update(msg)
 		next = next2.(model)
-		cmd = nextCmd
+		pending = nextCmd
 	}
-	return next, cmd
+	// The cmd from the Update that satisfied pred is returned un-dispatched so
+	// the caller can keep driving from it.
+	return next, pending
+}
+
+// dispatchConversationCmd runs cmd off the driver goroutine and funnels its
+// message back through the same sink the relay writes to. Bubble Tea also runs
+// cmds concurrently, and running them inline would block the driver for the
+// full interval of any pending timer tick, starving the stream.
+func dispatchConversationCmd(sink chan tea.Msg, cmd tea.Cmd) {
+	if cmd == nil || sink == nil {
+		return
+	}
+	go func() {
+		if msg := runConversationCmd(cmd); msg != nil {
+			sink <- msg
+		}
+	}()
+}
+
+// requireConversationSink guards against a model built with the production
+// sink, which has no program attached in tests and would drop every relay
+// message silently instead of failing.
+func requireConversationSink(t *testing.T, m model) chan tea.Msg {
+	t.Helper()
+	sink := conversationSinkChan(m)
+	if sink == nil {
+		t.Fatal("test model has no recording sink; build it with NewTestModel or set convSink")
+	}
+	return sink
+}
+
+func awaitConversationMsg(sink chan tea.Msg, wait time.Duration) (tea.Msg, bool) {
+	select {
+	case msg := <-sink:
+		return msg, true
+	case <-time.After(wait):
+		return nil, false
+	}
 }
 
 // runConversationCmd executes a tea.Cmd, expanding BatchMsg and skipping wait ticks.
@@ -365,12 +396,13 @@ func runConversationCmd(cmd tea.Cmd) tea.Msg {
 }
 
 func TestWaitConvBatchGroupsDeltasAndPrioritizesCompletion(t *testing.T) {
-	ch := make(chan tea.Msg, 3)
-	ch <- streamDeltaMsg{delta: harness.StreamDelta{Text: "one"}}
-	ch <- streamDeltaMsg{delta: harness.StreamDelta{Text: "two"}}
-	ch <- executeDoneMsg{}
+	sink := newRecordingSink()
+	relay := newConversationStreamRelay("ex-1", sink)
+	relay.Enqueue(harness.StreamDelta{Kind: harness.StreamKindText, Text: "one"})
+	relay.Enqueue(harness.StreamDelta{Kind: harness.StreamKindTool, Text: "two"})
+	relay.SendControl(executeDoneMsg{})
 
-	msg := waitConvBatchMsg(ch)()
+	msg := awaitSinkMsg(t, sink.ch, 2*time.Second)
 	batch, ok := msg.(conversationBatchMsg)
 	if !ok {
 		t.Fatalf("message type = %T, want conversationBatchMsg", msg)
@@ -1073,25 +1105,26 @@ func TestStreamDeltaMustDeliver(t *testing.T) {
 }
 
 func TestDeliverStreamDeltaTextBlocksUntilAccepted(t *testing.T) {
-	ch := make(chan tea.Msg) // unbuffered — would drop under old timeout path
+	sink := newRecordingSink()
+	relay := newConversationStreamRelay("ex-1", sink)
 	done := make(chan struct{})
 	go func() {
-		deliverStreamDelta(ch, "ex-1", harness.StreamDelta{Kind: harness.StreamKindText, Text: "hello"})
+		relay.Enqueue(harness.StreamDelta{Kind: harness.StreamKindText, Text: "hello"})
 		close(done)
 	}()
 	select {
-	case msg := <-ch:
-		sd, ok := msg.(streamDeltaMsg)
-		if !ok || sd.delta.Text != "hello" {
-			t.Fatalf("msg=%v", msg)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("text delta was not delivered")
-	}
-	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("deliverStreamDelta did not return")
+		t.Fatal("Enqueue blocked the harness callback")
+	}
+	msg := awaitSinkMsg(t, sink.ch, 2*time.Second)
+	batch, ok := msg.(conversationBatchMsg)
+	if !ok || len(batch.messages) != 1 {
+		t.Fatalf("msg=%#v", msg)
+	}
+	sd, ok := batch.messages[0].(streamDeltaMsg)
+	if !ok || sd.delta.Text != "hello" {
+		t.Fatalf("msg=%v", batch.messages[0])
 	}
 }
 
@@ -3322,7 +3355,7 @@ func TestConversationSiblingExecuteDoneKeepsOtherStream(t *testing.T) {
 	m = SetChatHarnessIDForTest(m, "cursor")
 	m.streaming = true
 	m.orchestrationLive = true
-	m.convStreamCh = make(chan tea.Msg, 8)
+	m.convSink = newRecordingSink()
 	m.executes = map[string]convExecute{
 		"ex-1": {ID: "ex-1", AgentName: "backend_agent", HarnessID: "cursor", AgentMsgIndex: 1},
 		"ex-2": {ID: "ex-2", AgentName: "frontend_agent", HarnessID: "codex", AgentMsgIndex: 3},
@@ -3533,7 +3566,7 @@ func TestConversationExecutePairMsgUpdatesLabels(t *testing.T) {
 	m = SetRuntimeHarnessIDForTest(m, "cursor")
 	m.runtimeAgentName = "orchestration_agent"
 	m.streaming = true
-	m.convStreamCh = make(chan tea.Msg, 1)
+	m.convSink = newRecordingSink()
 	m.liveAgents = []liveAgent{
 		{Name: "orchestration_agent", Label: "ORCH", Model: "composer-2.5", Harness: "cursor"},
 	}
@@ -4681,7 +4714,7 @@ func TestCancelStreamUsesExecuteSessionNotGlobalForeignID(t *testing.T) {
 	m.streaming = true
 	m.harnessSessionID = "ses_global_opencode"
 	m.harnessSessionHarnessID = "opencode"
-	relay := newConversationStreamRelay("ex-1", make(chan tea.Msg, 4))
+	relay := newConversationStreamRelay("ex-1", newRecordingSink())
 	m.executes = map[string]convExecute{
 		"ex-1": {
 			ID:        "ex-1",

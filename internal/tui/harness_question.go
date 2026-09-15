@@ -173,15 +173,9 @@ func (m model) submitHarnessQuestionAnswer() (model, tea.Cmd) {
 		m.harnessQuestionIndex = next
 		m.harnessQuestionMsg = formatHarnessQuestion(m.harnessQuestionReq, next)
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessQuestionMsg})
-		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvBatchMsg(m.convStreamCh)
-		}
 		return m, nil
 	}
 	m = m.finishHarnessQuestionAnswers()
-	if m.streaming && m.convStreamCh != nil {
-		return m, waitConvBatchMsg(m.convStreamCh)
-	}
 	return m, nil
 }
 
@@ -209,9 +203,6 @@ func (m model) handleHarnessQuestionComposer(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		return m.copyChatInput()
 	case "esc":
 		m = m.rejectHarnessQuestion()
-		if m.streaming && m.convStreamCh != nil {
-			return m, waitConvBatchMsg(m.convStreamCh)
-		}
 		return m, nil
 	case "enter":
 		return m.insertComposerNewline(), nil

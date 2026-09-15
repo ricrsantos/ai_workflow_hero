@@ -364,8 +364,7 @@ func TestTelegramConfigWizardSuppressesAutomaticStatus(t *testing.T) {
 func TestTelegramInterruptCancelsActiveConversation(t *testing.T) {
 	m, h, _ := newConversationTestModel(t)
 	outbound := []string{}
-	streamOut := make(chan tea.Msg, 1)
-	relay := newConversationStreamRelay("ex-1", streamOut)
+	relay := newConversationStreamRelay("ex-1", newRecordingSink())
 	m.streaming = true
 	m.harnessSessionID = "telegram-session"
 	m.agentMsgIndex = 0

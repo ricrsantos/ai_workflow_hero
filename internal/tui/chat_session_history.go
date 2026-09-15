@@ -659,9 +659,6 @@ func (m model) handleSessionRecoverStatus(msg sessionRecoverStatusMsg) (model, t
 		m = m.prepareSessionRecoverLiveAttach(msg.sessionID, msg.nativeID, msg.harnessID)
 		var cmds []tea.Cmd
 		cmds = append(cmds, m.sessionRecoverLiveAttachCmd(msg.sessionID, msg.nativeID, msg.harnessID))
-		if m.convStreamCh != nil {
-			cmds = append(cmds, waitConvBatchMsg(m.convStreamCh))
-		}
 		return m, combineTimerCmds(cmds...)
 	default:
 		m.heroSessionRecoverBusy = false
@@ -685,9 +682,6 @@ func (m model) prepareSessionRecoverLiveAttach(sessionID, nativeID, harnessID st
 	}
 	m.streaming = true
 	m.streamInterrupted = false
-	if m.convStreamCh == nil {
-		m.convStreamCh = make(chan tea.Msg, 512)
-	}
 	if m.executes == nil {
 		m.executes = make(map[string]convExecute)
 	}
@@ -712,8 +706,8 @@ func (m model) sessionRecoverLiveAttachCmd(sessionID, nativeID, harnessID string
 	adapter := m.adapterForHarnessID(harnessID)
 	attacher, ok := adapter.(harness.LiveStreamAttacher)
 	projectDir := m.executeDir()
-	ch := m.convStreamCh
-	if !ok || !attacher.SupportsLiveStreamAttach() || ch == nil {
+	sink := m.convSink
+	if !ok || !attacher.SupportsLiveStreamAttach() || sink == nil {
 		return func() tea.Msg {
 			return sessionRecoverAttachDoneMsg{
 				sessionID: sessionID,
@@ -721,7 +715,7 @@ func (m model) sessionRecoverLiveAttachCmd(sessionID, nativeID, harnessID string
 			}
 		}
 	}
-	relay := newConversationStreamRelay(sessionRecoverLiveAttachExecuteID, ch)
+	relay := newConversationStreamRelay(sessionRecoverLiveAttachExecuteID, sink)
 	return func() tea.Msg {
 		ctx := context.Background()
 		result, err := attacher.AttachLiveStream(ctx, harness.LiveStreamAttachRequest{

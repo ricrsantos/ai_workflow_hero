@@ -191,6 +191,9 @@ func runTUI(svc *cycle.Service, models []harnessmgr.ModelOption, modelSlug, harn
 		if pendingRestart {
 			p.Send(tuiRestartMsg{})
 		}
+		if sink, ok := m.convSink.(*programSink); ok {
+			sink.attach(p)
+		}
 		relayTelegramMsgs(p, m.telegramMsgCh)
 		if eventRelay != nil {
 			relayLifecycleEvents(p, eventRelay.Events())

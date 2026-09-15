@@ -36,6 +36,7 @@ func TestC14AcceptancePickerChipToHarnessSend(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataHome)
 	svc, h := newConversationTestService(t)
 	m := newModel(svc)
+	m.convSink = newRecordingSink()
 	m.freeChatMode = true
 	m = EnterConversationForTest(m)
 	m = SetChatHarnessIDForTest(m, "streaming")
@@ -65,6 +66,7 @@ func TestC14AcceptancePickerChipToHarnessSend(t *testing.T) {
 func TestC14AcceptanceUnknownModelAttemptsKnownImageTransport(t *testing.T) {
 	svc, h := newConversationTestService(t)
 	m := newModel(svc)
+	m.convSink = newRecordingSink()
 	m.freeChatMode = true
 	m = EnterConversationForTest(m)
 	m = SetChatHarnessIDForTest(m, "streaming")
@@ -98,6 +100,7 @@ func TestC14AcceptanceOptimisticProviderRejectionKeepsAttachmentChip(t *testing.
 	svc, h := newConversationTestService(t)
 	h.err = errors.New("provider rejected image input")
 	m := newModel(svc)
+	m.convSink = newRecordingSink()
 	m.freeChatMode = true
 	m = EnterConversationForTest(m)
 	m = SetChatHarnessIDForTest(m, "streaming")
@@ -130,6 +133,7 @@ func TestC14AcceptanceClipboardChipCapabilityBlockAndToolCard(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataHome)
 	svc, h := newConversationTestService(t)
 	m := newModel(svc)
+	m.convSink = newRecordingSink()
 	m.freeChatMode = true
 	m = EnterConversationForTest(m)
 	m = SetChatHarnessIDForTest(m, "streaming")

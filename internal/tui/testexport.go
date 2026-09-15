@@ -38,11 +38,21 @@ type PaletteItemView struct {
 type ActionResultForTest = actionResultMsg
 
 // NewTestModel builds a model for unit tests.
+// recordingSink stands in for *tea.Program so tests can observe exactly what a
+// relay hands to the event loop, in order, without running a real program.
+// An unattached programSink would drop those messages silently.
+type recordingSink struct{ ch chan tea.Msg }
+
+func newRecordingSink() *recordingSink { return &recordingSink{ch: make(chan tea.Msg, 4096)} }
+
+func (s *recordingSink) Send(msg tea.Msg) { s.ch <- msg }
+
 func NewTestModel(svc *cycle.Service) model {
 	m := newModel(svc)
 	m.width = 100
 	m.height = 40
 	m.testMode = true
+	m.convSink = newRecordingSink()
 	return m
 }
 

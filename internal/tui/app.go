@@ -112,7 +112,7 @@ type model struct {
 	convError                string
 	agentMsgIndex            int
 	thinkingMsgIndex         int
-	convStreamCh             chan tea.Msg
+	convSink                 msgSink
 	nextUserOrigin           string // Telegram origin applied to the next user+agent pair
 	chatInputFocused         bool
 
@@ -367,6 +367,7 @@ func newModel(svc *cycle.Service) model {
 		thinkingMsgIndex:          -1,
 		transcriptFollowBottom:    true,
 		transcriptLayout:          &transcriptLayoutCache{},
+		convSink:                  newProgramSink(),
 		chatInputFocused:          true,
 		sessionTimer:              sessionTimerState{suppressed: true},
 		harnessPermissionRequests: make(map[string]pendingHarnessPermission),
