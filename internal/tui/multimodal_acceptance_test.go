@@ -172,8 +172,7 @@ func TestC14AcceptanceClipboardChipCapabilityBlockAndToolCard(t *testing.T) {
 	if !strings.Contains(card, "[tool wrote]") {
 		t.Fatalf("tool asset card=%q", card)
 	}
-	preview, err := media.RenderMosaic(image.NewRGBA(image.Rect(0, 0, 2, 2)), media.MosaicConfig{Width: 2, Height: 1, ColorDepth: media.ColorDepth256})
-	if err != nil || !preview.Available || preview.Text == "" {
-		t.Fatalf("mosaic preview=%+v err=%v", preview, err)
+	if strings.Contains(strings.ToLower(card), "preview") || strings.Contains(strings.ToLower(card), "mosaic") {
+		t.Fatalf("tool asset card still exposes inline preview: %q", card)
 	}
 }

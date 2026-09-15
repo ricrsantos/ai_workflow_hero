@@ -15,7 +15,7 @@
 | [UI-C07-001-tui-cycle-config.md](UI-C07-001-tui-cycle-config.md) | C7 | Active-cycle Config screen, round-trip-safe editing, save/start, and failed-stage retry |
 | [UI-C08-001-tui-stage-execute.md](UI-C08-001-tui-stage-execute.md) | C8 | TUI-direct stage speakers, TASK chips, parallel Implementation headers |
 | [UI-C09-001-telegram-integration.md](UI-C09-001-telegram-integration.md) | C9 | Telegram Settings, pairing modal, remote transcript labels, and daemon recovery |
-| [UI-C14-001-tui-multimodal-images.md](UI-C14-001-tui-multimodal-images.md) | C14 | Attachment chips in composer, asset cards in transcript, Unicode mosaic preview, file picker, save dialog |
+| [UI-C14-001-tui-multimodal-images.md](UI-C14-001-tui-multimodal-images.md) | C14 | Attachment chips in composer, text asset cards, external image actions, file picker, and save dialog |
 | [UI-C16-001-tui-session-history.md](UI-C16-001-tui-session-history.md) | C16 | History navbar screen, session discovery/search, resume, rename, archive/restore/delete, recovery, and responsive layout |
 
 ## 1. Scope

@@ -561,13 +561,22 @@ func (m model) footerHints() string {
 		}
 		return "tab navbar · ↑↓ navigate · enter " + enter + " · esc chat · alt+q quit"
 	}
+	if m.attachmentPickerActive {
+		return "↑↓/j/k navigate · enter select/open · ←/h back · esc cancel · alt+q quit"
+	}
 	if m.multimodalConversation() {
+		if m.assetFocus {
+			return "alt+g back · ↑↓ cards · enter/o open · c copy path · a attach · s save · tab navbar"
+		}
+		if m.attachmentFocus {
+			return "alt+c back · ↑↓ chips · enter/o open · c copy path · s save · x remove · tab navbar"
+		}
 		hints := fixedFooterHints + " · alt+a attach · alt+v clipboard"
 		if len(m.attachments) > 0 {
 			hints += " · alt+c chips"
 		}
 		if len(m.assets) > 0 {
-			hints += " · alt+g cards · enter/o/c/a/s asset"
+			hints += " · alt+g cards · enter/o open · c copy · a attach · s save"
 		}
 		return hints
 	}

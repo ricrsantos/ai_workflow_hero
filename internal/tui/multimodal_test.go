@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -207,6 +209,24 @@ func TestAttachmentPickerLoadsDirectoryEntriesAndSupportsSelection(t *testing.T)
 	if got := next.attachmentPicker.View(); !strings.Contains(got, "nested.png") {
 		t.Fatalf("nested picker view=%q, want the image entry", got)
 	}
+	if got := ViewForTest(next); !strings.Contains(got, "nested.png") {
+		t.Fatalf("full TUI view=%q, want the picker entry", got)
+	}
+
+	for _, size := range []tea.WindowSizeMsg{
+		{Width: 72, Height: 12},
+		{Width: 120, Height: 40},
+	} {
+		resized, _ := next.Update(size)
+		next = resized.(model)
+		resizedView := ViewForTest(next)
+		if !strings.Contains(resizedView, "nested.png") {
+			t.Fatalf("resized TUI view (%dx%d)=%q, want the picker entry to remain visible", size.Width, size.Height, resizedView)
+		}
+		if got := len(strings.Split(stripANSI(resizedView), "\n")); got != size.Height {
+			t.Fatalf("resized TUI frame has %d rows at height %d, want %d", got, size.Height, size.Height)
+		}
+	}
 
 	next, cmd = HandleTestKey(next, "enter")
 	if next.attachmentPickerActive {
@@ -223,6 +243,57 @@ func TestAttachmentPickerLoadsDirectoryEntriesAndSupportsSelection(t *testing.T)
 	next = updated.(model)
 	if len(next.attachments) != 1 || next.attachments[0].pending || next.attachments[0].name != "nested.png" {
 		t.Fatalf("selected attachment=%+v, want a ready nested image", next.attachments)
+	}
+}
+
+func TestAttachmentPickerKeepsEntriesVisibleWhenScrolledAndResized(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	svc, _ := newConversationTestService(t)
+	svc.WorkDir = t.TempDir()
+	imageDir := filepath.Join(svc.WorkDir, "images")
+	if err := os.MkdirAll(imageDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 24; i++ {
+		name := fmt.Sprintf("file-%02d.png", i)
+		if err := os.WriteFile(filepath.Join(imageDir, name), []byte("fixture"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	m := NewTestModel(svc)
+	m.freeChatMode = true
+	m = EnterConversationForTest(m)
+	next, cmd := HandleTestKey(m, "alt+a")
+	if cmd == nil {
+		t.Fatal("Alt+A should schedule the initial directory load")
+	}
+	updated, _ := next.Update(cmd())
+	next = updated.(model)
+
+	next, cmd = HandleTestKey(next, "enter")
+	if cmd == nil {
+		t.Fatal("opening a directory should schedule another asynchronous load")
+	}
+	updated, _ = next.Update(cmd())
+	next = updated.(model)
+
+	updated, _ = next.Update(tea.WindowSizeMsg{Width: 100, Height: 12})
+	next = updated.(model)
+	last := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}}
+	next, _ = HandleTestKeyMsg(next, last)
+	if got := stripANSI(ViewForTest(next)); !strings.Contains(got, "file-23.png") {
+		t.Fatalf("scrolled picker view=%q, want the last entry visible", got)
+	}
+
+	// Shrinking while the picker is scrolled must preserve a valid viewport;
+	// forwarding the raw WindowSizeMsg to this Bubbles version would reset its
+	// upper bound without its private lower bound and render an empty picker.
+	updated, _ = next.Update(tea.WindowSizeMsg{Width: 100, Height: 8})
+	next = updated.(model)
+	resized := stripANSI(ViewForTest(next))
+	if strings.Contains(resized, "Bummer. No Files Found.") || !strings.Contains(resized, "file-") {
+		t.Fatalf("scrolled picker disappeared after resize: %q", resized)
 	}
 }
 
@@ -254,6 +325,118 @@ func TestBracketedImagePathPasteWorksInEveryConversationMode(t *testing.T) {
 				t.Fatal("bracketed image-path paste should start asynchronous validation")
 			}
 		})
+	}
+}
+
+func TestDraggedImagePathPasteNormalizesTerminalPayloads(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "design with spaces.png")
+	uri := (&url.URL{Scheme: "file", Path: path}).String()
+	escaped := strings.ReplaceAll(path, " ", `\ `)
+	cases := []struct {
+		name    string
+		payload string
+	}{
+		{name: "plain path", payload: path},
+		{name: "single quoted path", payload: "'" + path + "'"},
+		{name: "double quoted path", payload: `"` + path + `"`},
+		{name: "shell escaped path", payload: escaped},
+		{name: "local file URI", payload: uri},
+		{name: "quoted local file URI", payload: `"` + uri + `"`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := imagePathFromTerminalPaste(tc.payload)
+			if !ok || got != path {
+				t.Fatalf("payload %q normalized to %q, recognized=%v; want %q", tc.payload, got, ok, path)
+			}
+		})
+	}
+}
+
+func TestDraggedImagePathPasteQueuesAttachmentAndKeepsTextPasteText(t *testing.T) {
+	dataHome := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	svc, _ := newConversationTestService(t)
+	path := writeAcceptancePNG(t, t.TempDir(), "dropped image.png")
+
+	for _, tc := range []struct {
+		name    string
+		payload string
+	}{
+		{name: "quoted path", payload: "'" + path + "'"},
+		{name: "file URI", payload: (&url.URL{Scheme: "file", Path: path}).String()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewTestModel(svc)
+			m.freeChatMode = true
+			m = EnterConversationForTest(m)
+
+			next, cmd := HandleTestKeyMsg(m, tea.KeyMsg{Type: tea.KeyRunes, Paste: true, Runes: []rune(tc.payload)})
+			if len(next.attachments) != 1 || next.attachments[0].attachment.Path != path {
+				t.Fatalf("attachments=%+v, want source path %q", next.attachments, path)
+			}
+			if next.input != "" {
+				t.Fatalf("dragged path leaked into composer input=%q", next.input)
+			}
+			if cmd == nil {
+				t.Fatal("dragged image should start asynchronous validation")
+			}
+			materialized, ok := cmd().(attachmentMaterializedMsg)
+			if !ok || materialized.err != nil {
+				t.Fatalf("dragged image materialization=%T %+v", materialized, materialized)
+			}
+			next = next.handleAttachmentMaterialized(materialized)
+			if next.attachments[0].pending || next.attachments[0].err != "" {
+				t.Fatalf("dragged image chip after materialization=%+v", next.attachments[0])
+			}
+			if next.assetFocus || next.attachmentFocus || !next.chatInputFocused {
+				t.Fatalf("dragged image should leave the composer focused: asset=%v attachment=%v input=%v", next.assetFocus, next.attachmentFocus, next.chatInputFocused)
+			}
+			next, cmd = HandleTestKey(next, "enter")
+			if cmd != nil || next.input != "\n" {
+				t.Fatalf("enter after drag should create a new line: input=%q cmd=%v", next.input, cmd != nil)
+			}
+		})
+	}
+
+	unbracketedDrop := NewTestModel(svc)
+	unbracketedDrop.freeChatMode = true
+	unbracketedDrop = EnterConversationForTest(unbracketedDrop)
+	next, cmd := HandleTestKeyMsg(unbracketedDrop, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("'" + path + "'")})
+	if len(next.attachments) != 1 || next.attachments[0].attachment.Path != path || next.input != "" || cmd == nil {
+		t.Fatalf("quoted unbracketed drop was not promoted: attachments=%+v input=%q cmd=%v", next.attachments, next.input, cmd != nil)
+	}
+
+	splitDrop := NewTestModel(svc)
+	splitDrop.freeChatMode = true
+	splitDrop = EnterConversationForTest(splitDrop)
+	for _, r := range []rune("'" + path + "'") {
+		splitDrop, cmd = HandleTestKeyMsg(splitDrop, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if len(splitDrop.attachments) != 1 || splitDrop.attachments[0].attachment.Path != path || splitDrop.input != "" || cmd == nil {
+		t.Fatalf("split quoted unbracketed drop was not promoted: attachments=%+v input=%q cmd=%v", splitDrop.attachments, splitDrop.input, cmd != nil)
+	}
+
+	plainPaste := NewTestModel(svc)
+	plainPaste.freeChatMode = true
+	plainPaste = EnterConversationForTest(plainPaste)
+	next, cmd = HandleTestKeyMsg(plainPaste, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(path)})
+	if len(next.attachments) != 0 || next.input != path || cmd != nil {
+		t.Fatalf("ordinary unbracketed path paste changed attachment state: attachments=%+v input=%q cmd=%v", next.attachments, next.input, cmd != nil)
+	}
+}
+
+func TestTerminalImagePathPasteRejectsNonLocalFileURIs(t *testing.T) {
+	for _, payload := range []string{
+		"file://remote-host/tmp/image.png",
+		"file:///tmp/image.png?download=1",
+		"file:///tmp/image.png#fragment",
+	} {
+		if path, ok := imagePathFromTerminalPaste(payload); ok {
+			t.Fatalf("remote or qualified URI %q recognized as local path %q", payload, path)
+		}
 	}
 }
 
@@ -367,38 +550,122 @@ func TestAssetStreamAndFinalRepairDoesNotDuplicateCards(t *testing.T) {
 	}
 }
 
-func TestMosaicSpinnerAndResizeAreAsynchronous(t *testing.T) {
+func TestAssetCardsUseExternalActionsWithoutInlinePreview(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "generated.png")
-	if err := os.WriteFile(path, []byte("not decoded here"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("fixture image bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	m := EnterConversationForTest(NewTestModel(nil))
 	m.assets = []harness.Asset{{Attachment: harness.Attachment{Name: "generated.png", Path: path}, Source: harness.AssetSourceModel}}
 	m.assetFocus = true
 	m.assetCursor = 0
-	m.width = 80
-	m.height = 24
+	rendered := strings.Join(m.renderAssetCardLines(80), "\n")
+	if strings.Contains(strings.ToLower(rendered), "preview") || strings.Contains(strings.ToLower(rendered), "mosaic") {
+		t.Fatalf("asset card still advertises inline preview: %q", rendered)
+	}
+	if !strings.Contains(rendered, "enter/o open") {
+		t.Fatalf("asset card is missing the external open action: %q", rendered)
+	}
+	_, cmd, handled := m.handleAssetKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !handled || cmd == nil {
+		t.Fatal("enter should open the selected asset asynchronously")
+	}
+}
 
-	started, cmd := m.toggleAssetMosaic()
-	if cmd == nil || !started.assetMosaicPending[assetKey(started.assets[0])] {
-		t.Fatalf("toggle should schedule async mosaic: pending=%v cmd=%v", started.assetMosaicPending, cmd != nil)
+func TestAltGFocusesAssetCardsAndDoesNotLeaveStaleNavbarFocus(t *testing.T) {
+	m := EnterConversationForTest(NewTestModel(nil))
+	m.assets = []harness.Asset{
+		{Attachment: harness.Attachment{Name: "first.png", Path: "/tmp/first.png"}},
+		{Attachment: harness.Attachment{Name: "second.png", Path: "/tmp/second.png"}},
 	}
-	if rendered := strings.Join(started.renderAssetCardLines(80), "\n"); !strings.Contains(rendered, "rendering mosaic") {
-		t.Fatalf("pending card missing spinner: %q", rendered)
-	}
+	m.shellFocus = shellFocusNavbar
+	navCursor := m.navCursor
 
-	started.assetMosaics[assetKey(started.assets[0])] = media.MosaicResult{Available: true, Text: "old preview"}
-	delete(started.assetMosaicPending, assetKey(started.assets[0]))
-	resized, resizeCmd := started.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
-	if resizeCmd == nil {
-		t.Fatal("expanded mosaic resize should schedule a new async render")
+	next, _ := HandleTestKey(m, "alt+g")
+	if !next.assetFocus || next.shellFocus != shellFocusContent || next.chatInputFocused {
+		t.Fatalf("alt+g focus state=%+v", next)
 	}
-	resizedModel := resized.(model)
-	if !resizedModel.assetMosaicPending[assetKey(resizedModel.assets[0])] {
-		t.Fatal("expanded mosaic should be marked pending while resize render runs")
+	next, _ = HandleTestKey(next, "down")
+	if !next.assetFocus || next.assetCursor != 1 || next.shellFocus != shellFocusContent || next.navCursor != navCursor {
+		t.Fatalf("card navigation leaked to navbar: asset=%v cursor=%d shell=%v nav=%d", next.assetFocus, next.assetCursor, next.shellFocus, next.navCursor)
 	}
-	if rendered := strings.Join(resizedModel.renderAssetCardLines(140), "\n"); !strings.Contains(rendered, "rendering mosaic") {
-		t.Fatalf("resize card missing spinner: %q", rendered)
+	next, _ = HandleTestKey(next, "esc")
+	if next.assetFocus || next.shellFocus != shellFocusContent || !next.chatInputFocused {
+		t.Fatalf("esc did not return to composer: asset=%v shell=%v input=%v", next.assetFocus, next.shellFocus, next.chatInputFocused)
+	}
+	next, _ = HandleTestKey(next, "tab")
+	if next.shellFocus != shellFocusNavbar || next.assetFocus || next.attachmentFocus {
+		t.Fatalf("tab should move to navbar without stale media focus: shell=%v asset=%v attachment=%v", next.shellFocus, next.assetFocus, next.attachmentFocus)
+	}
+	next, _ = HandleTestKey(next, "alt+g")
+	if !next.assetFocus || next.shellFocus != shellFocusContent || next.chatInputFocused {
+		t.Fatalf("alt+g should recover card focus from navbar: shell=%v asset=%v input=%v", next.shellFocus, next.assetFocus, next.chatInputFocused)
+	}
+}
+
+func TestAttachmentChipsExposeOpenCopySaveAndRemove(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "attached.png")
+	destination := filepath.Join(dir, "exported.png")
+	if err := os.WriteFile(source, []byte("fixture image bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := EnterConversationForTest(NewTestModel(nil))
+	m.attachments = []tuiAttachment{{
+		token: "attachment-1",
+		name:  "attached.png",
+		attachment: harness.Attachment{
+			Kind:     harness.MediaKindImage,
+			Name:     "attached.png",
+			MIMEType: "image/png",
+			Path:     source,
+		},
+	}}
+	m.attachmentFocus = true
+	m.shellFocus = shellFocusContent
+
+	rendered := strings.Join(m.renderAttachmentChipLines(120), "\n")
+	for _, action := range []string{"enter/o open", "c copy path", "s save", "x remove"} {
+		if !strings.Contains(rendered, action) {
+			t.Fatalf("attachment chip missing %q: %q", action, rendered)
+		}
+	}
+	_, cmd, handled := m.handleAttachmentKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !handled || cmd == nil {
+		t.Fatal("enter should open the selected attachment asynchronously")
+	}
+	_, cmd, handled = m.handleAttachmentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if !handled || cmd == nil {
+		t.Fatal("c should copy the selected attachment path asynchronously")
+	}
+	m, _, handled = m.handleAttachmentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if !handled || !m.assetSavePending || m.assetSaveTarget != mediaSaveTargetAttachment {
+		t.Fatalf("s should open the attachment save dialog: pending=%v target=%d", m.assetSavePending, m.assetSaveTarget)
+	}
+	m, _, handled = m.handleAttachmentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(destination)})
+	if !handled || m.assetSaveInput != destination {
+		t.Fatalf("attachment save input=%q, want %q", m.assetSaveInput, destination)
+	}
+	m, cmd, handled = m.handleAttachmentKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !handled || cmd == nil {
+		t.Fatal("enter should start the attachment save asynchronously")
+	}
+	saved, ok := cmd().(assetActionMsg)
+	if !ok || saved.err != nil {
+		t.Fatalf("attachment save result=%T %+v", saved, saved)
+	}
+	updated, _ := m.Update(saved)
+	m = updated.(model)
+	if m.assetSavePending {
+		t.Fatal("attachment save dialog should close after completion")
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil || string(data) != "fixture image bytes" {
+		t.Fatalf("saved attachment data=%q err=%v", data, err)
+	}
+	m, _, handled = m.handleAttachmentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if !handled || len(m.attachments) != 0 {
+		t.Fatalf("x should remove the selected attachment: handled=%v attachments=%d", handled, len(m.attachments))
 	}
 }
 

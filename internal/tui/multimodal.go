@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,10 +13,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/filepicker"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
-	"github.com/muesli/termenv"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
 	"github.com/ricrsantos/ai_workflow_hero/internal/media"
@@ -46,6 +46,14 @@ type assetActionMsg struct {
 	clearSave         bool
 	overwriteRequired bool
 }
+
+type mediaSaveTarget uint8
+
+const (
+	mediaSaveTargetNone mediaSaveTarget = iota
+	mediaSaveTargetAsset
+	mediaSaveTargetAttachment
+)
 
 type mediaCleanupMsg struct {
 	err error
@@ -130,6 +138,7 @@ func (m model) openAttachmentPicker() (model, tea.Cmd) {
 	if !m.multimodalConversation() {
 		return m.setStatusResult(false, "attach", "image attachments are available in Chat only"), nil
 	}
+	m = m.clearMediaFocus()
 	picker := filepicker.New()
 	picker.AllowedTypes = []string{".png", ".jpg", ".jpeg", ".gif", ".webp"}
 	picker.CurrentDirectory = m.executeDir()
@@ -139,10 +148,12 @@ func (m model) openAttachmentPicker() (model, tea.Cmd) {
 	picker.DirAllowed = false
 	picker.FileAllowed = true
 	picker.ShowHidden = false
-	picker.SetHeight(maxInt(8, m.frameContentHeight()-4))
+	picker.AutoHeight = false
 	m.attachmentPicker = picker
 	m.attachmentPickerActive = true
-	return m, picker.Init()
+	m.chatInputFocused = false
+	m = m.resizeAttachmentPicker()
+	return m, m.attachmentPicker.Init()
 }
 
 func (m model) handleAttachmentPickerKey(msg tea.KeyMsg) (model, tea.Cmd) {
@@ -151,7 +162,7 @@ func (m model) handleAttachmentPickerKey(msg tea.KeyMsg) (model, tea.Cmd) {
 	}
 	if msg.String() == "esc" {
 		m.attachmentPickerActive = false
-		m.chatInputFocused = true
+		m = m.clearMediaFocus()
 		return m, nil
 	}
 	m, cmd := m.handleAttachmentPickerMsg(msg)
@@ -174,6 +185,21 @@ func (m model) handleAttachmentPickerMsg(msg tea.Msg) (model, tea.Cmd) {
 	return m, cmd
 }
 
+// resizeAttachmentPicker keeps the focused picker inside the content pane.
+// The parent owns the pane because the picker is rendered alongside the TUI
+// footer rather than as a standalone Bubble Tea program.
+func (m model) resizeAttachmentPicker() model {
+	if !m.attachmentPickerActive {
+		return m
+	}
+	height := m.frameContentHeight()
+	if height < 1 {
+		height = 1
+	}
+	m.attachmentPicker.SetHeight(height)
+	return m
+}
+
 func (m model) queueAttachmentPath(path string) (model, tea.Cmd) {
 	if !m.multimodalConversation() {
 		return m.setStatusResult(false, "attach", "image attachments are available in Chat only"), nil
@@ -181,7 +207,7 @@ func (m model) queueAttachmentPath(path string) (model, tea.Cmd) {
 	if len(m.attachments) >= media.DefaultMaxAttachmentsPerTurn {
 		return m.setStatusResult(false, "attach", "a turn can contain at most 5 images"), nil
 	}
-	path = strings.TrimSpace(path)
+	path = normalizeAttachmentPath(path)
 	if path == "" {
 		return m.setStatusResult(false, "attach", "image path is required"), nil
 	}
@@ -200,6 +226,7 @@ func (m model) queueAttachmentPath(path string) (model, tea.Cmd) {
 		},
 		pending: true,
 	})
+	m = m.clearMediaFocus()
 	pm := &m
 	sessionID := pm.durableMediaSessionID()
 	return *pm, m.materializeAttachmentCmd(token, path, name, sessionID)
@@ -278,6 +305,7 @@ func (m model) startClipboardAttachment() (model, tea.Cmd) {
 		},
 		pending: true,
 	})
+	m = m.clearMediaFocus()
 	pm := &m
 	sessionID := pm.durableMediaSessionID()
 	turnID := pm.attachmentTurnID
@@ -347,7 +375,140 @@ func readNativeClipboardPNG(ctx context.Context) ([]byte, error) {
 	return nil, errors.New("native clipboard does not contain a readable PNG image")
 }
 
-func isLikelyImagePath(path string) bool {
+// imagePathFromTerminalPaste recognizes the path payload emitted by terminal
+// drag-and-drop. There is no portable drag event in a terminal: emulators
+// normally send a bracketed paste containing either a filesystem path or a
+// local file URI. Some emulators quote or shell-escape paths with spaces.
+func imagePathFromTerminalPaste(raw string) (string, bool) {
+	path, ok := normalizeTerminalPath(raw)
+	if !ok || !isFilesystemImagePath(path) {
+		return "", false
+	}
+	return path, true
+}
+
+// promoteUnbracketedTerminalImage recovers the common terminal fallback in
+// which a drag-and-drop path is delivered as ordinary key input. A quoted
+// path or a file URI is a strong enough boundary to promote when the terminal
+// does not provide Paste=true; a bare absolute path is deliberately excluded
+// because ordinary typing has no reliable end marker.
+func (m model) promoteUnbracketedTerminalImage() (model, tea.Cmd, bool) {
+	raw := strings.TrimSpace(m.input)
+	if !isUnbracketedTerminalImageCandidate(raw) {
+		return m, nil, false
+	}
+	path, ok := imagePathFromTerminalPaste(raw)
+	if !ok {
+		return m, nil, false
+	}
+	m = m.clearChatInput()
+	next, cmd := m.queueAttachmentPath(path)
+	return next, cmd, true
+}
+
+func isUnbracketedTerminalImageCandidate(raw string) bool {
+	if len(raw) < 2 {
+		return false
+	}
+	if raw[0] == '\'' || raw[0] == '"' {
+		return raw[len(raw)-1] == raw[0]
+	}
+	return strings.HasPrefix(strings.ToLower(raw), "file:")
+}
+
+// normalizeAttachmentPath applies the same harmless terminal-path cleanup to
+// explicit /attach paths and paths selected by the picker. If the input is not
+// a safely recognizable local path (for example a remote file URI), preserve
+// it so the normal media validator can return the user-facing error.
+func normalizeAttachmentPath(raw string) string {
+	path, ok := normalizeTerminalPath(raw)
+	if ok {
+		return path
+	}
+	return strings.TrimSpace(raw)
+}
+
+func normalizeTerminalPath(raw string) (string, bool) {
+	path := strings.TrimSpace(raw)
+	if path == "" || strings.ContainsAny(path, "\r\n") {
+		return "", false
+	}
+
+	var ok bool
+	path, ok = stripTerminalPathQuotes(path)
+	if !ok || path == "" {
+		return "", false
+	}
+
+	if strings.HasPrefix(strings.ToLower(path), "file:") {
+		path, ok = localFileURIPath(path)
+		if !ok {
+			return "", false
+		}
+	}
+	path = unescapeTerminalPath(path)
+	if path == "" || strings.ContainsAny(path, "\r\n") {
+		return "", false
+	}
+	return path, true
+}
+
+func stripTerminalPathQuotes(path string) (string, bool) {
+	for len(path) >= 2 {
+		quote := path[0]
+		if quote != '\'' && quote != '"' {
+			break
+		}
+		if path[len(path)-1] != quote {
+			return "", false
+		}
+		path = path[1 : len(path)-1]
+	}
+	return path, true
+}
+
+func localFileURIPath(raw string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(u.Scheme, "file") || u.RawQuery != "" || u.Fragment != "" {
+		return "", false
+	}
+	if u.Host != "" && !strings.EqualFold(u.Host, "localhost") {
+		return "", false
+	}
+	path, err := url.PathUnescape(u.EscapedPath())
+	if err != nil || path == "" {
+		return "", false
+	}
+	return path, true
+}
+
+func unescapeTerminalPath(path string) string {
+	if !strings.ContainsRune(path, '\\') {
+		return path
+	}
+
+	var b strings.Builder
+	runes := []rune(path)
+	b.Grow(len(path))
+	for i := 0; i < len(runes); i++ {
+		if runes[i] != '\\' || i+1 >= len(runes) || !isTerminalEscapedPathRune(runes[i+1]) {
+			b.WriteRune(runes[i])
+			continue
+		}
+		i++
+		b.WriteRune(runes[i])
+	}
+	return b.String()
+}
+
+func isTerminalEscapedPathRune(r rune) bool {
+	if r == '\\' || r == ' ' || r == '\t' {
+		return true
+	}
+	return strings.ContainsRune(`"'()[]{}&;|<>*$?!#`, r)
+}
+
+func isFilesystemImagePath(path string) bool {
 	path = strings.TrimSpace(path)
 	if path == "" || strings.ContainsAny(path, "\r\n") {
 		return false
@@ -355,10 +516,15 @@ func isLikelyImagePath(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".png", ".jpg", ".jpeg", ".gif", ".webp":
-		return strings.HasPrefix(path, "/") || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") || strings.Contains(path, string(filepath.Separator))
+		return filepath.IsAbs(path) || strings.HasPrefix(path, "."+string(filepath.Separator)) || strings.HasPrefix(path, ".."+string(filepath.Separator)) || strings.Contains(path, string(filepath.Separator))
 	default:
 		return false
 	}
+}
+
+func isLikelyImagePath(path string) bool {
+	_, ok := imagePathFromTerminalPaste(path)
+	return ok
 }
 
 func (m model) handleAttachmentMaterialized(msg attachmentMaterializedMsg) model {
@@ -411,16 +577,89 @@ func (m model) clearAttachmentChipsForExecute(ex convExecute) model {
 	return m.clearAttachmentChips()
 }
 
+func (m model) clearMediaFocus() model {
+	m.assetFocus = false
+	m.attachmentFocus = false
+	if m.assetSavePending {
+		m = m.clearMediaSaveState()
+	}
+	m.shellFocus = shellFocusContent
+	m.chatInputFocused = true
+	return m
+}
+
+func (m model) focusAssetCards() model {
+	if len(m.assets) == 0 {
+		if m.assetFocus || m.attachmentFocus {
+			return m.clearMediaFocus()
+		}
+		return m
+	}
+	m.shellFocus = shellFocusContent
+	m.assetFocus = true
+	m.attachmentFocus = false
+	m.chatInputFocused = false
+	if m.assetCursor < 0 {
+		m.assetCursor = 0
+	}
+	if m.assetCursor >= len(m.assets) {
+		m.assetCursor = len(m.assets) - 1
+	}
+	return m
+}
+
+func (m model) focusAttachmentChips() model {
+	if len(m.attachments) == 0 {
+		if m.assetFocus || m.attachmentFocus {
+			return m.clearMediaFocus()
+		}
+		return m
+	}
+	m.shellFocus = shellFocusContent
+	m.assetFocus = false
+	m.attachmentFocus = true
+	m.chatInputFocused = false
+	if m.attachmentCursor < 0 {
+		m.attachmentCursor = 0
+	}
+	if m.attachmentCursor >= len(m.attachments) {
+		m.attachmentCursor = len(m.attachments) - 1
+	}
+	return m
+}
+
+func (m model) clearMediaSaveState() model {
+	m.assetSavePending = false
+	m.assetSaveOverwritePending = false
+	m.assetSaveSource = ""
+	m.assetSaveInput = ""
+	m.assetSaveInputDirty = false
+	m.assetSaveTarget = mediaSaveTargetNone
+	m.assetSaveAttachmentIndex = -1
+	return m
+}
+
 func (m model) clearAttachmentChips() model {
 	m.attachments = nil
 	m.attachmentTurnID = uuid.NewString()
 	m.attachmentFocus = false
+	if m.assetSaveTarget == mediaSaveTargetAttachment {
+		m = m.clearMediaSaveState()
+	}
 	return m
 }
 
 func (m model) removeAttachment(index int) model {
 	if index < 0 || index >= len(m.attachments) {
 		return m
+	}
+	if m.assetSaveTarget == mediaSaveTargetAttachment {
+		switch {
+		case m.assetSaveAttachmentIndex == index:
+			m = m.clearMediaSaveState()
+		case m.assetSaveAttachmentIndex > index:
+			m.assetSaveAttachmentIndex--
+		}
 	}
 	m.attachments = append(m.attachments[:index], m.attachments[index+1:]...)
 	if len(m.attachments) == 0 {
@@ -458,14 +697,17 @@ func (m model) renderAttachmentChipLines(width int) []string {
 			label += " · " + strings.TrimPrefix(meta, " · ")
 		}
 		if i == m.attachmentCursor && m.attachmentFocus {
-			label = "▸ " + label + " · x dismiss"
+			label = "▸ " + label + " · enter/o open · c copy path · s save · x remove"
 		} else {
 			label = "• " + label
 		}
-		if width > 0 && len([]rune(label)) > width {
+		if width > 0 {
 			label = truncateDisplayWidth(label, width)
 		}
 		lines = append(lines, label)
+		if i == m.assetSaveAttachmentIndex && m.attachmentFocus && m.assetSavePending {
+			lines = append(lines, m.renderMediaSaveLines(width)...)
+		}
 	}
 	return lines
 }
@@ -500,12 +742,6 @@ func (m model) addAssetToTurn(asset harness.Asset, turnIndex int) model {
 	msg.assets = harness.MergeAssetsByContentHash(msg.assets, []harness.Asset{asset})
 	m.transcript[turnIndex] = msg
 	m.rebuildAssetIndex()
-	if m.assetMosaics == nil {
-		m.assetMosaics = make(map[string]media.MosaicResult)
-	}
-	if m.assetMosaicPending == nil {
-		m.assetMosaicPending = make(map[string]bool)
-	}
 	if m.assetCursor < 0 {
 		m.assetCursor = 0
 	}
@@ -519,112 +755,6 @@ func (m *model) rebuildAssetIndex() {
 		assets = append(assets, msg.assets...)
 	}
 	m.assets = assets
-}
-
-func assetKey(asset harness.Asset) string {
-	if hash := strings.TrimSpace(asset.ContentHash); hash != "" {
-		return "hash:" + hash
-	}
-	if asset.Path != "" {
-		return "path:" + asset.Path
-	}
-	return "id:" + asset.ID
-}
-
-func (m model) toggleAssetMosaic() (model, tea.Cmd) {
-	if m.assetCursor < 0 || m.assetCursor >= len(m.assets) {
-		return m, nil
-	}
-	asset := m.assets[m.assetCursor]
-	key := assetKey(asset)
-	if m.assetMosaics == nil {
-		m.assetMosaics = make(map[string]media.MosaicResult)
-	}
-	if m.assetMosaicPending == nil {
-		m.assetMosaicPending = make(map[string]bool)
-	}
-	if _, expanded := m.assetMosaics[key]; expanded {
-		delete(m.assetMosaics, key)
-		return m, nil
-	}
-	if m.assetMosaicPending[key] {
-		return m, nil
-	}
-	m.assetMosaicPending[key] = true
-	return m, tea.Batch(media.MosaicCmd(asset.Path, m.assetMosaicConfig()), convWaitTickCmd())
-}
-
-func (m model) assetMosaicConfig() media.MosaicConfig {
-	return media.MosaicConfig{
-		Width:      minInt(64, maxInt(1, m.transcriptTextWidth()/2)),
-		Height:     minInt(12, maxInt(1, m.frameContentHeight()/3)),
-		ColorDepth: tuiMosaicColorDepth(),
-	}
-}
-
-func (m model) hasPendingMosaic() bool {
-	for _, pending := range m.assetMosaicPending {
-		if pending {
-			return true
-		}
-	}
-	return false
-}
-
-// refreshExpandedMosaics schedules a fresh decode/render for every expanded
-// card after a terminal resize. The command owns all filesystem/image work;
-// Update only marks the cards pending so keys and View remain responsive.
-func (m model) refreshExpandedMosaics() (model, tea.Cmd) {
-	if len(m.assetMosaics) == 0 || len(m.assets) == 0 {
-		return m, nil
-	}
-	if m.assetMosaicPending == nil {
-		m.assetMosaicPending = make(map[string]bool)
-	}
-	config := m.assetMosaicConfig()
-	cmds := make([]tea.Cmd, 0, len(m.assetMosaics))
-	for _, asset := range m.assets {
-		key := assetKey(asset)
-		if _, expanded := m.assetMosaics[key]; !expanded || strings.TrimSpace(asset.Path) == "" {
-			continue
-		}
-		m.assetMosaicPending[key] = true
-		cmds = append(cmds, media.MosaicCmd(asset.Path, config))
-	}
-	if len(cmds) == 0 {
-		return m, nil
-	}
-	return m, tea.Batch(cmds...)
-}
-
-func (m model) handleMosaicMsg(msg media.MosaicMsg) model {
-	if m.assetMosaicPending != nil {
-		delete(m.assetMosaicPending, assetKeyByPath(m.assets, msg.Path))
-	}
-	if msg.Err != nil {
-		m.bumpTranscriptLayout()
-		return m.setStatusWarning("preview", firstStatusLine(msg.Err.Error()))
-	}
-	if m.assetMosaics == nil {
-		m.assetMosaics = make(map[string]media.MosaicResult)
-	}
-	for _, asset := range m.assets {
-		if asset.Path == msg.Path {
-			m.assetMosaics[assetKey(asset)] = msg.Result
-			break
-		}
-	}
-	m.bumpTranscriptLayout()
-	return m
-}
-
-func assetKeyByPath(assets []harness.Asset, path string) string {
-	for _, asset := range assets {
-		if asset.Path == path {
-			return assetKey(asset)
-		}
-	}
-	return "path:" + path
 }
 
 func (m model) renderAssetCardLines(width int) []string {
@@ -660,46 +790,28 @@ func (m model) renderAssetCardLinesFor(width int, assets []harness.Asset, offset
 			line = "▸ " + line
 		}
 		lines = append(lines, line)
-		lines = append(lines, "  Enter preview · o open · c copy path · a attach · s save")
-		key := assetKey(asset)
-		if m.assetMosaicPending[key] {
-			_, expanded := m.assetMosaics[key]
-			selected := i+offset == m.assetCursor && m.assetFocus
-			if selected || expanded {
-				frame := waitAnimFrames[m.waitAnimFrame%len(waitAnimFrames)]
-				lines = append(lines, "  "+frame+" rendering mosaic…")
-			}
-		}
-		if i+offset == m.assetCursor && m.assetFocus && m.assetSavePending {
-			input := m.assetSaveInput
-			if input == "" {
-				input = "<destination path>"
-			}
-			lines = append(lines, "  save path: "+truncateDisplayWidth(input, maxInt(1, width-14))+" · enter save · esc cancel")
-			if m.assetSaveOverwritePending {
-				lines = append(lines, "  destination exists · y overwrite · n choose another · esc cancel")
-			}
-		}
-		if preview, ok := m.assetMosaics[key]; ok {
-			if preview.Available {
-				for _, previewLine := range strings.Split(preview.Text, "\n") {
-					lines = append(lines, "  "+truncateDisplayWidth(previewLine, maxInt(1, width-2)))
-				}
-			} else if preview.Message != "" {
-				lines = append(lines, "  "+preview.Message)
-			}
+		lines = append(lines, "  enter/o open · c copy path · a attach · s save")
+		if i+offset == m.assetCursor && m.assetFocus && m.assetSavePending && m.assetSaveTarget == mediaSaveTargetAsset {
+			lines = append(lines, m.renderMediaSaveLines(width)...)
 		}
 	}
 	return lines
 }
 
 func (m model) openSelectedAsset() tea.Cmd {
-	if m.assetCursor < 0 || m.assetCursor >= len(m.assets) || strings.TrimSpace(m.assets[m.assetCursor].Path) == "" {
-		return func() tea.Msg { return assetActionMsg{err: errors.New("asset has no saved path")} }
+	if m.assetCursor < 0 || m.assetCursor >= len(m.assets) {
+		return mediaActionErrorCmd("asset has no saved path")
 	}
-	path := m.assets[m.assetCursor].Path
+	return openMediaPathCmd(m.assets[m.assetCursor].Path)
+}
+
+func openMediaPathCmd(path string) tea.Cmd {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return mediaActionErrorCmd("image has no saved path")
+	}
 	return tea.ExecProcess(openAssetCommand(path), func(err error) tea.Msg {
-		return assetActionMsg{status: "asset viewer closed", err: err}
+		return assetActionMsg{status: "image viewer closed", err: err}
 	})
 }
 
@@ -712,9 +824,58 @@ func openAssetCommand(path string) *exec.Cmd {
 
 func (m model) assetCopyPathCmd() tea.Cmd {
 	if m.assetCursor < 0 || m.assetCursor >= len(m.assets) {
-		return nil
+		return mediaActionErrorCmd("asset has no saved path")
 	}
-	return copyToClipboardCmd(m.assets[m.assetCursor].Path)
+	return copyMediaPathCmd(m.assets[m.assetCursor].Path)
+}
+
+func (m model) selectedAttachment() (tuiAttachment, bool) {
+	if m.attachmentCursor < 0 || m.attachmentCursor >= len(m.attachments) {
+		return tuiAttachment{}, false
+	}
+	return m.attachments[m.attachmentCursor], true
+}
+
+func (m model) openSelectedAttachment() tea.Cmd {
+	chip, ok := m.selectedAttachment()
+	if !ok {
+		return mediaActionErrorCmd("image attachment is not selected")
+	}
+	if chip.pending {
+		return mediaActionErrorCmd("wait for image validation to finish")
+	}
+	if strings.TrimSpace(chip.err) != "" {
+		return mediaActionErrorCmd("image attachment cannot be opened: " + chip.err)
+	}
+	return openMediaPathCmd(chip.attachment.Path)
+}
+
+func (m model) attachmentCopyPathCmd() tea.Cmd {
+	chip, ok := m.selectedAttachment()
+	if !ok {
+		return mediaActionErrorCmd("image attachment is not selected")
+	}
+	if chip.pending {
+		return mediaActionErrorCmd("wait for image validation to finish")
+	}
+	if strings.TrimSpace(chip.err) != "" {
+		return mediaActionErrorCmd("image attachment cannot be copied: " + chip.err)
+	}
+	return copyMediaPathCmd(chip.attachment.Path)
+}
+
+func copyMediaPathCmd(path string) tea.Cmd {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return mediaActionErrorCmd("image has no saved path")
+	}
+	return copyToClipboardCmd(path)
+}
+
+func mediaActionErrorCmd(message string) tea.Cmd {
+	return func() tea.Msg {
+		return assetActionMsg{err: errors.New(message)}
+	}
 }
 
 func (m model) attachSelectedAsset() model {
@@ -732,21 +893,10 @@ func (m model) attachSelectedAsset() model {
 	return m
 }
 
-func tuiMosaicColorDepth() media.ColorDepth {
-	switch lipgloss.ColorProfile() {
-	case termenv.TrueColor, termenv.ANSI256:
-		return media.ColorDepth256
-	case termenv.ANSI:
-		return media.ColorDepthANSI
-	default:
-		return media.ColorDepthUnknown
-	}
-}
-
-func defaultAssetSavePath(asset harness.Asset) string {
-	name := strings.TrimSpace(asset.Name)
+func defaultMediaSavePath(name, sourcePath string) string {
+	name = strings.TrimSpace(name)
 	if name == "" {
-		name = filepath.Base(strings.TrimSpace(asset.Path))
+		name = filepath.Base(strings.TrimSpace(sourcePath))
 	}
 	name = filepath.Base(name)
 	if name == "" || name == "." || name == string(filepath.Separator) {
@@ -757,6 +907,27 @@ func defaultAssetSavePath(asset harness.Asset) string {
 		return filepath.Join("Downloads", name)
 	}
 	return filepath.Join(home, "Downloads", name)
+}
+
+func defaultAssetSavePath(asset harness.Asset) string {
+	return defaultMediaSavePath(asset.Name, asset.Path)
+}
+
+func (m model) renderMediaSaveLines(width int) []string {
+	if !m.assetSavePending {
+		return nil
+	}
+	input := m.assetSaveInput
+	if input == "" {
+		input = "<destination path>"
+	}
+	lines := []string{
+		"  save path: " + truncateDisplayWidth(input, maxInt(1, width-14)) + " · enter save · esc cancel",
+	}
+	if m.assetSaveOverwritePending {
+		lines = append(lines, "  destination exists · y overwrite · n choose another · esc cancel")
+	}
+	return lines
 }
 
 func (m model) beginAssetSave() model {
@@ -772,15 +943,38 @@ func (m model) beginAssetSave() model {
 	m.assetSaveSource = path
 	m.assetSaveInput = defaultAssetSavePath(m.assets[m.assetCursor])
 	m.assetSaveInputDirty = false
+	m.assetSaveTarget = mediaSaveTargetAsset
+	m.assetSaveAttachmentIndex = -1
+	return m.setStatusResult(false, "save", "confirm the destination path, then press enter")
+}
+
+func (m model) beginAttachmentSave() model {
+	chip, ok := m.selectedAttachment()
+	if !ok {
+		return m.setStatusWarning("save", "image attachment is not selected")
+	}
+	if chip.pending {
+		return m.setStatusWarning("save", "wait for image validation to finish")
+	}
+	if strings.TrimSpace(chip.err) != "" {
+		return m.setStatusWarning("save", "image attachment cannot be saved: "+chip.err)
+	}
+	path := strings.TrimSpace(chip.attachment.Path)
+	if path == "" {
+		return m.setStatusWarning("save", "image has no saved path")
+	}
+	m.assetSavePending = true
+	m.assetSaveOverwritePending = false
+	m.assetSaveSource = path
+	m.assetSaveInput = defaultMediaSavePath(chip.name, path)
+	m.assetSaveInputDirty = false
+	m.assetSaveTarget = mediaSaveTargetAttachment
+	m.assetSaveAttachmentIndex = m.attachmentCursor
 	return m.setStatusResult(false, "save", "confirm the destination path, then press enter")
 }
 
 func (m model) cancelAssetSave() model {
-	m.assetSavePending = false
-	m.assetSaveOverwritePending = false
-	m.assetSaveSource = ""
-	m.assetSaveInput = ""
-	m.assetSaveInputDirty = false
+	m = m.clearMediaSaveState()
 	return m.setStatusResult(false, "save", "asset save cancelled")
 }
 
@@ -837,79 +1031,119 @@ func safeAssetError(err error) error {
 	return errors.New(text)
 }
 
+func (m model) handleMediaSaveKey(msg tea.KeyMsg) (model, tea.Cmd, bool) {
+	if !m.assetSavePending {
+		return m, nil, false
+	}
+	if m.assetSaveOverwritePending {
+		switch strings.ToLower(msg.String()) {
+		case "y":
+			m.assetSaveOverwritePending = false
+			return m, m.saveAssetCmd(m.assetSaveSource, m.assetSaveInput, true), true
+		case "n":
+			m.assetSaveOverwritePending = false
+			return m.setStatusWarning("save", "choose another destination, then press enter"), nil, true
+		case "esc":
+			return m.cancelAssetSave(), nil, true
+		default:
+			return m, nil, true
+		}
+	}
+	switch msg.String() {
+	case "esc":
+		return m.cancelAssetSave(), nil, true
+	case "enter":
+		destination := strings.TrimSpace(m.assetSaveInput)
+		if destination == "" {
+			return m.setStatusWarning("save", "destination path is required"), nil, true
+		}
+		return m, m.saveAssetCmd(m.assetSaveSource, destination, false), true
+	case "backspace", "delete":
+		if !m.assetSaveInputDirty {
+			m.assetSaveInput = ""
+			m.assetSaveInputDirty = true
+		} else {
+			runes := []rune(m.assetSaveInput)
+			if len(runes) > 0 {
+				m.assetSaveInput = string(runes[:len(runes)-1])
+			}
+		}
+		return m, nil, true
+	}
+	if len(msg.Runes) > 0 && !msg.Alt {
+		if m.assetSaveInputDirty {
+			m.assetSaveInput += string(msg.Runes)
+		} else {
+			m.assetSaveInput = string(msg.Runes)
+			m.assetSaveInputDirty = true
+		}
+		return m, nil, true
+	}
+	return m, nil, true
+}
+
 func (m model) handleAssetKey(msg tea.KeyMsg) (model, tea.Cmd, bool) {
 	if len(m.assets) == 0 || !m.assetFocus || m.streaming {
 		return m, nil, false
 	}
 	if m.assetSavePending {
-		if m.assetSaveOverwritePending {
-			switch strings.ToLower(msg.String()) {
-			case "y":
-				m.assetSaveOverwritePending = false
-				return m, m.saveAssetCmd(m.assetSaveSource, m.assetSaveInput, true), true
-			case "n":
-				m.assetSaveOverwritePending = false
-				return m.setStatusWarning("save", "choose another destination, then press enter"), nil, true
-			case "esc":
-				return m.cancelAssetSave(), nil, true
-			default:
-				return m, nil, true
-			}
-		}
-		switch msg.String() {
-		case "esc":
-			return m.cancelAssetSave(), nil, true
-		case "enter":
-			destination := strings.TrimSpace(m.assetSaveInput)
-			if destination == "" {
-				return m.setStatusWarning("save", "destination path is required"), nil, true
-			}
-			return m, m.saveAssetCmd(m.assetSaveSource, destination, false), true
-		case "backspace", "delete":
-			if !m.assetSaveInputDirty {
-				m.assetSaveInput = ""
-				m.assetSaveInputDirty = true
-			} else {
-				runes := []rune(m.assetSaveInput)
-				if len(runes) > 0 {
-					m.assetSaveInput = string(runes[:len(runes)-1])
-				}
-			}
-			return m, nil, true
-		}
-		if len(msg.Runes) > 0 && !msg.Alt {
-			if m.assetSaveInputDirty {
-				m.assetSaveInput += string(msg.Runes)
-			} else {
-				m.assetSaveInput = string(msg.Runes)
-				m.assetSaveInputDirty = true
-			}
-			return m, nil, true
-		}
-		return m, nil, true
+		return m.handleMediaSaveKey(msg)
 	}
-	switch msg.String() {
-	case "up":
+	if key.Matches(msg, assetCardsFocusKey) {
+		return m.clearMediaFocus(), nil, true
+	}
+	switch {
+	case key.Matches(msg, navUpKey):
 		if m.assetCursor > 0 {
 			m.assetCursor--
 		}
 		return m, nil, true
-	case "down":
+	case key.Matches(msg, navDownKey):
 		if m.assetCursor < len(m.assets)-1 {
 			m.assetCursor++
 		}
 		return m, nil, true
-	case "enter":
-		next, cmd := m.toggleAssetMosaic()
-		return next, cmd, true
-	case "o":
+	case key.Matches(msg, mediaOpenKey):
 		return m, m.openSelectedAsset(), true
-	case "c":
+	case key.Matches(msg, mediaCopyPathKey):
 		return m, m.assetCopyPathCmd(), true
-	case "a":
+	case key.Matches(msg, mediaAttachKey):
 		return m.attachSelectedAsset(), nil, true
-	case "s":
+	case key.Matches(msg, mediaSaveKey):
 		return m.beginAssetSave(), nil, true
+	}
+	return m, nil, false
+}
+
+func (m model) handleAttachmentKey(msg tea.KeyMsg) (model, tea.Cmd, bool) {
+	if len(m.attachments) == 0 || !m.attachmentFocus || m.streaming {
+		return m, nil, false
+	}
+	if m.assetSavePending {
+		return m.handleMediaSaveKey(msg)
+	}
+	if key.Matches(msg, attachmentChipsFocusKey) {
+		return m.clearMediaFocus(), nil, true
+	}
+	switch {
+	case key.Matches(msg, navUpKey):
+		if m.attachmentCursor > 0 {
+			m.attachmentCursor--
+		}
+		return m, nil, true
+	case key.Matches(msg, navDownKey):
+		if m.attachmentCursor < len(m.attachments)-1 {
+			m.attachmentCursor++
+		}
+		return m, nil, true
+	case key.Matches(msg, mediaOpenKey):
+		return m, m.openSelectedAttachment(), true
+	case key.Matches(msg, mediaCopyPathKey):
+		return m, m.attachmentCopyPathCmd(), true
+	case key.Matches(msg, mediaSaveKey):
+		return m.beginAttachmentSave(), nil, true
+	case key.Matches(msg, mediaRemoveKey):
+		return m.removeAttachment(m.attachmentCursor), nil, true
 	}
 	return m, nil, false
 }

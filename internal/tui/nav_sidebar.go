@@ -151,6 +151,11 @@ func (m model) focusShellNavbar() (tea.Model, tea.Cmd) {
 	if !m.sidebarVisible() {
 		return m, nil
 	}
+	m.assetFocus = false
+	m.attachmentFocus = false
+	if m.assetSavePending {
+		m = m.clearMediaSaveState()
+	}
 	if m.shellFocus == shellFocusNavbar {
 		return m, nil
 	}
@@ -162,6 +167,8 @@ func (m model) focusShellNavbar() (tea.Model, tea.Cmd) {
 	}
 	m.shellFocus = shellFocusNavbar
 	m.navCursor = m.activeNavIndex()
+	m.assetFocus = false
+	m.attachmentFocus = false
 	m.chatInputFocused = false
 	return m, nil
 }
@@ -252,8 +259,11 @@ func (m model) activateNavbarScreen(target screen) (model, tea.Cmd) {
 	// Enter commits navbar navigation and hands keyboard focus to the selected
 	// screen. Keeping it on the navbar made Chat and list screens feel inert
 	// until the user pressed Tab a second time.
+	next = next.clearMediaFocus()
 	next.shellFocus = shellFocusContent
 	next.navCursor = next.activeNavIndex()
+	next.assetFocus = false
+	next.attachmentFocus = false
 	next.chatInputFocused = next.screen == screenConversation
 	return next, cmd
 }

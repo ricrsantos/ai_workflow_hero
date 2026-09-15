@@ -672,6 +672,16 @@ func TestImplementationPreparationFailureDoesNotStartEarlierAgent(t *testing.T) 
 			t.Fatalf("stage agent execute survived preparation failure: %+v", execute)
 		}
 	}
+	// Preparation failure resumes the orchestrator so it can explain the
+	// intervention to the user. Stop that asynchronous worker before the
+	// temporary project is removed by t.TempDir; otherwise its first-turn
+	// persistence can race cleanup and leave .workflow-hero non-empty.
+	if next.streaming {
+		_, cancelCmd := CancelConversationStreamForTest(next)
+		if cancelCmd != nil {
+			_ = cancelCmd()
+		}
+	}
 }
 
 func TestImplementationSymlinkChecklistFailsClosed(t *testing.T) {

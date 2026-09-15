@@ -1,10 +1,10 @@
 # PRD-C14-001 — Multimodal Image Support for Hero TUI
 
-> Cycle C14 requirements. Adds bidirectional image support to the Hero TUI Free Chat. Design input: [idea note](../idea/v3.3_images/tui-imagens-multimodais.md) (non-normative). Architecture decisions: [ADR-C14-002](../architecture/ADR-C14-002-tui-multimodal-images.md). UI spec: [UI-C14-001](UI-C14-001-tui-multimodal-images.md).
+> Cycle C14 requirements. Adds bidirectional image support to the Hero TUI's local Chat modes. Design input: [idea note](../idea/v3.3_images/tui-imagens-multimodais.md) (non-normative). Architecture decisions: [ADR-C14-002](../architecture/ADR-C14-002-tui-multimodal-images.md). UI spec: [UI-C14-001](UI-C14-001-tui-multimodal-images.md).
 
 ## 1. Outcome
 
-The Hero TUI Free Chat supports attaching PNG, JPEG, GIF, and WebP images to a message turn and receiving image assets produced by a harness. Attachments flow through a shared multimodal contract; each harness adapter translates to its native protocol. The TUI remains responsive and terminal-portable at all times. The feature is exclusive to Free Chat — Research and workflow-stage sessions are out of scope.
+The Hero TUI's local Chat modes support attaching PNG, JPEG, GIF, and WebP images to a message turn and receiving image assets produced by a harness. Attachments flow through a shared multimodal contract; each harness adapter translates to its native protocol. The TUI remains responsive and terminal-portable at all times. Control commands, approval/ToDo forms, and Telegram routing remain text-only.
 
 Target platforms: Linux and macOS on amd64/arm64. Implementation agents must apply the `go-engineering` and `golang-tui` project skills throughout.
 
@@ -51,7 +51,8 @@ Target platforms: Linux and macOS on amd64/arm64. Implementation agents must app
 
 - `Alt+A` or `/attach` opens a file picker; `Alt+A` shortcut must be validated against the existing keymap and reassigned if conflicting (planning validates this).
 - `Alt+V` or `/attach-clipboard` reads an image from the system clipboard using the native OS clipboard API (not OSC 52).
-- When bracketed paste delivers a filesystem path string to the composer, the TUI recognizes the pattern and offers to attach it as an image.
+- When terminal drag-and-drop delivers an image path through bracketed paste, the TUI recognizes plain, quoted, shell-escaped, and local `file:` URI forms, normalizes them, and stages the image as an attachment instead of inserting the path into the prompt.
+- If the terminal or multiplexer does not emit bracketed paste, clearly delimited quoted paths and local `file:` URIs can still be promoted when received as a complete path; a bare path remains ordinary text because the protocol provides no portable drop marker. The explicit `/attach <path>` command remains the fallback.
 - `/attach <path>` accepts an explicit path, useful in SSH and terminal multiplexer environments.
 - After capture and validation, a chip appears in the composer area outside the text input field. The chip displays: file name, MIME type, dimensions, size, and a close button.
 - The text cursor does not traverse chip content. Backspace in the text field does not remove an attachment; removal requires explicit focus on the chip and a dedicated key or the close button.
@@ -66,30 +67,24 @@ Target platforms: Linux and macOS on amd64/arm64. Implementation agents must app
 ```
 Image generated
 mockup-home.png · PNG · 1536x1024 · 1.8 MB
-enter preview · o open · c copy path · a attach · s save
+enter/o open · c copy path · a attach · s save
 ```
 
 - Card actions:
-  - **Enter / preview**: display Unicode mosaic preview inline (mandatory, see §2.7).
-  - **o**: open the image in the system default viewer (`xdg-open` on Linux, `open` on macOS). Suspend and restore the TUI correctly around the external process.
+  - **Enter / o**: open the image in the system default viewer (`xdg-open` on Linux, `open` on macOS). Suspend and restore the TUI correctly around the external process.
   - **c**: copy the local asset path to the clipboard.
   - **s**: save/export the image to a user-chosen destination path.
   - **a**: attach the asset as a new attachment to the next composer turn.
-- All I/O operations (read, decode, thumbnail generation, file write) must be `tea.Cmd`; they must not block `Update()` or execute in `View()`.
+- Focused composer attachment chips expose the applicable **Enter/o**, **c**, **s**, and **x/Delete** actions; `a` is intentionally not offered because the image is already attached.
+- All file and clipboard I/O operations must be `tea.Cmd`; they must not block `Update()` or execute in `View()`.
 
-### 2.7 Unicode mosaic preview
+### 2.7 Inline image preview (discontinued)
 
-- Implement a Unicode block-character + ANSI color mosaic renderer for image preview.
-- The renderer must operate outside `View()` as an async `tea.Cmd`.
-- The mosaic must respect the available pane width and height, degrade to the card on terminals without 256+ color support, and not produce layout-breaking output on resize.
-- Use golden-file or invariant tests; avoid large ANSI sequence snapshots.
+Hero does not render image pixels, Unicode mosaics, thumbnails, or other inline previews in the TUI. The text card/chip remains the accessible representation and `Enter/o` opens the file in the system viewer.
 
-### 2.8 Advanced inline preview (optional, phase 4)
+### 2.8 Advanced inline preview (discontinued)
 
-- Add opt-in Kitty Graphics Protocol, Sixel, and iTerm2 OSC 1337 inline image rendering.
-- Detection is best-effort; manual override is allowed via a config flag.
-- The card remains mandatory even when inline rendering is active.
-- Disable by default; never enable automatically without user or configuration opt-in.
+Kitty Graphics Protocol, Sixel, iTerm2 OSC 1337, and other inline image protocols are not part of the current TUI. No terminal capability detection or opt-in can enable them.
 
 ### 2.9 Adapter: Codex (phase 2, first adapter)
 
@@ -129,15 +124,14 @@ enter preview · o open · c copy path · a attach · s save
 ## 3. Constraints and quality
 
 - Apply the `go-engineering` and `golang-tui` project skills during implementation, code review, and refactoring.
-- Preserve the vertical-slice feature architecture: multimodal contract lives in `internal/harness` or `internal/media` (if justified); attachment validation, asset storage, and preview rendering do not leak into adapters; adapter protocol translation does not leak into TUI or core.
-- All async I/O (capture, validation, thumbnail, file operations) runs as `tea.Cmd`; `Update()` and `View()` remain non-blocking.
+- Preserve the vertical-slice feature architecture: multimodal contract lives in `internal/harness` or `internal/media` (if justified); attachment validation, asset storage, and external image actions do not leak into adapters; adapter protocol translation does not leak into TUI or core.
+- All async I/O (capture, validation, clipboard, viewer, and file operations) runs as `tea.Cmd`; `Update()` and `View()` remain non-blocking.
 - `go test ./...` must pass before any task is considered complete.
 - No real harness account, API key, or real image generation service is required by tests. Use fixtures and fake processes.
 - Race tests must verify that async workers do not mutate shared TUI model state.
 
 ## 4. Out of scope
 
-- Image support outside Free Chat (Research, planning, implementation, QA agents, or workflow-stage sessions).
 - Audio, video, PDF, or arbitrary binary attachments.
 - Calling image generation APIs outside the harness contract.
 - Automatic persistence of attachments or assets to git or cycle documents.
@@ -150,8 +144,8 @@ enter preview · o open · c copy path · a attach · s save
 
 ## 5. Acceptance criteria
 
-1. `Alt+A` opens a file picker in Free Chat; the user selects a PNG; a chip appears in the composer; on send, the attachment reaches Codex natively and the response is displayed normally.
-2. A Codex image generation result appears as an asset card with a Unicode mosaic preview in the transcript.
+1. `Alt+A` opens a file picker in a local Chat mode; the user selects a PNG; a chip appears in the composer; on send, the attachment reaches Codex natively and the response is displayed normally.
+2. A Codex image generation result appears as a keyboard-navigable asset card with open, copy-path, attach, and save actions in the transcript.
 3. `Alt+V` reads an image from the system clipboard; a chip appears in the composer.
 4. When the active model lacks image capability, submitting a turn with an attachment blocks with a clear error identifying the model and harness; no attachment is silently dropped.
 5. An image file written by a tool during a turn appears as an asset card.

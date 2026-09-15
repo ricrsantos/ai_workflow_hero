@@ -49,6 +49,37 @@ var conversationInterruptKey = key.NewBinding(
 	key.WithHelp("ctrl+c", "interrupt"),
 )
 
+var (
+	assetCardsFocusKey = key.NewBinding(
+		key.WithKeys("alt+g"),
+		key.WithHelp("alt+g", "asset cards"),
+	)
+	attachmentChipsFocusKey = key.NewBinding(
+		key.WithKeys("alt+c"),
+		key.WithHelp("alt+c", "attachment chips"),
+	)
+	mediaOpenKey = key.NewBinding(
+		key.WithKeys("enter", "o"),
+		key.WithHelp("enter/o", "open"),
+	)
+	mediaCopyPathKey = key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "copy path"),
+	)
+	mediaAttachKey = key.NewBinding(
+		key.WithKeys("a"),
+		key.WithHelp("a", "attach"),
+	)
+	mediaSaveKey = key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "save"),
+	)
+	mediaRemoveKey = key.NewBinding(
+		key.WithKeys("x", "backspace", "delete"),
+		key.WithHelp("x", "remove"),
+	)
+)
+
 type convMessage struct {
 	role        convRole
 	content     string
@@ -483,13 +514,13 @@ func (m model) resetChatSessionMemory() model {
 	m.assets = nil
 	m.assetCursor = 0
 	m.assetFocus = false
-	m.assetMosaics = nil
-	m.assetMosaicPending = nil
 	m.assetSavePending = false
 	m.assetSaveOverwritePending = false
 	m.assetSaveSource = ""
 	m.assetSaveInput = ""
 	m.assetSaveInputDirty = false
+	m.assetSaveTarget = mediaSaveTargetNone
+	m.assetSaveAttachmentIndex = -1
 	m.attachmentCursor = 0
 	m = m.clearStageHandoffState()
 	m.stageProgressHoldUntilStart = false
@@ -964,40 +995,46 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.assetFocus || m.attachmentFocus {
+		// Media focus is a content-pane mode. Consume Tab here so the root
+		// router cannot leave a stale card/chip focus behind while moving to
+		// the navbar.
+		if key.Matches(msg, shellFocusKey) {
+			m = m.clearMediaFocus()
+			m.chatInputFocused = true
+			return m.toggleShellFocus()
+		}
+		// Esc exits the card/chip list back to the composer. A second Esc,
+		// now with the composer focused, keeps the existing navbar behavior.
+		if key.Matches(msg, shellNavbarFocusKey) {
+			m = m.clearMediaFocus()
+			m.shellFocus = shellFocusContent
+			m.chatInputFocused = true
+			return m, nil
+		}
+		if m.assetFocus {
+			if next, cmd, handled := m.handleAssetKey(msg); handled {
+				return next, cmd
+			}
+		}
+		if m.attachmentFocus {
+			if next, cmd, handled := m.handleAttachmentKey(msg); handled {
+				return next, cmd
+			}
+		}
+	}
+
+	// Focus shortcuts are resolved before enabling the composer. This matters
+	// when the navbar is currently focused and no media items exist: an
+	// unavailable Alt+G/Alt+C must not create a false composer-focus state.
+	if key.Matches(msg, attachmentChipsFocusKey) {
+		return m.focusAttachmentChips(), nil
+	}
+	if key.Matches(msg, assetCardsFocusKey) {
+		return m.focusAssetCards(), nil
+	}
+
 	m.chatInputFocused = true
-	if m.assetFocus {
-		if s == "esc" || s == "alt+g" {
-			m.assetFocus = false
-			m.chatInputFocused = true
-			return m, nil
-		}
-		if next, cmd, handled := m.handleAssetKey(msg); handled {
-			return next, cmd
-		}
-	}
-	if m.attachmentFocus {
-		switch s {
-		case "alt+c":
-			m.attachmentFocus = false
-			m.chatInputFocused = true
-			return m, nil
-		case "up":
-			if m.attachmentCursor > 0 {
-				m.attachmentCursor--
-			}
-			return m, nil
-		case "down":
-			if m.attachmentCursor < len(m.attachments)-1 {
-				m.attachmentCursor++
-			}
-			return m, nil
-		case "x", "backspace", "delete":
-			return m.removeAttachment(m.attachmentCursor), nil
-		case "esc":
-			m.attachmentFocus = false
-			return m, nil
-		}
-	}
 
 	// Global shortcuts (modifier+key) work even while typing in chat.
 	// `/` is NOT global here — it stays in the composer (Cursor-style overlay).
@@ -1009,27 +1046,11 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openAttachmentPicker()
 	case "alt+v":
 		return m.startClipboardAttachment()
-	case "alt+c":
-		if len(m.attachments) > 0 {
-			m.attachmentFocus = true
-			m.attachmentCursor = minInt(m.attachmentCursor, len(m.attachments)-1)
-			m.assetFocus = false
-			m.chatInputFocused = false
-		}
-		return m, nil
-	case "alt+g":
-		if len(m.assets) > 0 {
-			m.assetFocus = true
-			m.chatInputFocused = false
-			m.attachmentFocus = false
-		}
-		return m, nil
 	case "alt+r":
 		return m.copyChatResponse()
 	case "alt+i":
 		return m.copyChatInput()
 	}
-
 	// Recognized slash commands keep their command behavior in the composer:
 	// Enter executes them, while Alt+Enter is reserved for ordinary prompts.
 	if s == "enter" {
@@ -1157,9 +1178,8 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	default:
 		if msg.Paste && len(msg.Runes) > 0 {
-			pasted := strings.TrimSpace(string(msg.Runes))
-			if isLikelyImagePath(pasted) {
-				return m.queueAttachmentPath(pasted)
+			if path, ok := imagePathFromTerminalPaste(string(msg.Runes)); ok {
+				return m.queueAttachmentPath(path)
 			}
 		}
 		if len(msg.Runes) == 0 || msg.Alt {
@@ -1168,6 +1188,11 @@ func (m model) handleConversationKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		prev := chatSlashToken(m.input)
 		m = m.insertRunesAtCursor(msg.Runes)
 		m = m.afterChatInputEdit(prev)
+		if !msg.Paste {
+			if next, cmd, promoted := m.promoteUnbracketedTerminalImage(); promoted {
+				return next, cmd
+			}
+		}
 		m = m.ensureInputCaretVisible()
 		return m, nil
 	}
@@ -3340,6 +3365,13 @@ func (m *model) bumpTranscriptLayout() {
 }
 
 func (m model) renderConversation(contentH int) string {
+	if m.attachmentPickerActive {
+		// The picker is a focused Chat mode, so give it the whole content pane.
+		// Normalizing its output is important because Bubbles adds a trailing
+		// padding row when files are present; keeping the first rows preserves
+		// the selected entries while the root frame keeps the footer anchored.
+		return fitContentHeight(m.attachmentPicker.View(), contentH, false)
+	}
 	n := m.transcriptVisibleLines(contentH)
 	s := m.buildConversation(n)
 	// The transcript pane absorbs leftover height after header, status hint,

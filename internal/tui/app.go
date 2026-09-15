@@ -128,13 +128,13 @@ type model struct {
 	assets                    []harness.Asset
 	assetCursor               int
 	assetFocus                bool
-	assetMosaics              map[string]media.MosaicResult
-	assetMosaicPending        map[string]bool
 	assetSavePending          bool
 	assetSaveOverwritePending bool
 	assetSaveSource           string
 	assetSaveInput            string
 	assetSaveInputDirty       bool
+	assetSaveTarget           mediaSaveTarget
+	assetSaveAttachmentIndex  int
 	pendingExecuteAttachments []harness.Attachment
 	mediaRegistry             *media.Registry
 	mediaRegistryExplicit     bool // test/injected registry must still gate fake adapters
@@ -496,6 +496,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.attachmentPickerActive {
+			m = m.resizeAttachmentPicker()
+		}
 		if m.shellFocus == shellFocusNavbar && !m.sidebarVisible() {
 			m.shellFocus = shellFocusContent
 			m.chatInputFocused = m.screen == screenConversation
@@ -515,13 +518,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.ensureHistoryListOffset()
 		}
 		m = m.clampContentOffset()
-		if m.screen == screenConversation {
-			var mosaicCmd tea.Cmd
-			m, mosaicCmd = m.refreshExpandedMosaics()
-			if mosaicCmd != nil {
-				return m, tea.Batch(mosaicCmd, convWaitTickCmd())
-			}
-		}
 		return m, nil
 
 	case historyLoadedMsg, historyRenameMsg, historyArchiveMsg, historyRestoreMsg, historyDeleteMsg, historyOpenMsg, historyImportMsg, historyForkDoneMsg:
@@ -615,9 +611,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case convWaitTickMsg:
 		if m.streaming {
 			m.waitAnimFrame++
-			if m.hasPendingMosaic() {
-				m.bumpTranscriptLayout()
-			}
 			m = m.maybeFollowTranscriptBottom()
 			return m, convWaitTickCmd()
 		}
@@ -626,11 +619,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.heroStartPreparing || m.heroStartBootstrapping {
 				m = m.maybeFollowTranscriptBottom()
 			}
-			return m, convWaitTickCmd()
-		}
-		if m.hasPendingMosaic() {
-			m.waitAnimFrame++
-			m.bumpTranscriptLayout()
 			return m, convWaitTickCmd()
 		}
 		if m.screen == screenHistory && (m.history.loading || m.history.mutating) {
@@ -693,10 +681,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.handleAttachmentMaterialized(msg)
 		return m, nil
 
-	case media.MosaicMsg:
-		m = m.handleMosaicMsg(msg)
-		return m, nil
-
 	case assetActionMsg:
 		if msg.overwriteRequired {
 			m.assetSaveOverwritePending = true
@@ -709,6 +693,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.assetSaveSource = ""
 			m.assetSaveInput = ""
 			m.assetSaveInputDirty = false
+			m.assetSaveTarget = mediaSaveTargetNone
+			m.assetSaveAttachmentIndex = -1
 		}
 		if msg.err != nil {
 			m = m.setStatusWarning("asset", firstStatusLine(msg.err.Error()))
@@ -779,6 +765,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// C5: warnings clear on the next user action (UI-C05-001 §5). The action
 		// itself may set a new warning later in this same processing pass.
 		m = m.clearPropsWarning()
+		if m.screen == screenConversation && (m.assetFocus || m.attachmentFocus ||
+			key.Matches(msg, assetCardsFocusKey) || key.Matches(msg, attachmentChipsFocusKey)) {
+			return m.handleConversationKey(msg)
+		}
 		if key.Matches(msg, shellFocusKey) {
 			return m.toggleShellFocus()
 		}
@@ -2101,6 +2091,14 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}, Alt: true}
 	case "alt+m":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}
+	case "alt+a":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}, Alt: true}
+	case "alt+v":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}, Alt: true}
+	case "alt+c":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}, Alt: true}
+	case "alt+g":
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}, Alt: true}
 	case "alt+r":
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}, Alt: true}
 	case "alt+s":

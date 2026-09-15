@@ -16,7 +16,7 @@
 | [PRD-C08-001-tui-stage-execute.md](PRD-C08-001-tui-stage-execute.md) | C8 | TUI-direct Execute of named stage agents, parallel Implementation, nested TASK chips |
 | [PRD-C09-001-telegram-integration.md](PRD-C09-001-telegram-integration.md) | C9 | Optional Telegram plugin, local daemon, addressed multi-TUI conversations, pairing, queues, and rotating logs |
 | [PRD-C13-001-claude-code-adapter.md](PRD-C13-001-claude-code-adapter.md) | C13 | Opt-in Claude Code TUI harness: headless CLI, session streaming, permissions bridge, `.claude/` projection, and managed `CLAUDE.md` |
-| [PRD-C14-001-tui-multimodal-images.md](PRD-C14-001-tui-multimodal-images.md) | C14 | Bidirectional image support in Free Chat: shared multimodal contract, session assets, capabilities, attachment chips, asset cards, Unicode mosaic, and Codex/OpenCode/Claude/Cursor adapters |
+| [PRD-C14-001-tui-multimodal-images.md](PRD-C14-001-tui-multimodal-images.md) | C14 | Bidirectional image support in local Chat: shared multimodal contract, session assets, capabilities, attachment chips, text asset cards, external image actions, and Codex/OpenCode/Claude/Cursor adapters |
 | [PRD-C15-001-loopback-findings-handoff.md](PRD-C15-001-loopback-findings-handoff.md) | C15 | Scheduler-owned validation findings, exact Implementation handoff, escalation deferral, durable ToDos, Research adoption, and manual completion |
 | [PRD-C16-001-tui-session-history.md](PRD-C16-001-tui-session-history.md) | C16 | Durable project-scoped TUI conversations, History screen, native resume, archive/restore/delete, leases, migration, and persistent assets |
 

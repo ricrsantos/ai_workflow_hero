@@ -615,7 +615,7 @@ Parity between TUI and chat is **intentional but not identical** — see [idea n
 
 ```text
 Free Chat input
-    │  picker · clipboard · path paste · slash command
+    │  picker · clipboard · path/URI paste · slash command
     ▼
 internal/tui ── immutable Attachment refs ──► internal/conversation
     │                                           │
@@ -637,13 +637,12 @@ session assets (0600, SHA-256, manifest)   media.Registry admission
                                                 │
                                   final ExecutionResult.Assets repair
                                                 ▼
-                         TUI cards → mosaic / open / copy / attach / save
+                         TUI cards → open / copy / attach / save
 ```
 
 `internal/harness` owns the provider-neutral `Attachment`, `Asset`,
 `MediaKind`, `MediaCapability`, and asset-repair contract. `internal/media`
-owns validation, session-scoped storage, retention, capability admission,
-Unicode mosaic rendering, and opt-in terminal preview helpers. The TUI asks
+owns validation, session-scoped storage, retention, and capability admission. The TUI asks
 adapters for transport facts and lazy model discovery, registers explicit
 catalog facts only when present, and sets the known intersection — or the known
 transport for a bounded optimistic attempt — immediately before Execute. A
@@ -652,8 +651,8 @@ a provider rejection is surfaced without fallback/retry. Adapter output paths
 are copied into the session store before
 they reach the TUI; workers send immutable messages and never mutate Bubble Tea
 maps directly. Tool-written images are correlated within a turn and
-deduplicated by content hash. Expanded mosaics are re-rendered by async
-commands after WindowSizeMsg; the card spinner is model state, not View I/O.
+deduplicated by content hash. Image cards and composer chips use only textual
+metadata plus asynchronous external actions; no image preview is rendered in the terminal.
 C14 attachment transport is shared by every local TUI Chat composer, including
 Free Chat, Research, orchestration, and workflow-stage conversations. Hero
 control commands, approval/rejection prompts, ToDo forms, and Telegram command
@@ -754,13 +753,13 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/telegram/daemon` | Bot API ownership, pairing, addressed routing, durable queue, suffix allocator, SQLite store |
 | `internal/lifecycle` | Private per-TUI Unix relay for lifecycle events emitted by CLI-as-API child processes |
 | `internal/harness` | `HarnessAdapter` interface, `StreamDelta` normalization, marker detection, multimodal references/capabilities |
-| `internal/media` | Session asset storage/validation/retention, capability admission, mosaic, optional terminal preview |
+| `internal/media` | Session asset storage/validation/retention and capability admission |
 | `internal/conversation` | Transport-neutral input classification, attachment handoff, session routing |
 | `internal/adapters/cursor` | Cursor Agent CLI adapter, paths, command import, NDJSON parse, file references, tool-image watch |
 | `internal/adapters/opencode` | OpenCode serve adapter: HTTP+SSE, ResumeSession, idle/gone SSE probe, serve lifecycle (PID registry, `exec.Command` not Execute-scoped), orphan reap, C5 properties, file/image parts and tool-image correlation |
 | `internal/adapters/codex` | Codex app-server adapter (stdio JSON-RPC, thread/turn, mid-turn reconnect+resume, registry, auth, C5 properties, stream map, CheckHealth, ResetAppServer, PrepareHeroStart, image schema/input/output normalization) |
 | `internal/adapters/claude` | Claude CLI NDJSON adapter, stream-json image spike/native/degraded input, tool-result and workspace image detection |
-| `internal/tui` | Bubble Tea terminal UI, Chat attachment chips, asset cards, async previews, save actions |
+| `internal/tui` | Bubble Tea terminal UI, Chat attachment chips, asset cards, external open/copy/save actions |
 | `internal/harnessmgr` | Adapter registry (cursor + opencode + codex), fallback chain, boot ListModels skip for lazy children |
 | `internal/tui` | Bubble Tea terminal UI |
 | `internal/todos` | `## Pending Features` parse/display; recoverable SQLite→file projection via `todo_projection_ops` |

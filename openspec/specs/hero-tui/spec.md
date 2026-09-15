@@ -104,7 +104,7 @@ Missing catalog, stale-cache fallback, and invalidated-value warnings SHALL use 
 
 ### Requirement: Chat composer SHALL support image attachments in every conversational mode
 
-Image attachment UX SHALL be available whenever the local Chat composer is active, including Free Chat, Research, orchestration, and workflow-stage sessions. It SHALL remain unavailable during Hero control commands, approval/rejection prompts, ToDo forms, and remote Telegram command routing. Bindings: `Alt+A`/`/attach` open a filtered file picker; `Alt+V`/`/attach-clipboard` capture via native OS clipboard APIs (not OSC 52); `/attach <path>` attaches an explicit path; bracketed paste of a filesystem path offers attachment. Planning validates `Alt+A`/`Alt+V` as free relative to existing Alt bindings (PRD-C14-001 §2.5; UI-C14-001 §§2,4,7).
+Image attachment UX SHALL be available whenever the local Chat composer is active, including Free Chat, Research, orchestration, and workflow-stage sessions. It SHALL remain unavailable during Hero control commands, approval/rejection prompts, ToDo forms, and remote Telegram command routing. Bindings: `Alt+A`/`/attach` open a filtered file picker; `Alt+V`/`/attach-clipboard` capture via native OS clipboard APIs (not OSC 52); `/attach <path>` attaches an explicit path; terminal drag-and-drop delivered as bracketed paste recognizes plain, quoted, shell-escaped, and local `file:` URI image paths and stages an attachment. When bracketed paste is unavailable, clearly quoted paths and local `file:` URIs may still be promoted when their complete payload is received; bare path-looking input remains text because ordinary key input has no portable drop marker. Planning validates `Alt+A`/`Alt+V` as free relative to existing Alt bindings (PRD-C14-001 §2.5; UI-C14-001 §§2,4,7).
 
 #### Scenario: Alt+A opens picker in Chat
 - **WHEN** Chat is focused in any conversational mode and the user presses Alt+A
@@ -113,6 +113,14 @@ Image attachment UX SHALL be available whenever the local Chat composer is activ
 #### Scenario: Research and workflow sessions accept attachments
 - **WHEN** a Research, orchestration, or workflow-stage Chat session is active and the user invokes an attachment binding
 - **THEN** the attachment is staged for that conversational turn and follows the same validation and capability admission as Free Chat
+
+#### Scenario: Terminal drag-and-drop stages an image attachment
+- **WHEN** a terminal delivers a dropped image as bracketed paste using a plain path, quoted/escaped path, or local `file:` URI
+- **THEN** the TUI normalizes the local path, stages asynchronous image validation, and does not insert the dropped path into the prompt input
+
+#### Scenario: Ordinary bare path remains text
+- **WHEN** a bare path-looking string arrives as ordinary unbracketed key input
+- **THEN** the TUI leaves it in the prompt input because the terminal supplied no portable indication that it was dragged
 
 #### Scenario: Hero controls reject attachments
 - **WHEN** the user submits an image together with a Hero control command or approval/rejection response
@@ -139,11 +147,11 @@ Validated attachments SHALL render as chips below the text input and above the s
 - **THEN** an error chip replaces the pending chip and submit cannot include that file
 
 ### Requirement: Transcript SHALL render asset cards with keyboard actions
-Model/tool image assets SHALL render as transcript cards with metadata and actions: Enter preview, `o` open in system viewer (xdg-open/open with TUI suspend/resume), `c` copy path, `a` attach to next composer turn, `s` save via inline path dialog. All I/O SHALL be `tea.Cmd`. For sessions registered in durable History, cards SHALL be reconstructed from persisted `session_events` and `session_assets` after TUI restart without loading image bytes into the Bubble Tea model. Cards MUST NOT be invented when `transcript_state` is `unavailable_legacy` (PRD-C14-001 §§2.6,2.14; PRD-C16-001 §3.3; UI-C14-001 §§3,5–6; UI-C16-001 §8; ADR-078; ADR-096).
+Model/tool image assets SHALL render as transcript cards with metadata and actions: `Enter/o` open in system viewer (xdg-open/open with TUI suspend/resume), `c` copy path, `a` attach to next composer turn, and `s` save via inline path dialog. Focused composer chips SHALL expose `Enter/o` open, `c` copy path, `s` save, and `x/Delete` remove. Inline pixel, Unicode mosaic, Kitty, Sixel, and iTerm2 previews are discontinued. All I/O SHALL be `tea.Cmd`. For sessions registered in durable History, cards SHALL be reconstructed from persisted `session_events` and `session_assets` after TUI restart without loading image bytes into the Bubble Tea model. Cards MUST NOT be invented when `transcript_state` is `unavailable_legacy` (PRD-C14-001 §§2.6,2.14; PRD-C16-001 §3.3; UI-C14-001 §§3,5–6; UI-C16-001 §8; ADR-078; ADR-096).
 
 #### Scenario: Card actions remain keyboard-only
 - **WHEN** an asset card is focused
-- **THEN** Enter/o/c/a/s perform preview/open/copy/attach/save without requiring a mouse
+- **THEN** Enter/o/c/a/s perform open/copy/attach/save without requiring a mouse
 
 #### Scenario: Open suspends the TUI
 - **WHEN** the user presses `o` on a card
@@ -163,15 +171,15 @@ Model/tool image assets SHALL render as transcript cards with metadata and actio
 
 ### Requirement: Capability and progress states SHALL be visible and non-blocking
 
-Unsupported-model submit errors, validation/clipboard/mosaic/save/open progress indicators, and footer hints for Alt+A/Alt+V SHALL follow UI-C14-001. Indicators MUST NOT block keyboard handling (UI-C14-001 §§2.4,6–7).
+Unsupported-model submit errors, validation/clipboard/save/open progress indicators, and footer hints for Alt+A/Alt+V/Alt+C/Alt+G SHALL follow UI-C14-001. Indicators MUST NOT block keyboard handling (UI-C14-001 §§2.4,6–7).
 
 #### Scenario: Capability error copy
 - **WHEN** submit is blocked for an incapable model
 - **THEN** the inline error names the model and harness and tells the user to remove attachments or switch models
 
-#### Scenario: Mosaic spinner is async
-- **WHEN** mosaic rendering is in progress
-- **THEN** the card shows a spinner and the TUI continues to accept key events
+#### Scenario: Composer chip actions remain keyboard-only
+- **WHEN** an attachment chip is focused
+- **THEN** Enter/o/c/s/x perform open/copy/save/remove without requiring a mouse
 
 ### Requirement: Chat SHALL show finding handoff and exact diagnostics
 After a valid failed report is atomically persisted, Chat SHALL show the source, created/reopened IDs, owners, one-line issues, and loop-back routing without pasting the entire report. Implementation Execute SHALL display owned planned `task-*` and findings `find-*` separately. Completion-gate failures SHALL show diagnostic code, field path, offending ID/value, assigned IDs when relevant, and that nothing was persisted (UI-C15-001 §§3–5).

@@ -4,7 +4,7 @@
 
 ## 1. Scope
 
-Defines terminal UX for image attachment input and image asset output in the Hero TUI Free Chat. Applies to Linux and macOS. Does not apply to Research or workflow-stage sessions.
+Defines terminal UX for image attachment input and image asset output in the Hero TUI's local Chat modes. Applies to Linux and macOS. It does not apply to control commands, approval/ToDo forms, or Telegram routing.
 
 ---
 
@@ -31,9 +31,13 @@ The composer area renders attachment chips below the text input line and above t
 | `Alt+A` or `/attach` | Open file picker |
 | `Alt+V` or `/attach-clipboard` | Capture image from system clipboard |
 | `/attach <path>` | Attach a file by explicit path |
-| Bracketed paste of a filesystem path | TUI offers to attach it as an image (confirmation prompt inline) |
+| Terminal drag-and-drop via bracketed paste | Recognize plain, quoted, shell-escaped, or local `file:` URI image paths; stage the image as an attachment instead of inserting the path |
 | Backspace in text field | Does not remove a chip |
 | Focus chip + `x` or `Delete` | Remove that attachment |
+| `Alt+C` | Focus the attachment-chip list; `↑↓` selects a chip |
+| `Enter` or `o` (focused chip) | Open the materialized image in the system viewer |
+| `c` (focused chip) | Copy the materialized image path |
+| `s` (focused chip) | Open the save/export dialog |
 | `Enter` (in text field, with chips) | Send turn; images sent first, then text |
 | `Enter` (chips only, no text) | Send image-only turn |
 
@@ -80,7 +84,7 @@ After a turn that produces an image asset, the card appears in the transcript at
 ```
 ┌─ Image  ──────────────────────────────────────────┐
 │ mockup-home.png · PNG · 1536×1024 · 1.8 MB        │
-│ [enter] preview  [o] open  [c] copy path           │
+│ [enter/o] open  [c] copy path                      │
 │ [a] attach  [s] save                               │
 └────────────────────────────────────────────────────┘
 ```
@@ -88,30 +92,13 @@ After a turn that produces an image asset, the card appears in the transcript at
 - The card is keyboard-navigable from the transcript. Focus moves to it with standard scroll/cursor keys.
 - `Source` label variants: "Image generated" (model/tool), "Image received" (user attachment echo, if shown).
 
-### 3.2 Unicode mosaic preview
+### 3.2 Inline preview (discontinued)
 
-Pressing `Enter` on a focused card (or the `preview` action) expands an inline Unicode mosaic below the card:
+The TUI intentionally does not render image pixels inline. `Enter` and `o` open the selected image in the system default viewer; the text card remains visible and keyboard-navigable.
 
-```
-┌─ Image  ──────────────────────────────────────────┐
-│ mockup-home.png · PNG · 1536×1024 · 1.8 MB        │
-│ [enter] close  [o] open  [c] copy path             │
-│ [a] attach  [s] save                               │
-├────────────────────────────────────────────────────┤
-│ ██████████████████████████████████████████████████ │
-│ ██▓▓░░░░▓███▓░░░░░░░░░░░░░░▓████████▓░░░░░███████ │
-│ ██████████████████████████████████████████████████ │
-│ (mosaic — 80×24 cells, truncated to pane width)    │
-└────────────────────────────────────────────────────┘
-```
+### 3.3 Advanced inline preview (discontinued)
 
-- Mosaic dimensions adapt to the current terminal width and the available pane height.
-- On terminals without 256+ color support, the `preview` action shows: `Preview unavailable (terminal color depth insufficient). Use [o] to open in viewer.`
-- The expanded mosaic state persists while the card remains in view; closing collapses it.
-
-### 3.3 Advanced inline preview (optional, phase 4)
-
-When Kitty, Sixel, or iTerm2 support is enabled and detected, `preview` renders pixels instead of a mosaic. The card action bar remains visible and navigable. The inline image is cleared on scroll or resize; the card reverts to mosaic (or card-only) state automatically.
+Kitty, Sixel, iTerm2, and other terminal image protocols are not implemented or opt-in in the current TUI.
 
 ### 3.4 Tool-generated asset cards
 
@@ -119,10 +106,14 @@ Image files written by a tool during a turn appear as asset cards at the end of 
 
 ```
 [tool wrote] design-export.png · PNG · 2048×1536 · 3.4 MB
-[enter] preview  [o] open  [c] copy path  [a] attach  [s] save
+[enter/o] open  [c] copy path  [a] attach  [s] save
 ```
 
 Multiple tool-written images appear as separate cards in creation order.
+
+### 3.5 Composer attachment actions
+
+Press `Alt+C` to focus the attachment chips, then use `↑↓` to select one. The focused chip exposes `Enter/o` to open, `c` to copy its materialized path, `s` to save/export it, and `x`/`Delete` to remove it. `a` is not shown for a composer chip because it is already attached.
 
 ---
 
@@ -137,7 +128,7 @@ Multiple tool-written images appear as separate cards in creation order.
 
 ## 5. Save dialog
 
-Pressing `s` on a focused asset card opens an inline path input:
+Pressing `s` on a focused asset card or composer attachment chip opens an inline path input:
 
 ```
 Save to: ~/Downloads/mockup-home.png  [enter confirm]  [esc cancel]
@@ -156,7 +147,6 @@ Save to: ~/Downloads/mockup-home.png  [enter confirm]  [esc cancel]
 |---|---|
 | Clipboard capture in progress | Spinner on the attachment area |
 | File validation in progress | Spinner chip in composer |
-| Mosaic rendering | Spinner in card preview area |
 | External viewer launching | One-line status: `Opening mockup-home.png…` |
 | Save in progress | Spinner on save dialog |
 
@@ -168,16 +158,17 @@ All indicators are non-blocking: the TUI remains responsive to keyboard input du
 
 | Key | Context | Action |
 |---|---|---|
-| `Alt+A` | Composer (Free Chat) | Open file picker |
-| `Alt+V` | Composer (Free Chat) | Attach from clipboard |
+| `Alt+A` | Local Chat composer | Open file picker |
+| `Alt+V` | Local Chat composer | Attach from clipboard |
 | `Enter` | Composer | Send turn |
 | `Delete` / `x` | Focused chip | Remove attachment |
-| `Enter` | Focused asset card | Toggle mosaic preview |
-| `o` | Focused asset card | Open in system viewer |
-| `c` | Focused asset card | Copy path to clipboard |
+| `Alt+C` | Composer with attachments | Focus attachment chips |
+| `Enter` / `o` | Focused asset card or attachment chip | Open in system viewer |
+| `c` | Focused asset card or attachment chip | Copy path to clipboard |
 | `a` | Focused asset card | Attach to next turn |
-| `s` | Focused asset card | Open save dialog |
-| `Esc` | File picker / save dialog | Cancel |
+| `s` | Focused asset card or attachment chip | Open save dialog |
+| `x` / `Delete` | Focused attachment chip | Remove attachment |
+| `Esc` | File picker / save dialog / media focus | Cancel or return to composer |
 
 Key assignments for `Alt+A` and `Alt+V` must be validated against the existing keymap during Planning. If either conflicts with an existing binding, the planning agent proposes an alternative that does not break the current keymap.
 
@@ -186,7 +177,7 @@ Key assignments for `Alt+A` and `Alt+V` must be validated against the existing k
 ## 8. Accessibility and terminal compatibility
 
 - All image content remains accessible via the text card (file name, dimensions, size, actions) regardless of terminal capability.
-- Color degradation: mosaic degrades gracefully when the terminal lacks 256+ color support.
-- SSH and terminal multiplexer environments: mosaic is the primary preview (pixel protocols are disabled by default); `open` action and `copy path` remain functional.
+- SSH and terminal multiplexer environments: the materialized path remains available through `open` and `copy path`; no terminal image protocol is required.
+- Drag-and-drop works best when the terminal/multiplexer preserves bracketed paste. Without it, clearly quoted paths and local `file:` URIs are promoted when their complete payload is received; a bare path has no portable drop marker and should use `/attach <path>`.
 - No UI element depends on mouse input; full keyboard navigation is mandatory.
-- Resize: the mosaic (if expanded) is re-rendered on `tea.WindowSizeMsg`; re-render is async and non-blocking.
+- Resize affects only textual layout; no image decode or preview render is scheduled.

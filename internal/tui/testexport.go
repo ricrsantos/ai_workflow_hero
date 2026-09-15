@@ -274,6 +274,10 @@ func AssetsForTest(m model) []harness.Asset {
 // SetAssetFocusForTest selects the asset card action surface.
 func SetAssetFocusForTest(m model, focused bool) model {
 	m.assetFocus = focused
+	if focused {
+		m.shellFocus = shellFocusContent
+		m.attachmentFocus = false
+	}
 	m.chatInputFocused = !focused
 	return m
 }

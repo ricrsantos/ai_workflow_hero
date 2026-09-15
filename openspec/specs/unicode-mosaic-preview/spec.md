@@ -1,22 +1,18 @@
-# unicode-mosaic-preview Specification
+# unicode-mosaic-preview Specification (discontinued)
 
 ## Purpose
 TBD - created by archiving change tui-multimodal-images. Update Purpose after archive.
 
+## Status
+
+This archived design is retained for traceability only. The current TUI does not decode or render image previews; asset cards and composer chips use textual metadata plus external open/copy/save/remove actions.
+
 ## Requirements
 
-### Requirement: Unicode mosaic preview SHALL be mandatory and async
+### Requirement: Unicode mosaic preview SHALL remain discontinued
 
-Every image asset card SHALL offer a Unicode block-character + ANSI-color mosaic preview computed asynchronously as a `tea.Cmd`, never inside `View()`. Mosaic SHALL respect pane width/height, re-render on resize without blocking, and degrade to card-only guidance when terminal color depth is below 256 colors (PRD-C14-001 §2.7; ADR-081; UI-C14-001 §3.2).
+The current TUI MUST NOT decode image files or render Unicode mosaic previews. Textual asset-card and composer-chip actions remain the supported image surface.
 
-#### Scenario: Enter toggles mosaic
-- **WHEN** the user focuses an asset card and presses Enter
-- **THEN** a mosaic region expands below the card without freezing input, and Enter again collapses it
-
-#### Scenario: Low-color terminal degrades
-- **WHEN** preview is requested on a terminal without 256+ colors
-- **THEN** the UI states preview is unavailable and points the user to open-in-viewer
-
-#### Scenario: Tests avoid huge ANSI snapshots
-- **WHEN** mosaic tests run
-- **THEN** they use golden invariants or bounded fixtures rather than large ANSI sequence snapshots
+#### Scenario: Asset card stays text-only
+- **WHEN** an image asset card is shown
+- **THEN** it exposes open/copy/attach/save actions without a preview region

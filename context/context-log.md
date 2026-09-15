@@ -2446,3 +2446,90 @@ materialization.
 
 **Verification**: `go test ./...`; focused `go test -race ./internal/tui`
 picker tests; `gofmt` and `git diff --check`.
+
+## 2026-09-15 — Chat image picker responsive layout
+
+**Problem**: After directory results began reaching the Bubbles file picker,
+the picker was still rendered together with the transcript and composer. The
+fixed frame retained the bottom chrome and could clip the picker; terminal
+resize events also changed the parent dimensions without updating the
+picker's internal viewport.
+
+**Fix**: An active picker now owns the Chat content pane, with its height
+derived from the responsive frame while the status/footer remain anchored.
+The root applies each `WindowSizeMsg` through the picker's public height API,
+which preserves its private cursor window safely on both shrink and grow
+events. The footer exposes picker-specific navigation hints.
+
+**Tests**: The temporary-workspace attachment regression now asserts the
+picker entry remains visible in the complete TUI frame through both terminal
+shrink and grow events, with the frame retaining the requested row count. A
+stage-handoff preparation test also cancels and joins its automatic recovery
+worker before temporary-directory cleanup to avoid an unrelated asynchronous
+cleanup race.
+
+**Verification**: Focused attachment and handoff tests pass repeatedly;
+`go test ./...`, focused `go test -race ./internal/tui`, `go vet ./...`,
+`gofmt`, and `git diff --check` are clean.
+
+## 2026-09-15 — TUI image preview discontinued and attachment actions unified
+
+**Request**: The user confirmed that inline image preview is not useful and
+asked for a working `Alt+G`, no preview, and the same applicable image actions
+on response cards and composer attachments: open (`o`), copy path (`c`), save
+(`s`), and remove (`x`/`Delete`) for an attachment.
+
+**Fix**: `Alt+G` and `Alt+C` are centralized Bubble Tea bindings routed before
+navbar handling. Media focus now owns navigation keys, clears stale focus when
+leaving the content pane, and keeps the composer from receiving card/chip
+actions. Response cards use `Enter/o` for the system viewer; composer chips
+now expose `Enter/o`, `c`, `s`, and `x`/`Delete`. Save dialog state is shared by
+cards and chips and all file, clipboard, and viewer work remains asynchronous.
+Inline mosaic and terminal-protocol preview code and TUI wiring were removed.
+
+**Verification**: Focused `internal/tui` tests pass, including Alt+G focus,
+card-without-preview, and attachment open/copy/save/remove behavior. `go test
+./...`, `go test -race ./internal/tui`, `go vet ./...`, strict validation of
+all 23 living OpenSpec specs, and `git diff --check` pass.
+
+## 2026-09-15 — Terminal drag-and-drop image attachments
+
+**Problem**: Dragging an image into a terminal usually arrives as a
+bracketed-paste payload, but emulators commonly wrap the path in quotes,
+escape spaces, or send a local `file:` URI. The TUI only recognized a literal
+filesystem path, so those payloads were inserted into the prompt as text or
+were passed to validation in the wrong form.
+
+**Fix**: Added a terminal-path normalizer at the shared attachment boundary.
+It accepts plain, single/double-quoted, shell-escaped, and local `file:` URI
+forms, rejects non-local/qualified file URIs, and passes the resulting path to
+the existing asynchronous validation/materialization flow. Ordinary
+unbracketed key input remains text because terminal protocols do not identify
+whether it came from drag-and-drop; `/attach <path>` remains the fallback.
+
+**Tests**: Added regressions for all supported terminal payload forms,
+attachment staging without prompt leakage, and unbracketed text preservation.
+
+**Verification**: `gofmt`, `go test ./...`, and `git diff --check` pass.
+
+## 2026-09-15 — Dragged image keeps composer focus
+
+**Problem**: After a dragged image was staged, the attachment action surface
+could retain focus in the current media-navigation state. Pressing `Enter`
+then invoked the chip's open action instead of inserting the next composer
+line, unlike the clipboard and picker attachment flows.
+
+**Fix**: Path, clipboard, and picker attachment staging now clears media focus
+and explicitly returns focus to the Chat composer. Opening or cancelling the
+picker also clears stale chip/card focus. The attachment remains rendered
+below the text input while ordinary `Enter` continues to create a newline.
+The terminal input path also promotes clearly quoted drag payloads and local
+`file:` URIs when bracketed paste is unavailable, including payloads split
+across individual key events; bare unquoted paths remain ordinary text.
+
+**Tests**: The drag-and-drop regression now verifies no media focus remains,
+the chip materializes successfully, quoted payloads are promoted even when
+split across key events, and `Enter` inserts `\n` without opening a viewer
+command.
+
+**Verification**: `gofmt`, `go test ./...`, and `git diff --check` pass.
