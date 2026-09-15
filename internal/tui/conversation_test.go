@@ -1153,6 +1153,73 @@ func TestTranscriptVisibleLinesScalesWithHeight(t *testing.T) {
 	}
 }
 
+func TestChatInputKeepsTwoFreeLinesWhenSpaceIsTight(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 13)
+
+	if got := m.chatInputVisibleLines(); got != chatInputMinLines {
+		t.Fatalf("tight terminal composer rows = %d want %d", got, chatInputMinLines)
+	}
+}
+
+func TestChatInputGrowsToSixFreeLinesAndShrinksTranscript(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 40)
+	m = EnterConversationForTest(m)
+
+	tests := []struct {
+		name  string
+		lines int
+		want  int
+	}{
+		{name: "empty uses default", lines: 1, want: chatInputDefaultLines},
+		{name: "short prompt keeps default", lines: 2, want: chatInputDefaultLines},
+		{name: "long prompt grows", lines: 4, want: 4},
+		{name: "maximum prompt", lines: chatInputMaxLines, want: chatInputMaxLines},
+		{name: "longer prompt stays capped", lines: 8, want: chatInputMaxLines},
+	}
+
+	var transcriptWithDefault int
+	var transcriptWithMaximum int
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := strings.TrimSuffix(strings.Repeat("x\n", tt.lines), "\n")
+			m = SetConversationInput(m, input)
+			if got := m.chatInputVisibleLines(); got != tt.want {
+				t.Fatalf("composer rows = %d want %d for %d visual lines", got, tt.want, tt.lines)
+			}
+			if tt.want == chatInputDefaultLines {
+				transcriptWithDefault = m.transcriptVisibleLines(m.contentAreaHeight())
+			}
+			if tt.want == chatInputMaxLines {
+				transcriptWithMaximum = m.transcriptVisibleLines(m.contentAreaHeight())
+			}
+		})
+	}
+
+	if transcriptWithMaximum < chatTranscriptMinLines {
+		t.Fatalf("maximum composer growth reduced transcript to %d rows", transcriptWithMaximum)
+	}
+	if transcriptWithDefault-transcriptWithMaximum != chatInputMaxLines-chatInputDefaultLines {
+		t.Fatalf("transcript rows changed by %d want %d when composer grows", transcriptWithDefault-transcriptWithMaximum, chatInputMaxLines-chatInputDefaultLines)
+	}
+}
+
+func TestChatInputStatusLineIsOutsideFreeTypingRows(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 100)
+	m = SetHeight(m, 40)
+	m = SetConversationInput(m, strings.TrimSuffix(strings.Repeat("x\n", chatInputMaxLines), "\n"))
+
+	boxRows := lipgloss.Height(m.renderConversationInput())
+	want := m.chatInputVisibleLines() + m.chatInputFixedHeight()
+	if boxRows != want {
+		t.Fatalf("composer box rows = %d want %d (free=%d fixed=%d)", boxRows, want, m.chatInputVisibleLines(), m.chatInputFixedHeight())
+	}
+}
+
 func TestTranscriptScrollsLongPrompt(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 80)

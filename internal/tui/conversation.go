@@ -36,7 +36,9 @@ const (
 
 // Visible content rows inside chat panes (excluding status row on composer).
 const (
-	chatInputVisibleLines  = 3
+	chatInputMinLines      = 2
+	chatInputDefaultLines  = 3
+	chatInputMaxLines      = 6
 	chatTranscriptMinLines = 2
 )
 
@@ -3790,26 +3792,8 @@ func (m model) transcriptVisibleLines(contentH int) int {
 // property/context row. It must not rebuild the transcript; that path used to
 // walk the full session on every keystroke and timer tick.
 func (m model) conversationChromeHeight() int {
-	var b strings.Builder
-	if header := m.renderConversationHeader(); header != "" {
-		b.WriteString(header)
-		b.WriteByte('\n')
-	}
-	if hint := m.renderScrollHintLine(); hint != "" {
-		b.WriteString(hint)
-		b.WriteByte('\n')
-	}
-	if m.convError != "" && !m.latestAgentFailed() {
-		b.WriteByte('\n')
-		b.WriteString(m.renderWrappedConvError())
-	}
-	b.WriteString(m.renderChatSlashOverlay())
-	if m.attachmentPickerActive {
-		b.WriteString(m.attachmentPicker.View())
-		b.WriteByte('\n')
-	}
-	b.WriteString(m.renderConversationInput())
-	return countContentLines(strings.TrimRight(b.String(), "\n"))
+	return m.conversationChromeHeightWithoutInput() +
+		m.chatInputFixedHeight() + m.chatInputVisibleLines()
 }
 
 func (m model) chatBoxWidth() int {
@@ -3848,10 +3832,99 @@ func (m model) chatContentWidth() int {
 }
 
 func (m model) chatInputVisibleLines() int {
-	if m.frameContentHeight() < 18 {
+	visible := chatInputDefaultLines
+	contentLines := len(m.inputContentLines(m.chatContentWidth()))
+	if contentLines > visible {
+		visible = contentLines
+	}
+	if visible > chatInputMaxLines {
+		visible = chatInputMaxLines
+	}
+
+	available := m.chatInputAvailableLines()
+	if available < visible {
+		visible = available
+	}
+	if visible < chatInputMinLines && available >= chatInputMinLines {
+		visible = chatInputMinLines
+	}
+	if visible < 1 {
+		// A terminal this small cannot preserve the normal two-line minimum;
+		// retain one usable row rather than allowing the composer to disappear.
 		return 1
 	}
-	return chatInputVisibleLines
+	return visible
+}
+
+// chatInputAvailableLines is the number of free typing rows that can fit
+// while preserving the minimum transcript and the composer's fixed chrome.
+// The transcript is deliberately represented by blank rows here instead of
+// rendering its history, keeping the View hot path independent of transcript
+// length while the user edits a prompt.
+func (m model) chatInputAvailableLines() int {
+	contentH := m.contentAreaHeight()
+	chromeWithoutInput := m.conversationChromeHeightWithoutInput()
+	available := contentH - chromeWithoutInput - chatTranscriptMinLines - m.chatInputFixedHeight()
+	if available < 0 {
+		return 0
+	}
+	return available
+}
+
+// chatInputFixedHeight counts composer rows that are not free for typing:
+// attachment chips, the mode/model status row, and the rounded border frame.
+func (m model) chatInputFixedHeight() int {
+	return len(m.renderAttachmentChipLines(m.chatContentWidth())) +
+		1 + chatBoxStyle.GetVerticalFrameSize()
+}
+
+// conversationChromeHeightWithoutInput returns all rows outside the minimum
+// transcript, excluding the composer. Keeping this separate prevents a
+// recursive height calculation and lets chatInputVisibleLines grow without
+// stealing the final transcript rows.
+func (m model) conversationChromeHeightWithoutInput() int {
+	var b strings.Builder
+	if header := m.renderConversationHeader(); header != "" {
+		b.WriteString(header)
+		b.WriteByte('\n')
+	}
+	if m.heroSessionHistorical {
+		b.WriteString(mutedStyle.Render(historicalContinuationBanner))
+		b.WriteByte('\n')
+	}
+
+	// renderConversationTranscript always emits exactly transcriptLines rows
+	// before its optional scroll hint. Blank placeholders keep this calculation
+	// independent from the amount of transcript history.
+	for i := 0; i < chatTranscriptMinLines; i++ {
+		b.WriteByte(' ')
+		b.WriteByte('\n')
+	}
+	if hint := m.renderScrollHintLine(); hint != "" {
+		b.WriteString(hint)
+		b.WriteByte('\n')
+	}
+
+	if m.convError != "" && !m.latestAgentFailed() {
+		b.WriteByte('\n')
+		b.WriteString(m.renderWrappedConvError())
+	}
+	b.WriteString(m.renderChatSlashOverlay())
+	if hint := m.renderTodoControlComposerHint(); hint != "" {
+		b.WriteByte('\n')
+		b.WriteString(mutedStyle.Render(hint))
+		b.WriteByte('\n')
+	}
+	if m.attachmentPickerActive {
+		b.WriteString(m.attachmentPicker.View())
+		b.WriteByte('\n')
+	}
+
+	rows := countContentLines(strings.TrimRight(b.String(), "\n"))
+	if rows < chatTranscriptMinLines {
+		return 0
+	}
+	return rows - chatTranscriptMinLines
 }
 
 func (m model) cachedResponseLines(msg *convMessage, contentW int) []string {

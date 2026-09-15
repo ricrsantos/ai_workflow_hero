@@ -52,6 +52,13 @@ New screen (or primary mode when an etapa requires interações):
 | Input | OpenCode-style boxed prompt with colored solid accent bar; status line shows **Build** or **Plan**, model slug, and harness name. For ordinary text, **Enter** inserts a newline without sending; **Alt+Enter** submits **interação** (does not conflict with **Alt+1–5** screen jumps). A recognized slash command is executed with **Enter**; **Alt+Enter** remains reserved for ordinary prompt submission. **Alt+y** copies the latest user prompt; **Alt+r** copies the latest agent turn; **Alt+i** copies the composer (OSC 52 + native clipboard). **Esc** dismisses the slash overlay when open, otherwise focuses the navbar. **`/` stays in the composer** and opens a filtered autocomplete overlay of the full palette (including `Go to - *`, Refresh, Quit, `/hero-*`, and imported commands). **Tab** on **`/hero-approve` `/hero-reject` `/hero-cancel` `/hero-continue` `/hero-finish` `/hero-back`** **inserts** the token; **Enter** executes it. **Tab** on **every other item** runs the same action as the full-screen palette (navigate / Execute immediately); **Enter** preserves that command execution behavior. **Tab** toggles Build ↔ Plan only when the overlay is closed (Plan → Cursor Agent CLI `--mode plan`). `/` on other screens still opens the full command palette. With a live `/hero-start` orchestrator session, `/hero-approve` (and `/hero-reject` `/hero-cancel` `/hero-finish` `/hero-continue` `/hero-back`) are sent as **follow-ups** to that session — they must not fail on SQLite `PendingApproval` (the waiting agent persists via CLI). ↑↓ move the composer caret between visual lines and scroll the unified transcript at the boundaries. |
 | Footer | Fixed hints: `tab focus · alt+m mode · / commands · enter newline or command · alt+enter send · alt+r/i copy · ↑↓ scroll · alt+q quit` |
 
+The composer reserves at least **2 free typing lines** whenever the terminal can
+fit them. It starts at **3 free lines**, grows with the prompt's visual wrapped
+lines up to **6 free lines**, and gives the reclaimed rows to the transcript so
+the response remains visible. The mode/model status row and rounded border are
+not counted as free typing lines. After submission, the composer returns to 3
+free lines (or the 2-line minimum when the window only permits that height).
+
 The left navbar ends with a blue timer subdivision below the navigation
 shortcut hint:
 

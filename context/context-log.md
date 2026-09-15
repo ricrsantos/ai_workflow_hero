@@ -1,5 +1,19 @@
 # Context Log
 
+## 2026-09-15 — Adaptive Chat composer height
+
+**Change**: The TUI Chat composer now reserves two free typing lines whenever the terminal can fit them, uses three free lines by default, grows with visual prompt wrapping up to six, and reserves the transcript's two-line minimum while growing. The mode/model row, attachment chips, and rounded border are excluded from the free-line count; after submission, clearing the composer restores the default or the available two-line minimum.
+
+**Implementation**: `internal/tui/conversation.go` balances the composer against the transcript through terminal-height and Lip Gloss frame calculations. `internal/tui/conversation_test.go` covers the tight-window minimum, growth/cap, transcript balance, and status-row accounting. UI-C03 documents the behavior.
+
+**Validation**: Targeted composer/transcript tests, the complete `internal/tui` suite, and `go test ./...` pass.
+
+## 2026-09-14 — Release v3.3.0
+
+**Action**: Minor bump `v3.2.0` → `v3.3.0` after `go test ./...`. Commit `f0901ef` syncs `.workflow-hero/models/codex.yml` overlay with embedded assets (ListModels authoritative; removed stale static `gpt-5.3-codex`). Tag pushed; `./scripts/release.sh`; GitHub Release with 8 binaries + `checksums.txt`.
+
+**URL**: https://github.com/ricrsantos/ai_workflow_hero/releases/tag/v3.3.0
+
 ## 2026-09-14 — Codex live response gap repair
 
 **Problem**: Codex `item/agentMessage/delta` could omit a span under app-server backpressure. The adapter retained the correct `item/completed` snapshot for `ExecutionResult.Output`, but the TUI displayed the corrupted partial text until the entire turn completed.
