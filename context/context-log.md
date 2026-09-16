@@ -1,5 +1,13 @@
 # Context Log
 
+## 2026-09-16 — Config TUI typing lag fix
+
+**Problem**: Cada tecla na tela de Config fazia 3 renders completos (`handleConfigEditKey` → `configEnsureFocusVisible` → `renderConfig`, + `clampContentOffset` → `renderContent` → `renderConfig`, + `View` → `renderFrame` → `renderConfig`), cada um com dezenas de queries SQLite (`Snapshot`/`ModelListState` por campo), um `os.Stat(go.mod)` e ~60-80 renders Lip Gloss.
+
+**Fix**: `handleConfigEditKey` não recalcula scroll por tecla (View faz o único render); `configEnsureFocusVisible` renderiza 1x e usa `clampContentOffsetForContent`; `renderConfig`/`configFields` usam `configRenderCache` de curta duração (1 Snapshot/State por harness+model, 1 stat por render). Sem mudança de comportamento; scroll volta a sincronizar em commit/navegação.
+
+**Validation**: `go vet ./internal/tui/`; `go test ./internal/tui/ -run TestConfig`; novos `TestConfigEditKeystrokeKeepsScrollOffset`, `TestConfigCachedFieldsMatchUncached`; `go test ./...` verde.
+
 ## 2026-09-16 — hero-sync inline sem Task, label HARN
 
 **Problem**: Após a primeira correção o sync ainda (1) exibia `[ORCH - …]` em vez do harness e (2) tentava despachar Task `context_agent` com `model inherit`, que o harness rejeita (`context_agent dispatch failed (model inherit), trying fallback scan...`).

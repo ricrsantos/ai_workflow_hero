@@ -413,6 +413,57 @@ func TestConfigEditKeysUpdateBufferAtCaret(t *testing.T) {
 	}
 }
 
+func TestConfigEditKeystrokeKeepsScrollOffset(t *testing.T) {
+	m := NewTestModel(nil)
+	m.width, m.height = 120, 12
+	m.screen = screenConfig
+	m.config.doc = &workflowconfig.Document{}
+	m.config.draft = workflowconfig.ManagedConfig{
+		Title: "title",
+		Stages: map[string]workflowconfig.ManagedStage{
+			"research": {Enabled: true, Purpose: "research", MaxIterations: 1, TimeoutMinutes: 1},
+		},
+		Agents: map[string]workflowconfig.AgentModelConfig{
+			"discover_agent": {Harness: "cursor", Model: "composer"},
+		},
+	}
+	m.config.editing = true
+	m.config.editBuffer = "ab"
+	m.config.editCursor = 2
+	m.contentOffset = 3
+
+	next, _ := m.handleConfigEditKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	got := next.(model)
+	if got.config.editBuffer != "abc" {
+		t.Fatalf("buffer=%q, want abc", got.config.editBuffer)
+	}
+	if got.contentOffset != 3 {
+		t.Fatalf("per-keystroke edit must not recompute scroll (offset=%d, want 3)", got.contentOffset)
+	}
+}
+
+func TestConfigCachedFieldsMatchUncached(t *testing.T) {
+	m := NewTestModel(nil)
+	m.config.draft = workflowconfig.ManagedConfig{
+		Stages: map[string]workflowconfig.ManagedStage{
+			"research": {Enabled: true, Purpose: "research", MaxIterations: 1, TimeoutMinutes: 1},
+		},
+		Agents: map[string]workflowconfig.AgentModelConfig{
+			"discover_agent": {Harness: "cursor", Model: "composer"},
+		},
+	}
+	plain := m.configFields()
+	cached := m.configFieldsCached(newConfigRenderCache())
+	if len(plain) != len(cached) {
+		t.Fatalf("field count plain=%d cached=%d", len(plain), len(cached))
+	}
+	for i := range plain {
+		if plain[i] != cached[i] {
+			t.Fatalf("field %d differs: %+v vs %+v", i, plain[i], cached[i])
+		}
+	}
+}
+
 func TestConfigDirtyLeaveDialogIsVisibleAndAcceptsEnterToSave(t *testing.T) {
 	m := NewTestModel(nil)
 	m.width, m.height = 100, 16

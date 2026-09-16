@@ -77,6 +77,65 @@ type configLoadedMsg struct {
 	err             error
 }
 
+// configRenderCache memoizes the expensive lookups used while building the
+// Config screen so a single render performs at most one Snapshot/ModelListState
+// per unique harness+model and one go.mod stat. It is deliberately
+// short-lived: one instance per renderConfig/configFields call. Model writes
+// (draft changes, model-list refresh) create a new cache on the next render,
+// so no explicit invalidation is needed.
+type configRenderCache struct {
+	snaps       map[string]modelprops.Snapshot
+	states      map[string]modelprops.ModelListState
+	hasGoModule bool
+	goModCached bool
+}
+
+func newConfigRenderCache() *configRenderCache {
+	return &configRenderCache{
+		snaps:  make(map[string]modelprops.Snapshot),
+		states: make(map[string]modelprops.ModelListState),
+	}
+}
+
+func configSnapshotKey(harnessID, modelID string) string {
+	return strings.ToLower(strings.TrimSpace(harnessID)) + "\x00" + strings.TrimSpace(modelID)
+}
+
+func (c *configRenderCache) snapshot(m model, harnessID, modelID string) modelprops.Snapshot {
+	if m.propsSvc == nil {
+		return modelprops.Snapshot{}
+	}
+	key := configSnapshotKey(harnessID, modelID)
+	if snap, ok := c.snaps[key]; ok {
+		return snap
+	}
+	snap := m.propsSvc.Snapshot(harnessID, modelID)
+	c.snaps[key] = snap
+	return snap
+}
+
+func (c *configRenderCache) modelListState(m model, harnessID string) modelprops.ModelListState {
+	key := strings.ToLower(strings.TrimSpace(harnessID))
+	if state, ok := c.states[key]; ok {
+		return state
+	}
+	var state modelprops.ModelListState
+	if m.propsSvc != nil {
+		state = m.propsSvc.ModelListState(harnessID)
+	}
+	c.states[key] = state
+	return state
+}
+
+func (c *configRenderCache) projectHasGoModule(projectDir string) bool {
+	if c.goModCached {
+		return c.hasGoModule
+	}
+	c.hasGoModule = workflowconfig.ProjectHasGoModule(projectDir)
+	c.goModCached = true
+	return c.hasGoModule
+}
+
 type configSavedMsg struct {
 	doc     *workflowconfig.Document
 	retries map[string]bool
@@ -252,6 +311,10 @@ var (
 )
 
 func (m model) configFields() []configField {
+	return m.configFieldsCached(newConfigRenderCache())
+}
+
+func (m model) configFieldsCached(c *configRenderCache) []configField {
 	fields := []configField{
 		{"title", "Title", "text", "", ""},
 		{"objective", "Objective", "text", "", ""},
@@ -296,19 +359,23 @@ func (m model) configFields() []configField {
 			if agent == "browser_ui_agent" && !m.config.draft.Scope.Frontend {
 				continue
 			}
-			fields = append(fields, m.agentFields(agent, name)...)
+			fields = append(fields, m.agentFieldsCached(c, agent, name)...)
 		}
 	}
 	for _, name := range requiredAgents {
 		if configAgentStage(name) == "" {
-			fields = append(fields, m.agentFields(name, "")...)
+			fields = append(fields, m.agentFieldsCached(c, name, "")...)
 		}
 	}
-	fields = append(fields, m.agentFields("fallback_model", "")...)
+	fields = append(fields, m.agentFieldsCached(c, "fallback_model", "")...)
 	return fields
 }
 
 func (m model) agentFields(name, stage string) []configField {
+	return m.agentFieldsCached(newConfigRenderCache(), name, stage)
+}
+
+func (m model) agentFieldsCached(c *configRenderCache, name, stage string) []configField {
 	prefix := "agents." + name
 	if name == "fallback_model" {
 		prefix = name
@@ -326,7 +393,7 @@ func (m model) agentFields(name, stage string) []configField {
 		{harness.PropertyThink, "thinking"},
 		{harness.PropertyEffort, "reasoning_effort"},
 	} {
-		if m.configPropertyVisible(agent, property.key) {
+		if m.configPropertyVisibleCached(c, agent, property.key) {
 			fields = append(fields, configField{prefix + "." + property.suffix, configAgentLabel(name) + " " + property.key, "property", stage, name})
 		}
 	}
@@ -347,7 +414,7 @@ func (m model) agentFields(name, stage string) []configField {
 			{harness.PropertyThink, "thinking"},
 			{harness.PropertyEffort, "reasoning_effort"},
 		} {
-			if m.configPropertyVisible(subagent, property.key) {
+			if m.configPropertyVisibleCached(c, subagent, property.key) {
 				fields = append(fields, configField{prefix + ".subagent." + property.suffix, configAgentLabel(name) + " subagent " + property.key, "property", stage, name + ":subagent"})
 			}
 		}
@@ -381,10 +448,14 @@ func configAgentStage(name string) string {
 }
 
 func (m model) configPropertyVisible(agent workflowconfig.AgentModelConfig, property string) bool {
+	return m.configPropertyVisibleCached(newConfigRenderCache(), agent, property)
+}
+
+func (m model) configPropertyVisibleCached(c *configRenderCache, agent workflowconfig.AgentModelConfig, property string) bool {
 	if m.propsSvc == nil {
 		return true
 	}
-	snap := m.propsSvc.Snapshot(agent.Harness, agent.Model)
+	snap := c.snapshot(m, agent.Harness, agent.Model)
 	if snap.Source == modelprops.SourceUnknown {
 		return true
 	}
@@ -392,22 +463,30 @@ func (m model) configPropertyVisible(agent workflowconfig.AgentModelConfig, prop
 }
 
 func (m model) configCapabilityWarning(field configField) string {
+	return m.configCapabilityWarningCached(newConfigRenderCache(), field)
+}
+
+func (m model) configCapabilityWarningCached(c *configRenderCache, field configField) string {
 	if m.propsSvc == nil || field.kind != "model" || field.agent == "" {
 		return ""
 	}
 	harnessID, modelID := m.configModelFieldPair(field)
-	if m.propsSvc.Snapshot(harnessID, modelID).Source != modelprops.SourceUnknown {
+	if c.snapshot(m, harnessID, modelID).Source != modelprops.SourceUnknown {
 		return ""
 	}
 	return "⚠ Missing capability data; configured properties are preserved."
 }
 
 func (m model) configModelAvailabilityWarning(field configField) string {
+	return m.configModelAvailabilityWarningCached(newConfigRenderCache(), field)
+}
+
+func (m model) configModelAvailabilityWarningCached(c *configRenderCache, field configField) string {
 	if m.propsSvc == nil || field.kind != "model" || field.agent == "" {
 		return ""
 	}
 	harnessID, modelID := m.configModelFieldPair(field)
-	state := m.propsSvc.ModelListState(harnessID)
+	state := c.modelListState(m, harnessID)
 	if !state.Authoritative || containsModelID(state.Models, modelID) {
 		return ""
 	}
@@ -603,7 +682,11 @@ func (m model) handleConfigEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.config.editCursor = cursor + len(msg.Runes)
 		}
 	}
-	return m.configEnsureFocusVisible(), nil
+	// Per-keystroke path: keep Update cheap. The caret moves inside the
+	// already-focused row, so no scroll recompute is needed here — View()
+	// renders once after Update and clipScrolledContent bounds the viewport
+	// for display. Full scroll resync happens on commit/cancel/navigation.
+	return m, nil
 }
 
 func (m model) commitConfigEdit() model {
@@ -1190,7 +1273,11 @@ func (m model) configEnsureFocusVisible() model {
 	if m.screen != screenConfig || m.frameContentHeight() <= 0 {
 		return m
 	}
-	lines := strings.Split(m.renderConfig(), "\n")
+	// Single render: reuse the already-built content for both focus lookup
+	// and offset clamping instead of rendering a second time inside
+	// clampContentOffset/maxContentOffset.
+	content := m.renderConfig()
+	lines := strings.Split(content, "\n")
 	for index, line := range lines {
 		if strings.Contains(line, "▸ ") {
 			height := m.frameContentHeight()
@@ -1199,8 +1286,28 @@ func (m model) configEnsureFocusVisible() model {
 			} else if index >= m.contentOffset+height {
 				m.contentOffset = index - height + 1
 			}
-			return m.clampContentOffset()
+			return m.clampContentOffsetForContent(content)
 		}
+	}
+	return m
+}
+
+// clampContentOffsetForContent bounds contentOffset against already-rendered
+// content, avoiding the second full render that clampContentOffset performs
+// via maxContentOffset/renderContent.
+func (m model) clampContentOffsetForContent(content string) model {
+	if !m.screenHasContentScroll() {
+		return m
+	}
+	maxOff := countContentLines(content) - m.frameContentHeight()
+	if maxOff < 0 {
+		maxOff = 0
+	}
+	if m.contentOffset > maxOff {
+		m.contentOffset = maxOff
+	}
+	if m.contentOffset < 0 {
+		m.contentOffset = 0
 	}
 	return m
 }
@@ -1291,7 +1398,8 @@ func (m model) renderConfig() string {
 		return b.String()
 	}
 	b.WriteByte('\n')
-	fields := m.configFields()
+	cache := newConfigRenderCache()
+	fields := m.configFieldsCached(cache)
 	focus := 0
 	if len(fields) > 0 {
 		focus = m.config.focus % len(fields)
@@ -1306,7 +1414,7 @@ func (m model) renderConfig() string {
 			b.WriteString(headerStyle.Render(section))
 			b.WriteByte('\n')
 			if section == "Verification" {
-				for _, line := range m.configReproPolicyLines() {
+				for _, line := range m.configReproPolicyLinesCached(cache) {
 					b.WriteString(mutedStyle.Render("  " + line))
 					b.WriteByte('\n')
 				}
@@ -1327,10 +1435,10 @@ func (m model) renderConfig() string {
 		if message, ok := m.config.fieldErrors[field.path]; ok {
 			line += "\n" + errorStyle.Render("    ✗ "+message)
 		}
-		if warning := m.configModelAvailabilityWarning(field); warning != "" {
+		if warning := m.configModelAvailabilityWarningCached(cache, field); warning != "" {
 			line += "\n" + warnStyle.Render("    "+warning)
 		}
-		if warning := m.configCapabilityWarning(field); warning != "" {
+		if warning := m.configCapabilityWarningCached(cache, field); warning != "" {
 			line += "\n" + warnStyle.Render("    "+warning)
 		}
 		b.WriteString(line)
@@ -1352,11 +1460,15 @@ func (m model) renderConfig() string {
 // editable here — so the screen shows the resolved result instead of leaving
 // the user to discover it through a rejected report.
 func (m model) configReproPolicyLines() []string {
+	return m.configReproPolicyLinesCached(newConfigRenderCache())
+}
+
+func (m model) configReproPolicyLinesCached(c *configRenderCache) []string {
 	projectDir := ""
 	if m.svc != nil {
 		projectDir = m.svc.ProjectDir
 	}
-	hasGoModule := workflowconfig.ProjectHasGoModule(projectDir)
+	hasGoModule := c.projectHasGoModule(projectDir)
 	policy := workflowconfig.BuildReproPolicy(m.config.draft.Verification, hasGoModule)
 
 	origin := "configured"
