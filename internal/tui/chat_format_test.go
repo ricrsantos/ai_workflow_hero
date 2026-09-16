@@ -238,8 +238,11 @@ func TestTUIRuntimeCommandPrompt_HeroSyncOverrides(t *testing.T) {
 	if !strings.Contains(got, "/hero-sync") {
 		t.Fatalf("missing sync context: %q", got)
 	}
-	if !strings.Contains(got, "context_agent") {
-		t.Fatalf("missing context_agent: %q", got)
+	if !strings.Contains(got, "do NOT dispatch Task") {
+		t.Fatalf("missing inline no-Task override: %q", got)
+	}
+	if strings.Contains(got, "Invoke `context_agent` via the Task") {
+		t.Fatalf("sync prompt must not dispatch context_agent: %q", got)
 	}
 	if !strings.Contains(got, "hero doctor") {
 		t.Fatalf("missing hero doctor: %q", got)

@@ -1,5 +1,13 @@
 # Context Log
 
+## 2026-09-16 — hero-sync inline sem Task, label HARN
+
+**Problem**: Após a primeira correção o sync ainda (1) exibia `[ORCH - …]` em vez do harness e (2) tentava despachar Task `context_agent` com `model inherit`, que o harness rejeita (`context_agent dispatch failed (model inherit), trying fallback scan...`).
+
+**Fix**: Sync virou turno freechat bootstrap de verdade — `hero-sync.md` (8 arquivos: 4 assets + 4 cópias instaladas) manda escanear inline na sessão, sem Task/`context_agent`/Model Resolution; TUI removeu `sync` de `usesOrchestratorRuntime` (sem corpo `orchestration_agent.md`, sem identidade ORCH → header `[HARN - modelo · harness]`), com preamble freechat próprio. Trava de regressão em `runtime_assets_test.go` proíbe `Invoke context_agent via Task` e `agents.context_agent` no sync.
+
+**Validation**: `go test ./internal/tui/ ./internal/common/`; `go test ./...` verde; `go vet` limpo.
+
 ## 2026-09-16 — hero-sync passa a usar o modelo do chat
 
 **Problem**: `/hero-sync` em projeto recém-instalado ignorava o modelo do chat e resolvia `agents.orchestration_agent` / `agents.context_agent` dos defaults do template (`composer-2.5`, `gpt-5.3-codex-medium`), que podem estar indisponíveis. `LoadCurrent` faz fallback para o template, e `orchestratorExecuteModel` + `applyAgentRuntimePair` preferiam o YAML ao `/model`.

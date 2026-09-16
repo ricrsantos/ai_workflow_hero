@@ -88,9 +88,6 @@ func TestPaletteSyncOpensConversation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-sync.md"), []byte("# /hero-sync\n\nSYNC_MARKER"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH_SYNC"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
 	svc := newTestServiceInDir(t, dir)
 	h := &streamingHarness{deltas: []string{"syncing"}}
@@ -128,11 +125,12 @@ func TestPaletteSyncOpensConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, "SYNC_MARKER") {
 		t.Fatalf("missing sync command: %q", h.lastPrompt)
 	}
-	if !strings.Contains(h.lastPrompt, "ORCH_SYNC") {
-		t.Fatalf("missing orchestration agent: %q", h.lastPrompt)
+	// Sync runs inline as a freechat turn: no orchestration agent body or identity.
+	if strings.Contains(h.lastPrompt, "ORCH_SYNC") {
+		t.Fatalf("sync prompt must not include orchestration agent: %q", h.lastPrompt)
 	}
-	if h.lastAgentName != "orchestration_agent" {
-		t.Fatalf("agent=%q", h.lastAgentName)
+	if h.lastAgentName != "" {
+		t.Fatalf("agent=%q want freechat (empty)", h.lastAgentName)
 	}
 }
 

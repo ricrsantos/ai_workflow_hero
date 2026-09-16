@@ -2880,9 +2880,6 @@ func TestHeroSyncRuntimeConversation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-sync.md"), []byte("# /hero-sync\n\nSYNC_RUNTIME"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH_SYNC"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
 	svc := newTestServiceInstalledNoCycle(t, dir)
 	h := &streamingHarness{deltas: []string{"sync"}}
@@ -2898,11 +2895,12 @@ func TestHeroSyncRuntimeConversation(t *testing.T) {
 	if !strings.Contains(h.lastPrompt, "SYNC_RUNTIME") {
 		t.Fatalf("missing command: %q", h.lastPrompt)
 	}
-	if h.lastAgentName != "orchestration_agent" {
-		t.Fatalf("agent=%q", h.lastAgentName)
+	// Sync is a freechat bootstrap turn: harness label, no orchestration identity.
+	if h.lastAgentName != "" {
+		t.Fatalf("agent=%q want freechat (empty)", h.lastAgentName)
 	}
 	if h.lastModel != "composer-2.5" {
-		t.Fatalf("model=%q want composer-2.5 (not YAML orchestrator)", h.lastModel)
+		t.Fatalf("model=%q want composer-2.5 (chat model)", h.lastModel)
 	}
 	if h.lastSessionID != "" {
 		t.Fatalf("expected fresh session, got %q", h.lastSessionID)
@@ -3144,9 +3142,6 @@ func TestHeroSyncPrefersChatModelOverYaml(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-sync.md"), []byte("# /hero-sync\n\nSYNC_YAML"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".cursor", "agents", "orchestration_agent.md"), []byte("---\nname: orchestration_agent\n---\n\nORCH"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	svc := newTestServiceWithRunningResearchInDir(t, dir)
 	h := &streamingHarness{deltas: []string{"sync"}}
 	svc.Harness = h
@@ -3157,8 +3152,9 @@ func TestHeroSyncPrefersChatModelOverYaml(t *testing.T) {
 	if h.lastModel != "composer-2.5" {
 		t.Fatalf("model=%q want chat /model, not YAML orchestration_agent", h.lastModel)
 	}
-	if h.lastAgentName != "orchestration_agent" {
-		t.Fatalf("agent=%q want orchestration_agent identity", h.lastAgentName)
+	// Sync keeps no orchestration identity: freechat turn even with a cycle config present.
+	if h.lastAgentName != "" {
+		t.Fatalf("agent=%q want freechat (empty)", h.lastAgentName)
 	}
 }
 

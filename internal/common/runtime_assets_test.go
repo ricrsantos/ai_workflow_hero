@@ -1031,9 +1031,19 @@ func TestRuntimeAssets_SyncPendingDocsScan(t *testing.T) {
 		"Pending docs scan",
 		"Dedupe",
 		"current-state.md",
+		"do NOT dispatch subagents",
+		"do NOT invoke `context_agent`",
 	} {
 		if !strings.Contains(syncStr, kw) {
 			t.Errorf("hero-sync.md missing pending-docs keyword %q", kw)
+		}
+	}
+	for _, kw := range []string{
+		"Invoke `context_agent` via the Task tool",
+		"agents.context_agent",
+	} {
+		if strings.Contains(syncStr, kw) {
+			t.Errorf("hero-sync.md must run inline on the chat model, found forbidden %q", kw)
 		}
 	}
 

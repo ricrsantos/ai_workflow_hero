@@ -236,10 +236,10 @@ func tuiHeroBackPreamble() string {
 
 func tuiHeroSyncPreamble() string {
 	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
-		"You are running /hero-sync inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
+		"You are running /hero-sync inside the Hero TUI. Follow the command instructions below with these overrides:\n\n" +
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓).\n" +
 		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
-		"- Reuse the current chat model for Task `context_agent` (read-only): do NOT apply Model Resolution from workflow-config.yml template defaults.\n" +
+		"- Work inline in this session on the current chat model: do NOT dispatch Task subagents and do NOT invoke `context_agent`; never read workflow-config.yml template defaults for model selection.\n" +
 		"- Generate AGENTS.md, context/current-state.md, context/context-log.md; scan docs/product and docs/architecture for pending items (ADR-029).\n" +
 		"- Update .workflow-hero/config/project.json; run `hero doctor` for harness warnings.\n" +
 		"- Tell the user to run /hero-todos and /hero-new in the Hero TUI — not Cursor chat handoff.\n\n" +
