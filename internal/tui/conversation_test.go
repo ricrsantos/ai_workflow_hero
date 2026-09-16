@@ -3138,7 +3138,7 @@ func TestHeroStartUsesYamlOrchestratorWithoutHeroModel(t *testing.T) {
 	}
 }
 
-func TestHeroSyncPrefersYamlOrchestratorOverDefault(t *testing.T) {
+func TestHeroSyncPrefersChatModelOverYaml(t *testing.T) {
 	dir := t.TempDir()
 	setupHeroApproveRuntimeFiles(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-sync.md"), []byte("# /hero-sync\n\nSYNC_YAML"), 0o644); err != nil {
@@ -3154,8 +3154,11 @@ func TestHeroSyncPrefersYamlOrchestratorOverDefault(t *testing.T) {
 	m := withDefaultChatModel(NewTestModel(svc))
 	next, cmd := RunPaletteItemForTest(OpenPalette(m), "/hero-sync")
 	next = drainConversationStream(t, next, cmd)
-	if h.lastModel != "gpt-5.3-codex-medium" {
-		t.Fatalf("model=%q want YAML orchestration_agent, not /hero-model", h.lastModel)
+	if h.lastModel != "composer-2.5" {
+		t.Fatalf("model=%q want chat /model, not YAML orchestration_agent", h.lastModel)
+	}
+	if h.lastAgentName != "orchestration_agent" {
+		t.Fatalf("agent=%q want orchestration_agent identity", h.lastAgentName)
 	}
 }
 

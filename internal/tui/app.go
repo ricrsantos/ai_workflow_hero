@@ -1543,7 +1543,9 @@ func (m model) beginHeroSync() (model, tea.Cmd) {
 		m = m.setStatusBusyBlocked()
 		return m, nil
 	}
-	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-sync")
+	// Sync is a bootstrap command with no cycle config yet: it always runs
+	// on the chat model (/model freechat pair), never on YAML template defaults.
+	m, cmd, slug, ok := m.defaultExecuteModel("/hero-sync")
 	if !ok {
 		return m, cmd
 	}

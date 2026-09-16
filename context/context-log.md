@@ -1,5 +1,13 @@
 # Context Log
 
+## 2026-09-16 — hero-sync passa a usar o modelo do chat
+
+**Problem**: `/hero-sync` em projeto recém-instalado ignorava o modelo do chat e resolvia `agents.orchestration_agent` / `agents.context_agent` dos defaults do template (`composer-2.5`, `gpt-5.3-codex-medium`), que podem estar indisponíveis. `LoadCurrent` faz fallback para o template, e `orchestratorExecuteModel` + `applyAgentRuntimePair` preferiam o YAML ao `/model`.
+
+**Fix**: Sync virou bootstrap no modelo do chat — assets `hero-sync.md` (cursor/opencode/codex/claude + cópias instaladas) mandam herdar a sessão em vez de Model Resolution YAML (ADR-008 não se aplica); TUI `beginHeroSync` usa `defaultExecuteModel`, `resolveExecuteResolution`/`resolveExecutionProperties` forçam par freechat via `isSyncChatModelTurn`, e `beginHeroRuntimeConversation` restaura o harness do chat mantendo a identidade `orchestration_agent`. Teste `TestHeroSyncPrefersYaml...` virou `TestHeroSyncPrefersChatModelOverYaml`.
+
+**Validation**: `go test ./internal/tui/ -run 'TestHeroSync|TestTUIRuntimeCommandPrompt_HeroSync'`; `go test ./...` verde; `go vet ./internal/tui/` limpo.
+
 ## 2026-09-16 — Release v3.4.0
 
 **Action**: Minor bump `v3.3.0` → `v3.4.0` after `go test ./...`. Release commit bumps default `main.version` (`3.2.0` → `3.4.0`, catching up the missed v3.3.0 bump), install fixture versions, `current-state`, and architecture overview. Carries TUI history recovery fixes, drag-and-drop image paths, file picker fixes, agent response box rendering, and prompt textbox sizing since v3.3.0. Tag pushed; `./scripts/release.sh`; GitHub Release with 8 binaries + `checksums.txt`.

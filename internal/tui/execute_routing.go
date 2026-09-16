@@ -23,8 +23,13 @@ type executeResolution struct {
 // resolveExecutionProperties projects the normalized C5 property map for an
 // execution (PRD-C05-001 §4.5.6; ADR-042): workflow/runtime commands (a non-empty
 // C4 runtimeAgentName) carry the active agent's YAML-derived values, marked
-// unvalidated; ordinary Chat and /hero-new carry the freechat selection.
+// unvalidated; ordinary Chat, /hero-new and /hero-sync carry the freechat selection.
+// Sync is a bootstrap command with no cycle config yet, so it always uses the
+// chat model even though it keeps the orchestration_agent identity for labeling.
 func (m model) resolveExecutionProperties(projectDir string) (map[string]string, bool) {
+	if m.isSyncChatModelTurn() {
+		return harness.NormalizeProperties(m.freechatProps), true
+	}
 	if m.workflowAgentActive() {
 		props := m.workflowPropertyProjection()
 		if props == nil && strings.TrimSpace(projectDir) != "" {
@@ -35,6 +40,13 @@ func (m model) resolveExecutionProperties(projectDir string) (map[string]string,
 		return harness.NormalizeProperties(props), false
 	}
 	return harness.NormalizeProperties(m.freechatProps), true
+}
+
+// isSyncChatModelTurn reports whether the active turn is /hero-sync, which
+// always executes on the chat model (/model freechat pair) even though it
+// keeps the orchestration_agent identity for prompt and transcript labels.
+func (m model) isSyncChatModelTurn() bool {
+	return strings.TrimSpace(strings.ToLower(m.runtimeCommandName)) == "sync"
 }
 
 func (m model) resolveExecuteResolution(ctx context.Context) (executeResolution, error) {
@@ -92,6 +104,11 @@ func (m model) resolveExecuteResolution(ctx context.Context) (executeResolution,
 
 	agentName := strings.TrimSpace(m.runtimeAgentName)
 	var agentHarness, agentModel string
+	// Sync always runs on the chat model (/model freechat pair): ignore YAML
+	// template defaults even when runtimeAgentName is set for labeling.
+	if m.isSyncChatModelTurn() {
+		agentName = ""
+	}
 	if agentName != "" && cfgErr == nil {
 		if agentPair, _, err := workflowconfig.AgentPairFor(projectDir, agentName); err == nil {
 			agentHarness = agentPair.Harness

@@ -9,7 +9,7 @@ You are the **orchestration agent** for AI Workflow Hero. This command activates
 ## Responsibilities
 
 1. Invoke `context_agent` via the Task tool (fresh isolated session) to scan the existing codebase.
-   - Apply **Model Resolution** from `orchestration_agent`: pass Task `model` as a kebab slug from `workflow-config.yml` → `agents.context_agent` (`enable_fast_model` → `<id>-fast`; never omit `model`; never use brackets).
+   - Reuse the **current chat/session model**: do NOT apply **Model Resolution** from `workflow-config.yml` (`agents.context_agent` / `fallback_model`) for sync. Omit Task `model` so the subagent inherits this session's model, or pass through the current session model when the harness requires it.
    - Pass file pointers: project root path, any existing AGENTS.md, docs/, context/.
    - context_agent is read-only: it never implements or decides architecture.
 2. Based on context_agent output, generate:
@@ -33,9 +33,9 @@ You are the **orchestration agent** for AI Workflow Hero. This command activates
 
 context_agent receives scope from the codebase analysis. The orchestrator routes work based on the `scope` fields in the generated project metadata.
 
-## Fallback
+## Model
 
-Fall back to `fallback_model` if configured model is unavailable; warn the user explicitly (ADR-008 / Model Resolution).
+Sync is a bootstrap command with no cycle config yet: it always runs on the model selected in chat (IDE session model, or TUI `/model` freechat pair). Never read `workflow-config.yml` template defaults for model selection. If the session model is unavailable, warn and ask the user to select a valid chat model; do not fall back to `fallback_model` (ADR-008 does not apply to sync).
 
 ## Output Format
 

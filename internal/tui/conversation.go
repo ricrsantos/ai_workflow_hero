@@ -718,6 +718,18 @@ func (m model) beginHeroRuntimeConversation(cmdName, modelSlug string, opts hero
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, composite, opts)
 		m = m.withRuntimeAgent(agentOrchestration)
 		m = m.applyAgentRuntimePair(agentOrchestration, modelSlug)
+		if cmdName == "sync" {
+			// Sync keeps the orchestration_agent identity for prompt/labels but
+			// always executes on the chat model: restore the chat harness that
+			// applyAgentRuntimePair just overwrote with YAML template defaults.
+			// The chat slug is already preserved via the modelSlug override.
+			if h := strings.TrimSpace(m.chatHarnessID); h != "" {
+				m.runtimeHarnessID = h
+			} else {
+				m.runtimeHarnessID = ""
+			}
+			m.workflowProps = nil
+		}
 	} else {
 		executePrompt = tuiRuntimeCommandPrompt(cmdName, cmdBody, opts)
 	}
