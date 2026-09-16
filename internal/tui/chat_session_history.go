@@ -217,9 +217,8 @@ func (m model) syncFinalizeSessionInterruptCmd() tea.Cmd {
 		}
 		if svc != nil && sessionID != "" {
 			if _, err := svc.MarkInterrupted(context.Background(), sessionID); err != nil {
-				slog.Error("tui sync mark hero session interrupted failed", "error", redact.Error(err))
 				return sessionPersistErrMsg{
-					err:         sessionPersistenceError(err),
+					err:         sessionPersistenceError("mark session interrupted", err),
 					sessionID:   sessionID,
 					events:      eventBatch,
 					assets:      assetBatch,

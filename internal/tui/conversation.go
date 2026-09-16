@@ -2074,7 +2074,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.convError = "Session persistence failed. Retry or cancel before sending."
 		}
-		slog.Error("tui session persist blocked further sends")
+		slog.Error("tui session persist blocked further sends", "session_id", sessionID, "error", redact.Error(msg.err))
 		return m, nil
 
 	case sessionPersistOKMsg:
@@ -2574,7 +2574,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 						persistFailed = true
 						pm.sessionPersistBlocked = true
 						pm.convError = "Session persistence serialization failed. Fix the payload, retry, or cancel before sending."
-						slog.Error("tui execute result persist serialization failed")
+						slog.Error("tui execute result persist serialization failed", "session_id", heroID, "error", redact.Error(err))
 					}
 				}
 				if !persistFailed && msg.result != nil {
@@ -2583,7 +2583,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 							persistFailed = true
 							pm.sessionPersistBlocked = true
 							pm.convError = "Session persistence serialization failed. Fix the payload, retry, or cancel before sending."
-							slog.Error("tui execute asset persist serialization failed")
+							slog.Error("tui execute asset persist serialization failed", "session_id", heroID, "error", redact.Error(err))
 							break
 						}
 					}
@@ -2648,7 +2648,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := pm.queuePersistTranscriptIndex(heroID, "", m.agentMsgIndex); err != nil {
 					m.sessionPersistBlocked = true
 					m.convError = "Session persistence serialization failed. Fix the payload, retry, or cancel before sending."
-					slog.Error("tui interrupt agent persist serialization failed")
+					slog.Error("tui interrupt agent persist serialization failed", "session_id", heroID, "error", redact.Error(err))
 				}
 			}
 			pm.queueSessionInterruption()
@@ -2727,14 +2727,14 @@ func (m *model) applyStreamDelta(msg streamDeltaMsg) {
 		if err := m.queueSessionAssetOn(heroID, *msg.delta.Asset); err != nil {
 			m.sessionPersistBlocked = true
 			// Keep the visible asset; block sends until the retry payload can be written.
-			slog.Error("tui stream asset persist serialization failed")
+			slog.Error("tui stream asset persist serialization failed", "session_id", heroID, "error", redact.Error(err))
 		}
 	}
 	switch msg.delta.Kind {
 	case harness.StreamKindText:
 		if err := m.queuePersistTranscriptIndex(heroID, msg.executeID, m.agentMsgIndex); err != nil {
 			m.sessionPersistBlocked = true
-			slog.Error("tui stream transcript persist serialization failed")
+			slog.Error("tui stream transcript persist serialization failed", "session_id", heroID, "error", redact.Error(err))
 		}
 	case harness.StreamKindThinking:
 		idx := m.thinkingMsgIndex
@@ -2743,7 +2743,7 @@ func (m *model) applyStreamDelta(msg streamDeltaMsg) {
 		}
 		if err := m.queuePersistTranscriptIndex(heroID, msg.executeID, idx); err != nil {
 			m.sessionPersistBlocked = true
-			slog.Error("tui stream transcript persist serialization failed")
+			slog.Error("tui stream transcript persist serialization failed", "session_id", heroID, "error", redact.Error(err))
 		}
 	}
 	m.streamPersistHeroID = prevPersistHero
@@ -3277,7 +3277,7 @@ func (m *model) appendAttributed(role convRole, d harness.StreamDelta) {
 			heroID := m.persistTargetHeroID()
 			if err := m.queuePersistTranscriptIndex(heroID, "", i); err != nil {
 				m.sessionPersistBlocked = true
-				slog.Error("tui stream transcript persist serialization failed")
+				slog.Error("tui stream transcript persist serialization failed", "session_id", heroID, "error", redact.Error(err))
 			}
 			return
 		}
@@ -3318,7 +3318,7 @@ func (m *model) insertBeforeAgent(msg convMessage) int {
 	heroID := m.persistTargetHeroID()
 	if err := m.queuePersistTranscriptIndex(heroID, "", idx); err != nil {
 		m.sessionPersistBlocked = true
-		slog.Error("tui message persist serialization failed")
+		slog.Error("tui message persist serialization failed", "session_id", heroID, "error", redact.Error(err))
 	}
 	return idx
 }

@@ -206,7 +206,6 @@ func (svc *SessionService) CreateSessionWithTranscript(ctx context.Context, meta
 	}
 	sess, err := svc.Store.CreateSessionWithTranscript(sessIn, events, assets)
 	if err != nil {
-		svc.log().Error("session first-turn transcript persistence failed", "kind", sessIn.Kind)
 		return store.Session{}, err
 	}
 	svc.log().Info("session created on first turn", logAttrKind(sess.Kind)...)
@@ -384,7 +383,6 @@ func (svc *SessionService) PersistTranscriptSuffix(ctx context.Context, events [
 		return fmt.Errorf("session service store is required")
 	}
 	if err := svc.Store.PersistSessionTranscriptSuffix(events, assets, bind); err != nil {
-		svc.log().Error("session transcript suffix persist failed")
 		return err
 	}
 	return nil

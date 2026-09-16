@@ -364,7 +364,7 @@ func (m model) drainSessionPersistCmd() (model, tea.Cmd) {
 		}
 		if svc == nil {
 			return sessionPersistErrMsg{
-				err:         sessionPersistenceError(fmt.Errorf("session service is required to reacquire lease")),
+				err:         sessionPersistenceError("reacquire session lease", fmt.Errorf("session service is required")),
 				sessionID:   leaseRetryID,
 				events:      eventBatch,
 				assets:      assetBatch,
@@ -373,9 +373,8 @@ func (m model) drainSessionPersistCmd() (model, tea.Cmd) {
 			}
 		}
 		if _, err := svc.AcquireLease(context.Background(), leaseRetryID, leaseRetryOwner); err != nil {
-			slog.Error("tui session lease retry failed", "error", redact.Error(err))
 			return sessionPersistErrMsg{
-				err:         sessionPersistenceError(err),
+				err:         sessionPersistenceError("reacquire session lease", err),
 				sessionID:   leaseRetryID,
 				events:      eventBatch,
 				assets:      assetBatch,
@@ -444,8 +443,7 @@ func persistSessionSuffix(
 		}
 	}
 	if _, err := storeAssetsFromPersistItems(assetBatch); err != nil {
-		slog.Error("tui session asset card meta marshal failed")
-		return fail(fmt.Errorf("asset card serialization failed: %w", err), true, eventBatch, assetBatch, bindingBatch, nativeBatch)
+		return fail(sessionPersistenceError("convert session asset batch", err), true, eventBatch, assetBatch, bindingBatch, nativeBatch)
 	}
 	if svc != nil {
 		groups := groupPersistSuffix(eventBatch, assetBatch, nativeBatch)
@@ -462,19 +460,17 @@ func persistSessionSuffix(
 			}
 			groupAssets, convErr := storeAssetsFromPersistItems(group.assets)
 			if convErr != nil {
-				slog.Error("tui session asset card meta marshal failed")
-				return fail(fmt.Errorf("asset card serialization failed: %w", convErr), true, remainingPersistEvents(groups, i), remainingPersistAssets(groups, i), bindingBatch, remainingPersistNatives(groups, i))
+				return fail(sessionPersistenceError("convert session asset group", convErr), true, remainingPersistEvents(groups, i), remainingPersistAssets(groups, i), bindingBatch, remainingPersistNatives(groups, i))
 			}
 			if len(group.events) == 0 && len(groupAssets) == 0 && bind == nil {
 				continue
 			}
 			if err := svc.PersistTranscriptSuffix(ctx, group.events, groupAssets, bind); err != nil {
+				op := "persist transcript suffix"
 				if bind != nil {
-					slog.Error("tui session native bind persist failed")
-				} else {
-					slog.Error("tui session transcript suffix persist failed")
+					op = "persist native session bind"
 				}
-				return fail(err, false, remainingPersistEvents(groups, i), remainingPersistAssets(groups, i), bindingBatch, remainingPersistNatives(groups, i))
+				return fail(sessionPersistenceError(op, err), false, remainingPersistEvents(groups, i), remainingPersistAssets(groups, i), bindingBatch, remainingPersistNatives(groups, i))
 			}
 		}
 	}
@@ -484,14 +480,12 @@ func persistSessionSuffix(
 		}
 		if item.orchestration {
 			if err := cycleSvc.SetOrchestrationSession(item.sessionID, item.harnessID); err != nil {
-				slog.Error("tui persist orchestration session failed")
-				return fail(err, false, nil, nil, append([]sessionBindingPersistItem(nil), bindingBatch[i:]...), nil)
+				return fail(sessionPersistenceError("set orchestration session binding", err), false, nil, nil, append([]sessionBindingPersistItem(nil), bindingBatch[i:]...), nil)
 			}
 			continue
 		}
 		if err := cycleSvc.SetStageSessionBinding(item.stage, item.harnessID, item.sessionID); err != nil {
-			slog.Error("tui persist stage session binding failed")
-			return fail(err, false, nil, nil, append([]sessionBindingPersistItem(nil), bindingBatch[i:]...), nil)
+			return fail(sessionPersistenceError("set stage session binding", err), false, nil, nil, append([]sessionBindingPersistItem(nil), bindingBatch[i:]...), nil)
 		}
 	}
 	return sessionPersistOKMsg{}
@@ -895,11 +889,14 @@ func (m model) chatFirstTurnContent(userLabel string, labelRole convRole, ex con
 	return turn
 }
 
-func sessionPersistenceError(err error) error {
+// sessionPersistenceError wraps a session persistence failure with the
+// specific operation that failed, so a single boundary log line names the
+// exact write that broke instead of a generic "persistence failed".
+func sessionPersistenceError(op string, err error) error {
 	if err == nil {
-		return fmt.Errorf("session persistence failed")
+		return fmt.Errorf("session persistence failed: %s", op)
 	}
-	return fmt.Errorf("session persistence failed: %w", err)
+	return fmt.Errorf("session persistence failed: %s: %w", op, err)
 }
 
 func attachmentAsset(att harness.Attachment) harness.Asset {
@@ -947,17 +944,17 @@ func (m model) persistAcceptedAttachments(ctx context.Context, heroID string, at
 	}
 	events, items, err := attachmentPersistBatch(heroID, attachments)
 	if err != nil {
-		return sessionPersistenceError(err)
+		return sessionPersistenceError("marshal attachment assets", err)
 	}
 	storeAssets, err := storeAssetsFromPersistItems(items)
 	if err != nil {
-		return sessionPersistenceError(err)
+		return sessionPersistenceError("convert attachment assets", err)
 	}
 	pipe := sessionPersistPipelineFor(heroID)
 	if err := pipe.run(func() error {
 		return m.sessionService.PersistTranscriptSuffix(ctx, events, storeAssets, nil)
 	}); err != nil {
-		return &sessionTurnPersistError{err: sessionPersistenceError(err), sessionID: heroID, events: events, assets: items}
+		return &sessionTurnPersistError{err: sessionPersistenceError("persist attachment transcript suffix", err), sessionID: heroID, events: events, assets: items}
 	}
 	return nil
 }
@@ -1013,15 +1010,15 @@ func (m model) persistUserTurnBeforeExecute(
 	}
 	userEvent, err := firstTurnUserEvent(heroID, userLabel, labelRole, turn, providerID)
 	if err != nil {
-		return "", sessionPersistenceError(err)
+		return "", sessionPersistenceError("build first-turn user event", err)
 	}
 	attachEvents, attachItems, err := attachmentPersistBatch(heroID, ex.Attachments)
 	if err != nil {
-		return "", &sessionTurnPersistError{err: sessionPersistenceError(err), sessionID: heroID, serialization: true}
+		return "", &sessionTurnPersistError{err: sessionPersistenceError("marshal first-turn attachment assets", err), sessionID: heroID, serialization: true}
 	}
 	storeAssets, err := storeAssetsFromPersistItems(attachItems)
 	if err != nil {
-		return "", &sessionTurnPersistError{err: sessionPersistenceError(err), sessionID: heroID, serialization: true, events: append([]store.AppendSessionEventInput{userEvent}, attachEvents...), assets: attachItems}
+		return "", &sessionTurnPersistError{err: sessionPersistenceError("convert first-turn attachment assets", err), sessionID: heroID, serialization: true, events: append([]store.AppendSessionEventInput{userEvent}, attachEvents...), assets: attachItems}
 	}
 	events := append([]store.AppendSessionEventInput{userEvent}, attachEvents...)
 	if heroID == "" {
@@ -1030,7 +1027,7 @@ func (m model) persistUserTurnBeforeExecute(
 		}
 		sess, err := m.sessionService.CreateSessionWithTranscript(persistCtx, meta, events, storeAssets)
 		if err != nil {
-			return "", &sessionTurnPersistError{err: sessionPersistenceError(err), events: events, assets: attachItems}
+			return "", &sessionTurnPersistError{err: sessionPersistenceError("create session with transcript", err), events: events, assets: attachItems}
 		}
 		heroID = strings.TrimSpace(sess.ID)
 		if heroID == "" {
@@ -1040,8 +1037,7 @@ func (m model) persistUserTurnBeforeExecute(
 		slog.Info("tui hero chat session created")
 		owner := strings.TrimSpace(m.tuiOwnerID)
 		if _, err := m.sessionService.AcquireLease(persistCtx, heroID, owner); err != nil {
-			slog.Error("tui first-turn lease acquisition failed", "error", redact.Error(err))
-			return "", &sessionTurnPersistError{err: sessionPersistenceError(err), sessionID: heroID, events: events, assets: attachItems}
+			return "", &sessionTurnPersistError{err: sessionPersistenceError("acquire first-turn session lease", err), sessionID: heroID, events: events, assets: attachItems}
 		}
 		return heroID, nil
 	}
@@ -1049,7 +1045,7 @@ func (m model) persistUserTurnBeforeExecute(
 	if err := pipe.run(func() error {
 		return m.sessionService.PersistTranscriptSuffix(persistCtx, events, storeAssets, nil)
 	}); err != nil {
-		return "", &sessionTurnPersistError{err: sessionPersistenceError(err), sessionID: heroID, events: events, assets: attachItems}
+		return "", &sessionTurnPersistError{err: sessionPersistenceError("persist transcript suffix", err), sessionID: heroID, events: events, assets: attachItems}
 	}
 	return heroID, nil
 }
@@ -1749,7 +1745,7 @@ func syncPersistExecuteResult(
 			occupancyKey: ex.OccupancyKey,
 		})
 		if err != nil {
-			return sessionPersistenceError(err)
+			return sessionPersistenceError("marshal assistant transcript payload", err)
 		}
 		origin, addr := assistantPersistOrigin(ex)
 		events = append(events, store.AppendSessionEventInput{
@@ -1765,7 +1761,7 @@ func syncPersistExecuteResult(
 	for _, asset := range result.Assets {
 		raw, err := json.Marshal(asset)
 		if err != nil {
-			return sessionPersistenceError(fmt.Errorf("asset serialization failed: %w", err))
+			return sessionPersistenceError("marshal execute result asset", err)
 		}
 		assetID := strings.TrimSpace(asset.ContentHash)
 		if assetID == "" {
@@ -1783,7 +1779,7 @@ func syncPersistExecuteResult(
 	}
 	storeAssets, err := storeAssetsFromPersistItems(items)
 	if err != nil {
-		return sessionPersistenceError(err)
+		return sessionPersistenceError("convert execute result assets", err)
 	}
 	var bind *store.NativeSessionBind
 	if sid := strings.TrimSpace(result.SessionID); sid != "" {
@@ -1798,7 +1794,7 @@ func syncPersistExecuteResult(
 	pipe := sessionPersistPipelineFor(heroID)
 	return pipe.run(func() error {
 		if err := svc.PersistTranscriptSuffix(ctx, events, storeAssets, bind); err != nil {
-			return sessionPersistenceError(err)
+			return sessionPersistenceError("persist execute result transcript", err)
 		}
 		return nil
 	})
