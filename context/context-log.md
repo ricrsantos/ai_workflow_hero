@@ -1,5 +1,11 @@
 # Context Log
 
+## 2026-09-16 — Release v3.4.0
+
+**Action**: Minor bump `v3.3.0` → `v3.4.0` after `go test ./...`. Release commit bumps default `main.version` (`3.2.0` → `3.4.0`, catching up the missed v3.3.0 bump), install fixture versions, `current-state`, and architecture overview. Carries TUI history recovery fixes, drag-and-drop image paths, file picker fixes, agent response box rendering, and prompt textbox sizing since v3.3.0. Tag pushed; `./scripts/release.sh`; GitHub Release with 8 binaries + `checksums.txt`.
+
+**URL**: https://github.com/ricrsantos/ai_workflow_hero/releases/tag/v3.4.0
+
 ## 2026-09-15 — Adaptive Chat composer height
 
 **Change**: The TUI Chat composer now reserves two free typing lines whenever the terminal can fit them, uses three free lines by default, grows with visual prompt wrapping up to six, and reserves the transcript's two-line minimum while growing. The mode/model row, attachment chips, and rounded border are excluded from the free-line count; after submission, clearing the composer restores the default or the available two-line minimum.
