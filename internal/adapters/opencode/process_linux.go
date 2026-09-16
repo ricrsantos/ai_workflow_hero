@@ -29,6 +29,16 @@ func processZombie(pid int) bool {
 	return data[i+2] == 'Z'
 }
 
+// processCwd returns the resolved working directory of pid. Hero starts each
+// managed serve with cmd.Dir set to its project, so the cwd identifies the
+// owning project and prevents reaping another project's serve.
+func processCwd(pid int) (string, error) {
+	if pid <= 0 {
+		return "", fmt.Errorf("invalid pid")
+	}
+	return os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid))
+}
+
 func listOpenCodeServePIDs() []int {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {

@@ -342,6 +342,36 @@ func TestAssetEventRestore(t *testing.T) {
 	}
 }
 
+func TestAssetEventRestoresBeforeParentResponse(t *testing.T) {
+	stored := harness.Asset{
+		Attachment: harness.Attachment{Name: "shot.png", Path: "/tmp/shot.png", ContentHash: "before-parent"},
+		Source:     harness.AssetSourceTool,
+	}
+	raw, err := json.Marshal(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := []store.SessionEvent{
+		{EventType: store.SessionEventUser, PayloadJSON: `{"text":"prompt"}`},
+		{EventType: store.SessionEventThinking, PayloadJSON: `{"text":"thinking"}`},
+		{EventType: store.SessionEventAssistant, PayloadJSON: `{"text":"answer"}`},
+		{EventType: store.SessionEventAsset, PayloadJSON: string(raw)},
+	}
+	transcript, _, _ := eventsToTranscript(events, nil)
+	answerIndex, assetIndex := -1, -1
+	for i, msg := range transcript {
+		if msg.role == convRoleAgent && strings.Contains(msg.content, "answer") {
+			answerIndex = i
+		}
+		if len(msg.assets) > 0 {
+			assetIndex = i
+		}
+	}
+	if assetIndex < 0 || answerIndex < 0 || assetIndex > answerIndex {
+		t.Fatalf("asset turn=%d answer turn=%d; want asset before answer: %+v", assetIndex, answerIndex, transcript)
+	}
+}
+
 func TestAttachmentEventRestoreAsAssetCard(t *testing.T) {
 	payload := `{"type":"image","filename":"remote.png","mime":"image/png","url":"https://example.com/remote.png"}`
 	events := []store.SessionEvent{

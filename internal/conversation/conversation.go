@@ -158,7 +158,12 @@ const (
 type Event struct {
 	// EventID is the append-only SQLite event id. It is used by local relays to
 	// de-duplicate a notification when a process reconnects or retries delivery.
-	EventID    int64     `json:"event_id,omitempty"`
+	EventID int64 `json:"event_id,omitempty"`
+	// ProjectDir identifies the project that owns the event. The private
+	// lifecycle relay uses it to reject events emitted by a process that
+	// inherited the endpoint but does not belong to the relay's project (for
+	// example a test binary), so foreign events never reach the TUI/Telegram.
+	ProjectDir string    `json:"project_dir,omitempty"`
 	Kind       EventKind `json:"kind"`
 	CycleID    int64     `json:"cycle_id"`
 	CycleTitle string    `json:"cycle_title,omitempty"`

@@ -3581,17 +3581,17 @@ func (m model) ensureTranscriptLayout(contentW, rowW int) []string {
 func (m model) buildTranscriptLayoutLines(contentW, rowW int) []string {
 	if len(m.transcript) == 0 {
 		var out []string
-		if m.streaming || len(m.liveAgents) > 0 {
-			header := m.responseSpeakerHeader()
-			out = []string{chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW)}
-		}
 		if cards := m.renderAssetCardLines(contentW); len(cards) > 0 {
-			if len(out) > 0 {
-				out = append(out, "")
-			}
 			for _, card := range cards {
 				out = append(out, chatThinBarRow(chatBarMuted, chatInMuted.Render(card), rowW))
 			}
+		}
+		if m.streaming || len(m.liveAgents) > 0 {
+			if len(out) > 0 {
+				out = append(out, "")
+			}
+			header := m.responseSpeakerHeader()
+			out = append(out, chatThinBarRow(chatBarAgent, chatInAgent.Render(header), rowW))
 		}
 		return out
 	}
@@ -3611,6 +3611,16 @@ func (m model) buildTranscriptLayoutLines(contentW, rowW int) []string {
 			}
 			continue
 		}
+		// Asset cards render before the agent response as their own muted block,
+		// matching thinking/tool detail rows, so the answer remains the last
+		// content of the turn.
+		if len(msg.assets) > 0 {
+			for _, card := range m.renderAssetCardLinesFor(contentW, msg.assets, assetOffset) {
+				out = append(out, chatThinBarRow(chatBarMuted, chatInMuted.Render(card), rowW))
+			}
+			assetOffset += len(msg.assets)
+			out = append(out, "")
+		}
 		bar, label := m.transcriptMessageChrome(*msg)
 		if originLabel, ok := telegramOriginLabel(*msg); ok {
 			out = append(out, chatThinBarRow(chatBarMuted, chatInMuted.Render(originLabel), rowW))
@@ -3619,12 +3629,6 @@ func (m model) buildTranscriptLayoutLines(contentW, rowW int) []string {
 		body := m.transcriptMessageBody(msg, contentW)
 		for _, line := range body {
 			out = append(out, chatThinBarRow(bar, line, rowW))
-		}
-		if len(msg.assets) > 0 {
-			for _, card := range m.renderAssetCardLinesFor(contentW, msg.assets, assetOffset) {
-				out = append(out, chatThinBarRow(bar, chatInMuted.Render(card), rowW))
-			}
-			assetOffset += len(msg.assets)
 		}
 		if i < len(m.transcript)-1 {
 			out = append(out, "")

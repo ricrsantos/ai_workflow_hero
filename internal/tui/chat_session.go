@@ -1408,9 +1408,11 @@ func normalizeRestoredTranscriptTurn(turn []restoredTranscriptEntry) []restoredT
 		if entry.eventType == store.SessionEventAssistant && strings.TrimSpace(entry.message.callID) == "" {
 			continue
 		}
-		// Asset and interruption events are emitted after the parent row in the
-		// live transcript, so keep them after the restored response as well.
-		if entry.eventType == store.SessionEventAsset || entry.eventType == store.SessionEventInterruption {
+		// Interruption markers are emitted after the parent row in the live
+		// transcript, so keep them after the restored response. Asset cards
+		// render with the turn's pre-response detail rows (thinking/tool/
+		// activity) in the live view, so restore them before the parent.
+		if entry.eventType == store.SessionEventInterruption {
 			trailing = append(trailing, entry)
 			continue
 		}

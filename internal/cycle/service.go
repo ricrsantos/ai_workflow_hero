@@ -81,7 +81,7 @@ func OpenService(projectDir string) (*Service, error) {
 	}
 	eng := engine.New(st)
 	eng.ProjectDir = root
-	if notifier := lifecycle.NewEnvNotifier(); notifier != nil {
+	if notifier := lifecycle.NewEnvNotifier(root); notifier != nil {
 		eng.Notifier = notifier
 	}
 	return &Service{

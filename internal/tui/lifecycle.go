@@ -36,6 +36,11 @@ func (m model) handleLifecycleEvent(event conversation.Event) (model, tea.Cmd) {
 		}
 		m.lifecycleEventIDs[event.EventID] = struct{}{}
 	}
+	if !m.lifecycleCycleKnown(event.CycleID) {
+		slog.Debug("ignored lifecycle event for unknown cycle",
+			"kind", event.Kind, "cycle_id", event.CycleID, "event_id", event.EventID)
+		return m, nil
+	}
 	var progressCmd tea.Cmd
 	switch event.Kind {
 	case conversation.EventStageStarted, conversation.EventApprovalRequired:
@@ -56,6 +61,18 @@ func (m model) handleLifecycleEvent(event conversation.Event) (model, tea.Cmd) {
 		return m, progressCmd
 	}
 	return m, combineTimerCmds(progressCmd, m.telegramOutboundCmd(text))
+}
+
+// lifecycleCycleKnown guards against lifecycle events that reference a cycle
+// this TUI does not own. The private relay is project-scoped, but a stale or
+// replayed event must not drive ensureStageProgress or Telegram delivery.
+// Events without a cycle id (direct in-process calls, tests) are allowed.
+func (m model) lifecycleCycleKnown(cycleID int64) bool {
+	if cycleID <= 0 || m.svc == nil || m.svc.Store == nil {
+		return true
+	}
+	_, err := m.svc.Store.GetCycle(cycleID)
+	return err == nil
 }
 
 func (m model) flushPendingLifecycleEvents() (model, tea.Cmd) {

@@ -751,7 +751,7 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 | `internal/telegram/ipc` | Versioned newline-delimited JSON IPC frames + `0600` UDS (`ipc.go`, `socket.go`) |
 | `internal/telegram/vault` | OS credential vault abstraction (token + authorized chat id) with in-memory fake |
 | `internal/telegram/daemon` | Bot API ownership, pairing, addressed routing, durable queue, suffix allocator, SQLite store |
-| `internal/lifecycle` | Private per-TUI Unix relay for lifecycle events emitted by CLI-as-API child processes |
+| `internal/lifecycle` | Private per-TUI, project-scoped Unix relay for lifecycle events emitted by CLI-as-API child processes; drops events stamped with a different project (e.g. test binaries that inherit the endpoint) |
 | `internal/harness` | `HarnessAdapter` interface, `StreamDelta` normalization, marker detection, multimodal references/capabilities |
 | `internal/media` | Session asset storage/validation/retention and capability admission |
 | `internal/conversation` | Transport-neutral input classification, attachment handoff, session routing |

@@ -83,13 +83,14 @@
 1. `OpenCodeAdapter` starts **`opencode serve`** lazily on first OpenCode Execute (localhost, ephemeral port).
 2. Chat/stream/cancel/session use that server’s **HTTP API**. Do not spawn `opencode run` per prompt.
 3. Attach **only** to the child Hero started. Never attach to an unknown `:4096`.
-4. Registry lives in **this project’s `hero.db`**. On `hero tui` start, reap recorded orphans whose PID is still `opencode serve` (unexpected TUI exit only).
+4. Registry lives in **this project’s `hero.db`**. On `hero tui` start, reap recorded orphans whose PID is still `opencode serve` (unexpected TUI exit only). When the recorded PID is gone but its URL is still alive, resolve the serve by listening port **only** if the process working directory belongs to the same project; otherwise skip the kill.
 5. Normal quit and disabling OpenCode **stop** the child Hero created. Recreate on the next OpenCode Execute.
 6. This is **not** `hero serve`. Engine still never talks HTTP to OpenCode — only the adapter.
 
 **Consequences**:
 - SQLite schema version bump for serve rows + session harness binding.
 - One TUI per project in 2.0 (second TUI would reap the first’s server).
+- Orphan reap never terminates a serve owned by another project: the port/URL fallback is scoped by the process working directory and requires a recorded project path, so an unrelated `opencode serve` (or a developer’s own, e.g. on `:4096`) is left alone.
 - `IsAvailable` covers OpenCode CLI presence when an Execute needs serve; enabled ≠ available.
 
 ---

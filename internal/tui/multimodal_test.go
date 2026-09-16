@@ -704,11 +704,11 @@ func TestStreamAssetUsesProducingExecuteTurn(t *testing.T) {
 		t.Fatalf("second execute assets=%+v", m.transcript[3].assets)
 	}
 	rendered := strings.Join(m.transcriptContentLines(70), "\n")
-	if strings.Index(rendered, "first answer") > strings.Index(rendered, "first-stream.png") {
-		t.Fatalf("first stream asset rendered outside its turn: %q", rendered)
+	if ai, pi := strings.Index(rendered, "first answer"), strings.Index(rendered, "first-stream.png"); ai < 0 || pi < 0 || pi > ai {
+		t.Fatalf("first stream asset should render before its answer: %q", rendered)
 	}
-	if strings.Index(rendered, "second answer") > strings.Index(rendered, "second-stream.png") {
-		t.Fatalf("second stream asset rendered outside its turn: %q", rendered)
+	if ai, pi := strings.Index(rendered, "second answer"), strings.Index(rendered, "second-stream.png"); ai < 0 || pi < 0 || pi > ai {
+		t.Fatalf("second stream asset should render before its answer: %q", rendered)
 	}
 }
 
@@ -777,11 +777,11 @@ func TestAssetsRenderOnTheirProducingTranscriptTurn(t *testing.T) {
 		t.Fatalf("second turn assets=%+v", m.transcript[3].assets)
 	}
 	rendered := strings.Join(m.transcriptContentLines(70), "\n")
-	if strings.Index(rendered, "first answer") > strings.Index(rendered, "first.png") {
-		t.Fatalf("first asset was not rendered after its answer: %q", rendered)
+	if ai, pi := strings.Index(rendered, "first answer"), strings.Index(rendered, "first.png"); ai < 0 || pi < 0 || pi > ai {
+		t.Fatalf("first asset should render before its answer: %q", rendered)
 	}
-	if strings.Index(rendered, "second answer") > strings.Index(rendered, "second.png") {
-		t.Fatalf("second asset was not rendered after its answer: %q", rendered)
+	if ai, pi := strings.Index(rendered, "second answer"), strings.Index(rendered, "second.png"); ai < 0 || pi < 0 || pi > ai {
+		t.Fatalf("second asset should render before its answer: %q", rendered)
 	}
 }
 

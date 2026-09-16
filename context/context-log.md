@@ -2579,3 +2579,93 @@ response, green bottom rendering, occupancy, and cycle-session key selection.
 
 **Verification**: `gofmt`, targeted TUI tests, `go test ./...`, and
 `git diff --check` pass.
+
+## 2026-09-15 — Asset cards render before the turn response
+
+**Problem**: Tool/model asset cards always rendered after the assistant text.
+Assets are attached to the parent agent message and emitted after its body,
+while thinking/tool/activity rows are separate messages inserted before the
+parent, so produced-file cards appeared below the answer instead of grouped
+with the turn's detail rows.
+
+**Change**: `buildTranscriptLayoutLines` now renders each message's asset cards
+as their own muted block before the agent header (empty-transcript and normal
+paths), matching thinking/tool chrome. `normalizeRestoredTranscriptTurn` moves
+persisted `SessionEventAsset` rows into the turn's leading detail rows while
+interruption markers stay trailing, so durable restore matches live order. The
+`harness-adapter` "after the turn's text output" scenario was overridden and
+the ordering is now documented in the `hero-tui` asset-card requirement.
+
+**Tests**: Flipped the live ordering assertions in
+`TestStreamAssetUsesProducingExecuteTurn` and
+`TestAssetsRenderOnTheirProducingTranscriptTurn`; added
+`TestAssetEventRestoresBeforeParentResponse` for durable restore.
+
+**Verification**: `gofmt`, `go vet ./internal/tui/...`, targeted ordering
+tests, the full `internal/tui` suite, and `go test ./...` pass.
+
+## 2026-09-15 — Lifecycle relay leaked test lifecycle events to Telegram
+
+**Problem**: During a live TUI session with an agent running, Telegram received
+cycle notifications ("Cycle started: TUI Test", "Stage started: …",
+"Approval required: qa", "Error in qa: handoff failure") although no real cycle
+was active. Root cause: the OpenCode `serve` child exports
+`HERO_LIFECYCLE_EVENT_SOCKET` pointing at the owning TUI's private relay. A
+`go test` run inside the harness inherits it, so any test that opened a cycle
+service (`cycle.OpenService`) installed `lifecycle.NewEnvNotifier` and published
+its synthetic cycle events to the live relay, which forwarded them to Telegram.
+The relay accepted any event with `Kind != "" && CycleID > 0`, and the TUI
+forwarded without checking cycle ownership — so test events could also trigger
+`ensureStageProgress` dispatch.
+
+**Change**: Three layers.
+1. Runtime project binding: `conversation.Event` gains `ProjectDir`;
+   `lifecycle.NewEnvNotifier(projectDir)` stamps it and `cycle.OpenService`
+   passes the project root; `Relay` stores its project and drops events whose
+   project does not match (`sameProject`, off the Update loop).
+2. Test isolation: new `internal/testsupport.Run` unsets
+   `HERO_LIFECYCLE_EVENT_SOCKET`; `TestMain` added to `internal/tui`,
+   `internal/cycle`, `internal/integration`, `internal/status`.
+3. TUI guard: `handleLifecycleEvent` ignores events whose `CycleID` is absent
+   from the TUI's own store (events with no cycle id stay allowed for in-process
+   callers/tests).
+
+Docs updated: ADR-065 (`ADR-C09-002`) decision/consequences, `PRD-C09-001`
+§3.3, `UI-C09-001` §4, and the `internal/lifecycle` row in
+`architecture-overview.md`.
+
+**Tests**: `TestRelayRejectsEventFromAnotherProject` (new),
+`TestRelayReceivesEnvironmentNotifierEvent` (asserts stamped project),
+`TestLifecycleEventForUnknownCycleIsIgnored` (new), plus targeted lifecycle/
+cycle/tui lifecycle tests.
+
+**Verification**: `gofmt -l` clean on touched files, `go vet ./...`, and
+`go test ./... -count=1` pass (exit 0; `internal/tui` 73s).
+
+## 2026-09-15 — Orphan-serve reap killed the live OpenCode server during tests
+
+**Problem**: Running `go test ./...` repeatedly disconnected/restarted the
+OpenCode server hosting the TUI. `TestReapOrphanServersClearsRegistry`
+(`internal/adapters/opencode/server_test.go`) and
+`TestIntegration_OrphanServeRegistryReap` (`internal/integration/multi_harness_test.go`)
+insert a fake `harness_serve_registry` row with a dead PID but the default
+`Port 4096` / `URL http://127.0.0.1:4096`, then call `ReapOrphanServers`. The
+live `opencode serve` (started with `--port 0`) had bound 4096, so `reapEntry`'s
+URL-alive fallback scanned `listOpenCodeServePIDs()` globally, matched it with
+`processListenPort`, and SIGTERM'd it. The fallback ignored the registry entry's
+project, so a temp-project test could kill another project's serve.
+
+**Change**: `reapEntry` now requires a recorded `ProjectPath` and only terminates
+a globally discovered serve when `/proc/<pid>/cwd` is inside it
+(`pathWithinProject`, symlink-resolved). Missing project path → skip kill
+(registry row is still deleted, so pruning is unaffected). Tests no longer use
+4096/live URLs: `freeTCPPort` picks a free port for the unit reaps, and the
+integration fixture points at a dead `:1` with `ProjectPath` set. Added
+`processCwd` (linux + `!linux` stub) and `TestPathWithinProject`.
+
+Docs: ADR-035 decision/consequences amended; `context/current-state.md`
+"Harness transport reconnect" notes the project-scoped reap.
+
+**Verification**: targeted reap/path tests pass; `go vet`, `git diff --check`
+clean; full `go test ./... -count=1` exit 0 with the live OpenCode serve
+(PID 731716 on `:4096`) still listening and returning 200 afterwards.

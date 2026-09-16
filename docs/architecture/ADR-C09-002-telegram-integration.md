@@ -78,8 +78,12 @@ Telegram no safe way to answer it.
 passes its path to the long-lived OpenCode `serve` child through
 `HERO_LIFECYCLE_EVENT_SOCKET`. CLI services inherit the variable and install a
 best-effort notifier that sends the transport-neutral lifecycle event, including
-its SQLite event id, to the socket. The TUI de-duplicates by event id and
-forwards only the existing filtered lifecycle messages to Telegram. SQLite
+its SQLite event id and the owning project, to the socket. The relay accepts an
+event only when its project matches the relay's own, so a process that merely
+inherits the endpoint — for example a test binary — cannot inject notifications.
+The TUI de-duplicates by event id and rejects events whose cycle id is unknown to
+its own store, then forwards only the existing filtered lifecycle messages to
+Telegram. SQLite
 remains the audit source; the TUI does not poll it for live delivery. Native
 harness permissions remain a separate keyed gate: the TUI forwards the request
 id and accepts only `/hero-permission <id> allow|deny`, while local `y`/`n` and
@@ -88,7 +92,11 @@ id and accepts only `/hero-permission <id> allow|deny`, while local `y`/`n` and
 **Consequences:** Stage approvals emitted by a `hero` child reach the owning
 TUI without importing Telegram concerns into the engine or daemon. Delivery is
 best-effort during process shutdown or an unavailable Telegram connection, with
-short-lived TUI-side buffering until pairing returns. OpenCode serve is
+short-lived TUI-side buffering until pairing returns. Foreign-project events are
+dropped at the relay, and a TUI ignores events for a cycle it does not own, so a
+stray or replayed event cannot drive stage progression or Telegram delivery.
+Test suites that open a cycle service neutralize the endpoint so synthetic
+lifecycle events never reach a live TUI. OpenCode serve is
 restarted when its lifecycle endpoint changes so descendants cannot retain an
 old endpoint. The relay is local-only and supported on the Linux/macOS target
 platforms; it is not a distributed event bus.

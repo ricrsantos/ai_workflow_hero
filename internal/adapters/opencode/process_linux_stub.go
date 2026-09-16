@@ -21,3 +21,8 @@ func processListenPort(pid, port int) bool {
 	_ = port
 	return true
 }
+
+func processCwd(pid int) (string, error) {
+	_ = pid
+	return "", nil
+}

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -174,8 +175,24 @@ func reapEntry(ctx context.Context, e store.ServeRegistryEntry) {
 		}
 		return
 	}
+	// The URL is live but the recorded PID is gone. Resolve the real serve by
+	// listening port, but only when its working directory belongs to the same
+	// project: a bare global port match could terminate another project's serve
+	// (or an unrelated opencode serve the developer is running on that port).
+	projectDir := strings.TrimSpace(e.ProjectPath)
+	if projectDir == "" {
+		slog.Warn("registry url is alive without a project path; skipping reaping by port",
+			"pid", e.PID, "port", e.Port, "url", e.URL)
+		return
+	}
 	for _, pid := range listOpenCodeServePIDs() {
 		if e.Port > 0 && !processListenPort(pid, e.Port) {
+			continue
+		}
+		cwd, cwdErr := processCwd(pid)
+		if cwdErr != nil || !pathWithinProject(cwd, projectDir) {
+			slog.Warn("skip reaping opencode serve owned by another project",
+				"pid", pid, "cwd", cwd, "project", projectDir)
 			continue
 		}
 		slog.Info("reaping orphan opencode serve by registry url", "pid", pid, "port", e.Port, "url", e.URL)
@@ -185,6 +202,30 @@ func reapEntry(ctx context.Context, e store.ServeRegistryEntry) {
 	if e.PID > 0 && processAlive(e.PID) {
 		slog.Warn("registry pid is not opencode serve; skipping kill", "pid", e.PID, "port", e.Port)
 	}
+}
+
+// pathWithinProject reports whether cwd equals projectDir or is nested inside
+// it. Symlinks are resolved so a kernel-resolved /proc/<pid>/cwd can be compared
+// with a configured project path. Empty inputs never match, so reaping stays
+// conservative when ownership cannot be established.
+func pathWithinProject(cwd, projectDir string) bool {
+	cwd = strings.TrimSpace(cwd)
+	projectDir = strings.TrimSpace(projectDir)
+	if cwd == "" || projectDir == "" {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(projectDir); err == nil {
+		projectDir = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(cwd); err == nil {
+		cwd = resolved
+	}
+	cwd = filepath.Clean(cwd)
+	projectDir = filepath.Clean(projectDir)
+	if cwd == projectDir {
+		return true
+	}
+	return strings.HasPrefix(cwd, projectDir+string(filepath.Separator))
 }
 
 // stopRegistryProcesses terminates all opencode serve rows in the registry.

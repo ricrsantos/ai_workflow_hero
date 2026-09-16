@@ -234,11 +234,12 @@ func TestIntegration_OrphanServeRegistryReap(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 
 	if _, err := st.InsertServeRegistry(store.ServeRegistryEntry{
-		Harness:   "opencode",
-		PID:       999999,
-		Port:      4096,
-		URL:       "http://127.0.0.1:4096",
-		CreatedAt: "2026-01-01T00:00:00Z",
+		Harness:     "opencode",
+		PID:         999999,
+		Port:        1,
+		URL:         "http://127.0.0.1:1",
+		ProjectPath: dir,
+		CreatedAt:   "2026-01-01T00:00:00Z",
 	}); err != nil {
 		t.Fatal(err)
 	}

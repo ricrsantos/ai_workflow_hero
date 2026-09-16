@@ -147,11 +147,15 @@ Validated attachments SHALL render as chips below the text input and above the s
 - **THEN** an error chip replaces the pending chip and submit cannot include that file
 
 ### Requirement: Transcript SHALL render asset cards with keyboard actions
-Model/tool image assets SHALL render as transcript cards with metadata and actions: `Enter/o` open in system viewer (xdg-open/open with TUI suspend/resume), `c` copy path, `a` attach to next composer turn, and `s` save via inline path dialog. Focused composer chips SHALL expose `Enter/o` open, `c` copy path, `s` save, and `x/Delete` remove. Inline pixel, Unicode mosaic, Kitty, Sixel, and iTerm2 previews are discontinued. All I/O SHALL be `tea.Cmd`. For sessions registered in durable History, cards SHALL be reconstructed from persisted `session_events` and `session_assets` after TUI restart without loading image bytes into the Bubble Tea model. Cards MUST NOT be invented when `transcript_state` is `unavailable_legacy` (PRD-C14-001 §§2.6,2.14; PRD-C16-001 §3.3; UI-C14-001 §§3,5–6; UI-C16-001 §8; ADR-078; ADR-096).
+Model/tool image assets SHALL render as transcript cards with metadata and actions: `Enter/o` open in system viewer (xdg-open/open with TUI suspend/resume), `c` copy path, `a` attach to next composer turn, and `s` save via inline path dialog. Focused composer chips SHALL expose `Enter/o` open, `c` copy path, `s` save, and `x/Delete` remove. Asset cards SHALL render before the turn's assistant text as their own block grouped with the turn's thinking/tool detail rows, so the answer is the last content of the turn. Inline pixel, Unicode mosaic, Kitty, Sixel, and iTerm2 previews are discontinued. All I/O SHALL be `tea.Cmd`. For sessions registered in durable History, cards SHALL be reconstructed from persisted `session_events` and `session_assets` after TUI restart without loading image bytes into the Bubble Tea model. Cards MUST NOT be invented when `transcript_state` is `unavailable_legacy` (PRD-C14-001 §§2.6,2.14; PRD-C16-001 §3.3; UI-C14-001 §§3,5–6; UI-C16-001 §8; ADR-078; ADR-096).
 
 #### Scenario: Card actions remain keyboard-only
 - **WHEN** an asset card is focused
 - **THEN** Enter/o/c/a/s perform open/copy/attach/save without requiring a mouse
+
+#### Scenario: Cards precede the turn response
+- **WHEN** a turn produces an asset and also emits assistant text
+- **THEN** the asset card renders above the assistant text, after the turn's thinking/tool rows
 
 #### Scenario: Open suspends the TUI
 - **WHEN** the user presses `o` on a card

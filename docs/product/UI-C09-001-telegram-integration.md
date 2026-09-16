@@ -95,7 +95,7 @@ ai_workflow_2: disconnected.
 
 - Do not send thinking, tool, activity, stream deltas, or local diagnostics to Telegram.
 - Authorization failures give the remote sender no project-specific response. Local logs may record a redacted rejection count.
-- Cycle approvals emitted by a CLI child are delivered through the owning TUI's private lifecycle relay, so Telegram receives `Approval required: <stage>` even when the `hero stage close` command ran inside OpenCode. The relay does not forward intermediate harness activity.
+- Cycle approvals emitted by a CLI child are delivered through the owning TUI's private lifecycle relay, so Telegram receives `Approval required: <stage>` even when the `hero stage close` command ran inside OpenCode. The relay does not forward intermediate harness activity. Events stamped with a different project than the relay's own are dropped before they reach the TUI, and the TUI ignores events for a cycle it does not own.
 - Missing plugin, vault failure, incompatible daemon, failed Bot API connection, and restart exhaustion use existing warning/error colors with an actionable local remediation message.
 
 ## 5. Keyboard and accessibility

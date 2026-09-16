@@ -190,7 +190,7 @@ During a turn, adapters SHALL detect image files written by tools and expose the
 
 #### Scenario: Tool-written PNG appears once
 - **WHEN** a tool writes `design-export.png` during a turn and the same bytes are also mentioned in a tool result
-- **THEN** Chat shows a single tool-sourced asset card after the turn’s text output
+- **THEN** Chat shows a single tool-sourced asset card within the turn, before the turn’s text output
 
 #### Scenario: Detection does not stall completion
 - **WHEN** tool-written detection runs

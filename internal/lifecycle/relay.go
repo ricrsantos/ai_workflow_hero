@@ -32,11 +32,12 @@ const (
 
 // Relay receives lifecycle events for one owning TUI process.
 type Relay struct {
-	path     string
-	listener net.Listener
-	events   chan conversation.Event
-	cancel   context.CancelFunc
-	done     chan struct{}
+	path       string
+	projectDir string
+	listener   net.Listener
+	events     chan conversation.Event
+	cancel     context.CancelFunc
+	done       chan struct{}
 
 	closeOnce sync.Once
 	connWG    sync.WaitGroup
@@ -78,11 +79,12 @@ func NewRelay(projectDir string) (*Relay, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Relay{
-		path:     path,
-		listener: listener,
-		events:   make(chan conversation.Event, 64),
-		cancel:   cancel,
-		done:     make(chan struct{}),
+		path:       path,
+		projectDir: filepath.Clean(projectDir),
+		listener:   listener,
+		events:     make(chan conversation.Event, 64),
+		cancel:     cancel,
+		done:       make(chan struct{}),
 	}
 	go r.acceptLoop(ctx)
 	return r, nil
@@ -157,10 +159,26 @@ func (r *Relay) handleConnection(ctx context.Context, conn net.Conn) {
 		slog.Debug("lifecycle relay ignored invalid event", "kind", event.Kind, "cycle_id", event.CycleID)
 		return
 	}
+	if !sameProject(r.projectDir, event.ProjectDir) {
+		slog.Debug("lifecycle relay ignored event from another project",
+			"kind", event.Kind, "cycle_id", event.CycleID, "event_project", event.ProjectDir)
+		return
+	}
 	select {
 	case r.events <- event:
 	case <-ctx.Done():
 	}
+}
+
+// sameProject reports whether two project paths identify the same directory.
+// An empty project never matches, so an unstamped event cannot cross the relay.
+func sameProject(a, b string) bool {
+	a = filepath.Clean(strings.TrimSpace(a))
+	b = filepath.Clean(strings.TrimSpace(b))
+	if a == "" || b == "" || a == "." || b == "." {
+		return false
+	}
+	return a == b
 }
 
 // Close stops the endpoint and removes its exact socket path.
@@ -185,22 +203,28 @@ func (r *Relay) Close() error {
 // envNotifier is the child-side synchronous notifier. Notifications are
 // best-effort: a lifecycle event must never make a CLI command fail or stall.
 type envNotifier struct {
-	path string
+	path       string
+	projectDir string
 }
 
 // NewEnvNotifier returns a notifier for EventSocketEnv, or nil when the
-// process is not running under an owning TUI.
-func NewEnvNotifier() conversation.Notifier {
+// process is not running under an owning TUI. projectDir identifies the service
+// that emits the events; the relay drops events whose project does not match
+// its own.
+func NewEnvNotifier(projectDir string) conversation.Notifier {
 	path := strings.TrimSpace(os.Getenv(EventSocketEnv))
 	if path == "" {
 		return nil
 	}
-	return envNotifier{path: path}
+	return envNotifier{path: path, projectDir: projectDir}
 }
 
 func (n envNotifier) Notify(event conversation.Event) {
 	if strings.TrimSpace(n.path) == "" {
 		return
+	}
+	if strings.TrimSpace(event.ProjectDir) == "" {
+		event.ProjectDir = n.projectDir
 	}
 	conn, err := net.DialTimeout("unix", n.path, notifyTimeout)
 	if err != nil {
