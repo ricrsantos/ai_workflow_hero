@@ -41,13 +41,6 @@ QA failure loop: returns to the implementation agent(s) referenced in the error 
 - NEVER change architecture.
 - Receive only file pointers — start each session fresh.
 
-Estimate character usage for this invocation:
-
-- `input_chars` ≈ size of the effective prompt + files read
-- `output_chars` ≈ size of the response + report written
-
-The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
-
 ## C15 report contract (PRD-C15-001 §6)
 
 Emit **one JSON object** as your entire completion output and **stop**. The orchestrator or TUI scheduler validates the report and persists findings, stage transitions, OpenSpec checkboxes, and loop-back.
@@ -75,7 +68,11 @@ If a mode is not enabled for this project the whole report is rejected with `inv
 
 Optional `evidence` is a string array of safe repo-relative paths or commands; a `..` path segment (`../secret`) is not allowed. Optional `reopen_id` reopens a prior `done` finding in the same cycle only when file, requirement, acceptance, **and** repro mode+package+test match the stored contract.
 
-Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
+A field Hero does not recognize is **ignored with a warning**, never a rejection: the report still decodes and persists. A report fails only on something Hero cannot interpret — a missing or malformed field. Do not pad the report to be safe, and do not drop a required field to avoid a rejection.
+
+Rejection codes (nothing is persisted): `invalid_json`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
+
+Warning codes (report accepted): `unknown_field` (extra field ignored), `field_renamed` (key normalized onto the contract, e.g. `reopenId` → `reopen_id`).
 
 ## Loop ceiling (scheduler-owned)
 
@@ -149,17 +146,3 @@ Each failure entry uses `owner` (or legacy alias `agent`) plus `file` and/or `re
 ```
 `file`, `requirement` (when present), `acceptance_criteria`, and `repro.mode`+`repro.package`+`repro.test` in that entry MUST match the stored `find-qa-1` contract. A different residual or different repro identity omits `reopen_id`.
 Logging failures belong in the `failures` array (for example `"issue": "Missing leveled logging (error/info/debug); unleveled console.log only"`). Do not emit a separate top-level `"logging"` field in the JSON report.
-
-Example orchestrator-side metrics payload (never include inside the C15 validation JSON object):
-
-```json
-{
-  "metrics": {
-    "model": "<id>",
-    "input_chars": 0,
-    "output_chars": 0
-  }
-}
-```
-
-Estimate character usage for this invocation (`input_chars`, `output_chars`). The orchestrator persists metrics via CLI — do **not** add a `metrics` object to the C15 JSON report above.

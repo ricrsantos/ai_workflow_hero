@@ -9,6 +9,9 @@ type QAReport struct {
 	Status   string
 	Failures []FailureEntry
 	Summary  string
+	// ContractWarnings records deviations Hero tolerated (extra fields it
+	// ignored, key names it normalized). Never a reason to reject the report.
+	ContractWarnings []ReportWarning
 }
 
 var qaAllowed = map[string]struct{}{
@@ -21,9 +24,8 @@ func DecodeQA(data []byte, ctx DecodeContext) (*QAReport, *DiagnosticError) {
 	if err != nil {
 		return nil, err
 	}
-	if err := unknownFields(root, qaAllowed, ""); err != nil {
-		return nil, err
-	}
+	var warnings []ReportWarning
+	collect(&warnings, dropUnknownFields(root, qaAllowed, ""))
 
 	status, err := parseValidationStatus(root)
 	if err != nil {
@@ -44,6 +46,7 @@ func DecodeQA(data []byte, ctx DecodeContext) (*QAReport, *DiagnosticError) {
 		policy:       ctx.EffectiveReproPolicy(),
 		active:       ctx.ActiveOwners,
 		reopen:       ctx.ReopenIDs,
+		warnings:     &warnings,
 	})
 	if err != nil {
 		return nil, err
@@ -55,7 +58,7 @@ func DecodeQA(data []byte, ctx DecodeContext) (*QAReport, *DiagnosticError) {
 		return nil, err
 	}
 
-	return &QAReport{Status: status, Failures: failures, Summary: summary}, nil
+	return &QAReport{Status: status, Failures: failures, Summary: summary, ContractWarnings: warnings}, nil
 }
 
 // DecodeQAFromText extracts the first JSON object containing status from agent output.

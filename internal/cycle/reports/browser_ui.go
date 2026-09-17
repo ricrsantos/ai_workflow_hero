@@ -15,6 +15,9 @@ type BrowserUIReport struct {
 	Warnings     []string
 	ArtifactsDir string
 	Summary      string
+	// ContractWarnings is Hero's own tolerance record, distinct from the
+	// agent-supplied Warnings above.
+	ContractWarnings []ReportWarning
 }
 
 var browserUIAllowed = map[string]struct{}{
@@ -28,9 +31,8 @@ func DecodeBrowserUI(data []byte, ctx DecodeContext) (*BrowserUIReport, *Diagnos
 	if err != nil {
 		return nil, err
 	}
-	if err := unknownFields(root, browserUIAllowed, ""); err != nil {
-		return nil, err
-	}
+	var warnings []ReportWarning
+	collect(&warnings, dropUnknownFields(root, browserUIAllowed, ""))
 
 	status, err := parseValidationStatus(root)
 	if err != nil {
@@ -69,6 +71,7 @@ func DecodeBrowserUI(data []byte, ctx DecodeContext) (*BrowserUIReport, *Diagnos
 		policy:             ctx.EffectiveReproPolicy(),
 		active:             ctx.ActiveOwners,
 		reopen:             ctx.ReopenIDs,
+		warnings:           &warnings,
 	})
 	if err != nil {
 		return nil, err
@@ -100,5 +103,6 @@ func DecodeBrowserUI(data []byte, ctx DecodeContext) (*BrowserUIReport, *Diagnos
 		return nil, err
 	}
 
+	report.ContractWarnings = warnings
 	return report, nil
 }

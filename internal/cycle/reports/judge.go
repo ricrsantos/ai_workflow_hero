@@ -6,6 +6,8 @@ type JudgeReport struct {
 	ImplementationGaps []FailureEntry
 	SDDAmbiguity       bool
 	Summary            string
+	// ContractWarnings records deviations Hero tolerated instead of rejecting.
+	ContractWarnings []ReportWarning
 }
 
 var judgeAllowed = map[string]struct{}{
@@ -18,9 +20,8 @@ func DecodeJudge(data []byte, ctx DecodeContext) (*JudgeReport, *DiagnosticError
 	if err != nil {
 		return nil, err
 	}
-	if err := unknownFields(root, judgeAllowed, ""); err != nil {
-		return nil, err
-	}
+	var warnings []ReportWarning
+	collect(&warnings, dropUnknownFields(root, judgeAllowed, ""))
 
 	status, err := parseValidationStatus(root)
 	if err != nil {
@@ -54,6 +55,7 @@ func DecodeJudge(data []byte, ctx DecodeContext) (*JudgeReport, *DiagnosticError
 			active:            ctx.ActiveOwners,
 			activeImpl:        ctx.ActiveImplementationAgents,
 			reopen:            ctx.ReopenIDs,
+			warnings:          &warnings,
 		})
 		if err != nil {
 			return nil, err
@@ -72,6 +74,7 @@ func DecodeJudge(data []byte, ctx DecodeContext) (*JudgeReport, *DiagnosticError
 		ImplementationGaps: gaps,
 		SDDAmbiguity:       sddAmbiguity,
 		Summary:            summary,
+		ContractWarnings:   warnings,
 	}, nil
 }
 

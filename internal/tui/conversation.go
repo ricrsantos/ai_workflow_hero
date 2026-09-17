@@ -578,6 +578,9 @@ func (m model) clearStageHandoffState() model {
 	m.stageHandoffExpectedAgents = nil
 	m.stageHandoffPreparationError = ""
 	m.stageHandoffInterventionRequired = false
+	m.stageHandoffReportRetries = 0
+	m.stageHandoffRetryStage = ""
+	m.stageHandoffReportFeedback = ""
 	m.stageHandoffDoneKey = ""
 	m.stageProgressCTAKey = ""
 	return m
@@ -2481,8 +2484,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// a harness reset invalidated this completion for the new Chat-session
 			// context counter. Ordinary freechat never writes cycle costs.
 			if !freechatTurn && m.svc != nil && stageForMetrics != "" {
+				cost := m.turnCostUSD(modelForMetrics, usage.InputTokens, usage.OutputTokens)
 				if err := m.svc.AccumulateStageHarnessMetrics(
-					stageForMetrics, agentForMetrics, modelForMetrics, usage, msg.result.Duration,
+					stageForMetrics, agentForMetrics, modelForMetrics, usage, msg.result.Duration, cost,
 				); err != nil {
 					slog.Debug("tui accumulate stage metrics failed", "error", redact.Error(err))
 				}

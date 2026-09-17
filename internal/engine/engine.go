@@ -674,9 +674,14 @@ func (e *Engine) persistMetrics(cycleID int64, defaultStage string, metrics []Me
 }
 
 // AccumulateStageMetrics adds harness (or estimated) turn tokens onto the
-// existing cycle+stage+agent metrics row. Used by the TUI when conversationStage
-// is set so Costs/SQLite reflect real adapter usage without waiting for --metrics-json.
-func (e *Engine) AccumulateStageMetrics(cycleID int64, stageName, agent, model string, usage harness.Usage, durationMS int64) error {
+// existing cycle+stage+agent metrics row. The TUI runtime is the only writer:
+// it prices each turn from the model catalog and accumulates cost alongside
+// tokens, so no agent ever has to estimate or report metrics.
+//
+// costUSD is this turn's cost, not the row total. Pricing is linear in tokens,
+// so accumulating per turn also prices a stage correctly when the model
+// changes mid-stage — each turn keeps its own model's rate.
+func (e *Engine) AccumulateStageMetrics(cycleID int64, stageName, agent, model string, usage harness.Usage, durationMS int64, costUSD float64) error {
 	stageName = strings.TrimSpace(stageName)
 	if stageName == "" {
 		return fmt.Errorf("accumulate metrics: stage name required")
@@ -706,6 +711,9 @@ func (e *Engine) AccumulateStageMetrics(cycleID int64, stageName, agent, model s
 	row.OutputTokens += usage.OutputTokens
 	if durationMS > 0 {
 		row.DurationMS += durationMS
+	}
+	if costUSD > 0 {
+		row.CostUSD += costUSD
 	}
 	return e.Store.UpsertMetric(row)
 }

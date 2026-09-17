@@ -12,7 +12,7 @@ import (
 // the cycle's repro policy. The policy decides which modes are available, so a
 // Go project keeps the strict `go test` gate while another stack uses its own
 // configured command (or, where no re-run can exist, evidence).
-func decodeFindingRepro(item object, prefix, sourceStage string, policy findingrepro.Policy, evidence []string) (FindingRepro, *DiagnosticError) {
+func decodeFindingRepro(item object, prefix, sourceStage string, policy findingrepro.Policy, evidence []string, sink *[]ReportWarning) (FindingRepro, *DiagnosticError) {
 	raw, ok := item["repro"]
 	if !ok || string(raw) == "null" {
 		return FindingRepro{}, diag(CodeMissingField, prefix+"repro", "", "repro is required")
@@ -22,9 +22,7 @@ func decodeFindingRepro(item object, prefix, sourceStage string, policy findingr
 		return FindingRepro{}, diag(CodeInvalidEnum, prefix+"repro", truncateValue(string(raw)), "repro must be an object")
 	}
 	allowed := map[string]struct{}{"mode": {}, "package": {}, "test": {}, "source": {}}
-	if err := unknownFields(fields, allowed, prefix+"repro."); err != nil {
-		return FindingRepro{}, err
-	}
+	collect(sink, dropUnknownFields(fields, allowed, prefix+"repro."))
 
 	modeRaw := ""
 	if rawMode, ok := fields["mode"]; ok && string(rawMode) != "null" {

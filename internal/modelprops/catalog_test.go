@@ -27,11 +27,14 @@ func TestClaudeCatalogUsesNativeSelectorsAndKeepsPricingUnknown(t *testing.T) {
 	cat := LoadCatalogFromFS(assets.FS, "models")
 	want := []string{
 		"claude-fable-5",
+		"claude-fable-5-1",
 		"claude-haiku-4-5-20251001",
 		"claude-opus-4-7",
 		"claude-opus-4-7[1m]",
+		"claude-opus-5",
 		"claude-sonnet-4-6",
 		"claude-sonnet-4-6[1m]",
+		"claude-sonnet-5",
 		"fable",
 		"haiku",
 		"opus",
@@ -46,6 +49,33 @@ func TestClaudeCatalogUsesNativeSelectorsAndKeepsPricingUnknown(t *testing.T) {
 		ef, ok := cat.CatalogValuesForHarness("claude", model, "ef")
 		if !ok || !ef.Available || ef.Default != "medium" {
 			t.Fatalf("%s effort metadata=%+v", model, ef)
+		}
+	}
+
+	// Context windows follow Claude Code's model-config docs, not the Anthropic
+	// API's: Claude Code documents Haiku at 100K where the API exposes 200K.
+	// The current generation is natively 1M, so `[1m]` is only a real opt-in
+	// for the selectors that are still 200K.
+	wantWindow := map[string]int64{
+		"sonnet":                    1_000_000,
+		"sonnet[1m]":                1_000_000,
+		"claude-sonnet-5":           1_000_000,
+		"claude-sonnet-4-6":         200_000,
+		"claude-sonnet-4-6[1m]":     1_000_000,
+		"opus":                      1_000_000,
+		"opus[1m]":                  1_000_000,
+		"claude-opus-5":             1_000_000,
+		"claude-opus-4-7":           1_000_000,
+		"claude-opus-4-7[1m]":       1_000_000,
+		"haiku":                     100_000,
+		"claude-haiku-4-5-20251001": 100_000,
+		"fable":                     1_000_000,
+		"claude-fable-5-1":          1_000_000,
+		"claude-fable-5":            1_000_000,
+	}
+	for model, window := range wantWindow {
+		if got := cat[model].ContextWindow; got != window {
+			t.Errorf("%s context_window=%d want %d", model, got, window)
 		}
 	}
 }

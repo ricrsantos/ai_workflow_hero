@@ -13,7 +13,7 @@
   "harnesses": {
     "claude": {
       "enabled": true,
-      "model": "sonnet",
+      "model": "opus",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     },
@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "opencode",
-    "model": "opencode-go/muse-spark-1.3-contributor"
+    "harness": "claude",
+    "model": "opus"
   },
   "chat_verbosity": "debug",
   "telegram": {

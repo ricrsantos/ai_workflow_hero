@@ -93,6 +93,10 @@ type stageHandoffDecision struct {
 	// EscalateReason stops the loop and hands the decision to the user instead
 	// of asking the orchestrator for yet another wave.
 	EscalateReason string
+	// ContractWarnings are deviations Hero tolerated while decoding the report
+	// (ignored extra fields, normalized key names). They are shown to the user
+	// so a drifting agent prompt is visible, and never block the stage.
+	ContractWarnings []reports.ReportWarning
 }
 
 const (
@@ -409,6 +413,14 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 		if stageSummary != "" {
 			prompt += "\n## Orchestrator assignment (loop-back)\n\n" + stageSummary + "\n"
 		}
+		if feedback := strings.TrimSpace(m.stageHandoffReportFeedback); feedback != "" {
+			prompt += "\n## Previous report rejected — reissue it\n\n" +
+				"Hero could not decode your last report and persisted nothing. " +
+				"Do not redo the stage work; re-emit the same findings as one valid JSON object.\n\n" +
+				"Diagnostic: " + feedback + "\n\n" +
+				"Extra fields are ignored with a warning, so the report fails only on a missing or malformed field. " +
+				"Emit the JSON object as your entire completion output and stop.\n"
+		}
 		if strings.TrimSpace(prompt) == "" {
 			return m.returnStageAgentPreparationFailure(stage, fmt.Sprintf("empty prompt for %s", agent))
 		}
@@ -421,6 +433,9 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 
 	m.stageHandoffLive = true
 	m.stageHandoffInterventionRequired = false
+	// The diagnostic is now baked into the prompts above; a later wave must not
+	// inherit a stale "your report was rejected" block.
+	m.stageHandoffReportFeedback = ""
 	m.stageProgressHoldUntilStart = false
 	m.stageProgressCTAKey = ""
 	m.stageHandoffStage = stage
@@ -1176,6 +1191,23 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 		// wave, not a completion-gate retry of the validation stage.
 		m.stageHandoffDoneKey = ""
 	}
+	// A report Hero could not decode used to park the stage Running and wait for
+	// a human to notice. The cycle is the priority: re-dispatch the stage agent
+	// with the diagnostic, and only hand control back once the retries are spent.
+	// Scoped to validation stages: Implementation already has its own wave loop
+	// and completion gate, so a second retry mechanism there would double-handle
+	// the same failure.
+	if reportRejected := isValidationHandoffStage(stage) && decision.OmitAgentOutput &&
+		strings.Contains(decision.ChatCopy, "report rejected"); reportRejected {
+		if retry, ok := m.nextReportRetry(stage); ok {
+			m.transcript = append(m.transcript, convMessage{
+				role:    convRoleWarning,
+				content: strings.TrimRight(decision.ChatCopy, "\n") + fmt.Sprintf("\n→ Re-running %s (attempt %d of %d)", validationStageTitle(stage), retry, maxReportRetries),
+			})
+			return m.retryStageAgentsAfterRejectedReport(stage, decision.Reason)
+		}
+		decision.EscalateReason = "report_contract"
+	}
 	m = m.restoreOrchestratorSession()
 	m = m.withRuntimeAgent(agentOrchestration)
 	m.runtimeCommandName = "start"
@@ -1201,6 +1233,18 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	}
 	if decision.SchedulerHandledFailure || decision.JudgeSDDAmbiguity {
 		canClose = false
+	}
+	if warnCopy := formatContractWarnings(stage, decision.ContractWarnings); warnCopy != "" {
+		m.transcript = append(m.transcript, convMessage{role: convRoleWarning, content: warnCopy})
+	}
+	// The stage is ending (closing, or closed-failed with loop-back), so this
+	// is the stage-close moment the metrics summary belongs to. The TUI prints
+	// it because only the TUI sees real harness usage; the orchestration agent
+	// no longer estimates or reports metrics.
+	if canClose || decision.SchedulerHandledFailure {
+		if summary := strings.TrimRight(m.stageMetricsSummary(stage), "\n"); summary != "" {
+			m.transcript = append(m.transcript, convMessage{role: convRoleSystem, content: summary})
+		}
 	}
 	var prompt string
 	if copy := strings.TrimSpace(decision.ChatCopy); copy != "" {
@@ -1280,13 +1324,14 @@ func (m model) evaluateValidationStageHandoff(stage, outputs string) stageHandof
 		decision.Reason = derr.Error()
 		return decision
 	}
-	status, judgeAmbiguity, decodeErr := decodeValidationReportStatus(stage, reportJSON, ctx)
+	status, judgeAmbiguity, contractWarnings, decodeErr := decodeValidationReportStatus(stage, reportJSON, ctx)
 	if decodeErr != nil {
 		decision.ChatCopy = formatValidationReportRejected(stage, decodeErr)
 		decision.OmitAgentOutput = true
 		decision.Reason = decodeErr.Error()
 		return decision
 	}
+	decision.ContractWarnings = contractWarnings
 	if judgeAmbiguity {
 		decision.JudgeSDDAmbiguity = true
 		if status == reports.ValidationStatusPassed {
@@ -1333,34 +1378,34 @@ func validationReportBody(outputs string, chunks []string) string {
 	return raw
 }
 
-func decodeValidationReportStatus(stage string, reportJSON []byte, ctx reports.DecodeContext) (string, bool, *reports.DiagnosticError) {
+func decodeValidationReportStatus(stage string, reportJSON []byte, ctx reports.DecodeContext) (string, bool, []reports.ReportWarning, *reports.DiagnosticError) {
 	switch stage {
 	case stageQA:
 		r, err := reports.DecodeQA(reportJSON, ctx)
 		if err != nil {
-			return "", false, err
+			return "", false, nil, err
 		}
-		return r.Status, false, nil
+		return r.Status, false, r.ContractWarnings, nil
 	case stageJudge:
 		r, err := reports.DecodeJudge(reportJSON, ctx)
 		if err != nil {
-			return "", false, err
+			return "", false, nil, err
 		}
-		return r.Status, r.SDDAmbiguity, nil
+		return r.Status, r.SDDAmbiguity, r.ContractWarnings, nil
 	case stageBrowserUI:
 		r, err := reports.DecodeBrowserUI(reportJSON, ctx)
 		if err != nil {
-			return "", false, err
+			return "", false, nil, err
 		}
-		return r.Status, false, nil
+		return r.Status, false, r.ContractWarnings, nil
 	case stageQAEndToEnd:
 		r, err := reports.DecodeQAEndToEnd(reportJSON, ctx)
 		if err != nil {
-			return "", false, err
+			return "", false, nil, err
 		}
-		return r.Status, false, nil
+		return r.Status, false, r.ContractWarnings, nil
 	default:
-		return "", false, reportsDiagInvalidStage(stage)
+		return "", false, nil, reportsDiagInvalidStage(stage)
 	}
 }
 
@@ -1573,4 +1618,76 @@ func (m model) escalateStalledFindings(st store.Stage, stalled []store.Finding) 
 	extra := fmt.Sprintf("%d finding(s) reached the %d-round limit: %s",
 		len(stalled), maxFindingRounds, strings.Join(ids, ", "))
 	return m.emitSchedulerCTA(schedulerCTAContinue, st, extra)
+}
+
+// formatContractWarnings renders what Hero tolerated while decoding a report.
+// The stage already proceeded — this exists so a drifting agent prompt is
+// visible instead of silently accumulating noise in every report.
+func formatContractWarnings(stage string, warnings []reports.ReportWarning) string {
+	if len(warnings) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "⚠ %s report accepted with %d contract warning(s)\n", validationStageTitle(stage), len(warnings))
+	for _, w := range warnings {
+		switch w.Code {
+		case reports.CodeFieldRenamed:
+			fmt.Fprintf(&b, "  %s → %s (normalized)\n", w.Field, w.Value)
+		default:
+			fmt.Fprintf(&b, "  %s ignored (not in the report contract)\n", w.Field)
+		}
+	}
+	b.WriteString("  The cycle continued; fix the agent prompt so future reports stay on contract.\n")
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// maxReportRetries bounds automatic re-dispatch after a rejected report. Two
+// attempts cover the common case (a model that drifts once and corrects when
+// shown the diagnostic) without burning the stage budget on a model that
+// cannot produce the contract at all.
+const maxReportRetries = 2
+
+// nextReportRetry claims one retry for this stage, returning the attempt number.
+// The counter is scoped to a stage so moving on always starts fresh.
+func (m *model) nextReportRetry(stage string) (int, bool) {
+	stage = strings.TrimSpace(stage)
+	if m.stageHandoffRetryStage != stage {
+		m.stageHandoffRetryStage = stage
+		m.stageHandoffReportRetries = 0
+	}
+	if m.stageHandoffReportRetries >= maxReportRetries {
+		return 0, false
+	}
+	m.stageHandoffReportRetries++
+	return m.stageHandoffReportRetries, true
+}
+
+// retryStageAgentsAfterRejectedReport re-runs the stage agent with the decoder
+// diagnostic attached, without touching persisted state: a rejected report
+// still applies nothing.
+func (m model) retryStageAgentsAfterRejectedReport(stage, diagnostic string) (model, tea.Cmd) {
+	if m.svc == nil {
+		return m, nil
+	}
+	st, err := m.svc.ActiveStage()
+	if err != nil {
+		// Without a resolved stage there is nothing safe to re-dispatch into.
+		slog.Error("report retry could not resolve active stage", "stage", stage, "error", redact.Error(err))
+		m.stageHandoffInterventionRequired = true
+		return m, nil
+	}
+	if st.Status != store.StageRunning {
+		// The stage moved on underneath us; hand back to the orchestrator
+		// rather than dispatching an agent into a stage that is not Running.
+		slog.Warn("report retry skipped; stage no longer running", "stage", stage, "status", st.Status)
+		return m.progressCTAForStage(st)
+	}
+	m.stageHandoffLive = false
+	m.stageHandoffOutputs = nil
+	m.stageHandoffDoneKey = ""
+	m.stageHandoffReportFeedback = strings.TrimSpace(diagnostic)
+	m = m.clearReproGateState()
+	m = m.restoreOrchestratorSession()
+	m.runtimeCommandName = ""
+	return m.startStageAgentSessions(m.namedStageAgents(st))
 }

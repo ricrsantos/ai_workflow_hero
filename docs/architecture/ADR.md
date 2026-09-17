@@ -37,7 +37,7 @@
 | [ADR-028](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-028-hero-cycles-and-hero-todos-runtime-commands) | `hero-cycles` and `hero-todos` Runtime commands | Accepted |
 | [ADR-029](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-029-hero-sync-scans-product-and-architecture-pending-items) | `hero-sync` scans product and architecture pending items | Accepted |
 | [ADR-030](ADR-C03-001-cursor-harness-tui-autonomy.md#adr-030-harness-default-model-in-herojson-tui-freechat-without-cycle) | Harness default model in hero.json; TUI freechat without cycle | Accepted |
-| [ADR-031](ADR-C04-001-multi-harness.md#adr-031-multi-harness-is-tui-only-cursor-ide-stays-cursor-only) | Multi-harness is TUI-only; Cursor IDE stays Cursor-only | Accepted |
+| [ADR-031](ADR-C04-001-multi-harness.md#adr-031-multi-harness-is-tui-only-cursor-ide-stays-cursor-only) | Multi-harness is TUI-only; Cursor IDE stays Cursor-only | Superseded by ADR-099 |
 | [ADR-032](ADR-C04-001-multi-harness.md#adr-032-agents-declare-harness--native-model-id-no-hero-canonical-id) | Agents declare harness + native model id; no Hero canonical id | Accepted |
 | [ADR-033](ADR-C04-001-multi-harness.md#adr-033-fallback-may-use-explicit-fallback-harness-never-a-third) | Fallback may use explicit fallback harness; never a third | Accepted |
 | [ADR-034](ADR-C04-001-multi-harness.md#adr-034-hero-200-interactive-harness-install-tools-removed) | Hero 2.0.0: interactive harness install; `--tools` removed | Accepted |
@@ -49,7 +49,7 @@
 | [ADR-040](ADR-C05-001-model-properties-tui.md#adr-040-per-harnessmodel-property-persistence-in-herojson) | Per-harness/model property persistence in `hero.json` | Accepted |
 | [ADR-041](ADR-C05-001-model-properties-tui.md#adr-041-adapter-owned-property-transport-and-explicit-rejection) | Adapter-owned property transport and explicit rejection | Accepted |
 | [ADR-042](ADR-C05-001-model-properties-tui.md#adr-042-tui-picker-and-effective-property-projection) | TUI picker and effective-property projection | Accepted |
-| [ADR-043](ADR-C06-001-codex-adapter.md#adr-043-codex-is-a-third-tui-harness-cursor-ide-stays-cursor-only) | Codex is a third TUI harness; Cursor IDE stays Cursor-only | Accepted |
+| [ADR-043](ADR-C06-001-codex-adapter.md#adr-043-codex-is-a-third-tui-harness-cursor-ide-stays-cursor-only) | Codex is a third TUI harness; Cursor IDE stays Cursor-only | Superseded by ADR-099 |
 | [ADR-044](ADR-C06-001-codex-adapter.md#adr-044-codex-via-hero-managed-app-server-stdio-json-rpc) | Codex via Hero-managed app-server (stdio JSON-RPC); project SQLite registry | Accepted |
 | [ADR-045](ADR-C06-001-codex-adapter.md#adr-045-opencodeadapter-is-the-behavioral-spec-idea-file-yields-on-divergence) | OpenCodeAdapter is the behavioral spec; idea file yields on divergence | Accepted |
 | [ADR-046](ADR-C06-001-codex-adapter.md#adr-046-codex-projection-assets-codex-to-codex) | Codex projection: `assets/codex/` → `.codex/`; enable provisions; disable keeps files | Accepted |
@@ -96,6 +96,10 @@
 | [ADR-096](ADR-C16-001-tui-session-history.md#adr-096-persistent-sessions-retain-managed-assets-until-explicit-deletion) | Persistent sessions retain managed assets until explicit deletion | Proposed |
 | [ADR-097](ADR-C16-001-tui-session-history.md#adr-097-adapter-session-history-and-deletion-are-optional-narrow-capabilities) | Adapter session history and deletion are optional narrow capabilities | Proposed |
 | [ADR-098](ADR-C16-001-tui-session-history.md#adr-098-legacy-bindings-migrate-idempotently-without-invented-transcript-data) | Legacy bindings migrate idempotently without invented transcript data | Proposed |
+| [ADR-099](ADR-C17-001-tui-only-runtime-report-tolerance.md#adr-099-the-hero-tui-is-the-only-cycle-runtime-ide-chat-orchestration-is-removed) | The Hero TUI is the only cycle runtime; IDE-chat orchestration is removed | Accepted |
+| [ADR-100](ADR-C17-001-tui-only-runtime-report-tolerance.md#adr-100-stage-metrics-are-measured-by-the-runtime-never-self-reported-by-agents) | Stage metrics are measured by the runtime, never self-reported by agents | Accepted |
+| [ADR-101](ADR-C17-001-tui-only-runtime-report-tolerance.md#adr-101-report-contracts-fail-closed-on-missing-fields-and-tolerate-extra-ones) | Report contracts fail closed on missing fields and tolerate extra ones | Accepted |
+| [ADR-102](ADR-C17-001-tui-only-runtime-report-tolerance.md#adr-102-a-rejected-report-retries-with-feedback-then-escalates-it-never-parks-the-cycle-silently) | A rejected report retries with feedback, then escalates; it never parks the cycle silently | Accepted |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 
@@ -133,7 +137,7 @@
 
 **Decision**: Strictly separate:
 - **CLI** (Go binary): only installation, update, maintenance, and administration of Hero. Never performs LLM reasoning.
-- **Runtime** (IDE chat, slash commands): all reasoning-driven development cycle execution.
+- **Runtime** (Hero TUI, slash commands): all reasoning-driven development cycle execution. Superseded by [ADR-099](ADR-C17-001-tui-only-runtime-report-tolerance.md#adr-099-the-hero-tui-is-the-only-cycle-runtime-ide-chat-orchestration-is-removed): the Runtime was originally IDE chat; the Hero TUI is now the only cycle runtime.
 
 Only purely administrative commands may have equivalents in both (e.g. `hero status` / `/hero:status`, `hero help` / `/hero:help`). Any command requiring agent reasoning exists **exclusively** in the Runtime — for example, `hero sync` does not exist; only `/hero:sync` does, because synchronizing `AGENTS.md`/context files from a codebase requires reasoning.
 

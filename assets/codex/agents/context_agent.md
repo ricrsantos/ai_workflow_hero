@@ -39,15 +39,6 @@ The context agent can be invoked during any stage by the orchestrator to fetch c
 - NEVER modify files other than during /hero-sync (`AGENTS.md`, `current-state.md`, `context-log.md`, `project.json`, `docs/architecture/architecture-overview.md` when missing or stale, `documents.json` when registering that overview, and soft secrets hygiene files `.env.example` / `.gitignore` when missing patterns).
 - Read from file pointers, not from pasted content.
 
-## Metrics (required in every completion report)
-
-Estimate character usage for this invocation:
-
-- `input_chars` ≈ size of the effective prompt + files read
-- `output_chars` ≈ size of the response + context report written
-
-The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
-
 ## Output Format
 
 ```json
@@ -57,11 +48,6 @@ The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
   "stack": "<stack description>",
   "recent_decisions": ["<decision 1>", "<decision 2>"],
   "key_files": ["<path1>", "<path2>"],
-  "summary": "<brief summary>",
-  "metrics": {
-    "model": "<id>",
-    "input_chars": 0,
-    "output_chars": 0
-  }
+  "summary": "<brief summary>"
 }
 ```

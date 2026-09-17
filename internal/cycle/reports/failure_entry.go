@@ -42,6 +42,7 @@ type failureEntryOptions struct {
 	active             ActiveOwners
 	activeImpl         []string
 	reopen             ReopenIDValidator
+	warnings           *[]ReportWarning
 }
 
 func decodeFailureEntries(raw json.RawMessage, fieldName string, opts failureEntryOptions) ([]FailureEntry, *DiagnosticError) {
@@ -67,9 +68,8 @@ func decodeFailureEntries(raw json.RawMessage, fieldName string, opts failureEnt
 
 	for i, item := range items {
 		prefix := fieldName + "[" + itoa(i) + "]."
-		if err := unknownFields(item, allowed, ""); err != nil {
-			err.Field = prefix + err.Field
-			return nil, err
+		for _, w := range dropUnknownFields(item, allowed, prefix) {
+			collectOne(opts.warnings, w)
 		}
 
 		entry, err := decodeFailureEntry(item, prefix, opts)
@@ -207,7 +207,7 @@ func decodeFailureEntry(item object, prefix string, opts failureEntryOptions) (*
 	}
 	entry.ReopenID = reopen
 
-	repro, err := decodeFindingRepro(item, prefix, opts.sourceStage, opts.policy, entry.Evidence)
+	repro, err := decodeFindingRepro(item, prefix, opts.sourceStage, opts.policy, entry.Evidence, opts.warnings)
 	if err != nil {
 		return nil, err
 	}

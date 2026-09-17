@@ -277,6 +277,8 @@ SDD ambiguity remains separate from implementation findings.
 
 ---
 
+> **Amended by [ADR-101](ADR-C17-001-tui-only-runtime-report-tolerance.md#adr-101-report-contracts-fail-closed-on-missing-fields-and-tolerate-extra-ones)**: fail-closed protects state, not shape. Missing and malformed fields still reject the whole report; extra fields are dropped with an `unknown_field` warning and the report persists normally.
+
 ## ADR-087: Deferred findings become durable project ToDos with a reconciled file projection
 
 ### Context

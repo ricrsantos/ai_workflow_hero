@@ -8,6 +8,8 @@ type QAEndToEndReport struct {
 	FlowsValidated []string
 	Failures       []FailureEntry
 	Summary        string
+	// ContractWarnings records deviations Hero tolerated instead of rejecting.
+	ContractWarnings []ReportWarning
 }
 
 var e2eAllowed = map[string]struct{}{
@@ -21,9 +23,8 @@ func DecodeQAEndToEnd(data []byte, ctx DecodeContext) (*QAEndToEndReport, *Diagn
 	if err != nil {
 		return nil, err
 	}
-	if err := unknownFields(root, e2eAllowed, ""); err != nil {
-		return nil, err
-	}
+	var warnings []ReportWarning
+	collect(&warnings, dropUnknownFields(root, e2eAllowed, ""))
 
 	status, err := parseValidationStatus(root)
 	if err != nil {
@@ -63,6 +64,7 @@ func DecodeQAEndToEnd(data []byte, ctx DecodeContext) (*QAEndToEndReport, *Diagn
 		policy:       ctx.EffectiveReproPolicy(),
 		active:       ctx.ActiveOwners,
 		reopen:       ctx.ReopenIDs,
+		warnings:     &warnings,
 	})
 	if err != nil {
 		return nil, err
@@ -76,5 +78,6 @@ func DecodeQAEndToEnd(data []byte, ctx DecodeContext) (*QAEndToEndReport, *Diagn
 		return nil, err
 	}
 
+	report.ContractWarnings = warnings
 	return report, nil
 }

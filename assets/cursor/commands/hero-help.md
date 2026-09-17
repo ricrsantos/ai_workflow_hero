@@ -13,11 +13,11 @@ Display a summary of all available Hero Runtime commands.
 | Command | Description |
 |---------|-------------|
 | /hero-new | Prepare `workflow-config.yml`, then `hero cycle new` (import prior models/stages; reset title/objective/scope; clean-session handoff) |
-| /hero-start | Start configured workflow stages (prefer new empty chat; bootstrap from config + `hero status`) |
-| /hero-approve | Approve via `hero approve --metrics-json` and advance |
+| /hero-start | Start configured workflow stages (bootstrap from config + `hero status`) |
+| /hero-approve | Approve via `hero approve` and advance |
 | /hero-reject | Reject via `hero reject --reason` and re-run stage |
 | /hero-cancel | Cancel active cycle via `hero cancel` (git rollback when needed) |
-| /hero-finish | Close cycle via `hero finish --metrics-json` |
+| /hero-finish | Close cycle via `hero finish` |
 | /hero-archive | Archive via `hero cycle archive` (OpenSpec `openspec archive <name> -y` first when linked; `--force` on OpenSpec failure) |
 | /hero-resume [cycle] | Resume via `hero cycle resume [--number N]` |
 | /hero-sync | Activate Hero in an existing project (Runtime only; runs `hero doctor` after sync — no `hero sync` CLI) |

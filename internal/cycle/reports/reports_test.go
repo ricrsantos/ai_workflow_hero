@@ -46,11 +46,47 @@ func TestDecodeQA_MissingAcceptanceCriteria(t *testing.T) {
 	}
 }
 
-func TestDecodeQA_UnknownField(t *testing.T) {
+func TestDecodeQA_UnknownFieldIsIgnoredNotRejected(t *testing.T) {
 	raw := `{"status":"passed","failures":[],"summary":"ok","extra":true}`
-	_, err := DecodeQA([]byte(raw), testCtx())
-	if err == nil || err.Code != CodeUnknownField {
-		t.Fatalf("expected unknown_field, got %v", err)
+	report, err := DecodeQA([]byte(raw), testCtx())
+	if err != nil {
+		t.Fatalf("extra field must not reject the report: %v", err)
+	}
+	if report.Status != ValidationStatusPassed {
+		t.Fatalf("status=%q want passed", report.Status)
+	}
+	if len(report.ContractWarnings) != 1 {
+		t.Fatalf("warnings=%+v want exactly one", report.ContractWarnings)
+	}
+	w := report.ContractWarnings[0]
+	if w.Code != CodeUnknownField || w.Field != "extra" {
+		t.Fatalf("warning=%+v want unknown_field on extra", w)
+	}
+}
+
+// A near-miss key is adopted rather than dropped: losing reopen_id silently
+// would let Hero allocate a new finding ID and bypass the loop ceiling.
+func TestDecodeQA_NormalizesNearMissKeys(t *testing.T) {
+	raw := `{"status":"failed","failures":[{"owner":"generic_agent","file":"a.go",` +
+		`"issue":"boom","acceptanceCriteria":"fixed",` +
+		`"repro":{"package":"./internal/tui","test":"TestBoom",` +
+		`"source":"package tui\n\nfunc TestBoom(t *testing.T) { t.Fatal(\"boom\") }\n"}}],` +
+		`"summary":"one"}`
+	report, err := DecodeQA([]byte(raw), testCtx())
+	if err != nil {
+		t.Fatalf("camelCase key must be normalized, not rejected: %v", err)
+	}
+	if len(report.Failures) != 1 || report.Failures[0].AcceptanceCriteria != "fixed" {
+		t.Fatalf("failures=%+v want acceptance_criteria adopted", report.Failures)
+	}
+	var renamed bool
+	for _, w := range report.ContractWarnings {
+		if w.Code == CodeFieldRenamed && strings.Contains(w.Field, "acceptanceCriteria") {
+			renamed = true
+		}
+	}
+	if !renamed {
+		t.Fatalf("warnings=%+v want a field_renamed entry", report.ContractWarnings)
 	}
 }
 
@@ -367,7 +403,7 @@ func implReport(completed, remaining string, gatesTrue bool) string {
 	}`
 }
 
-func TestDecodeImplementation_UnknownMetricsField(t *testing.T) {
+func TestDecodeImplementation_StrayMetricsIsIgnored(t *testing.T) {
 	raw := `{
 		"stage":"implementation",
 		"agent":"generic_agent",
@@ -383,9 +419,15 @@ func TestDecodeImplementation_UnknownMetricsField(t *testing.T) {
 		"summary":"done",
 		"metrics":{"model":"x","input_chars":1,"output_chars":1}
 	}`
-	_, err := DecodeImplementation([]byte(raw), OwnerGeneric, nil, testCtx())
-	if err == nil || err.Code != CodeUnknownField || err.Field != "metrics" {
-		t.Fatalf("expected unknown_field metrics, got %v", err)
+	report, err := DecodeImplementation([]byte(raw), OwnerGeneric, nil, testCtx())
+	if err != nil {
+		t.Fatalf("a stray metrics object must not reject the report: %v", err)
+	}
+	if report.Status != ImplStatusComplete {
+		t.Fatalf("status=%q want complete", report.Status)
+	}
+	if len(report.ContractWarnings) != 1 || report.ContractWarnings[0].Field != "metrics" {
+		t.Fatalf("warnings=%+v want one unknown_field on metrics", report.ContractWarnings)
 	}
 }
 

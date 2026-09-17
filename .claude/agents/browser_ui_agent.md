@@ -64,17 +64,6 @@ Browser UI Validation failure loop: returns to `frontend_agent` (or `backend_age
 - Do not run full business journey scripts — Health + optional Visual only.
 - Receive only file pointers — start each session fresh.
 
-## Metrics (orchestrator only)
-
-Estimate character usage for this invocation:
-
-- `input_chars` ≈ size of the effective prompt + files read
-- `output_chars` ≈ size of the response + report written
-
-The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
-
-Browser UI Validation is the one stage where `repro.mode: "evidence"` is always available, because a rendering, CSS, or visual-diff failure has no deterministic unit-test re-run. Use it with the artifact paths under `.workflow-hero/cycles/current/browser-ui/` in `evidence`. When the failure *is* expressible as an automated check (a console error a test can assert, a broken endpoint), prefer `go_test` or `command` so Hero can gate the fix.
-
 ## Loop ceiling (scheduler-owned)
 
 One finding may travel validation → Implementation → validation at most 3 rounds. On the fourth, Hero escalates Implementation instead of dispatching another wave, and the user decides with `/hero-continue` (grant iterations), `/hero-add-todo` (defer the finding), `/hero-cancel`, or `/hero-finish`. Reporting the same residual under a **new** `find-*` ID to dodge that ceiling is a contract violation: reopen the existing ID whenever file, requirement, acceptance, and repro identity still match.
@@ -114,7 +103,11 @@ If a mode is not enabled for this project the whole report is rejected with `inv
 
 Optional `evidence` is a string array of safe repo-relative paths or commands; a `..` path segment (`../secret`) is not allowed. Optional `reopen_id` reopens a prior `done` finding in the same cycle only when file, requirement, acceptance, **and** repro mode+package+test match the stored contract.
 
-Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
+A field Hero does not recognize is **ignored with a warning**, never a rejection: the report still decodes and persists. A report fails only on something Hero cannot interpret — a missing or malformed field. Do not pad the report to be safe, and do not drop a required field to avoid a rejection.
+
+Rejection codes (nothing is persisted): `invalid_json`, `missing_field`, `invalid_enum`, `invalid_owner`, `unknown_reopen_id`, `duplicate_id`, `overlapping_arrays`, `assignment_union_mismatch`, `unassigned_id`, `false_acceptance_gate`, `nonempty_empty_assignment`, `no_actionable_finding`.
+
+Warning codes (report accepted): `unknown_field` (extra field ignored), `field_renamed` (key normalized onto the contract, e.g. `reopenId` → `reopen_id`).
 
 ### Passing example
 
@@ -189,16 +182,3 @@ Decoder diagnostic codes include: `invalid_json`, `unknown_field`, `missing_fiel
   "summary": "Reopened find-bui-1; backend health still failing."
 }
 ```
-Example orchestrator-side metrics payload (never include inside the C15 validation JSON object):
-
-```json
-{
-  "metrics": {
-    "model": "<id>",
-    "input_chars": 0,
-    "output_chars": 0
-  }
-}
-```
-
-Estimate character usage for this invocation (`input_chars`, `output_chars`). The orchestrator persists metrics via CLI — do **not** add a `metrics` object to the C15 JSON report above.

@@ -17,6 +17,8 @@ type ImplementationReport struct {
 	Summary         string
 	Blocker         string
 	NextAction      string
+	// ContractWarnings records deviations Hero tolerated instead of rejecting.
+	ContractWarnings []ReportWarning
 }
 
 var implementationAllowed = map[string]struct{}{
@@ -37,9 +39,8 @@ func DecodeImplementation(data []byte, expectedAgent string, assignment []string
 	if err != nil {
 		return nil, err
 	}
-	if err := unknownFields(root, implementationAllowed, ""); err != nil {
-		return nil, err
-	}
+	var warnings []ReportWarning
+	collect(&warnings, dropUnknownFields(root, implementationAllowed, ""))
 
 	stage, err := requireString(root, "stage")
 	if err != nil {
@@ -74,7 +75,7 @@ func DecodeImplementation(data []byte, expectedAgent string, assignment []string
 		return nil, err
 	}
 
-	gates, err := decodeAcceptanceGates(root)
+	gates, err := decodeAcceptanceGates(root, &warnings)
 	if err != nil {
 		return nil, err
 	}
@@ -98,14 +99,15 @@ func DecodeImplementation(data []byte, expectedAgent string, assignment []string
 	}
 
 	report := &ImplementationReport{
-		Stage:           stage,
-		Agent:           agent,
-		Status:          status,
-		TasksCompleted:  completed,
-		TasksRemaining:  remaining,
-		TestsPassed:     testsPassed,
-		AcceptanceGates: gates,
-		Summary:         summary,
+		Stage:            stage,
+		Agent:            agent,
+		Status:           status,
+		TasksCompleted:   completed,
+		TasksRemaining:   remaining,
+		TestsPassed:      testsPassed,
+		AcceptanceGates:  gates,
+		Summary:          summary,
+		ContractWarnings: warnings,
 	}
 
 	if status == ImplStatusComplete {
@@ -136,7 +138,7 @@ func DecodeImplementation(data []byte, expectedAgent string, assignment []string
 	return report, nil
 }
 
-func decodeAcceptanceGates(root object) (map[string]bool, *DiagnosticError) {
+func decodeAcceptanceGates(root object, sink *[]ReportWarning) (map[string]bool, *DiagnosticError) {
 	raw, ok := root["acceptance_gates"]
 	if !ok {
 		return nil, diag(CodeMissingField, "acceptance_gates", "", "field is required")
@@ -150,9 +152,7 @@ func decodeAcceptanceGates(root object) (map[string]bool, *DiagnosticError) {
 		"task_ownership_respected": {},
 		"required_tests_passed":    {},
 	}
-	if err := unknownFields(fields, allowed, "acceptance_gates."); err != nil {
-		return nil, err
-	}
+	collect(sink, dropUnknownFields(fields, allowed, "acceptance_gates."))
 	out := make(map[string]bool, len(allowed))
 	for key := range allowed {
 		sub, ok := fields[key]

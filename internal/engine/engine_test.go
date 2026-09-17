@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -762,11 +763,11 @@ func TestAccumulateStageMetricsAndPreferHarnessOnClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := e.AccumulateStageMetrics(id, "research", "discover_agent", "composer-2.5",
-		harness.Usage{InputTokens: 100, OutputTokens: 40}, 1500); err != nil {
+		harness.Usage{InputTokens: 100, OutputTokens: 40}, 1500, 0.02); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.AccumulateStageMetrics(id, "research", "discover_agent", "composer-2.5",
-		harness.Usage{InputTokens: 50, OutputTokens: 10}, 500); err != nil {
+		harness.Usage{InputTokens: 50, OutputTokens: 10}, 500, 0.01); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.GetMetric(id, "research", "discover_agent")
@@ -776,8 +777,12 @@ func TestAccumulateStageMetricsAndPreferHarnessOnClose(t *testing.T) {
 	if got.InputTokens != 150 || got.OutputTokens != 50 || got.DurationMS != 2000 {
 		t.Fatalf("accumulated=%+v", got)
 	}
+	// Cost accumulates per turn alongside tokens, priced by the TUI runtime.
+	if math.Abs(got.CostUSD-0.03) > 1e-9 {
+		t.Fatalf("cost=%v want 0.03", got.CostUSD)
+	}
 
-	// Agent estimate must not overwrite harness tokens; cost may fill when unset.
+	// Agent estimate must not overwrite TUI-priced cost or harness tokens.
 	if err := e.CloseStage(id, "research", StageCloseInput{
 		Summary: "done",
 		Metrics: []MetricInput{{
@@ -794,8 +799,8 @@ func TestAccumulateStageMetricsAndPreferHarnessOnClose(t *testing.T) {
 	if got.InputTokens != 150 || got.OutputTokens != 50 {
 		t.Fatalf("harness tokens overwritten: %+v", got)
 	}
-	if got.CostUSD != 0.05 {
-		t.Fatalf("cost not merged from agent: %+v", got)
+	if math.Abs(got.CostUSD-0.03) > 1e-9 {
+		t.Fatalf("agent estimate overwrote TUI-priced cost: %+v", got)
 	}
 }
 

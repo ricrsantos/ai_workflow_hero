@@ -13,7 +13,6 @@ import (
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
-	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reprotest"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
@@ -860,16 +859,18 @@ func TestStageAgentReportParserRequiresCanonicalAcceptanceGates(t *testing.T) {
 			wantValid: false,
 		},
 		{
-			name:      "partial rejects unknown additional gate",
+			name:      "partial ignores unknown additional gate",
 			gates:     `{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true,"extra_gate":false}`,
 			status:    "partial",
-			wantValid: false,
+			wantValid: true,
+			wantGates: true,
 		},
 		{
-			name:      "complete rejects unknown additional gate",
+			name:      "complete ignores unknown additional gate",
 			gates:     `{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true,"extra_gate":false}`,
 			status:    "complete",
-			wantValid: false,
+			wantValid: true,
+			wantGates: true,
 		},
 		{
 			name:      "missing canonical key",
@@ -1297,29 +1298,28 @@ func TestImplementationHandoffMarksFindingDone(t *testing.T) {
 	}
 }
 
-func TestStageAgentReportParserRejectsUnknownField(t *testing.T) {
+func TestStageAgentReportParserIgnoresUnknownField(t *testing.T) {
 	raw := `{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test","unexpected_field":true}`
 	report := parseStageAgentReport(raw, "generic_agent")
-	if report.Valid || !strings.Contains(report.ValidationError, "unknown_field") {
-		t.Fatalf("report=%+v want unknown_field rejection", report)
+	if !report.Valid {
+		t.Fatalf("report=%+v want an extra field to be ignored, not rejected", report)
 	}
-	if got := implementationReportDiagnosticCode(report); got != string(reports.CodeUnknownField) {
-		t.Fatalf("diagnostic code=%q want %s", got, reports.CodeUnknownField)
+	if report.Status != "complete" {
+		t.Fatalf("status=%q want complete", report.Status)
 	}
 }
 
-func TestStageAgentReportParserRejectsMetricsField(t *testing.T) {
+// The exact payload that stalled a QA stage in the field: a weaker model
+// attached the metrics object its own prompt illustrated. The cycle must
+// survive it.
+func TestStageAgentReportParserIgnoresMetricsField(t *testing.T) {
 	raw := `{"stage":"implementation","agent":"generic_agent","status":"complete","tasks_completed":[],"tasks_remaining":[],"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},"summary":"test","metrics":{"model":"x","input_chars":1,"output_chars":1}}`
 	report := parseStageAgentReport(raw, "generic_agent")
-	if report.Valid || !strings.Contains(report.ValidationError, "unknown_field") || !strings.Contains(report.ValidationError, "metrics") {
-		t.Fatalf("report=%+v want unknown_field: metrics", report)
+	if !report.Valid {
+		t.Fatalf("report=%+v want a stray metrics object to be ignored", report)
 	}
-	if got := implementationReportDiagnosticCode(report); got != string(reports.CodeUnknownField) {
-		t.Fatalf("diagnostic code=%q want %s", got, reports.CodeUnknownField)
-	}
-	copy := formatImplementationHandoffDiagnostics([]stageAgentReport{report}, model{})
-	if !strings.Contains(copy, "unknown_field") {
-		t.Fatalf("chat copy=%q want unknown_field title", copy)
+	if !report.AcceptanceGates || report.Status != "complete" {
+		t.Fatalf("report=%+v want the real content decoded", report)
 	}
 }
 

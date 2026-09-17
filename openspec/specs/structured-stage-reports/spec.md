@@ -47,7 +47,24 @@ Implementation reports SHALL keep `tasks_completed` and `tasks_remaining` as dis
 - **THEN** the diagnostic is `nonempty_empty_assignment` and nothing is applied
 
 ### Requirement: Invalid reports SHALL name a stable diagnostic before mutation
-Go decoders SHALL reject unknown fields, invalid JSON, invalid enums, missing required fields, invalid owners, invalid `reopen_id`, duplicate IDs, overlapping completed/remaining arrays, assignment union mismatch, false acceptance gates, and nonempty IDs on an empty assignment. Each rejection SHALL expose a stable code, JSON field path when applicable, offending value, and concise rule. No finding, task checkbox, stage, event, or conversation-result mutation SHALL occur until the entire report passes. Raw invalid output MAY be kept only in the existing safe audit channel (PRD-C15-001 §7.3; UI-C15-001 §5; ADR-086).
+Go decoders SHALL reject invalid JSON, invalid enums, missing required fields, invalid owners, invalid `reopen_id`, duplicate IDs, overlapping completed/remaining arrays, assignment union mismatch, false acceptance gates, and nonempty IDs on an empty assignment. Each rejection SHALL expose a stable code, JSON field path when applicable, offending value, and concise rule. No finding, task checkbox, stage, event, or conversation-result mutation SHALL occur until the entire report passes. Raw invalid output MAY be kept only in the existing safe audit channel (PRD-C15-001 §7.3; UI-C15-001 §5; ADR-086).
+
+Decoders SHALL NOT reject a report for carrying fields outside the contract. An unrecognized field SHALL be dropped and reported as an `unknown_field` warning, and the report SHALL decode and persist normally. A field name that matches a contract field case- and separator-insensitively SHALL be adopted under its canonical name and reported as a `field_renamed` warning, so a misspelled `reopen_id` cannot silently become a new finding ID and bypass the loop ceiling (ADR-101).
+
+#### Scenario: An extra field is ignored, not fatal
+- **WHEN** a QA report carries a `metrics` object alongside the contract fields
+- **THEN** the report decodes, findings persist, and an `unknown_field` warning names `metrics`
+
+#### Scenario: A near-miss key is adopted
+- **WHEN** a failure entry spells `reopenId` instead of `reopen_id`
+- **THEN** the value is adopted as `reopen_id` and a `field_renamed` warning is recorded
+
+### Requirement: A rejected report SHALL retry before the cycle stops
+When a validation report is rejected, Hero SHALL re-dispatch the stage agent with the diagnostic attached, bounded to two attempts, persisting nothing on each attempt. When the attempts are exhausted the stage SHALL be escalated with reason `report_contract` rather than left Running without a control state (ADR-102).
+
+#### Scenario: Exhausted retries escalate instead of stalling
+- **WHEN** a stage agent returns an undecodable report three times
+- **THEN** the stage is Escalated and the user is offered `/hero-continue`, `/hero-add-todo`, `/hero-cancel`, `/hero-finish`
 
 #### Scenario: Union mismatch names the missing ID
 - **WHEN** assignment is `find-qa-1` and `find-qa-2` but `find-qa-2` is absent from completed and remaining

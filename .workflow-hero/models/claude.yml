@@ -2,12 +2,19 @@
 # These are CLI selectors, not Anthropic API provider aliases. Pricing is
 # deliberately omitted: Claude Code subscription/account billing must never be
 # inferred as token pricing by Hero. The aliases and pinned IDs below follow
-# Claude Code's native model configuration documentation; `[1m]` is exposed
-# only for the Sonnet and Opus selectors that Claude Code documents as
-# extended-context variants.
+# Claude Code's native model configuration documentation.
+#
+# Context windows are Claude Code's, not the Anthropic API's — they differ.
+# Claude Code documents Haiku at 100K while the API exposes 200K for the same
+# model, so these values must come from Claude Code's model-config docs.
+#
+# The current generation is natively 1M: Fable 5.1, Opus 5, Sonnet 5, and
+# Opus 4.7+. `[1m]` remains only for the selectors whose resolved model is not
+# natively 1M (Sonnet 4.6, Opus 4.6), where Claude Code documents the suffix as
+# an extended-context opt-in.
 provider: claude
 version: 1
-last_updated: 2026-09-07
+last_updated: 2026-09-17
 currency: usd
 unit: per_1m_tokens
 
@@ -19,8 +26,9 @@ media:
   max_attachment_bytes: 20971520
 
 models:
-  sonnet: &standard
-    context_window: 200000
+  # Aliases resolve to the current generation, which is natively 1M.
+  sonnet: &native_1m
+    context_window: 1000000
     properties: &standard_properties
       fs:
         available: false
@@ -35,31 +43,38 @@ models:
         values: ["low", "medium", "high"]
         default: "medium"
   sonnet[1m]:
-    <<: *standard
-    context_window: 1000000
+    <<: *native_1m
+  claude-sonnet-5:
+    <<: *native_1m
+  # Sonnet 4.6 is one of the two selectors that is still 200K natively, so the
+  # `[1m]` suffix is a real opt-in here rather than a no-op.
   claude-sonnet-4-6:
-    <<: *standard
+    context_window: 200000
+    properties: *standard_properties
   claude-sonnet-4-6[1m]:
-    <<: *standard
-    context_window: 1000000
+    <<: *native_1m
 
   opus:
-    <<: *standard
+    <<: *native_1m
   opus[1m]:
-    <<: *standard
-    context_window: 1000000
+    <<: *native_1m
+  claude-opus-5:
+    <<: *native_1m
   claude-opus-4-7:
-    <<: *standard
+    <<: *native_1m
   claude-opus-4-7[1m]:
-    <<: *standard
-    context_window: 1000000
+    <<: *native_1m
 
-  haiku:
-    <<: *standard
+  # Claude Code documents Haiku at 100K, below the API's 200K for this model.
+  haiku: &haiku
+    context_window: 100000
+    properties: *standard_properties
   claude-haiku-4-5-20251001:
-    <<: *standard
+    <<: *haiku
 
   fable:
-    <<: *standard
+    <<: *native_1m
+  claude-fable-5-1:
+    <<: *native_1m
   claude-fable-5:
-    <<: *standard
+    <<: *native_1m

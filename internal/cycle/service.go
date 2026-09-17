@@ -745,9 +745,10 @@ func (s *Service) CloseStage(name string, summary string, metricsJSON string, fa
 	})
 }
 
-// AccumulateStageHarnessMetrics adds turn token usage onto the active cycle's
-// metrics row for stage+agent. No-op when there is no active cycle.
-func (s *Service) AccumulateStageHarnessMetrics(stageName, agent, model string, usage harness.Usage, duration time.Duration) error {
+// AccumulateStageHarnessMetrics adds turn token usage and cost onto the active
+// cycle's metrics row for stage+agent. No-op when there is no active cycle.
+// costUSD is this turn's cost, priced by the caller from the model catalog.
+func (s *Service) AccumulateStageHarnessMetrics(stageName, agent, model string, usage harness.Usage, duration time.Duration, costUSD float64) error {
 	if s == nil || s.Engine == nil || s.Store == nil {
 		return nil
 	}
@@ -759,7 +760,7 @@ func (s *Service) AccumulateStageHarnessMetrics(stageName, agent, model string, 
 	if ms < 0 {
 		ms = 0
 	}
-	return s.Engine.AccumulateStageMetrics(c.ID, stageName, agent, model, usage, ms)
+	return s.Engine.AccumulateStageMetrics(c.ID, stageName, agent, model, usage, ms, costUSD)
 }
 
 // RunResult is the outcome of hero run dispatch.

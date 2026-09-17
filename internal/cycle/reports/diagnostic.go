@@ -67,3 +67,48 @@ func (d Diagnostics) First() *DiagnosticError {
 func diag(code Code, field, value, rule string) *DiagnosticError {
 	return &DiagnosticError{Code: code, Field: field, Value: value, Rule: rule}
 }
+
+// CodeFieldRenamed marks a key Hero normalized onto the contract (reopenId →
+// reopen_id). It is a warning, never a rejection.
+const CodeFieldRenamed Code = "field_renamed"
+
+// ReportWarning is a contract deviation Hero tolerated. Warnings never block a
+// stage: the report is decoded and persisted, and the warning is surfaced so
+// the agent's prompt can be corrected.
+type ReportWarning struct {
+	Code  Code
+	Field string
+	Value string
+	Rule  string
+}
+
+func (w ReportWarning) String() string {
+	field := strings.TrimSpace(w.Field)
+	if field == "" {
+		return fmt.Sprintf("%s: %s", w.Code, w.Rule)
+	}
+	if strings.TrimSpace(w.Value) == "" {
+		return fmt.Sprintf("%s: %s — %s", w.Code, field, w.Rule)
+	}
+	return fmt.Sprintf("%s: %s → %s", w.Code, field, w.Value)
+}
+
+func warn(code Code, field, value, rule string) ReportWarning {
+	return ReportWarning{Code: code, Field: field, Value: value, Rule: rule}
+}
+
+// collect appends decoded warnings onto an optional sink. A nil sink means the
+// caller does not surface warnings; tolerance does not depend on collecting them.
+func collect(sink *[]ReportWarning, warnings []ReportWarning) {
+	if sink == nil || len(warnings) == 0 {
+		return
+	}
+	*sink = append(*sink, warnings...)
+}
+
+func collectOne(sink *[]ReportWarning, w ReportWarning) {
+	if sink == nil {
+		return
+	}
+	*sink = append(*sink, w)
+}

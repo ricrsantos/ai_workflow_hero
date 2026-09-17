@@ -96,7 +96,6 @@ func TestRuntimeAssets_ImplementationCompletionContractParity(t *testing.T) {
 				`"tests_passed": true`,
 				`status: "blocked"`,
 				"Allowed top-level fields only:",
-				"**not** add a `metrics` object",
 				"`complete`, `partial`, or `blocked`",
 			} {
 				if !strings.Contains(body, required) {
@@ -334,13 +333,44 @@ func TestRuntimeAssets_ModelResolution(t *testing.T) {
 	}
 }
 
-// TestRuntimeAssets_Metrics verifies metrics-related keywords and executable procedure appear.
+// TestRuntimeAssets_Metrics verifies that no Runtime asset asks an agent to
+// produce metrics. The TUI is the only cycle runtime and prices stage metrics
+// from harness usage, so a self-reported `metrics` object is both redundant and
+// a contract hazard: models copy the example and the report gets rejected.
 func TestRuntimeAssets_Metrics(t *testing.T) {
-	keywords := []string{"metrics-summary.md", "hero metrics", "Metrics Procedure"}
-	allContent := loadAllAssetContent(t, "cursor")
-	for _, kw := range keywords {
-		if !strings.Contains(allContent, kw) {
-			t.Errorf("metrics keyword %q not found in any Runtime asset", kw)
+	agents := []string{
+		"orchestration_agent", "backend_agent", "frontend_agent", "generic_agent",
+		"qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent",
+		"discover_agent", "planning_agent", "context_agent",
+	}
+	harnessAssetDirs := []string{"cursor", "codex", "opencode", "claude"}
+	// Nothing may ask an agent to estimate usage, price it, or hand it back.
+	banned := []string{"input_chars", "output_chars", "Metrics Procedure", "--metrics-json", "chars ÷ 4"}
+	for _, harnessID := range harnessAssetDirs {
+		for _, agent := range agents {
+			path := harnessID + "/agents/" + agent + ".md"
+			data, err := fs.ReadFile(assets.FS, path)
+			if err != nil {
+				t.Errorf("read %s: %v", path, err)
+				continue
+			}
+			content := string(data)
+			for _, kw := range banned {
+				if strings.Contains(content, kw) {
+					t.Errorf("%s still asks the agent for metrics (%q)", path, kw)
+				}
+			}
+			// No example may show a metrics object inside a report, even as a
+			// counter-example: the shape is what weaker models copy.
+			for i, raw := range jsonFences(content) {
+				var obj map[string]json.RawMessage
+				if json.Unmarshal(raw, &obj) != nil {
+					continue
+				}
+				if _, hasMetrics := obj["metrics"]; hasMetrics {
+					t.Errorf("%s JSON fence %d still illustrates a metrics object", path, i+1)
+				}
+			}
 		}
 	}
 
@@ -349,18 +379,10 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 		t.Fatalf("read orchestration_agent: %v", err)
 	}
 	orchStr := string(orch)
-	for _, kw := range []string{"Metrics Procedure", "input_chars", "1_000_000", "per_1m_tokens", "Duration:", "Total:", "--metrics-json", "hero metrics"} {
-		if !strings.Contains(orchStr, kw) {
-			t.Errorf("orchestration_agent.md missing Metrics Procedure keyword %q", kw)
-		}
+	if !strings.Contains(orchStr, "Do **not** estimate, persist, or print stage metrics.") {
+		t.Error("orchestration_agent.md must tell the orchestrator the TUI owns metrics")
 	}
-	if !strings.Contains(orchStr, "show the stage metrics summary in the chat") &&
-		!strings.Contains(orchStr, "required in chat every stage close") {
-		t.Error("orchestration_agent.md must require showing metrics (tokens + duration) in chat")
-	}
-	if strings.Contains(orchStr, "Replace the stage row(s) in `.workflow-hero/cycles/current/metrics.md`") {
-		t.Error("orchestration_agent.md must not mandate writing metrics.md")
-	}
+	// `hero metrics` stays as a read-only pointer for the user.
 	if !strings.Contains(orchStr, "hero metrics") {
 		t.Error("orchestration_agent.md must point users to hero metrics")
 	}
@@ -373,81 +395,20 @@ func TestRuntimeAssets_Metrics(t *testing.T) {
 		t.Error("hero-new.md must include a clickable markdown link to workflow-config.yml")
 	}
 
-	approve, err := fs.ReadFile(assets.FS, "cursor/commands/hero-approve.md")
-	if err != nil {
-		t.Fatalf("read hero-approve: %v", err)
-	}
-	approveStr := string(approve)
-	if strings.Contains(approveStr, "final iteration count for the stage") {
-		t.Error("hero-approve.md still limits metrics update to iteration count only")
-	}
-	if !strings.Contains(approveStr, "Metrics Procedure") {
-		t.Error("hero-approve.md missing Metrics Procedure reference")
-	}
-	if !strings.Contains(approveStr, "hero approve") || !strings.Contains(approveStr, "--metrics-json") {
-		t.Error("hero-approve.md must invoke hero approve --metrics-json")
-	}
-	if strings.Contains(approveStr, "Update `metrics.md`") || strings.Contains(approveStr, "update metrics.md") {
-		t.Error("hero-approve.md must not instruct writing metrics.md")
-	}
-
-	c15Agents := []string{
-		"backend_agent", "frontend_agent", "generic_agent",
-		"qa_agent", "judge_agent", "browser_ui_agent", "end2end_qa_agent",
-	}
-	for _, agent := range c15Agents {
-		path := "cursor/agents/" + agent + ".md"
-		data, err := fs.ReadFile(assets.FS, path)
-		if err != nil {
-			t.Errorf("read %s: %v", path, err)
-			continue
-		}
-		content := string(data)
-		if !strings.Contains(content, "**not** add a `metrics` object") {
-			t.Errorf("%s must forbid a metrics object inside the C15 JSON report", path)
-		}
-		if !strings.Contains(content, "input_chars") {
-			t.Errorf("%s missing input_chars", path)
-		}
-		for i, raw := range jsonFences(content) {
-			var obj map[string]json.RawMessage
-			if json.Unmarshal(raw, &obj) != nil {
+	for _, harnessID := range harnessAssetDirs {
+		for _, name := range []string{"hero-approve.md", "hero-finish.md", "hero-start.md", "hero-back.md", "hero-continue.md"} {
+			path := harnessID + "/commands/" + name
+			data, err := fs.ReadFile(assets.FS, path)
+			if err != nil {
+				t.Errorf("read %s: %v", path, err)
 				continue
 			}
-			if _, hasStatus := obj["status"]; !hasStatus {
-				continue
+			for _, kw := range banned {
+				if strings.Contains(string(data), kw) {
+					t.Errorf("%s still instructs the orchestrator to produce metrics (%q)", path, kw)
+				}
 			}
-			if _, hasMetrics := obj["metrics"]; hasMetrics {
-				t.Errorf("%s JSON fence %d includes forbidden top-level metrics", path, i+1)
-			}
 		}
-	}
-
-	legacyMetricsAgents := []string{"discover_agent", "planning_agent", "context_agent"}
-	for _, agent := range legacyMetricsAgents {
-		path := "cursor/agents/" + agent + ".md"
-		data, err := fs.ReadFile(assets.FS, path)
-		if err != nil {
-			t.Errorf("read %s: %v", path, err)
-			continue
-		}
-		content := string(data)
-		if !strings.Contains(content, `"metrics"`) && !strings.Contains(content, `"input_chars"`) {
-			t.Errorf("%s missing metrics/input_chars in output schema", path)
-		}
-		if !strings.Contains(content, "input_chars") {
-			t.Errorf("%s missing input_chars", path)
-		}
-	}
-
-	// Legacy template may still ship for upgrade import fixtures; formula kept for Metrics Procedure docs.
-	tmpl, err := fs.ReadFile(assets.FS, "templates/metrics.md")
-	if err != nil {
-		t.Fatalf("read metrics template: %v", err)
-	}
-	tmplStr := string(tmpl)
-	if !strings.Contains(tmplStr, "1_000_000") {
-		t.Error("templates/metrics.md missing explicit cost formula (1_000_000)")
 	}
 }
 
@@ -458,7 +419,7 @@ func TestRuntimeAssets_CLIAPIStageClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	orchStr := string(orch)
-	for _, kw := range []string{"Stage Close Sequence", "hero stage close", "hero approve", "--metrics-json", "SQLite"} {
+	for _, kw := range []string{"Stage Close Sequence", "hero stage close", "hero approve", "SQLite"} {
 		if !strings.Contains(orchStr, kw) {
 			t.Errorf("orchestration_agent.md missing CLI stage-close keyword %q", kw)
 		}
@@ -545,9 +506,11 @@ func TestRuntimeAssets_CLIAPIStageClose(t *testing.T) {
 			t.Errorf("discover_agent.md still mandates filling metrics.md: %q", banned)
 		}
 	}
-	for _, kw := range []string{"--metrics-json", "SQLite", `"metrics"`} {
-		if !strings.Contains(discoverStr, kw) {
-			t.Errorf("discover_agent.md missing structured metrics keyword %q", kw)
+	// discover_agent used to hand back its own metrics object; the TUI prices
+	// the stage now, so the report must carry no metrics at all.
+	for _, kw := range []string{"--metrics-json", `"metrics"`} {
+		if strings.Contains(discoverStr, kw) {
+			t.Errorf("discover_agent.md still reports metrics (%q)", kw)
 		}
 	}
 }
@@ -682,20 +645,18 @@ func TestRuntimeAssets_ResearchPreDocumentGate(t *testing.T) {
 
 // TestRuntimeAssets_CleanSessionHandoff verifies new/start encode the soft clean-chat
 // handoff (new empty chat + select orchestrator/grill-me) and disk-only bootstrap.
-func TestRuntimeAssets_CleanSessionHandoff(t *testing.T) {
+// TestRuntimeAssets_StartHandoff verifies the /hero-new → /hero-start handoff
+// targets the Hero TUI. ADR-099 removed the IDE-chat runtime, so no command may
+// send the user to open an IDE chat or pick an orchestrator model there.
+func TestRuntimeAssets_StartHandoff(t *testing.T) {
 	newCmd, err := fs.ReadFile(assets.FS, "cursor/commands/hero-new.md")
 	if err != nil {
 		t.Fatalf("read hero-new: %v", err)
 	}
 	newStr := string(newCmd)
-	for _, kw := range []string{
-		"Clean Session Handoff",
-		"new empty chat",
-		"orchestrator / grill-me",
-		"/hero-start",
-	} {
+	for _, kw := range []string{"Handoff to /hero-start", "workflow-config.yml", "/hero-start"} {
 		if !strings.Contains(newStr, kw) {
-			t.Errorf("hero-new.md missing Clean Session Handoff keyword %q", kw)
+			t.Errorf("hero-new.md missing handoff keyword %q", kw)
 		}
 	}
 
@@ -708,12 +669,33 @@ func TestRuntimeAssets_CleanSessionHandoff(t *testing.T) {
 		"Session Bootstrap",
 		"Do **not** rely on prior chat history",
 		"workflow-config.yml",
-		"orchestrator / grill-me",
-		"new empty chat",
 		"this project root",
+		"Hero TUI",
 	} {
 		if !strings.Contains(startStr, kw) {
 			t.Errorf("hero-start.md missing Session Bootstrap keyword %q", kw)
+		}
+	}
+
+	// No runtime command may route the user back into an IDE chat.
+	ideOnly := []string{"new empty chat", "orchestrator / grill-me", "IDE agent/model", "Cursor chat"}
+	for _, harnessID := range []string{"cursor", "codex", "opencode", "claude"} {
+		entries, err := fs.ReadDir(assets.FS, harnessID+"/commands")
+		if err != nil {
+			t.Fatalf("read %s commands: %v", harnessID, err)
+		}
+		for _, e := range entries {
+			path := harnessID + "/commands/" + e.Name()
+			data, err := fs.ReadFile(assets.FS, path)
+			if err != nil {
+				t.Errorf("read %s: %v", path, err)
+				continue
+			}
+			for _, kw := range ideOnly {
+				if strings.Contains(string(data), kw) {
+					t.Errorf("%s still routes the cycle through an IDE chat (%q)", path, kw)
+				}
+			}
 		}
 	}
 }
@@ -787,7 +769,6 @@ func TestRuntimeAssets_BrowserUIValidation(t *testing.T) {
 		"failure_class",
 		"health-report.md",
 		"model: inherit",
-		`"input_chars"`,
 	} {
 		if !strings.Contains(agentStr, kw) {
 			t.Errorf("browser_ui_agent.md missing keyword %q", kw)

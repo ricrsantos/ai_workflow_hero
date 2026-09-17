@@ -192,7 +192,15 @@ type model struct {
 	stageHandoffExpectedAgents       []string
 	stageHandoffPreparationError     string
 	stageHandoffInterventionRequired bool
-	stageHandoffDoneKey              string // "stage:iteration" already TUI-executed this session
+	// stageHandoffReportRetries counts re-dispatches of the current stage after
+	// a report was rejected outright. Bounded so a stage agent that cannot
+	// produce a valid report escalates to the user instead of looping.
+	stageHandoffReportRetries int
+	stageHandoffRetryStage    string
+	// stageHandoffReportFeedback is the decoder diagnostic handed to the stage
+	// agent on a retry, so it corrects the report instead of repeating it.
+	stageHandoffReportFeedback string
+	stageHandoffDoneKey        string // "stage:iteration" already TUI-executed this session
 	// Repro gate state for the current Implementation wave. The gate runs
 	// asynchronously, so the wave's decision waits for stageHandoffReproChecked.
 	stageHandoffReproChecked    bool
