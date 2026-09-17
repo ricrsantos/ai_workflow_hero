@@ -64,22 +64,19 @@ Do **not** copy `title`, `objective`, or `scope` from the previous cycle. Keep `
 4. Write the result to `.workflow-hero/cycles/current/workflow-config.yml`.
 5. Tell the user briefly that workflow_config/models/stages/fallback were imported from cycle `C<N>` and that title/objective/scope were reset for this cycle.
 
-## Clean Session Handoff
-
-After configuration is ready, tell the user to continue in a **new empty chat** so the orchestrator session starts with a fresh context window (this chat’s grilling/Q&A would waste budget on later stages). Soft guidance only — do not block if they ignore it.
+## Handoff to /hero-start
 
 Required message content (adapt wording; keep all points):
 
 1. Cycle is prepared in SQLite (active, empty title/objective until `/hero-start`); config file is ready — include the clickable link `[.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)`.
-2. Open a **new empty chat** (do not continue `/hero-start` in this configuration session).
-3. In that new chat, **select the agent (model) they want to use as the Hero orchestrator / grill-me** — that IDE session model drives orchestration and Research grilling.
-4. Then run `/hero-start`.
+2. Review title, objective, and scope — prefer the Hero TUI Config screen (alt+6).
+3. Then run `/hero-start` in the Hero TUI.
 
 ## Approval and Control Loop
 
 - When `require_human_approval: false`: stage auto-completes and advances automatically (persist via `hero` CLI per **Stage Close Sequence** in `orchestration_agent`).
 - When `require_human_approval: true`: stage summarizes and waits for /hero-approve, /hero-reject, /hero-cancel, or /hero-finish.
-- Every stage closes with: (a) summary + approval request, (b) persist via `hero` CLI with `--metrics-json` when applicable, (c) show metrics summary in chat, (d) advance to next configured stage.
+- Every stage closes with: (a) summary + approval request, (b) persist via the `hero` CLI, (c) advance to next configured stage. The TUI renders the metrics summary.
 
 ## Fallback / Model Resolution
 
@@ -94,10 +91,9 @@ When later stages invoke subagents (after `/hero-start`), follow **Model Resolut
 ✓ Cycle C<N> prepared (active; title/objective pending until /hero-start).
 → Review and fill title, objective, and scope — prefer Hero TUI Config (alt+6); or edit YAML: [.workflow-hero/cycles/current/workflow-config.yml](.workflow-hero/cycles/current/workflow-config.yml)
 
-→ Next (clean session handoff):
-  1. Open a new empty chat (do not continue here).
-  2. In that chat, select the agent you want as the Hero orchestrator / grill-me.
-  3. Run /hero-start.
+→ Next:
+  1. Review title, objective, and scope (Hero TUI Config, alt+6).
+  2. Run /hero-start in the Hero TUI.
 ```
 
 (Omit the “Previous cycle config” line on the very first cycle.)

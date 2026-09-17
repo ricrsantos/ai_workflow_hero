@@ -48,15 +48,6 @@ The orchestrator applies **Model Resolution** (see `orchestration_agent`): the T
 - Always mark parallel vs series in `tasks.md`; use subagents whenever possible.
 - Before completing Planning, verify that every implementation task has exactly one canonical owner marker and that every cross-cutting task was decomposed into dependent single-owner tasks.
 
-## Metrics (required in every completion report)
-
-Estimate character usage for this invocation:
-
-- `input_chars` ≈ size of the effective prompt + files read
-- `output_chars` ≈ size of the response + SDD artifacts written
-
-The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
-
 ## Output Format
 
 ```json
@@ -69,11 +60,6 @@ The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`.
     ["task-1-backend", "task-2-frontend"],
     ["task-3-infra"]
   ],
-  "summary": "SDD created with 12 tasks; backend+frontend marked parallel after API contract.",
-  "metrics": {
-    "model": "<id>",
-    "input_chars": 0,
-    "output_chars": 0
-  }
+  "summary": "SDD created with 12 tasks; backend+frontend marked parallel after API contract."
 }
 ```

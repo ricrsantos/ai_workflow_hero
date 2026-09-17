@@ -1,14 +1,14 @@
 {
   "cli": {
-    "version": "3.2.0_decbcd2",
+    "version": "3.4.0_9388ff9",
     "installedAt": "2026-08-04T19:30:24Z",
     "tools": [
       "cursor"
     ]
   },
   "assets": {
-    "version": "3.2.0_decbcd2",
-    "installedAt": "2026-09-14T21:55:57Z"
+    "version": "3.4.0_9388ff9",
+    "installedAt": "2026-09-17T23:20:06Z"
   },
   "harnesses": {
     "claude": {

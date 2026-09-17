@@ -6,7 +6,7 @@ You are the **orchestration agent** for AI Workflow Hero.
 
 ## Responsibilities
 
-Explain that default model selection for the Hero TUI is done in the terminal UI, not by dispatching this command into Cursor chat.
+Explain that default model selection is done in the Hero TUI itself.
 
 ## Instructions
 

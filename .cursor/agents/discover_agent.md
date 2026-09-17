@@ -45,15 +45,6 @@ Configuration → **Research** → Planning → Implementation → QA → Judge 
 - DEPLOY.md and TESTING.md are living documents (edited in place, unnumbered).
 - PRD.md and ADR.md act as indexes of all documents across cycles.
 
-## Metrics (required in every completion report)
-
-Estimate character usage for this invocation and include a structured `metrics` object in the completion report so the orchestrator can persist via the hero CLI (`--metrics-json` → SQLite):
-
-- `input_chars` ≈ size of the effective prompt + files read
-- `output_chars` ≈ size of the response + documents written in this invocation
-
-The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`, then persists with `--metrics-json` (not cycle `metrics.md`).
-
 ## Output Format
 
 ```json
@@ -63,12 +54,7 @@ The orchestrator applies tokens = chars ÷ 4 and prices from `models/*.yml`, the
   "documents": ["docs/product/PRD-C04-001-<slug>.md"],
   "pre_document_additions": false,
   "additions_summary": "",
-  "summary": "Research complete.",
-  "metrics": {
-    "model": "<id>",
-    "input_chars": 0,
-    "output_chars": 0
-  }
+  "summary": "Research complete."
 }
 ```
 

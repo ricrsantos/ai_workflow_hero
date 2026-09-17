@@ -19,7 +19,6 @@ You are the **orchestration agent** for AI Workflow Hero. This command displays 
    ⚠ If docs/product or docs/architecture changed, run /hero-sync then /hero-todos to refresh.
    ```
 
-
 ## C15 ToDo sources (PRD-C15-001 §9)
 
 - `hero.db` is authoritative for structured ToDo lifecycle (`pending`, `adopted`, `resolved`).

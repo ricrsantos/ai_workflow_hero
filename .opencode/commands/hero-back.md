@@ -15,7 +15,7 @@ Only invokable during the Judge stage when the judge_agent identifies that the f
 3. Invoke `planning_agent` via the Task tool (fresh isolated session) with the ambiguity report from `judge_agent`.
    - Apply **Model Resolution** from `orchestration_agent`: pass Task `model` as a kebab slug from `workflow-config.yml` → `agents.planning_agent` (`enable_fast_model` → `<id>-fast`; never omit `model`; never use brackets).
 4. `planning_agent` edits the existing OpenSpec proposal in place (preserving change history — no archive/recreate).
-5. After the planning_agent completes, re-run Implementation → QA → Judge from scratch (every Task call still applies Model Resolution for the target agent). Persist each stage close via `hero` CLI with `--metrics-json` per **Metrics Procedure**.
+5. After the planning_agent completes, re-run Implementation → QA → Judge from scratch (every Task call still applies Model Resolution for the target agent). Persist each stage close via the `hero` CLI.
 6. Record the back-step decision in `context-log.md`.
 
 Do **not** update `workflow.md` — operational state lives in SQLite (`hero status`).
