@@ -115,6 +115,7 @@ OpenCode orphan reap is project-scoped. `harness_serve_registry` rows are filter
 
 ## Recent Decisions
 
+- **2026-09-17 — Status bar com quebra automática e scroll Alt**: Altura dinâmica 2–6 linhas com teto pela janela; quebra automática em pergunta/permissão/confirmação/resultados; scroll só via `Alt+↑↓/PgUp/PgDn/Home/End` com hint `[▲/▼]`; transcript/composer intactos; offset reseta ao abrir/concluir.
 - **2026-09-16 — Config TUI typing responsiveness**: Per-keystroke edits no longer trigger scroll recompute/render in Update (single View render); `configEnsureFocusVisible` renders once with content-bounded clamp; `renderConfig`/`configFields`/warnings share a short-lived `configRenderCache` (one Snapshot/ModelListState per harness+model, one go.mod stat per render). No behavior change; `go test ./...` green.
 - **2026-09-16 — /hero-sync runs on the chat model**: Bootstrap sync no longer resolves YAML template defaults (`agents.orchestration_agent` / `context_agent` / `fallback_model`). TUI executes on the `/model` freechat pair and Runtime prompts inherit the session model for `context_agent`; ADR-008 fallback does not apply to sync.
 - **2026-09-16 — /hero-sync inline sem Task (label HARN)**: Sync escaneia inline na sessão, sem dispatch Task/`context_agent` (o `model inherit` era rejeitado pelo harness). Na TUI é turno freechat, sem corpo `orchestration_agent.md` e sem identidade ORCH — header `[HARN - modelo · harness]`.

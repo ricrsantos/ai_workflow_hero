@@ -118,6 +118,7 @@ func (m model) clearHarnessQuestionState() model {
 	m.harnessQuestionRespCh = nil
 	m.harnessQuestionIndex = 0
 	m.harnessQuestionAnswers = nil
+	m.statusScrollOffset = 0
 	m.harnessWatchdog.Resume(time.Now())
 	return m
 }
@@ -172,6 +173,7 @@ func (m model) submitHarnessQuestionAnswer() (model, tea.Cmd) {
 	if next < len(m.harnessQuestionReq.Questions) {
 		m.harnessQuestionIndex = next
 		m.harnessQuestionMsg = formatHarnessQuestion(m.harnessQuestionReq, next)
+		m.statusScrollOffset = 0
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessQuestionMsg})
 		return m, nil
 	}
@@ -190,6 +192,9 @@ func (m model) handleHarnessQuestionComposer(msg tea.KeyMsg) (tea.Model, tea.Cmd
 	s := msg.String()
 	m.chatInputFocused = true
 
+	if next, handled := m.handleStatusScrollKey(s); handled {
+		return next, nil
+	}
 	if isNavKey(msg) {
 		return m.handleKey(msg)
 	}

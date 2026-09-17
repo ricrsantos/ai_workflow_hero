@@ -68,6 +68,7 @@ type model struct {
 	statusKind                statusKind
 	statusLabel               string
 	statusText                string
+	statusScrollOffset        int // scroll da status bar (perguntas longas, Alt+↑↓)
 	actionBusy                bool
 	autoUpdateBusy            bool
 	restartRequested          bool
@@ -518,6 +519,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.ensureHistoryListOffset()
 		}
 		m = m.clampContentOffset()
+		m = m.clampStatusScroll(m.statusBarWidth())
 		return m, nil
 
 	case historyLoadedMsg, historyRenameMsg, historyArchiveMsg, historyRestoreMsg, historyDeleteMsg, historyOpenMsg, historyImportMsg, historyForkDoneMsg:
@@ -755,6 +757,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// navbar focus. Otherwise Enter/Esc never reach the instructions.
 		if m.telegram != nil && m.telegram.pairing {
 			return m.handleTelegramPairingKey(msg)
+		}
+		// Scroll da status bar (Alt+↑↓/PgUp/PgDn/Home/End) tem prioridade e
+		// nunca consome ↑↓/PgUp/PgDn do transcript/composer.
+		if next, handled := m.handleStatusScrollKey(msg.String()); handled {
+			return next, nil
 		}
 		if m.harnessPermissionPending {
 			return m.handleHarnessPermissionKey(msg)
@@ -1993,6 +2000,7 @@ func (m model) showConfirm(action paletteAction, actionN int, msg string) (model
 	m.confirmAction = action
 	m.confirmActionN = actionN
 	m.confirmMsg = msg
+	m.statusScrollOffset = 0
 	if m.screen != screenConversation {
 		m, _ = m.enterConversation()
 	}
@@ -2002,12 +2010,16 @@ func (m model) showConfirm(action paletteAction, actionN int, msg string) (model
 // handleConfirmKey processes a key press while a confirmation dialog is active.
 // Only y/Y confirms; any other key (including n, N, esc) denies.
 func (m model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if next, handled := m.handleStatusScrollKey(msg.String()); handled {
+		return next, nil
+	}
 	switch msg.String() {
 	case "y", "Y":
 		action := m.confirmAction
 		actionN := m.confirmActionN
 		m.confirmPending = false
 		m.confirmMsg = ""
+		m.statusScrollOffset = 0
 
 		if action == actionQuit {
 			if m.heroStartBootstrapping || m.heroStartPreparing {
@@ -2040,6 +2052,7 @@ func (m model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// n, N, esc, or any other key — cancel the confirmation.
 		m.confirmPending = false
 		m.confirmMsg = ""
+		m.statusScrollOffset = 0
 		return m, nil
 	}
 }
@@ -2123,6 +2136,18 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyUp}
 	case "down":
 		return tea.KeyMsg{Type: tea.KeyDown}
+	case "alt+up":
+		return tea.KeyMsg{Type: tea.KeyUp, Alt: true}
+	case "alt+down":
+		return tea.KeyMsg{Type: tea.KeyDown, Alt: true}
+	case "alt+pgup":
+		return tea.KeyMsg{Type: tea.KeyPgUp, Alt: true}
+	case "alt+pgdown":
+		return tea.KeyMsg{Type: tea.KeyPgDown, Alt: true}
+	case "alt+home":
+		return tea.KeyMsg{Type: tea.KeyHome, Alt: true}
+	case "alt+end":
+		return tea.KeyMsg{Type: tea.KeyEnd, Alt: true}
 	case "backspace":
 		return tea.KeyMsg{Type: tea.KeyBackspace}
 	case "tab":

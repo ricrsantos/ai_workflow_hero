@@ -2306,6 +2306,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.harnessQuestionIndex = 0
 		m.harnessQuestionAnswers = nil
 		m.harnessQuestionMsg = formatHarnessQuestion(msg.req, 0)
+		m.statusScrollOffset = 0
 		m.insertBeforeAgent(convMessage{role: convRoleWarning, content: m.harnessQuestionMsg})
 		m = m.restartAIResponseTimer(time.Now())
 		m.chatInputFocused = true
@@ -3007,6 +3008,7 @@ func (m model) trackHarnessPermission(msg harnessPermissionRequestMsg) model {
 	m.harnessPermissionReq = msg.req
 	m.harnessPermissionRespCh = msg.respCh
 	m.harnessPermissionMsg = formatHarnessPermission(msg.req)
+	m.statusScrollOffset = 0
 	return m
 }
 
@@ -3019,6 +3021,7 @@ func (m model) activateHarnessPermission(key string) model {
 	m.harnessPermissionReq = pending.req
 	m.harnessPermissionRespCh = pending.respCh
 	m.harnessPermissionMsg = formatHarnessPermission(pending.req)
+	m.statusScrollOffset = 0
 	return m
 }
 
@@ -3099,6 +3102,7 @@ func (m model) clearHarnessPermissionDisplay() model {
 	m.harnessPermissionMsg = ""
 	m.harnessPermissionReq = harness.PermissionRequest{}
 	m.harnessPermissionRespCh = nil
+	m.statusScrollOffset = 0
 	m.harnessWatchdog.Resume(time.Now())
 	return m
 }
@@ -3118,6 +3122,9 @@ func (m model) persistHarnessPermissionPause(paused bool) model {
 }
 
 func (m model) handleHarnessPermissionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if next, handled := m.handleStatusScrollKey(msg.String()); handled {
+		return next, nil
+	}
 	switch msg.String() {
 	case "y", "Y":
 		m = m.replyHarnessPermission(true)

@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -144,6 +145,117 @@ func TestBusyGuardBlocksSecondAction(t *testing.T) {
 	}
 	if !strings.Contains(ViewForTest(next), "busy") {
 		t.Fatalf("expected busy message: %q", ViewForTest(next))
+	}
+}
+
+func TestStatusBarWrapsQuestionUpToSixLines(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 40)
+	m = SetHeight(m, 24)
+	m.harnessQuestionPending = true
+	m.harnessQuestionMsg = "Harness question: Qual é a melhor estratégia para migrar o banco?\nLinha longa que certamente vai quebrar em várias linhas do terminal estreito para testar wrap.\n  1) Opção A — descrição longa que também quebra\n  2) Opção B\nType option number or text, then Alt+Enter. Esc rejects."
+	lines := m.statusBarDisplayLines(40)
+	if len(lines) < 3 {
+		t.Fatalf("expected wrapped question >2 lines, got %d: %q", len(lines), lines)
+	}
+	if len(lines) > 6 {
+		t.Fatalf("expected max 6 lines, got %d", len(lines))
+	}
+	if got := m.statusBarLineCount(); got != len(lines) {
+		t.Fatalf("lineCount=%d display=%d", got, len(lines))
+	}
+	view := ViewForTest(m)
+	for _, line := range lines {
+		_ = line
+	}
+	if view == "" {
+		t.Fatal("expected view")
+	}
+}
+
+func TestStatusBarScrollWithAlt(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 30)
+	m = SetHeight(m, 24)
+	var b strings.Builder
+	for i := 1; i <= 20; i++ {
+		b.WriteString("linha longa de teste para quebra automática número ")
+		b.WriteString(strings.TrimSpace(strings.Repeat("x", 0)) + strconv.Itoa(i))
+		b.WriteByte('\n')
+	}
+	m.harnessQuestionPending = true
+	m.harnessQuestionMsg = b.String()
+	total := len(m.statusBarAllLines(30))
+	if total <= 6 {
+		t.Fatalf("expected overflow fixture, total=%d", total)
+	}
+	if m.statusBarLineCount() != 6 {
+		t.Fatalf("lineCount=%d want 6", m.statusBarLineCount())
+	}
+	next, _ := HandleTestKey(m, "alt+down")
+	if next.statusScrollOffset != 1 {
+		t.Fatalf("offset=%d want 1", next.statusScrollOffset)
+	}
+	// ↑↓ do transcript não pode mover a status bar.
+	plain, _ := HandleTestKey(m, "down")
+	if plain.statusScrollOffset != 0 {
+		t.Fatalf("plain down moved status offset=%d", plain.statusScrollOffset)
+	}
+	next, _ = HandleTestKey(next, "alt+end")
+	if next.statusScrollOffset != total-6 {
+		t.Fatalf("end offset=%d want %d", next.statusScrollOffset, total-6)
+	}
+	next, _ = HandleTestKey(next, "alt+home")
+	if next.statusScrollOffset != 0 {
+		t.Fatalf("home offset=%d want 0", next.statusScrollOffset)
+	}
+	// Indicador de scroll sem consumir linha extra.
+	lines := next.statusBarDisplayLines(30)
+	_ = lines
+	m2 := m
+	m2.statusScrollOffset = 0
+	m2 = m2.clampStatusScroll(30)
+	disp := m2.statusBarDisplayLines(30)
+	found := false
+	for _, line := range disp {
+		if strings.Contains(line, "Alt+") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected scroll hint Alt+ in %q", disp)
+	}
+}
+
+func TestStatusBarReturnsToNormalAfterQuestion(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 80)
+	m = SetHeight(m, 24)
+	m.harnessQuestionPending = true
+	m.harnessQuestionMsg = "q1\nq2\nq3\nq4\nq5\nq6\nq7\nq8"
+	m.statusScrollOffset = 2
+	m = m.clearHarnessQuestionState()
+	if m.statusBarLineCount() != 2 {
+		t.Fatalf("lineCount=%d want 2 after clear", m.statusBarLineCount())
+	}
+	if m.statusScrollOffset != 0 {
+		t.Fatalf("offset=%d want 0 after clear", m.statusScrollOffset)
+	}
+}
+
+func TestStatusBarCapsByWindowHeight(t *testing.T) {
+	m := NewTestModel(nil)
+	m = SetWidth(m, 40)
+	m = SetHeight(m, 12)
+	m.harnessQuestionPending = true
+	m.harnessQuestionMsg = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl"
+	if got := m.statusBarLineCount(); got > 6 {
+		t.Fatalf("lineCount=%d want <=6", got)
+	}
+	// Altura mínima ainda preserva o normal de 2 linhas.
+	m = SetHeight(m, 8)
+	if got := m.statusBarLineCount(); got < 2 {
+		t.Fatalf("lineCount=%d want >=2", got)
 	}
 }
 

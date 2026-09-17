@@ -1,5 +1,13 @@
 # Context Log
 
+## 2026-09-17 — Status bar com quebra automática e scroll Alt
+
+**Problem**: A penúltima linha da TUI (status) também exibe perguntas do agente sem quebra automática nem scroll; pergunta longa ficava ilegível e o chat parecia travado.
+
+**Fix**: `internal/tui/status_bar.go` agora quebra automaticamente (`splitOutputLines`) para pergunta/permissão/confirmação e resultados longos; altura dinâmica 2 (normal) até 6 linhas com teto pela altura da janela (`height - borda - footer - reserva 4`); scroll dedicado via `Alt+↑↓/PgUp/PgDn/Home/End` (`statusScrollOffset`, sem tocar no ↑↓/PgUp/PgDn do transcript/composer); hint `[▲a ▼b Alt+↑↓]` na última linha visível; offset zera ao abrir/avançar/concluir pergunta, permissão e confirmação. Item 4 (caixa de resposta escrolável) desconsiderado — já implementado. `parseTestKey` passa a suportar `alt+up/down/pgup/pgdown/home/end`.
+
+**Validation**: novos `TestStatusBarWrapsQuestionUpToSixLines`, `TestStatusBarScrollWithAlt`, `TestStatusBarReturnsToNormalAfterQuestion`, `TestStatusBarCapsByWindowHeight`; `go test ./internal/tui/ -count=1` e `go test ./...` verdes.
+
 ## 2026-09-16 — Config TUI typing lag fix
 
 **Problem**: Cada tecla na tela de Config fazia 3 renders completos (`handleConfigEditKey` → `configEnsureFocusVisible` → `renderConfig`, + `clampContentOffset` → `renderContent` → `renderConfig`, + `View` → `renderFrame` → `renderConfig`), cada um com dezenas de queries SQLite (`Snapshot`/`ModelListState` por campo), um `os.Stat(go.mod)` e ~60-80 renders Lip Gloss.
