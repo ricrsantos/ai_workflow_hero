@@ -304,14 +304,58 @@ func bindNativeSessionTx(tx *sql.Tx, id, harnessID, nativeSessionID, model, mode
 	if id == "" {
 		return ErrSessionNotFound
 	}
+	harnessID = strings.TrimSpace(harnessID)
+	nativeSessionID = strings.TrimSpace(nativeSessionID)
 	props := strings.TrimSpace(modelPropertiesJSON)
 	if props == "" {
 		props = "{}"
 	}
+	if nativeSessionID == "" {
+		res, err := tx.Exec(`
+UPDATE sessions SET harness_id = ?, native_session_id = ?, model = ?, model_properties_json = ?
+WHERE id = ?`,
+			harnessID, nativeSessionID,
+			strings.TrimSpace(model), props, id)
+		if err != nil {
+			return fmt.Errorf("bind native session: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			return ErrSessionNotFound
+		}
+		return nil
+	}
+	// Idempotent rebind: the same Hero session already owning this
+	// (harness, native) pair just refreshes model metadata.
+	var owner string
+	err := tx.QueryRow(`
+SELECT id FROM sessions WHERE harness_id = ? AND native_session_id = ? LIMIT 1`,
+		harnessID, nativeSessionID).Scan(&owner)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("check native session owner: %w", err)
+	}
+	if err == nil && strings.TrimSpace(owner) == id {
+		res, err := tx.Exec(`
+UPDATE sessions SET harness_id = ?, native_session_id = ?, model = ?, model_properties_json = ?
+WHERE id = ?`,
+			harnessID, nativeSessionID,
+			strings.TrimSpace(model), props, id)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return ErrDuplicateNativeSession
+			}
+			return fmt.Errorf("bind native session: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			return ErrSessionNotFound
+		}
+		return nil
+	}
 	res, err := tx.Exec(`
 UPDATE sessions SET harness_id = ?, native_session_id = ?, model = ?, model_properties_json = ?
 WHERE id = ?`,
-		strings.TrimSpace(harnessID), strings.TrimSpace(nativeSessionID),
+		harnessID, nativeSessionID,
 		strings.TrimSpace(model), props, id)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -324,6 +368,25 @@ WHERE id = ?`,
 		return ErrSessionNotFound
 	}
 	return nil
+}
+
+// FindSessionByNative returns the Hero session owning (harness_id, native_session_id).
+func (s *Store) FindSessionByNative(harnessID, nativeSessionID string) (Session, error) {
+	harnessID = strings.TrimSpace(harnessID)
+	nativeSessionID = strings.TrimSpace(nativeSessionID)
+	if harnessID == "" || nativeSessionID == "" {
+		return Session{}, ErrSessionNotFound
+	}
+	row := s.db.QueryRow(`SELECT `+sessionSelectCols+` FROM sessions WHERE harness_id = ? AND native_session_id = ? LIMIT 1`,
+		harnessID, nativeSessionID)
+	sess, err := scanSession(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Session{}, ErrSessionNotFound
+	}
+	if err != nil {
+		return Session{}, fmt.Errorf("find session by native: %w", err)
+	}
+	return sess, nil
 }
 
 // SetRemoteImportConfirmed marks that the user confirmed remote history import.

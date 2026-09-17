@@ -353,6 +353,9 @@ func TestPersistSessionTranscriptSuffixAtomicWithBind(t *testing.T) {
 	if firstEv.Seq != 1 {
 		t.Fatalf("first seq=%d", firstEv.Seq)
 	}
+	// A bind colliding with a different Hero session must not fail the
+	// transcript: events/assets commit and only the bind is skipped, so the
+	// TUI never blocks further sends on ErrDuplicateNativeSession.
 	err = s.PersistSessionTranscriptSuffix(
 		[]AppendSessionEventInput{{
 			BoundSessionID: second.ID, SessionID: second.ID,
@@ -364,29 +367,33 @@ func TestPersistSessionTranscriptSuffixAtomicWithBind(t *testing.T) {
 		}},
 		&NativeSessionBind{SessionID: second.ID, HarnessID: "cursor", NativeSessionID: "native-taken", Model: "m"},
 	)
-	if !errors.Is(err, ErrDuplicateNativeSession) {
-		t.Fatalf("want duplicate native, got %v", err)
+	if err != nil {
+		t.Fatalf("duplicate bind must not fail transcript persist, got %v", err)
 	}
 	events, err := s.ListSessionEventsNewest(second.ID, 0, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("assistant event leaked after bind failure: %+v", events)
+	if len(events) != 2 {
+		t.Fatalf("transcript events after skipped bind=%d, want 2", len(events))
 	}
 	assets, err := s.ListSessionAssets(second.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(assets) != 0 {
-		t.Fatalf("asset leaked after bind failure: %+v", assets)
+	if len(assets) != 1 {
+		t.Fatalf("assets after skipped bind=%d, want 1", len(assets))
 	}
 	got, err := s.GetSession(second.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.NativeSessionID != "" {
-		t.Fatalf("native bind leaked: %+v", got)
+		t.Fatalf("conflicting native bind must be skipped: %+v", got)
+	}
+	owner, err := s.GetSession(first.ID)
+	if err != nil || owner.NativeSessionID != "native-taken" {
+		t.Fatalf("owner bind changed: %+v %v", owner, err)
 	}
 
 	if err := s.PersistSessionTranscriptSuffix(
@@ -404,12 +411,49 @@ func TestPersistSessionTranscriptSuffixAtomicWithBind(t *testing.T) {
 		t.Fatalf("retry persist: %v", err)
 	}
 	events, err = s.ListSessionEventsNewest(second.ID, 0, 20)
-	if err != nil || len(events) != 2 {
+	if err != nil || len(events) != 3 {
 		t.Fatalf("events after retry=%d err=%v", len(events), err)
 	}
 	got, err = s.GetSession(second.ID)
 	if err != nil || got.NativeSessionID != "native-ok" {
 		t.Fatalf("bound=%+v err=%v", got, err)
+	}
+}
+
+func TestPersistSessionTranscriptSuffixSameSessionRebindIdempotent(t *testing.T) {
+	s := openTestStore(t)
+	sess, _, err := s.CreateSessionWithFirstEvent(
+		CreateSessionInput{Kind: SessionKindFreechat, Title: "rebind"},
+		AppendSessionEventInput{EventType: SessionEventUser, Origin: SessionOriginLocal, PayloadJSON: `{"text":"hi"}`},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bind := &NativeSessionBind{SessionID: sess.ID, HarnessID: "opencode", NativeSessionID: "ses_same", Model: "m"}
+	if err := s.PersistSessionTranscriptSuffix([]AppendSessionEventInput{{
+		BoundSessionID: sess.ID, SessionID: sess.ID,
+		EventType: SessionEventAssistant, Origin: SessionOriginLocal, PayloadJSON: `{"text":"one"}`,
+	}}, nil, bind); err != nil {
+		t.Fatalf("first bind persist: %v", err)
+	}
+	// Rebinding the same Hero session to the same native must stay idempotent
+	// and keep appending transcript events.
+	if err := s.PersistSessionTranscriptSuffix([]AppendSessionEventInput{{
+		BoundSessionID: sess.ID, SessionID: sess.ID,
+		EventType: SessionEventAssistant, Origin: SessionOriginLocal, PayloadJSON: `{"text":"two"}`,
+	}}, nil, bind); err != nil {
+		t.Fatalf("same-session rebind persist: %v", err)
+	}
+	events, err := s.ListSessionEventsNewest(sess.ID, 0, 20)
+	if err != nil || len(events) != 3 {
+		t.Fatalf("events=%d err=%v", len(events), err)
+	}
+	got, err := s.GetSession(sess.ID)
+	if err != nil || got.NativeSessionID != "ses_same" {
+		t.Fatalf("bound=%+v err=%v", got, err)
+	}
+	if _, err := s.FindSessionByNative("opencode", "ses_same"); err != nil {
+		t.Fatalf("FindSessionByNative: %v", err)
 	}
 }
 

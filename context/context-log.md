@@ -1,5 +1,15 @@
 # Context Log
 
+## 2026-09-17 — native bind duplicado não bloqueia mais o transcript (jobs/C1)
+
+**Problem**: No projeto `backend/jobs` (C1, QA Running) a TUI repetia `session persistence failed: persist native session bind: native session id already bound` para a sessão `677c975d…` e bloqueava novos envios (`sessionPersistBlocked`). Causa: o Chat compartilha um único Hero session ID entre turns de stages, e cada `executeDone` tenta religar essa mesma linha a um native novo; quando o native já pertence a outra History row, o `UNIQUE(harness_id, native_session_id)` abortava a transação inteira (eventos + bind) e o bind envenenado era re-enfileirado a cada retry — spam no `tui.log` e transcript parado. Mesmo padrão do bug de import legado de 2026-09-12, agora no caminho live.
+
+**Fix**: `PersistSessionTranscriptSuffix` (`internal/store/session_persist.go`) agora checa o dono antes da tx e ignora o bind conflitante com `Warn` (hero/harness/native no log), comitando eventos/assets normalmente; race dentro da tx tem o mesmo tratamento. `bindNativeSessionTx` ficou idempotente para rebind da mesma sessão e ganhou `FindSessionByNative`. Erros de bind passam a incluir `hero/harness/native`. Testes atualizados para o novo contrato (transcript vence bind): `TestPersistSessionTranscriptSuffixAtomicWithBind`, `TestSyncPersistExecuteResultAtomicWithBindFailure`, `TestFindQA27FinalSuffixFailureIsAtomicPerExecute`; novo `TestPersistSessionTranscriptSuffixSameSessionRebindIdempotent`.
+
+**Validation**: `go vet ./internal/store/`; `go test ./internal/store/ ./internal/tui/ -count=1`; `go test ./...` verde.
+
+**Recovery (projeto jobs)**: a fila é em memória — basta atualizar o binário (`./scripts/build_dev.sh`), encerrar a TUI e abrir de novo; nenhum reparo no `hero.db` é necessário (sem duplicatas; a sessão `677c975d…` já detém `ses_f4f347…`).
+
 ## 2026-09-17 — Status bar com quebra automática e scroll Alt
 
 **Problem**: A penúltima linha da TUI (status) também exibe perguntas do agente sem quebra automática nem scroll; pergunta longa ficava ilegível e o chat parecia travado.

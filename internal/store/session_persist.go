@@ -2,7 +2,9 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 )
 
 // NativeSessionBind is the native harness identity written with a transcript suffix.
@@ -16,12 +18,27 @@ type NativeSessionBind struct {
 
 // PersistSessionTranscriptSuffix writes events, assets, and optional native binding
 // in one SQLite transaction so a later failure cannot leave a partial suffix.
+// A native bind that collides with a different Hero session never fails the
+// transcript: events/assets are still committed and the conflicting bind is
+// skipped (the Chat transcript is shared across stage turns while each native
+// session stays owned by a single History row). Same-session rebinds remain
+// idempotent.
 func (s *Store) PersistSessionTranscriptSuffix(events []AppendSessionEventInput, assets []SessionAsset, bind *NativeSessionBind) error {
 	if s == nil {
 		return fmt.Errorf("store is not open")
 	}
 	if len(events) == 0 && len(assets) == 0 && bind == nil {
 		return nil
+	}
+	if bind != nil && isDuplicateBindForOtherSession(s, bind) {
+		s.log.Warn("skipping native bind owned by another session",
+			"session_id", strings.TrimSpace(bind.SessionID),
+			"harness_id", strings.TrimSpace(bind.HarnessID),
+			"native_session_id", strings.TrimSpace(bind.NativeSessionID))
+		bind = nil
+		if len(events) == 0 && len(assets) == 0 {
+			return nil
+		}
 	}
 	err := s.InTx(func(tx *sql.Tx) error {
 		for i, ev := range events {
@@ -36,7 +53,19 @@ func (s *Store) PersistSessionTranscriptSuffix(events []AppendSessionEventInput,
 		}
 		if bind != nil {
 			if err := bindNativeSessionTx(tx, bind.SessionID, bind.HarnessID, bind.NativeSessionID, bind.Model, bind.ModelPropertiesJSON); err != nil {
-				return err
+				if errors.Is(err, ErrDuplicateNativeSession) {
+					// Raced with another writer between the pre-check and the
+					// tx: the transcript is already staged above, so commit it
+					// and drop only the conflicting bind.
+					s.log.Warn("skipping raced native bind owned by another session",
+						"session_id", strings.TrimSpace(bind.SessionID),
+						"harness_id", strings.TrimSpace(bind.HarnessID),
+						"native_session_id", strings.TrimSpace(bind.NativeSessionID))
+					return nil
+				}
+				return fmt.Errorf("persist suffix bind hero=%s harness=%s native=%s: %w",
+					strings.TrimSpace(bind.SessionID), strings.TrimSpace(bind.HarnessID),
+					strings.TrimSpace(bind.NativeSessionID), err)
 			}
 		}
 		return nil
@@ -46,6 +75,29 @@ func (s *Store) PersistSessionTranscriptSuffix(events []AppendSessionEventInput,
 	}
 	s.log.Debug("session transcript suffix persisted", "events", len(events), "assets", len(assets))
 	return nil
+}
+
+// isDuplicateBindForOtherSession reports whether (harness, native) is already
+// owned by a different Hero session. Same-session rebinds are idempotent and
+// return false.
+func isDuplicateBindForOtherSession(s *Store, bind *NativeSessionBind) bool {
+	if s == nil || s.db == nil || bind == nil {
+		return false
+	}
+	harnessID := strings.TrimSpace(bind.HarnessID)
+	nativeID := strings.TrimSpace(bind.NativeSessionID)
+	heroID := strings.TrimSpace(bind.SessionID)
+	if harnessID == "" || nativeID == "" || heroID == "" {
+		return false
+	}
+	var owner string
+	err := s.db.QueryRow(`
+SELECT id FROM sessions WHERE harness_id = ? AND native_session_id = ? LIMIT 1`,
+		harnessID, nativeID).Scan(&owner)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(owner) != heroID
 }
 
 // CreateSessionWithTranscript creates a session and writes its initial events and

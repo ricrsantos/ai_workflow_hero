@@ -132,19 +132,22 @@ func TestFindQA27FinalSuffixFailureIsAtomicPerExecute(t *testing.T) {
 		{heroID: first.SessionID, harnessID: "cursor", nativeID: "native-shared", modelSlug: "model"},
 		{heroID: second.SessionID, harnessID: "cursor", nativeID: "native-shared", modelSlug: "model"},
 	})
-	failed, ok := msg.(sessionPersistErrMsg)
-	if !ok || failed.err == nil {
-		t.Fatalf("expected second native bind failure, got %T %+v", msg, msg)
+	if _, ok := msg.(sessionPersistOKMsg); !ok {
+		t.Fatalf("conflicting second bind must not fail the suffix, got %T %+v", msg, msg)
 	}
 
 	events, err := sessionSvc.ListSessionEventsNewest(ctx, second.SessionID, 0, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
+	hasAssistant := false
 	for _, event := range events {
 		if event.EventType == store.SessionEventAssistant {
-			t.Fatalf("second execution suffix committed without its binding: %+v", event)
+			hasAssistant = true
 		}
+	}
+	if !hasAssistant {
+		t.Fatalf("second execution suffix missing after skipped bind: %+v", events)
 	}
 	got, err := sessionSvc.GetSession(ctx, second.SessionID)
 	if err != nil {
@@ -152,6 +155,10 @@ func TestFindQA27FinalSuffixFailureIsAtomicPerExecute(t *testing.T) {
 	}
 	if got.NativeSessionID != "" {
 		t.Fatalf("second execution binding committed after failure: %+v", got)
+	}
+	firstGot, err := sessionSvc.GetSession(ctx, first.SessionID)
+	if err != nil || firstGot.NativeSessionID != "native-shared" {
+		t.Fatalf("first execution must keep the shared bind: %+v %v", firstGot, err)
 	}
 }
 

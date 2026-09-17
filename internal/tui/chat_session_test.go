@@ -817,30 +817,36 @@ func TestSyncPersistExecuteResultAtomicWithBindFailure(t *testing.T) {
 		Attachment: harness.Attachment{Name: "a.png", Path: "/tmp/a.png", MIMEType: "image/png", ContentHash: "hash-bind-fail"},
 		Source:     harness.AssetSourceModel,
 	}
+	// A conflicting native bind must not fail the execute-result transcript:
+	// the assistant output persists and only the bind is skipped.
 	err = syncPersistExecuteResult(ctx, sessionSvc, target.SessionID, convExecute{}, &harness.ExecutionResult{
 		Output:    "done",
 		SessionID: "native-taken",
 		Assets:    []harness.Asset{asset},
 	}, "cursor", "m", nil)
-	if err == nil {
-		t.Fatal("expected bind failure")
+	if err != nil {
+		t.Fatalf("conflicting bind must not fail execute-result persist: %v", err)
 	}
 	events, err := svc.Store.ListSessionEventsNewest(target.SessionID, 0, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
+	hasAssistant := false
 	for _, ev := range events {
-		if ev.EventType == store.SessionEventAssistant || ev.EventType == store.SessionEventAsset {
-			t.Fatalf("suffix leaked after bind failure: %+v", events)
+		if ev.EventType == store.SessionEventAssistant {
+			hasAssistant = true
 		}
 	}
+	if !hasAssistant {
+		t.Fatalf("assistant output missing after skipped bind: %+v", events)
+	}
 	assets, err := svc.Store.ListSessionAssets(target.SessionID)
-	if err != nil || len(assets) != 0 {
-		t.Fatalf("assets leaked: %+v err=%v", assets, err)
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("assets missing after skipped bind: %+v err=%v", assets, err)
 	}
 	got, err := sessionSvc.GetSession(ctx, target.SessionID)
 	if err != nil || got.NativeSessionID != "" {
-		t.Fatalf("native bind leaked: %+v err=%v", got, err)
+		t.Fatalf("conflicting native bind must be skipped: %+v err=%v", got, err)
 	}
 }
 
