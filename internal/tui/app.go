@@ -71,6 +71,7 @@ type model struct {
 	statusScrollOffset        int // scroll da status bar (perguntas longas, Alt+↑↓)
 	actionBusy                bool
 	autoUpdateBusy            bool
+	heroUpgradeBusy           bool
 	restartRequested          bool
 	pendingQuitAfterInterrupt bool
 
@@ -614,6 +615,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case telegramAutoUpdateResultMsg:
 		return m.handleTelegramAutoUpdateResult(msg)
+
+	case telegramHeroUpgradeResultMsg:
+		return m.handleTelegramHeroUpgradeResult(msg)
 
 	case timerTickMsg:
 		return m.handleTimerTick(msg)

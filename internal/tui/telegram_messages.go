@@ -183,6 +183,13 @@ func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 		next, cmd := m.handleTelegramAutoUpdate()
 		return next, combineTimerCmds(ack, cmd)
 	}
+	if matched, valid := parseTelegramHeroUpgrade(msg.text); matched {
+		if !valid {
+			return m, combineTimerCmds(ack, m.telegramOutboundCmd("Usage: /hero-upgrade (no arguments)."))
+		}
+		next, cmd := m.handleTelegramHeroUpgrade()
+		return next, combineTimerCmds(ack, cmd)
+	}
 	if strings.EqualFold(strings.TrimSpace(msg.text), telegramStatusCommand) {
 		return m, combineTimerCmds(ack, m.telegramOutboundCmd(m.telegramStatusText(time.Now())))
 	}

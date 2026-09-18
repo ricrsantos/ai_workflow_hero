@@ -36,6 +36,7 @@ func TestCommandHelpTextListsCoreCommands(t *testing.T) {
 		"/kill",
 		"/tail",
 		"/auto-update",
+		"/hero-upgrade",
 		"/model",
 		"/hero-config",
 		"/hero-permission",

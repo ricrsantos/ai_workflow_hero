@@ -2711,3 +2711,9 @@ Docs: ADR-035 decision/consequences amended; `context/current-state.md`
 **Verification**: targeted reap/path tests pass; `go vet`, `git diff --check`
 clean; full `go test ./... -count=1` exit 0 with the live OpenCode serve
 (PID 731716 on `:4096`) still listening and returning 200 afterwards.
+
+## 2026-09-18 — Telegram /hero-upgrade (skill go-engineering)
+
+**Change**: Novo slash command `/hero-upgrade` na interface Telegram (`internal/tui/telegram_upgrade.go`, TUI-owned como `/auto-update`): executa o equivalente in-process de `hero upgrade` (`upgrade.Run` com `assets.FS`, project dir e versão do binário) em `tea.Cmd` de fundo e devolve o resumo estilo CLI (updated/migrated/replaced + saída capturada) ao chat. Sem argumentos, com flag `heroUpgradeBusy`, recusa durante streaming/preflight, nunca abre turno de harness. Roteado em `handleTelegramInbound` antes do dispatch genérico `/hero-*`; resultado via `telegramHeroUpgradeResultMsg` no `Update`. Daemon não precisou mudar (qualquer `/...` já é encaminhado como comando). `/hero-upgrade` listado em `internal/telegram.CommandHelpText` (+ teste). Testes novos em `internal/tui/telegram_upgrade_test.go` (parse, guards, busy, sucesso com saída CLI, falha, sem harness turn). `context/current-state.md` atualizado.
+
+**Verification**: `gofmt` limpo, `go vet ./internal/tui/ ./internal/telegram/...` ok, `go test ./... -count=1` exit 0.
