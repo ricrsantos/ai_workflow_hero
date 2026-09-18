@@ -318,11 +318,12 @@ func (n *OpenCodeAssetNormalizer) ConsumeSSEEvent(evt map[string]any) (OpenCodeA
 		if candidate.turnID == "" {
 			candidate.turnID = strings.TrimSpace(n.options.TurnID)
 		}
+		// ADR-082 detection is a best-effort heuristic over free-form tool
+		// output (see openCodeCandidateFromString); a single candidate that
+		// fails to resolve must not abort the whole turn, so it is skipped
+		// the same way an unready (not-yet-written) candidate is.
 		asset, ready, err := n.assetFromCandidate(candidate)
-		if err != nil {
-			return OpenCodeAssetResult{}, err
-		}
-		if !ready {
+		if err != nil || !ready {
 			continue
 		}
 		n.addAsset(asset, eventType)
@@ -678,11 +679,17 @@ func openCodeCandidateFromMap(values map[string]any, context openCodeCandidateCo
 
 func openCodeCandidateFromString(value string, context openCodeCandidateContext) (openCodeAssetCandidate, bool) {
 	value = strings.Trim(strings.TrimSpace(value), "`\"'(),;[]{}")
-	if strings.HasPrefix(strings.ToLower(value), "data:") {
-		return openCodeAssetCandidate{source: context.source, uri: value, imageHint: true}, true
-	}
-	if strings.HasPrefix(strings.ToLower(value), "file:") {
-		return openCodeAssetCandidate{source: context.source, uri: value, imageHint: true}, true
+	// Only a single whitespace-free token can be a genuine data:/file: URI.
+	// Free-form tool output (e.g. `stat`'s "File: /path\nSize: ...\n...") can
+	// start with the same prefix without being a URI at all; treating the
+	// whole blob as one would send garbage into url.Parse further down.
+	if !strings.ContainsFunc(value, unicode.IsSpace) {
+		if strings.HasPrefix(strings.ToLower(value), "data:") {
+			return openCodeAssetCandidate{source: context.source, uri: value, imageHint: true}, true
+		}
+		if strings.HasPrefix(strings.ToLower(value), "file:") {
+			return openCodeAssetCandidate{source: context.source, uri: value, imageHint: true}, true
+		}
 	}
 	for _, token := range strings.FieldsFunc(value, unicode.IsSpace) {
 		token = strings.Trim(token, "`\"'(),;[]{}")

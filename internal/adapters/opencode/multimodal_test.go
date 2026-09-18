@@ -263,6 +263,35 @@ func TestOpenCodeToolResultAndWatcherCorrelationDeduplicatesByPathAndHash(t *tes
 	}
 }
 
+// TestOpenCodeStatToolOutputIsNotMistakenForFileURI guards against a false
+// positive where free-form tool stdout that happens to start with "File:"
+// (e.g. the `stat` command) was parsed as a file: URI, which aborted the
+// whole turn when url.Parse choked on the embedded newlines.
+func TestOpenCodeStatToolOutputIsNotMistakenForFileURI(t *testing.T) {
+	normalizer := NewOpenCodeAssetNormalizer(OpenCodeAssetNormalizerOptions{
+		SessionID: "session-stat", TurnID: "turn-stat", ReadFile: os.ReadFile,
+	})
+	statOutput := "  File: /home/user/project/main.go\n" +
+		"  Size: 1234      \tBlocks: 8          IO Block: 4096   regular file\n" +
+		"Device: 259,3\tInode: 123456      Links: 1\n"
+	toolResult := map[string]any{
+		"type": "message.part.updated",
+		"properties": map[string]any{
+			"part": map[string]any{
+				"type":  "tool",
+				"state": map[string]any{"status": "completed", "output": statOutput},
+			},
+		},
+	}
+	result, err := normalizer.ConsumeSSEEvent(toolResult)
+	if err != nil {
+		t.Fatalf("stat-like tool output aborted the turn: %v", err)
+	}
+	if len(result.Assets) != 0 {
+		t.Fatalf("stat-like tool output produced a bogus asset=%+v", result.Assets)
+	}
+}
+
 func mustFileURI(t *testing.T, path string) string {
 	t.Helper()
 	uri, err := openCodeFileURI(path)
