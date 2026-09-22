@@ -1,5 +1,11 @@
 # Context Log
 
+## 2026-09-22 — Release v3.5.0
+
+**Action**: Minor bump `v3.4.0` → `v3.5.0` after `go test ./...`. Release commit bumps default `main.version`, install fixture versions, `current-state`, and architecture overview. Carries chat session control, hero-sync and model-select fixes, TUI config responsiveness, context save fixes, stage validation fixes, OpenCode error detection, status behavior when the model asks the user, session-save logging, harness asset refresh, and Telegram assets update command since v3.4.0. Tag pushed; `./scripts/release.sh`; GitHub Release with 8 binaries + `checksums.txt`.
+
+**URL**: https://github.com/ricrsantos/ai_workflow_hero/releases/tag/v3.5.0
+
 ## 2026-09-17 — native bind duplicado não bloqueia mais o transcript (jobs/C1)
 
 **Problem**: No projeto `backend/jobs` (C1, QA Running) a TUI repetia `session persistence failed: persist native session bind: native session id already bound` para a sessão `677c975d…` e bloqueava novos envios (`sessionPersistBlocked`). Causa: o Chat compartilha um único Hero session ID entre turns de stages, e cada `executeDone` tenta religar essa mesma linha a um native novo; quando o native já pertence a outra History row, o `UNIQUE(harness_id, native_session_id)` abortava a transação inteira (eventos + bind) e o bind envenenado era re-enfileirado a cada retry — spam no `tui.log` e transcript parado. Mesmo padrão do bug de import legado de 2026-09-12, agora no caminho live.
