@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -480,11 +481,19 @@ func persistSessionSuffix(
 		}
 		if item.orchestration {
 			if err := cycleSvc.SetOrchestrationSession(item.sessionID, item.harnessID); err != nil {
+				if errors.Is(err, store.ErrNoActiveCycle) {
+					slog.Info("skipping orchestration session binding: cycle no longer active", "session_id", item.sessionID)
+					continue
+				}
 				return fail(sessionPersistenceError("set orchestration session binding", err), false, nil, nil, append([]sessionBindingPersistItem(nil), bindingBatch[i:]...), nil)
 			}
 			continue
 		}
 		if err := cycleSvc.SetStageSessionBinding(item.stage, item.harnessID, item.sessionID); err != nil {
+			if errors.Is(err, store.ErrNoActiveCycle) {
+				slog.Info("skipping stage session binding: cycle no longer active", "session_id", item.sessionID, "stage", item.stage)
+				continue
+			}
 			return fail(sessionPersistenceError("set stage session binding", err), false, nil, nil, append([]sessionBindingPersistItem(nil), bindingBatch[i:]...), nil)
 		}
 	}
