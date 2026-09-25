@@ -1,6 +1,6 @@
 provider: cursor
 version: 1
-last_updated: 2026-08-21
+last_updated: 2026-09-25
 currency: usd
 unit: per_1m_tokens
 
@@ -163,6 +163,79 @@ models:
     output: 6.00
     context_window: 500000
   cursor-grok-4.6-xhigh-fast:
+    input: 4.00
+    cache_write: 0.00
+    cache_read: 1.00
+    output: 12.00
+    context_window: 500000
+  # Grok 4.7 (released 2026-09-21). Priced identically to Grok 4.6: $2.00
+  # input / $6.00 output, cached $0.50, Fast at 2x. cursor.com/docs/models/
+  # grok-4-7 documents effort default as "high" (Grok 4.6's Cursor default is
+  # "medium"), so the base row diverges from cursor-grok-4.6 on that value.
+  # Extended context beyond 256K bills at Fast rates up to the 500K window
+  # (not modeled here, matching how Grok 4.6's long-context tier is omitted).
+  cursor-grok-4.7:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 500000
+    properties:
+      fs:
+        available: true
+        values: ["true", "false"]
+        default: "false"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh"]
+        default: "high"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+  cursor-grok-4.7-low:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 500000
+  cursor-grok-4.7-low-fast:
+    input: 4.00
+    cache_write: 0.00
+    cache_read: 1.00
+    output: 12.00
+    context_window: 500000
+  cursor-grok-4.7-medium:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 500000
+  cursor-grok-4.7-medium-fast:
+    input: 4.00
+    cache_write: 0.00
+    cache_read: 1.00
+    output: 12.00
+    context_window: 500000
+  cursor-grok-4.7-high:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 500000
+  cursor-grok-4.7-high-fast:
+    input: 4.00
+    cache_write: 0.00
+    cache_read: 1.00
+    output: 12.00
+    context_window: 500000
+  cursor-grok-4.7-xhigh:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 500000
+  cursor-grok-4.7-xhigh-fast:
     input: 4.00
     cache_write: 0.00
     cache_read: 1.00

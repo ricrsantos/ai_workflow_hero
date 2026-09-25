@@ -1,10 +1,32 @@
 provider: anthropic
 version: 1
-last_updated: 2026-08-18
+last_updated: 2026-09-25
 currency: usd
 unit: per_1m_tokens
 
 models:
+  # Opus 5.5 (released 2026-09-22): $4.00/$20.00, ~40% cheaper on typical
+  # workloads and >30% faster than Opus 5. cache_write is the 5-minute cache
+  # rate (1.25x input), matching the 5.00 reported for a 5-min cache write.
+  claude-opus-5-5:
+    input: 4.00
+    cache_write: 5.00
+    cache_read: 0.20
+    output: 20.00
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh", "max"]
+        default: "high"
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "on"
   claude-sonnet-5:
     input: 2.00
     cache_write: 2.50
@@ -101,3 +123,22 @@ models:
         available: true
         values: ["off", "on"]
         default: "off"
+  anthropic/claude-opus-5-5:
+    input: 4.00
+    cache_write: 5.00
+    cache_read: 0.20
+    output: 20.00
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh", "max"]
+        default: "high"
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "on"

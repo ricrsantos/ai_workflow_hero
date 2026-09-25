@@ -13,7 +13,7 @@ func TestEmbeddedCodexCatalogNativeIDs(t *testing.T) {
 	cat := LoadCatalogFromFS(assets.FS, "models")
 	for _, id := range []string{
 		"gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
-		"gpt-5.3-codex-spark",
+		"gpt-5.3-codex-spark", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
 	} {
 		if !cat.HasModel(id) {
 			t.Fatalf("missing Codex-native catalog id %q", id)

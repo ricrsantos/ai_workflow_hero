@@ -8,7 +8,7 @@
 # Context: Codex default window is ~272k; API max may be higher (1.05M/400K) — see model pages.
 provider: codex
 version: 1
-last_updated: 2026-08-25
+last_updated: 2026-09-25
 currency: usd
 unit: per_1m_tokens
 
@@ -117,6 +117,74 @@ models:
     cache_write: 0.25
     cache_read: 0.02
     output: 1.20
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  # GPT-6 Astra (released 2026-09-03): OpenAI's premium tier above Sol, same
+  # 1.05M window / 128K max output, later knowledge cutoff, big long-horizon
+  # agentic gains. $10.00/$50.00, cached $1.00, cache_write $12.50 (all
+  # confirmed by OpenAI/press pricing, and matching the family's 1.25x-input /
+  # 0.1x-input cache convention). Unlike Sol/Luna, Astra does not support the
+  # "none" effort level.
+  gpt-6-astra:
+    input: 10.00
+    cache_write: 12.50
+    cache_read: 1.00
+    output: 50.00
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  # GPT-6 Sol/Luna (released 2026-09-22, permanent pricing per OpenAI/VentureBeat).
+  # Sol: 50% cheaper than gpt-5.6-sol at same $/$ ratio; same 1.05M window / 128K
+  # max output. Luna: 50% cheaper input, 58.3% cheaper output than gpt-5.6-luna.
+  # cache_write follows the family's 1.25x-input convention; cache_read is the
+  # reported cached-input rate (0.1x input for Sol, 0.1x input for Luna).
+  gpt-6-sol:
+    input: 2.00
+    cache_write: 2.50
+    cache_read: 0.20
+    output: 10.00
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  gpt-6-luna:
+    input: 0.10
+    cache_write: 0.125
+    cache_read: 0.01
+    output: 0.50
     context_window: 1050000
     properties:
       fs:

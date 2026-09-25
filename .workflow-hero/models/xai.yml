@@ -1,6 +1,6 @@
 provider: xai
 version: 1
-last_updated: 2026-08-18
+last_updated: 2026-09-25
 currency: usd
 unit: per_1m_tokens
 
@@ -43,6 +43,29 @@ models:
         available: false
         values: ["na"]
         default: "na"
+  # Grok 4.7 (released 2026-09-21). Base tier (<200K prompt tokens) matches
+  # Grok 4.6 pricing exactly: $2.00/$6.00, cached $0.50. Above 200K prompt
+  # tokens xAI doubles all three rates ($4.00/$1.00/$12.00) — not modeled here,
+  # matching how Grok 4.6's own long-context tier is left out of this catalog.
+  grok-4.7:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 500000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh"]
+        default: "high"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
   # Retired 2026-05-15; cached-input rate and capabilities not publicly archived.
   grok-3-mini:
     input: 0.30
@@ -65,6 +88,25 @@ models:
         default: na
   # OpenCode-native provider/model ids (PRD-C04-001 §4.10)
   xai/grok-4.6:
+    input: 2.00
+    cache_write: 0.00
+    cache_read: 0.50
+    output: 6.00
+    context_window: 500000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh"]
+        default: "high"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+  xai/grok-4.7:
     input: 2.00
     cache_write: 0.00
     cache_read: 0.50

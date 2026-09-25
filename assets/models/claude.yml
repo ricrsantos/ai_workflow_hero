@@ -14,7 +14,7 @@
 # an extended-context opt-in.
 provider: claude
 version: 1
-last_updated: 2026-09-17
+last_updated: 2026-09-25
 currency: usd
 unit: per_1m_tokens
 
@@ -54,9 +54,13 @@ models:
   claude-sonnet-4-6[1m]:
     <<: *native_1m
 
+  # Opus 5.5 (released 2026-09-22) is Claude Code's `opus` alias default from
+  # CLI 2.1.280+ (natively 1M, same shape as claude-opus-5).
   opus:
     <<: *native_1m
   opus[1m]:
+    <<: *native_1m
+  claude-opus-5-5:
     <<: *native_1m
   claude-opus-5:
     <<: *native_1m

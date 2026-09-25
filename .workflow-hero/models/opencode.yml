@@ -3,7 +3,7 @@
 # Model IDs match `opencode models` (opencode/ = OpenCode Zen free; opencode-go/ = OpenCode Go).
 provider: opencode-go
 version: 1
-last_updated: 2026-09-13
+last_updated: 2026-09-25
 currency: usd
 unit: per_1m_tokens
 
@@ -499,6 +499,70 @@ models:
       ef:
         available: true
         values: ["minimal", "low", "medium", "high", "xhigh"]
+        default: "medium"
+  # MiMo V2.6 family (Xiaomi, released 2026-09-22/24). Unlike V2.5, V2.6 adds
+  # a reasoning on/off toggle (OpenRouter "reasoning enabled" boolean) — no
+  # effort ladder reported, so `ef` stays unavailable like the V2.5 rows.
+  opencode-go/mimo-v2.6-flash:
+    input: 0.14
+    cache_write: 0.00
+    cache_read: 0.0028
+    output: 0.28
+    context_window: 1048576
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
+      ef:
+        available: false
+  opencode-go/mimo-v2.6-pro:
+    input: 0.435
+    cache_write: 0.00
+    cache_read: 0.0036
+    output: 0.87
+    context_window: 1048576
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
+      ef:
+        available: false
+  opencode-go/mimo-v2.6-pro-ultraspeed:
+    input: 4.35
+    cache_write: 0.00
+    cache_read: 0.036
+    output: 8.70
+    context_window: 1048576
+    properties:
+      fs:
+        available: false
+      th:
+        available: true
+        values: ["off", "on"]
+        default: "off"
+      ef:
+        available: false
+  # GPT-6 Luna (released 2026-09-22), same rates as codex.yml/openai.yml.
+  opencode-go/gpt-6-luna:
+    input: 0.10
+    cache_write: 0.125
+    cache_read: 0.01
+    output: 0.50
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+      th:
+        available: false
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
         default: "medium"
   opencode-go/qwen3.8-flash:
     input: 0.15
