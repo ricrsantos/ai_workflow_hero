@@ -218,3 +218,25 @@ func TestUpdateModels_CustomizedFileIsReplacedWithBackup(t *testing.T) {
 		t.Fatal("checksums.json not updated after conflict replacement")
 	}
 }
+
+func TestModelNames_CoverEveryEmbeddedCatalog(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "..", "assets", "models"))
+	if err != nil {
+		t.Fatalf("read assets/models: %v", err)
+	}
+	listed := make(map[string]bool)
+	for _, name := range update_models.ModelNames {
+		listed[name] = true
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+			continue
+		}
+		if !listed[e.Name()] {
+			t.Errorf("update-models does not fetch %s", e.Name())
+		}
+	}
+	if !listed["claude.yml"] {
+		t.Error("update-models must fetch claude.yml")
+	}
+}

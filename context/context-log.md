@@ -2737,3 +2737,11 @@ clean; full `go test ./... -count=1` exit 0 with the live OpenCode serve
 **Verification**: `go test ./...` exit 0 (todos os pacotes, incluindo `internal/modelprops` e `internal/tui`).
 
 **Follow-up 2026-09-25**: usuário confirmou incluir GPT-6 Astra. Adicionado a `codex.yml` (codex-only, mesmo padrão do Sol) com $10.00/$50.00, cache_write $12.50, cache_read $1.00, contexto 1.05M — valores confirmados por pricing oficial da OpenAI/imprensa, batendo com a convenção `cache_write = 1.25× input` / `cache_read = 0.1× input` já usada no arquivo. Diferença notada na pesquisa: Astra não suporta o nível de effort `none` (Sol e Luna suportam), então `ef.values` do Astra ficou sem `"none"`. `internal/modelprops/codex_catalog_test.go` ganhou `gpt-6-astra` na lista de cobertura. `go test ./...` exit 0.
+
+## 2026-09-27 — Release 3.5.1: `hero update-models` fetches every embedded catalog
+
+**Investigation**: `hero upgrade` did not bring `gpt-6-sol` / `gpt-6-luna` into projects because the installed binary was the v3.5.0 release build, cut before commit `550d367` added them; `upgrade` copies the catalog embedded in the running binary. While comparing `upgrade` and `update-models`, found that `update_models.ModelNames` was a hardcoded list missing `claude.yml`, so `hero update-models` never refreshed the Claude catalog.
+
+**Change**: `internal/update_models/service.go` — `ModelNames` is now derived from the embedded `assets/models/*.yml` directory. New test `TestModelNames_CoverEveryEmbeddedCatalog` fails if any shipped catalog is not fetched. Version bumped to 3.5.1 (`cmd/hero/main.go`, Claude lifecycle test fixtures, architecture overview status) and released with the GPT-6 / Opus 5.5 / Grok 4.7 / MiMo 2.6 catalog entries.
+
+**Verification**: `go test ./...` exit 0.

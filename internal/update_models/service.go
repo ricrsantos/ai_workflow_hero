@@ -3,12 +3,14 @@ package update_models
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/ricrsantos/ai_workflow_hero/assets"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/assetconflict"
 	"github.com/ricrsantos/ai_workflow_hero/internal/install"
@@ -29,17 +31,23 @@ type Options struct {
 	HTTPClient *http.Client
 }
 
-// ModelNames is the canonical list of model pricing files.
-var ModelNames = []string{
-	"openai.yml",
-	"anthropic.yml",
-	"google.yml",
-	"cursor.yml",
-	"moonshot.yml",
-	"zhipu.yml",
-	"xai.yml",
-	"opencode.yml",
-	"codex.yml",
+// ModelNames lists the model pricing files to fetch. It is derived from the
+// embedded assets/models directory so every catalog that ships with Hero
+// (including claude.yml) is refreshed without a hand-maintained list.
+var ModelNames = embeddedModelNames()
+
+func embeddedModelNames() []string {
+	entries, err := fs.ReadDir(assets.FS, "models")
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(strings.ToLower(e.Name()), ".yml") {
+			names = append(names, e.Name())
+		}
+	}
+	return names
 }
 
 // Run fetches updated model pricing files and writes them to .workflow-hero/models/.
