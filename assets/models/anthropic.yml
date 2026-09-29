@@ -1,6 +1,6 @@
 provider: anthropic
 version: 1
-last_updated: 2026-09-25
+last_updated: 2026-09-29
 currency: usd
 unit: per_1m_tokens
 
@@ -22,11 +22,11 @@ models:
       ef:
         available: true
         values: ["low", "medium", "high", "xhigh", "max"]
-        default: "high"
+        default: "medium"
       th:
-        available: true
-        values: ["off", "on"]
-        default: "on"
+        available: false
+        values: ["na"]
+        default: "na"
   claude-sonnet-5:
     input: 2.00
     cache_write: 2.50
@@ -137,8 +137,8 @@ models:
       ef:
         available: true
         values: ["low", "medium", "high", "xhigh", "max"]
-        default: "high"
+        default: "medium"
       th:
-        available: true
-        values: ["off", "on"]
-        default: "on"
+        available: false
+        values: ["na"]
+        default: "na"

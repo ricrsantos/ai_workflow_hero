@@ -2779,3 +2779,11 @@ clean; full `go test ./... -count=1` exit 0 with the live OpenCode serve
 **Change**: `internal/update_models/service.go` — `ModelNames` is now derived from the embedded `assets/models/*.yml` directory. New test `TestModelNames_CoverEveryEmbeddedCatalog` fails if any shipped catalog is not fetched. Version bumped to 3.5.1 (`cmd/hero/main.go`, Claude lifecycle test fixtures, architecture overview status) and released with the GPT-6 / Opus 5.5 / Grok 4.7 / MiMo 2.6 catalog entries.
 
 **Verification**: `go test ./...` exit 0.
+
+## 2026-09-29 — Claude Opus 5.5 catalog parameters corrected
+
+**Research**: Anthropic's Claude Platform model page confirms the standard API rates ($4/$20 per million input/output tokens, $5 five-minute cache writes, $0.20 cache reads), a 1M-token context window, 128K max output, and adaptive thinking that cannot be disabled. The API default effort is `medium`; supported levels are `low`, `medium`, `high`, `xhigh`, and `max`. Claude Code's model-configuration docs confirm the same five effort levels and `medium` default, and that Opus 5.5 resolves the `opus` alias in CLI 2.1.280+.
+
+**Change**: Updated `assets/models/{claude,anthropic}.yml` and the matching `.workflow-hero/models/` mirrors. The Anthropic/OpenCode rows now default to `medium`; thinking is marked unavailable because the API requires always-on adaptive thinking and the adapter cannot express that mode. Claude Code's `opus`, `opus[1m]`, and `claude-opus-5-5` rows now expose the five effort levels with `medium` default. Standard pricing and 1M context were already correct. Fast mode pricing ($8/$40) is not exposed as `fs`: Hero's Claude CLI adapter does not forward that setting, and OpenCode's current mapping does not send Anthropic's required `speed` parameter and beta header. The catalog schema also has no max-output field.
+
+**Sources**: https://platform.claude.com/docs/en/models/opus-5-5/overview ; https://platform.claude.com/docs/en/build-with-claude/effort ; https://code.claude.com/docs/en/model-config ; https://platform.claude.com/docs/en/build-with-claude/fast-mode

@@ -8,13 +8,13 @@
 # Claude Code documents Haiku at 100K while the API exposes 200K for the same
 # model, so these values must come from Claude Code's model-config docs.
 #
-# The current generation is natively 1M: Fable 5.1, Opus 5, Sonnet 5, and
+# The current generation is natively 1M: Fable 5.1, Opus 5.5, Sonnet 5, and
 # Opus 4.7+. `[1m]` remains only for the selectors whose resolved model is not
 # natively 1M (Sonnet 4.6, Opus 4.6), where Claude Code documents the suffix as
 # an extended-context opt-in.
 provider: claude
 version: 1
-last_updated: 2026-09-25
+last_updated: 2026-09-29
 currency: usd
 unit: per_1m_tokens
 
@@ -55,13 +55,27 @@ models:
     <<: *native_1m
 
   # Opus 5.5 (released 2026-09-22) is Claude Code's `opus` alias default from
-  # CLI 2.1.280+ (natively 1M, same shape as claude-opus-5).
-  opus:
-    <<: *native_1m
+  # CLI 2.1.280+. It has a native 1M context window, defaults to medium effort,
+  # and supports all five effort levels.
+  opus: &opus_5_5
+    context_window: 1000000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      th:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh", "max"]
+        default: "medium"
   opus[1m]:
-    <<: *native_1m
+    <<: *opus_5_5
   claude-opus-5-5:
-    <<: *native_1m
+    <<: *opus_5_5
   claude-opus-5:
     <<: *native_1m
   claude-opus-4-7:
