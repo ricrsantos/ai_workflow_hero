@@ -13,13 +13,13 @@
   "harnesses": {
     "claude": {
       "enabled": true,
-      "model": "sonnet",
+      "model": "claude-opus-5-5",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     },
     "codex": {
       "enabled": true,
-      "model": "gpt-5.6-luna",
+      "model": "gpt-6-luna",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     },
@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "claude",
-    "model": "sonnet"
+    "harness": "codex",
+    "model": "gpt-6-luna"
   },
   "chat_verbosity": "debug",
   "telegram": {
@@ -47,6 +47,9 @@
   },
   "model_properties": {
     "claude": {
+      "claude-opus-5-5": {
+        "ef": "medium"
+      },
       "claude-sonnet-4-6": {
         "ef": "medium"
       },
@@ -75,6 +78,14 @@
         "th": "off"
       },
       "gpt-5.6-terra": {
+        "ef": "medium",
+        "th": "off"
+      },
+      "gpt-6-luna": {
+        "ef": "max",
+        "th": "off"
+      },
+      "gpt-6-sol": {
         "ef": "medium",
         "th": "off"
       }
