@@ -107,7 +107,7 @@ func TestTabFocusesNavbarAndEnterOpensHighlightedScreen(t *testing.T) {
 	if next.shellFocus != shellFocusNavbar {
 		t.Fatal("Tab should move focus from content to navbar")
 	}
-	if hints := next.footerHints(); !strings.Contains(hints, "↑↓ navbar") || !strings.Contains(hints, "enter open") {
+	if hints := strings.Join(helpActions(next.helpGroups()), " "); !strings.Contains(hints, "Select and open a sidebar screen") {
 		t.Fatalf("navbar help is incomplete: %q", hints)
 	}
 	if ChatInputFocusedForTest(next) {

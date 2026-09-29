@@ -696,10 +696,10 @@ func TestConversationResponsePaneLayout(t *testing.T) {
 	if !strings.Contains(view, "│") {
 		t.Fatalf("expected thin transcript accent bar: %q", view)
 	}
-	if !strings.Contains(view, "↑↓ scroll") {
-		t.Fatalf("expected scroll hint: %q", view)
+	if !strings.Contains(strings.Join(helpActions(m.helpGroups()), " "), "scroll conversation") {
+		t.Fatalf("expected scroll help: %q", view)
 	}
-	if !strings.Contains(view, "alt+q quit") && !strings.Contains(view, "alt+1-7") {
+	if !strings.Contains(view, "/help shortcuts") {
 		t.Fatalf("expected footer menu visible: %q", view)
 	}
 	// Stage hint moved to status bar under ready (not in the chat header).
@@ -1186,13 +1186,17 @@ func TestTranscriptVisibleLinesScalesWithHeight(t *testing.T) {
 	}
 }
 
-func TestChatInputKeepsTwoFreeLinesWhenSpaceIsTight(t *testing.T) {
+func TestChatInputUsesReclaimedFooterRowWhenSpaceAllows(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 80)
 	m = SetHeight(m, 13)
 
+	if got := m.chatInputVisibleLines(); got != chatInputDefaultLines {
+		t.Fatalf("composer rows = %d want %d", got, chatInputDefaultLines)
+	}
+	m = SetHeight(m, 11)
 	if got := m.chatInputVisibleLines(); got != chatInputMinLines {
-		t.Fatalf("tight terminal composer rows = %d want %d", got, chatInputMinLines)
+		t.Fatalf("shorter terminal composer rows = %d want %d", got, chatInputMinLines)
 	}
 }
 
@@ -1399,8 +1403,8 @@ func TestConversationEmptyStageShowsInput(t *testing.T) {
 	if !strings.Contains(view, "Build") {
 		t.Fatalf("expected Build mode label: %q", view)
 	}
-	if !strings.Contains(view, "alt+m mode") {
-		t.Fatalf("expected alt+m hint: %q", view)
+	if !strings.Contains(strings.Join(helpActions(m.helpGroups()), " "), "Alt+M Switch Build / Plan mode") {
+		t.Fatalf("expected Alt+M in help: %q", view)
 	}
 }
 
@@ -1476,8 +1480,8 @@ func TestConversationInputGuidanceWhenEmpty(t *testing.T) {
 	if !strings.Contains(view, "Build") {
 		t.Fatalf("expected Build mode: %q", view)
 	}
-	if !strings.Contains(view, "alt+m mode") {
-		t.Fatalf("expected alt+m hint: %q", view)
+	if !strings.Contains(strings.Join(helpActions(m.helpGroups()), " "), "Alt+M Switch Build / Plan mode") {
+		t.Fatalf("expected Alt+M in help: %q", view)
 	}
 	if !ChatInputFocusedForTest(m) {
 		t.Fatal("expected chat input focused on conversation screen")
@@ -4163,8 +4167,8 @@ func TestConversationContextBarShownWhenCatalogHasWindow(t *testing.T) {
 	m = SetChatModelSlugForTest(m, "composer-2.5")
 	m.contextUsedTokens = 180000
 	view := stripANSI(ViewForTest(m))
-	if !strings.Contains(view, "↑↓ scroll") {
-		t.Fatalf("missing scroll hint: %q", view)
+	if !strings.Contains(strings.Join(helpActions(m.helpGroups()), " "), "scroll conversation") {
+		t.Fatalf("missing scroll help: %q", view)
 	}
 	if !strings.Contains(view, "180k/200k") {
 		t.Fatalf("expected context bar label: %q", view)

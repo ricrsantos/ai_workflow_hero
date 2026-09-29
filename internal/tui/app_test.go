@@ -163,7 +163,7 @@ func TestHeroPaletteSlashLabels(t *testing.T) {
 		"/hero-new", "/hero-start", "/hero-sync", "/hero-status",
 		"/hero-approve", "/hero-reject", "/hero-continue", "/hero-back",
 		"/hero-cancel", "/hero-finish", "/hero-archive", "/hero-resume",
-		"/hero-cycles", "/hero-todos", "/model", "/hero-config-update", "/harness", "/harness-reset", "/hero-help",
+		"/hero-cycles", "/hero-todos", "/model", "/hero-config-update", "/harness", "/harness-reset", "/hero-help", "/help",
 	}
 	labels := map[string]bool{}
 	for _, item := range PaletteItemsForTest(m) {

@@ -40,13 +40,12 @@ func TestEmptyArtifactsCostsEventsNoC0(t *testing.T) {
 	}
 }
 
-func TestChatFooterUsesRealBindingsAndIncludesAllHints(t *testing.T) {
+func TestFooterShowsOnlyPrimaryBindings(t *testing.T) {
 	m := NewTestModel(nil)
 	m = SetWidth(m, 80)
 	m = EnterConversationForTest(m)
 
-	want := "tab focus · alt+m mode · / commands · enter newline · alt+enter send · esc navbar · ctrl+c interrupt · alt+r/i copy · ↑↓ scroll · alt+q quit"
-	wantChat := want + " · alt+a attach · alt+v clipboard"
+	want := "/help shortcuts · tab focus · alt+enter send · ctrl+c interrupt · alt+q exit"
 	for _, state := range []struct {
 		screen    screen
 		streaming bool
@@ -62,17 +61,13 @@ func TestChatFooterUsesRealBindingsAndIncludesAllHints(t *testing.T) {
 		m.screen = state.screen
 		m.streaming = state.streaming
 		m.slashOverlayDismissed = !state.overlay
-		expected := want
-		if state.screen == screenConversation {
-			expected = wantChat
-		}
-		if got := m.footerHints(); got != expected {
-			t.Fatalf("footer for screen=%v streaming=%t overlay=%t = %q, want %q", state.screen, state.streaming, state.overlay, got, expected)
+		if got := m.footerHints(); got != want {
+			t.Fatalf("footer for screen=%v streaming=%t overlay=%t = %q, want %q", state.screen, state.streaming, state.overlay, got, want)
 		}
 	}
 }
 
-func TestFooterWrapsWithoutClippingAndReservesRows(t *testing.T) {
+func TestFooterStaysOneLineWithoutClipping(t *testing.T) {
 	const width, height = 40, 24
 	m := NewTestModel(nil)
 	m = SetWidth(m, width)
@@ -80,8 +75,11 @@ func TestFooterWrapsWithoutClippingAndReservesRows(t *testing.T) {
 	m = EnterConversationForTest(m)
 
 	footerLines := m.footerHintLines()
-	if len(footerLines) < 2 {
-		t.Fatalf("expected narrow footer to wrap, got %v", footerLines)
+	if len(footerLines) != 1 {
+		t.Fatalf("expected one footer line, got %v", footerLines)
+	}
+	if !strings.Contains(footerLines[0], "/help shortcuts") || !strings.Contains(footerLines[0], "alt+q exit") {
+		t.Fatalf("narrow footer must retain Help and Exit: %q", footerLines[0])
 	}
 	for _, line := range footerLines {
 		if got := lipgloss.Width(line); got > width {
@@ -98,6 +96,13 @@ func TestFooterWrapsWithoutClippingAndReservesRows(t *testing.T) {
 		if got := viewLines[footerStart+i]; got != want {
 			t.Fatalf("footer line %d=%q want %q\n%s", i, got, want, strings.Join(viewLines, "\n"))
 		}
+	}
+}
+
+func TestFooterKeepsHelpAndExitInVeryNarrowTerminal(t *testing.T) {
+	m := SetWidth(NewTestModel(nil), 30)
+	if got, want := m.footerVisibleHints(), "/help shortcuts · alt+q exit"; got != want {
+		t.Fatalf("narrow footer=%q want %q", got, want)
 	}
 }
 
@@ -120,8 +125,8 @@ func TestFooterRemainsVisibleWhenContentAreaIsShort(t *testing.T) {
 			t.Fatalf("footer line %d=%q want %q\n%s", i, got, want, strings.Join(viewLines, "\n"))
 		}
 	}
-	if got := strings.Join(viewLines[start:], " · "); got != m.footerHints() {
-		t.Fatalf("footer=%q want %q", got, m.footerHints())
+	if got := strings.Join(viewLines[start:], " · "); got != m.footerVisibleHints() {
+		t.Fatalf("footer=%q want %q", got, m.footerVisibleHints())
 	}
 }
 

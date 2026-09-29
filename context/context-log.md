@@ -1,5 +1,39 @@
 # Context Log
 
+## 2026-09-29 — Release v3.5.2: TUI keyboard shortcuts guide
+
+**Change**: Added a scrollable local keyboard guide available from `/help`, the command palette, and Alt+F1. The footer now keeps the primary shortcuts on one row, and Enter selects the exact typed slash command in autocomplete. Updated version defaults and release state.
+
+**Verification**: `go test ./...` passed.
+
+**Release**: Tag `v3.5.2`; Hero and Telegram daemon binaries for Linux/macOS amd64/arm64 with `checksums.txt`.
+
+## 2026-09-29 — Rename local TUI shortcuts command
+
+**Change**: Renamed the local keyboard guide command from `/keys` to `/help` in Chat autocomplete, command palette, footer, panel copy, tests, and UI spec. `/hero-help` remains the separate workflow guide; Telegram `/help` remains daemon-owned.
+
+**Validation**: `go test ./...`.
+
+## 2026-09-29 — Terminal-independent keyboard help entry
+
+**Problem**: F1 and Alt+F1 were consumed by editor terminals and Terminator before the Hero TUI received key events.
+
+**Change**: Added local `/keys` command to Chat autocomplete and the command palette. It opens the same keyboard guide without a harness turn; the footer now advertises `/keys Help`. Alt+F1 remains an optional shortcut where forwarded by the host terminal.
+
+**Validation**: `go test ./...`.
+
+## 2026-09-29 — Alt+F1 Help and fixed exit hint
+
+**Change**: Switched the TUI shortcut guide from F1 to Alt+F1 to avoid editor and terminal bindings; plain F1 no longer opens it. The one-row footer now also shows `alt+q exit`, retaining Help and Exit at narrower widths when both fit. Updated the help panel, UI spec, and keyboard tests.
+
+**Validation**: `go test ./...`.
+
+## 2026-09-28 — TUI single-row shortcuts and F1 Help
+
+**Change**: The keyboard footer now uses one row with F1 Help, Tab focus, Alt+Enter send, and Ctrl+C interrupt. F1 opens a scrollable, grouped keyboard guide without replacing Chat, its unsent composer, or the current focus. Narrow terminals omit whole trailing hints; the F1 entry remains visible. Updated the C3 UI spec and TUI behavior tests.
+
+**Validation**: `go test ./...`.
+
 ## 2026-09-22 — Release v3.5.0
 
 **Action**: Minor bump `v3.4.0` → `v3.5.0` after `go test ./...`. Release commit bumps default `main.version`, install fixture versions, `current-state`, and architecture overview. Carries chat session control, hero-sync and model-select fixes, TUI config responsiveness, context save fixes, stage validation fixes, OpenCode error detection, status behavior when the model asks the user, session-save logging, harness asset refresh, and Telegram assets update command since v3.4.0. Tag pushed; `./scripts/release.sh`; GitHub Release with 8 binaries + `checksums.txt`.

@@ -52,6 +52,8 @@ type model struct {
 	screen       screen
 	shellFocus   shellFocus
 	navCursor    int
+	helpOpen     bool
+	helpOffset   int
 
 	status    cycle.StatusView
 	metrics   cycle.MetricsView
@@ -759,6 +761,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleCompleteManualTodosResult(msg)
 
 	case tea.KeyMsg:
+		if m.helpOpen {
+			return m.handleHelpKey(msg)
+		}
+		if key.Matches(msg, helpKey) {
+			return m.openKeyboardHelp(), nil
+		}
 		if m.cycleWelcomeDialog {
 			return m.handleCycleWelcomeKey(msg)
 		}
@@ -1116,6 +1124,9 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	case actionRefresh:
 		m = m.closePalette()
 		return m, m.refreshCmd()
+	case actionKeyboardHelp:
+		m = m.closePalette()
+		return m.openKeyboardHelp(), nil
 	}
 
 	if m.actionBusy {
@@ -2134,6 +2145,10 @@ func parseTestKey(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}, Alt: true}
 	case "esc":
 		return tea.KeyMsg{Type: tea.KeyEscape}
+	case "f1":
+		return tea.KeyMsg{Type: tea.KeyF1}
+	case "alt+f1":
+		return tea.KeyMsg{Type: tea.KeyF1, Alt: true}
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
 	case "enter":

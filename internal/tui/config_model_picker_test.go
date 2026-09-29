@@ -230,7 +230,7 @@ func TestConfigModelPickerFooterHints(t *testing.T) {
 	m := newConfigModelPickerTestModel()
 	m.config.modelPicker = true
 
-	if got := m.footerHints(); !strings.Contains(got, "enter select") || !strings.Contains(got, "esc cancel") {
+	if got := m.footerHints(); got != fixedFooterHints {
 		t.Fatalf("picker footer=%q", got)
 	}
 }

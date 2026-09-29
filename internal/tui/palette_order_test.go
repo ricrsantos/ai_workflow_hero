@@ -27,6 +27,7 @@ func TestDefaultHeroPaletteOrder(t *testing.T) {
 		"/harness",
 		"/harness-reset",
 		"/hero-help",
+		"/help",
 		"/hero-refresh",
 		"Go to - Chat",
 		"Go to - History",
@@ -48,7 +49,7 @@ func TestDefaultHeroPaletteOrder(t *testing.T) {
 
 func TestFreeChatPaletteFilter(t *testing.T) {
 	items := filterFreeChatPaletteItems(defaultHeroPaletteItems())
-	want := []string{"/new-chat", "/model", "/harness", "/harness-reset", "Quit"}
+	want := []string{"/new-chat", "/model", "/harness", "/harness-reset", "/help", "Quit"}
 	if len(items) != len(want) {
 		t.Fatalf("len=%d want %d labels=%v", len(items), len(want), labelsOf(items))
 	}

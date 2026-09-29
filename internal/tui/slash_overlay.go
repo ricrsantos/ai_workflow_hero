@@ -143,7 +143,17 @@ func (m model) executeChatSlashCommand() (model, tea.Cmd) {
 	if len(items) == 0 {
 		return m.submitConversation()
 	}
-	item := items[m.clampedSlashOverlayIndex()]
+	index := m.clampedSlashOverlayIndex()
+	if index == 0 {
+		for i, candidate := range items {
+			if strings.EqualFold(candidate.label, chatSlashToken(m.input)) {
+				index = i
+				break
+			}
+		}
+	}
+	m.slashOverlayIndex = index
+	item := items[index]
 	if chatComposerControlSlash(item) {
 		m = m.insertChatSlashSelection()
 		return m.submitConversation()

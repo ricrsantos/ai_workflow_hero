@@ -35,10 +35,13 @@ const (
 )
 
 var (
-	titleStyle   = lipgloss.NewStyle().Bold(true).Foreground(colorTextPri)
-	headerStyle  = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(colorTextPri)
-	footerStyle  = lipgloss.NewStyle().Foreground(colorTextDim)
-	successStyle = lipgloss.NewStyle().Foreground(colorOK)
+	titleStyle       = lipgloss.NewStyle().Bold(true).Foreground(colorTextPri)
+	headerStyle      = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(colorTextPri)
+	footerStyle      = lipgloss.NewStyle().Foreground(colorTextDim)
+	footerKeyStyle   = lipgloss.NewStyle().Bold(true).Foreground(colorAccentAI)
+	helpSectionStyle = lipgloss.NewStyle().Bold(true).Foreground(colorAccentUser)
+	helpKeyStyle     = lipgloss.NewStyle().Bold(true).Foreground(colorAccentAI)
+	successStyle     = lipgloss.NewStyle().Foreground(colorOK)
 	// Config form field label/value separation. Labels reuse the blue accent bar
 	// from the Chat composer, while inactive controls remain intentionally muted.
 	configLabelStyle         = lipgloss.NewStyle().Foreground(colorAccentAI)

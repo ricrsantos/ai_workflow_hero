@@ -77,8 +77,8 @@ func TestConversationNewlineHint(t *testing.T) {
 	m := NewTestModel(nil)
 	m = EnterConversationForTest(m)
 	view := ViewForTest(m)
-	if !strings.Contains(view, "enter newline") {
-		t.Fatalf("missing newline hint: %q", view)
+	if !strings.Contains(strings.Join(helpActions(m.helpGroups()), " "), "Enter New line") {
+		t.Fatalf("help missing newline guidance: %q", view)
 	}
 	if strings.Contains(view, "ctrl+enter") || strings.Contains(view, "ctrl+j") || strings.Contains(view, "shift+enter") {
 		t.Fatalf("hint must advertise only enter/alt+enter: %q", view)
@@ -89,8 +89,8 @@ func TestConversationNewlineHint(t *testing.T) {
 	if !strings.Contains(view, "ctrl+c interrupt") {
 		t.Fatalf("missing interrupt hint: %q", view)
 	}
-	if !strings.Contains(view, "esc navbar") {
-		t.Fatalf("missing navbar hint: %q", view)
+	if !strings.Contains(strings.Join(helpActions(m.helpGroups()), " "), "Esc Focus sidebar") {
+		t.Fatalf("help missing navbar guidance: %q", view)
 	}
 }
 

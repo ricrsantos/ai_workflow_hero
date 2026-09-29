@@ -1450,6 +1450,10 @@ func controlSlashFollowUpPrompt(text string) string {
 func (m model) dispatchExactHeroSlash(text string) (model, tea.Cmd, bool) {
 	trimmed := strings.TrimSpace(text)
 	lower := strings.ToLower(trimmed)
+	if lower == "/help" {
+		m = m.clearChatInput()
+		return m.openKeyboardHelp(), nil, true
+	}
 	attachmentSlash := lower == "/attach" || lower == "/attach-clipboard" || strings.HasPrefix(lower, "/attach ")
 	if attachmentSlash && strings.HasPrefix(strings.ToLower(strings.TrimSpace(m.nextUserOrigin)), "telegram:") {
 		m = m.clearChatInput()

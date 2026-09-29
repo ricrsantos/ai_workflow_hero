@@ -29,6 +29,7 @@ const (
 	actionCycles
 	actionTodos
 	actionHelp
+	actionKeyboardHelp
 	actionImportCommand
 	actionRefresh
 	actionQuit
@@ -91,6 +92,7 @@ func defaultHeroPaletteItems() []paletteItem {
 		{label: slashHarness, hint: "manage harnesses", action: actionHarness},
 		{label: "/harness-reset", hint: "restart harness connection", action: actionHarnessReset},
 		{label: "/hero-help", hint: "workflow guide", action: actionHelp},
+		{label: "/help", hint: "keyboard shortcuts", action: actionKeyboardHelp},
 		{label: slashRefresh, hint: "reload from store", action: actionRefresh},
 	}
 	goTo := []paletteItem{

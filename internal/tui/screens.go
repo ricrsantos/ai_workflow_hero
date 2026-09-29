@@ -432,6 +432,9 @@ func (m model) ensurePaletteVisible() model {
 }
 
 func (m model) renderFrame() string {
+	if m.helpOpen {
+		return m.renderHelpFrame()
+	}
 	if m.cycleWelcomeDialog {
 		return m.renderCycleWelcomeDialog()
 	}
@@ -505,81 +508,9 @@ func fitContentHeight(content string, height int, keepBottom bool) string {
 	return strings.Join(lines, "\n")
 }
 
-const fixedFooterHints = "tab focus · alt+m mode · / commands · enter newline · alt+enter send · esc navbar · ctrl+c interrupt · alt+r/i copy · ↑↓ scroll · alt+q quit"
+const fixedFooterHints = "/help shortcuts · tab focus · alt+enter send · ctrl+c interrupt · alt+q exit"
 
 func (m model) footerHints() string {
-	if m.cycleWelcomeDialog {
-		return "tab/←→ select · enter confirm · esc close"
-	}
-	if m.todoControlActive() {
-		if m.todoControlUsesComposer() {
-			return "enter confirm · esc cancel"
-		}
-		return "see dialog · esc cancel"
-	}
-	if m.shellFocus == shellFocusNavbar {
-		return "tab screen · ↑↓ navbar · enter open · " + m.navScreenRangeLabel() + " screens · alt+q quit"
-	}
-	if m.screen == screenConfig {
-		switch {
-		case m.config.leaveDialog && m.config.saving:
-			return "saving configuration…"
-		case m.config.leaveDialog:
-			return "enter save · d discard · esc cancel"
-		case m.config.modelPicker:
-			return "↑↓ models · enter select · esc cancel"
-		case m.config.editing:
-			return "enter apply · esc cancel · ←→ move · home/end · backspace/delete"
-		default:
-			return "tab navbar · ↑↓ fields · space toggle · enter edit/select · alt+s save · alt+enter save and start · alt+r reload · esc leave"
-		}
-	}
-	if m.screen == screenHistory {
-		return m.historyFooterHints()
-	}
-	if m.screen == screenSettings {
-		if m.settings.saving {
-			return "saving settings…"
-		}
-		if m.settings.editingAbbrev {
-			return "tab navbar · enter save abbreviation · esc cancel · alt+q quit"
-		}
-		enter := "apply"
-		if row, ok := m.focusedSettingsRow(); ok {
-			switch row.kind {
-			case rowTelegramCopyCommand:
-				enter = "copy"
-			case rowTelegramAbbrev:
-				enter = "edit"
-			case rowTelegramAutoReport:
-				enter = "edit"
-			case rowTelegramAlwaysSend:
-				enter = "toggle"
-			case rowTelegramAction:
-				enter = strings.ToLower(row.label)
-			}
-		}
-		return "tab navbar · ↑↓ navigate · enter " + enter + " · esc chat · alt+q quit"
-	}
-	if m.attachmentPickerActive {
-		return "↑↓/j/k navigate · enter select/open · ←/h back · esc cancel · alt+q quit"
-	}
-	if m.multimodalConversation() {
-		if m.assetFocus {
-			return "alt+g back · ↑↓ cards · enter/o open · c copy path · a attach · s save · tab navbar"
-		}
-		if m.attachmentFocus {
-			return "alt+c back · ↑↓ chips · enter/o open · c copy path · s save · x remove · tab navbar"
-		}
-		hints := fixedFooterHints + " · alt+a attach · alt+v clipboard"
-		if len(m.attachments) > 0 {
-			hints += " · alt+c chips"
-		}
-		if len(m.assets) > 0 {
-			hints += " · alt+g cards · enter/o open · c copy · a attach · s save"
-		}
-		return hints
-	}
 	return fixedFooterHints
 }
 
@@ -590,38 +521,10 @@ func (m model) renderBorderRule() string {
 	return lipgloss.NewStyle().Foreground(colorBorder).Render(strings.Repeat("─", w))
 }
 
-// footerHintLines wraps the footer at the terminal width. The footer used to
-// be rendered as a single unbounded line, so long Chat hints were clipped by
-// the terminal and could visually collide with the content above them.
+// footerHintLines keeps the footer to one physical row, prioritizing Help and Exit
+// when the terminal is too narrow to show every hint.
 func (m model) footerHintLines() []string {
-	width := m.width
-	if width < 1 {
-		width = 1
-	}
-	hints := strings.TrimSpace(m.footerHints())
-	if hints == "" {
-		// Keep one reserved footer row for picker states that render their own
-		// keyboard guidance in the content area.
-		return []string{""}
-	}
-	// Keep each hint atomic while wrapping. In particular, splitting the
-	// `↑↓ scroll` or `alt+enter send` pairs makes the fixed footer look
-	// incomplete even though all text is technically present.
-	parts := strings.Split(hints, " · ")
-	lines := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if len(lines) == 0 {
-			lines = append(lines, part)
-			continue
-		}
-		candidate := lines[len(lines)-1] + " · " + part
-		if lipgloss.Width(candidate) <= width {
-			lines[len(lines)-1] = candidate
-			continue
-		}
-		lines = append(lines, part)
-	}
-	return lines
+	return []string{m.footerVisibleHints()}
 }
 
 func (m model) footerLineCount() int {
@@ -629,14 +532,42 @@ func (m model) footerLineCount() int {
 }
 
 func (m model) renderFooter() string {
-	lines := m.footerHintLines()
-	for i, line := range lines {
-		// Render each row independently. Lipgloss pads multi-line strings to
-		// their widest row, which makes shorter wrapped hints look like they
-		// overlap the terminal edge.
-		lines[i] = footerStyle.Render(line)
+	parts := strings.Split(m.footerVisibleHints(), " · ")
+	var b strings.Builder
+	for i, part := range parts {
+		if i > 0 {
+			b.WriteString(footerStyle.Render(" · "))
+		}
+		keyName, label, ok := strings.Cut(part, " ")
+		if !ok {
+			b.WriteString(footerStyle.Render(part))
+			continue
+		}
+		b.WriteString(footerKeyStyle.Render(keyName))
+		b.WriteByte(' ')
+		b.WriteString(footerStyle.Render(label))
 	}
-	return strings.Join(lines, "\n")
+	return b.String()
+}
+
+func (m model) footerVisibleHints() string {
+	parts := strings.Split(fixedFooterHints, " · ")
+	if m.width < lipgloss.Width(parts[0]) {
+		return truncateDisplayWidth(parts[0], m.width)
+	}
+	visible := []string{parts[0]}
+	exit := parts[len(parts)-1]
+	if lipgloss.Width(parts[0]+" · "+exit) > m.width {
+		return parts[0]
+	}
+	for _, part := range parts[1 : len(parts)-1] {
+		candidate := strings.Join(visible, " · ") + " · " + part + " · " + exit
+		if lipgloss.Width(candidate) > m.width {
+			break
+		}
+		visible = append(visible, part)
+	}
+	return strings.Join(append(visible, exit), " · ")
 }
 
 func pendingApprovalStage(st cycle.StatusView) string {
