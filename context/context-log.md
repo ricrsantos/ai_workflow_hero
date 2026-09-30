@@ -1,5 +1,11 @@
 # Context Log
 
+## 2026-09-30 — Add Codex-native GPT-6.1 Sol to model catalog
+
+**Change**: Added `gpt-6.1-sol` to `assets/models/codex.yml` and the `.workflow-hero/models/codex.yml` overlay (kept byte-identical). From the OpenAI model page (launched 2026-09-29): input $2.00 / output $10.00, cached input $0.10, cache_write $2.50 (1.25x-input convention), 1,050,000 context window, 128,000 max output, knowledge cutoff 2026-04-30, `reasoning.effort` `low/medium/high/xhigh/max` (no `none`/`minimal`, like Astra). Following the established `gpt-6-sol` / `gpt-5.6-sol` precedent, the row stays codex-only (not mirrored into `openai.yml`/`opencode.yml`). `internal/modelprops/codex_catalog_test.go` coverage list now includes `gpt-6.1-sol`; `last_updated` bumped to `2026-09-30`.
+
+**Validation**: `go test ./...` passed.
+
 ## 2026-09-29 — Release v3.5.2: TUI keyboard shortcuts guide
 
 **Change**: Added a scrollable local keyboard guide available from `/help`, the command palette, and Alt+F1. The footer now keeps the primary shortcuts on one row, and Enter selects the exact typed slash command in autocomplete. Updated version defaults and release state.
@@ -2787,3 +2793,11 @@ clean; full `go test ./... -count=1` exit 0 with the live OpenCode serve
 **Change**: Updated `assets/models/{claude,anthropic}.yml` and the matching `.workflow-hero/models/` mirrors. The Anthropic/OpenCode rows now default to `medium`; thinking is marked unavailable because the API requires always-on adaptive thinking and the adapter cannot express that mode. Claude Code's `opus`, `opus[1m]`, and `claude-opus-5-5` rows now expose the five effort levels with `medium` default. Standard pricing and 1M context were already correct. Fast mode pricing ($8/$40) is not exposed as `fs`: Hero's Claude CLI adapter does not forward that setting, and OpenCode's current mapping does not send Anthropic's required `speed` parameter and beta header. The catalog schema also has no max-output field.
 
 **Sources**: https://platform.claude.com/docs/en/models/opus-5-5/overview ; https://platform.claude.com/docs/en/build-with-claude/effort ; https://code.claude.com/docs/en/model-config ; https://platform.claude.com/docs/en/build-with-claude/fast-mode
+
+## 2026-09-29 — Visual Validation toggle disabled its parent stage
+
+**Problem**: In the TUI Config screen, toggling `stages.browser_ui_validation.visual_validation.enabled` could turn off the entire Browser UI Validation stage. The boolean reader also displayed the parent stage's value for the nested Visual Validation field. Both helpers matched any path ending in `.enabled` before reaching the more specific nested field.
+
+**Change**: `internal/tui/config_screen.go` now compares complete stage field paths when reading or toggling stage booleans. Visual Validation is independent of `stages.browser_ui_validation.enabled`; Browser Health remains active whenever the stage is enabled. `context/current-state.md` records this behavior.
+
+**Verification**: `git diff --check` clean. Tests were not run in this turn.

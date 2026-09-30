@@ -8,7 +8,7 @@
 # Context: Codex default window is ~272k; API max may be higher (1.05M/400K) — see model pages.
 provider: codex
 version: 1
-last_updated: 2026-09-25
+last_updated: 2026-09-30
 currency: usd
 unit: per_1m_tokens
 
@@ -194,6 +194,30 @@ models:
       ef:
         available: true
         values: ["none", "low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  # GPT-6.1 Sol (released 2026-09-29): near-Astra performance at lower cost for
+  # coding, computer use, and professional work. Same 1.05M window / 128K max
+  # output as the GPT-6 family. $2.00/$10.00, cached $0.10, cache_write $2.50
+  # (family 1.25x-input convention). Effort supports low/medium/high/xhigh/max;
+  # "none"/"minimal" are not supported (like Astra). Knowledge cutoff 2026-04-30.
+  gpt-6.1-sol:
+    input: 2.00
+    cache_write: 2.50
+    cache_read: 0.10
+    output: 10.00
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["low", "medium", "high", "xhigh", "max"]
         default: "medium"
       th:
         available: true

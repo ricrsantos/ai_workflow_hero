@@ -857,13 +857,13 @@ func (m model) toggleConfigField(field configField) model {
 		if field.stage != "" && field.agent == "" {
 			stage := c.Stages[field.stage]
 			switch {
-			case strings.HasSuffix(field.path, ".enabled"):
+			case field.path == "stages."+field.stage+".enabled":
 				stage.Enabled = !stage.Enabled
-			case strings.HasSuffix(field.path, ".require_human_approval"):
+			case field.path == "stages."+field.stage+".require_human_approval":
 				stage.RequireHumanApproval = !stage.RequireHumanApproval
-			case strings.HasSuffix(field.path, ".visual_validation.enabled"):
+			case field.path == "stages."+field.stage+".visual_validation.enabled":
 				stage.VisualValidation.Enabled = !stage.VisualValidation.Enabled
-			case strings.HasSuffix(field.path, ".use_playwright"):
+			case field.path == "stages."+field.stage+".use_playwright":
 				stage.UsePlaywright = !stage.UsePlaywright
 			}
 			c.Stages[field.stage] = stage
@@ -1633,13 +1633,13 @@ func configBoolValue(c workflowconfig.ManagedConfig, field configField) bool {
 	if field.stage != "" && field.agent == "" {
 		stage := c.Stages[field.stage]
 		switch {
-		case strings.HasSuffix(field.path, ".enabled"):
+		case field.path == "stages."+field.stage+".enabled":
 			return stage.Enabled
-		case strings.HasSuffix(field.path, ".require_human_approval"):
+		case field.path == "stages."+field.stage+".require_human_approval":
 			return stage.RequireHumanApproval
-		case strings.HasSuffix(field.path, ".visual_validation.enabled"):
+		case field.path == "stages."+field.stage+".visual_validation.enabled":
 			return stage.VisualValidation.Enabled
-		case strings.HasSuffix(field.path, ".use_playwright"):
+		case field.path == "stages."+field.stage+".use_playwright":
 			return stage.UsePlaywright
 		}
 	}

@@ -19,7 +19,7 @@
     },
     "codex": {
       "enabled": true,
-      "model": "gpt-6-luna",
+      "model": "gpt-6.1-sol",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     },
@@ -31,14 +31,14 @@
     },
     "opencode": {
       "enabled": true,
-      "model": "opencode-go/muse-spark-1.3-contributor",
+      "model": "opencode-go/deepseek-v4.1-flash",
       "enable_fast_model": false,
       "permission_profile": "auto-all"
     }
   },
   "freechat_default": {
-    "harness": "codex",
-    "model": "gpt-6-luna"
+    "harness": "opencode",
+    "model": "opencode-go/deepseek-v4.1-flash"
   },
   "chat_verbosity": "debug",
   "telegram": {
