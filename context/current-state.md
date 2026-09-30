@@ -306,6 +306,8 @@ OpenCode orphan reap is project-scoped. `harness_serve_registry` rows are filter
 
 ## Next Steps
 
+Upcoming cycle input: [Browser improvements](../docs/idea/browser_improvements.md) captures the agreed direction for `.env.hero` test users (manual/Config, multiple profiles, ignore and archive cleanup), authenticated Browser UI/E2E coverage, blocked prerequisites, explicit Playwright execution, and scheduler-enforced budgets for all TUI stages. This is an active idea only; schemas, timing/state semantics and architecture changes require Research and approved cycle specs. Persisted browser-session reuse is excluded.
+
 1. Convert approved C16 PRD/UI/ADR into an OpenSpec implementation plan.
 2. Implement schema v12, conversation lifecycle, History UI, adapter capabilities, migration, asset retention, and the specified test matrix using `golang-tui` and `go-engineering`.
 

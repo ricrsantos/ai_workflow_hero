@@ -37,8 +37,8 @@
     }
   },
   "freechat_default": {
-    "harness": "opencode",
-    "model": "opencode-go/deepseek-v4.1-flash"
+    "harness": "codex",
+    "model": "gpt-6.1-sol"
   },
   "chat_verbosity": "debug",
   "telegram": {
@@ -86,6 +86,10 @@
         "th": "off"
       },
       "gpt-6-sol": {
+        "ef": "medium",
+        "th": "off"
+      },
+      "gpt-6.1-sol": {
         "ef": "medium",
         "th": "off"
       }

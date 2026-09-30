@@ -2801,3 +2801,15 @@ clean; full `go test ./... -count=1` exit 0 with the live OpenCode serve
 **Change**: `internal/tui/config_screen.go` now compares complete stage field paths when reading or toggling stage booleans. Visual Validation is independent of `stages.browser_ui_validation.enabled`; Browser Health remains active whenever the stage is enabled. `context/current-state.md` records this behavior.
 
 **Verification**: `git diff --check` clean. Tests were not run in this turn.
+
+## 2026-09-30 — Browser validation and execution-budget idea
+
+**Request**: Document the agreed browser-process improvements for a future Hero cycle; do not implement them now.
+
+**Direction**: Test credentials default to project-root `.env.hero`, independently of the application's `.env`, editable manually or through Config, with arbitrary user/profile entries. Hero must add the ignore rule, delete the file on cycle archive without archiving secrets, prioritize setup in the hero-new checklist, and report Browser UI/E2E prerequisite failures as blocked. Persisted authentication-state/session reuse is excluded. The idea also specifies coverage gates, bounded preparation, explicit Playwright browser-versus-suite capability, sanitized progress, and continuous execution budgets across all TUI stages while keeping health passive.
+
+**Evidence**: Source inspection confirms general timeout checks at StartStage, an additional Implementation partial-wave checkpoint, cancellable Execute without stage-derived deadline, and progress scheduling skipped during active Execute. OpenCode `part type patch` is generic part activity, not proof of a browser action. Incident log counts remain user-reported evidence.
+
+**Artifacts**: Added `docs/idea/browser_improvements.md` with acceptance matrix, implementation touchpoints, security/archive boundaries and unresolved Research decisions; updated current-state. No code or canonical architecture changed.
+
+**Verification**: Documentation reviewed and `git diff --check` run. Go tests are not required for this documentation-only change.
