@@ -4,6 +4,8 @@
 
 ## Cycle UI specs
 
+C17: [UI-C17-001-browser-validation-execution-budgets.md](UI-C17-001-browser-validation-execution-budgets.md) defines Test users Config, actionable blocked messages, remaining active time, optional per-screen capture, busy-state screenshot retrieval and Telegram image forwarding. Confirmed design; implementation pending.
+
 | Document | Cycle | Summary |
 |---|---|---|
 | [UI-C01-001-hero-tui.md](UI-C01-001-hero-tui.md) | C1 | TUI screens, dual entry parity, CLI status/metrics/events replacing cycle markdown |

@@ -1,10 +1,13 @@
 // Package envhygiene provides soft secrets hygiene helpers for Hero projects:
-// ensure `.env.example` + `.gitignore` patterns, and detect tracked secret files.
+// ensure approved placeholder examples and `.gitignore` patterns, and detect
+// tracked secret files.
 package envhygiene
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,8 +19,9 @@ const (
 	MarkerBegin = "# BEGIN Hero secrets hygiene"
 	MarkerEnd   = "# END Hero secrets hygiene"
 
-	EnvExamplePath = ".env.example"
-	GitignorePath  = ".gitignore"
+	EnvExamplePath     = ".env.example"
+	EnvHeroExamplePath = ".env.hero.example"
+	GitignorePath      = ".gitignore"
 
 	// TUILogGitignorePath is the repo-relative path for TUI slog output.
 	TUILogGitignorePath = ".workflow-hero/tui.log"
@@ -28,6 +32,7 @@ const (
 	LogsDirGitignorePath = ".workflow-hero/logs/"
 
 	templateEnvExample     = "templates/env.example"
+	templateEnvHeroExample = "templates/env.hero.example"
 	templateGitignoreBlock = "templates/gitignore-secrets"
 )
 
@@ -47,11 +52,14 @@ var SensitiveTrackedSuffixes = []string{
 	".pem",
 }
 
-// EnsureProjectRoot creates `.env.example` if missing and ensures `.gitignore`
-// contains the Hero secrets hygiene block. Existing files are never overwritten;
-// missing patterns are appended as a marked block.
+// EnsureProjectRoot creates the approved placeholder examples if missing and
+// ensures `.gitignore` contains the Hero secrets hygiene block. Existing files
+// are never overwritten; missing patterns are appended as a marked block.
 func EnsureProjectRoot(projectDir string, assetsFS fs.FS) error {
 	if err := ensureEnvExample(projectDir, assetsFS); err != nil {
+		return err
+	}
+	if err := ensureEnvHeroExample(projectDir, assetsFS); err != nil {
 		return err
 	}
 	return ensureGitignore(projectDir, assetsFS)
@@ -72,6 +80,74 @@ func ensureEnvExample(projectDir string, assetsFS fs.FS) error {
 	if err := os.WriteFile(dst, data, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
+	return nil
+}
+
+func ensureEnvHeroExample(projectDir string, assetsFS fs.FS) error {
+	dst := filepath.Join(projectDir, EnvHeroExamplePath)
+	info, err := os.Lstat(dst)
+	if err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("refuse unsafe %s target", EnvHeroExamplePath)
+		}
+		slog.Debug("preserved existing Hero test access example", "path", EnvHeroExamplePath)
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect %s: %w", EnvHeroExamplePath, err)
+	}
+
+	data, err := fs.ReadFile(assetsFS, templateEnvHeroExample)
+	if err != nil {
+		return fmt.Errorf("read asset %s: %w", templateEnvHeroExample, err)
+	}
+	file, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if os.IsExist(err) {
+			info, statErr := os.Lstat(dst)
+			if statErr == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+				slog.Debug("preserved existing Hero test access example", "path", EnvHeroExamplePath)
+				return nil
+			}
+			if statErr != nil {
+				return fmt.Errorf("inspect existing %s: %w", EnvHeroExamplePath, statErr)
+			}
+			return fmt.Errorf("refuse unsafe %s target", EnvHeroExamplePath)
+		}
+		return fmt.Errorf("create %s: %w", EnvHeroExamplePath, err)
+	}
+	createdInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return fmt.Errorf("inspect new %s: %w", EnvHeroExamplePath, err)
+	}
+	complete := false
+	defer func() {
+		if !complete {
+			currentInfo, statErr := os.Lstat(dst)
+			if statErr == nil && currentInfo.Mode()&os.ModeSymlink == 0 && os.SameFile(createdInfo, currentInfo) {
+				_ = os.Remove(dst)
+			}
+		}
+	}()
+	written, err := file.Write(data)
+	if err != nil {
+		_ = file.Close()
+		return fmt.Errorf("write %s: %w", EnvHeroExamplePath, err)
+	}
+	if written != len(data) {
+		_ = file.Close()
+		return fmt.Errorf("write %s: %w", EnvHeroExamplePath, io.ErrShortWrite)
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("sync %s: %w", EnvHeroExamplePath, err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", EnvHeroExamplePath, err)
+	}
+	complete = true
+	slog.Info("created Hero test access example", "path", EnvHeroExamplePath)
 	return nil
 }
 
@@ -99,11 +175,25 @@ func ensureGitignore(projectDir string, assetsFS fs.FS) error {
 	}
 	updated = ensureGitignoreTUILog(updated)
 	updated = ensureGitignoreLogsDir(updated)
+	updated = ensureGitignoreEnvHeroExample(updated)
 
 	if updated == content {
 		return nil
 	}
 	return os.WriteFile(path, []byte(updated), 0o644)
+}
+
+func ensureGitignoreEnvHeroExample(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		switch strings.TrimSpace(line) {
+		case "!.env.hero.example", "!/.env.hero.example":
+			return content
+		}
+	}
+	if strings.Contains(content, MarkerBegin) && strings.Contains(content, MarkerEnd) {
+		return insertLineBeforeMarkerEnd(content, "!.env.hero.example")
+	}
+	return appendGitignoreBlock(content, "!.env.hero.example\n")
 }
 
 func appendGitignoreBlock(content, block string) string {
@@ -213,7 +303,7 @@ func IsSensitivePath(rel string) bool {
 	rel = filepath.ToSlash(rel)
 	base := filepath.Base(rel)
 
-	if base == EnvExamplePath || strings.HasSuffix(rel, "/"+EnvExamplePath) {
+	if rel == EnvExamplePath || rel == EnvHeroExamplePath || strings.HasSuffix(rel, "/"+EnvExamplePath) {
 		return false
 	}
 

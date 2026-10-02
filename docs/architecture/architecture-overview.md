@@ -10,6 +10,40 @@ Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning
 
 ## Technology stack
 
+### C17 boundaries (persistence and control surfaces implemented; live browser integration pending)
+
+`internal/testaccess` owns dotenv parsing, account validation/serialization,
+root-anchored safe storage, revision checks, and private per-attempt snapshots.
+The Config Test users editor and archive cleanup use this boundary. SQLite v17
+persists cumulative `stage_budgets`, sanitized `stage_blockers`, an immutable
+`stage_coverage` denominator plus `stage_coverage_plans` digest/traceability,
+and `screenshot_manifests`. Engine report admission gates mandatory coverage;
+only an explicit Planning approval may replace an existing denominator. TUI
+budget generation/cancellation, blocked/progress display, safe capture
+service, screenshot collection, addressed Telegram image delivery, and four-
+harness prompt parity have focused coverage. The live stage session does not
+yet admit the selected browser method, call capture after assertions, or
+forward automatically captured images; full cross-surface secret proof also
+remains an open release gate.
+
+The browser cycle is TUI-only; IDE-specific removal is excluded. Existing package diagrams below describe the earlier implementation. ADR-103–106 add the following target flow:
+
+```text
+workflowconfig (test_access.enabled) ──┐
+Planning ── browser-plan.json ── digest + approved denominator ──┐
+root .env.hero ────────────→ testaccess private account snapshot ─┼─→ typed report gate
+Config editor ─────────────┘                                     │
+Planning /hero-approve ── explicit denominator update ───────────┘
+archive lifecycle ─ exact cleanup ─→ credential boundary
+TUI deadline ── generation revoke/scoped cancel ─→ cycle/reports ─→ engine/store
+Health/watchdog ── warning only                                  │
+                                               blocked/coverage/budget status
+cycle screenshots ─→ immutable manifests ─→ TUI cards/collection
+                         └─ always_send ─→ Telegram IPC/daemon image delivery
+```
+
+Cycle evidence survives archive/session cleanup; credentials do not enter archives or operational storage. Engine/store own durable active budgets and blockers; TUI owns async cancellation and generation admission. The helper is not a security sandbox against unrestricted same-user harness tools. Implementation/migration details are Planning-owned under [ADR-C17-002](ADR-C17-002-browser-validation-execution-budgets.md).
+
 | Concern | Choice |
 |---|---|
 | Language | Go 1.26+ (`modernc.org/sqlite`, no CGO) |
@@ -17,7 +51,7 @@ Hero V1 is **two coupled systems**: a **deterministic Go CLI** and a **reasoning
 | CLI | Cobra + `internal/common/clierr` |
 | TUI | Bubble Tea + lipgloss + huh (install prompts) |
 | Assets | `assets.FS` (`embed.FS`) |
-| Operational store | SQLite at `.workflow-hero/hero.db` (schema **v14**; v14 C15 finding repro package/test/source; v13 `session_delete_op_managed_paths`; v12 C16 `sessions`/`session_events`/`session_assets`/`session_leases`/`session_delete_ops`; v11 C15 findings/ToDo + cycle disposition; v10 orchestrator session pair on `cycles`, stage-agent sessions on `stages`) |
+| Operational store | SQLite at `.workflow-hero/hero.db` (schema **v17**; v17 coverage traceability and approved-plan digest; v16 budgets/blockers/coverage/screenshot tables; v15 finding repro mode; v14 C15 finding repro package/test/source; v13 `session_delete_op_managed_paths`; v12 C16 `sessions`/`session_events`/`session_assets`/`session_leases`/`session_delete_ops`; v11 C15 findings/ToDo + cycle disposition; v10 orchestrator session pair on `cycles`, stage-agent sessions on `stages`) |
 | SDD | OpenSpec (external CLI; coupled at archive) |
 | V1 harness | Cursor Agent CLI (`cursor-agent` / `cursor agent`) |
 | Platforms | Linux/macOS `amd64` / `arm64` |
@@ -34,6 +68,7 @@ ai_workflow_hero/
 ├── internal/
 │   ├── install · upgrade · uninstall · doctor · status · variables · update_models
 │   ├── autoupdate · cycle · engine · store · tui · harness · todos · workflowconfig · ideadocs
+│   ├── testaccess/        # Direct dotenv accounts, safe local storage, private snapshots
 │   ├── adapters/cursor/   # Cursor Agent CLI adapter (NDJSON stream-json)
 │   ├── adapters/opencode/ # OpenCode serve HTTP + SSE /event
 │   ├── adapters/codex/    # Codex app-server stdio JSON-RPC + PrepareHeroStart (C6 §4–§7; Hero 2.5.0)
@@ -776,5 +811,30 @@ Command: `go test ./...` (see [TESTING.md](../testing/TESTING.md)).
 ---
 
 ## Summary
+
+### C17 implementation boundaries (focused gates implemented; final acceptance in progress)
+
+```text
+planning_agent ──► current/browser-plan.json (recipe/method/coverage; non-secret)
+                         └──► stage-start digest + immutable coverage snapshot
+workflowconfig test_access.enabled ──► Config + required-login admission
+project-root .env.hero ───────► private account snapshot ──► fresh browser context
+                                                     (no state export)
+browser CaptureSource ──► internal/cycle/screenshots ──► immutable ready assets
+                                                   └─► v16 screenshot manifests
+TUI stage generation ──► engine budget API ──► v16 cumulative stage ledger
+Browser UI/E2E JSON ──► typed preparation/blocker/coverage admission
+archive prerequisites ──► project lease + cycle claim ──► SQL preflight + cleanup
+                        └─► move intent (directory identity, no credentials)
+```
+
+The browser-side method is still admitted by the active harness session; the
+Go executor interface does not imply a live provider binding. Ready captures
+remain cycle evidence even when asynchronously sent to an addressed Telegram
+chat. Archive recovery recognizes only a cycle-owned move intent with matching
+directory identity; unrelated destination collisions stay blocked. Credentials
+are removed at the exact root path without recovery copies. Harness health is
+observation-only; deadline cancellation is a separate scheduler-owned path.
+See ADR-C17-002 for normative boundaries.
 
 Hero **installs** Runtime assets into the consumer project, **persists** cycle state in SQLite through a deterministic engine, and exposes **two entry UIs**: Cursor chat (full orchestration) and Hero TUI (monitoring, approvals, and harness-driven conversation). Reasoning always happens in the harness; the Go binary coordinates, validates, and records — it does not replace the IDE orchestrator for full workflow execution unless explicitly driven through harness Execute from the TUI.

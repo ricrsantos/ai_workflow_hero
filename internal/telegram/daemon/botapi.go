@@ -1,12 +1,15 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +36,19 @@ type BotAPI interface {
 	GetUpdates(ctx context.Context, offset int64) ([]Update, error)
 	// SendMessage sends text to chatID.
 	SendMessage(ctx context.Context, chatID, text string) error
+}
+
+// Photo is an already validated image upload. Callers must provide a
+// filesystem-free, safe filename and a metadata-only caption.
+type Photo struct {
+	Filename string
+	Caption  string
+	Data     []byte
+}
+
+// ImageBotAPI is the optional image-upload capability used only by the daemon.
+type ImageBotAPI interface {
+	SendPhoto(ctx context.Context, chatID string, photo Photo) error
 }
 
 // HTTPBotAPI is the production Bot API client. The token is never logged: error
@@ -101,10 +117,13 @@ func (b *HTTPBotAPI) do(ctx context.Context, method string, params url.Values) (
 	if err != nil {
 		return nil, b.redactError(err)
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, b.redactError(err)
+	body, readErr := io.ReadAll(resp.Body)
+	closeErr := resp.Body.Close()
+	if readErr != nil {
+		return nil, b.redactError(readErr)
+	}
+	if closeErr != nil {
+		return nil, b.redactError(fmt.Errorf("bot api response close: %w", closeErr))
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, b.redactError(fmt.Errorf("bot api status %d: %s", resp.StatusCode, string(body)))
@@ -161,6 +180,64 @@ func (b *HTTPBotAPI) SendMessage(ctx context.Context, chatID, text string) error
 	}
 	if !resp.OK {
 		return b.redactError(fmt.Errorf("sendMessage failed: %s", resp.Desc))
+	}
+	return nil
+}
+
+var safePhotoFilename = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
+
+// SendPhoto uploads one image using Telegram's multipart Bot API. The daemon
+// validates size and image content before this method is called.
+func (b *HTTPBotAPI) SendPhoto(ctx context.Context, chatID string, photo Photo) error {
+	if strings.TrimSpace(chatID) == "" || !safePhotoFilename.MatchString(photo.Filename) || len(photo.Data) == 0 || int64(len(photo.Data)) > telegramPhotoMaxBytes {
+		return fmt.Errorf("sendPhoto: invalid upload")
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("chat_id", chatID); err != nil {
+		return b.redactError(err)
+	}
+	if photo.Caption != "" {
+		if err := writer.WriteField("caption", photo.Caption); err != nil {
+			return b.redactError(err)
+		}
+	}
+	part, err := writer.CreateFormFile("photo", photo.Filename)
+	if err != nil {
+		return b.redactError(err)
+	}
+	if _, err := part.Write(photo.Data); err != nil {
+		return b.redactError(err)
+	}
+	if err := writer.Close(); err != nil {
+		return b.redactError(err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.endpoint("sendPhoto"), &body)
+	if err != nil {
+		return b.redactError(err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return b.redactError(fmt.Errorf("sendPhoto: %w", err))
+	}
+	responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	closeErr := resp.Body.Close()
+	if readErr != nil {
+		return b.redactError(fmt.Errorf("sendPhoto response: %w", readErr))
+	}
+	if closeErr != nil {
+		return b.redactError(fmt.Errorf("sendPhoto response close: %w", closeErr))
+	}
+	if resp.StatusCode != http.StatusOK {
+		return b.redactError(fmt.Errorf("sendPhoto status %d: %s", resp.StatusCode, string(responseBody)))
+	}
+	var result botResponse[json.RawMessage]
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		return b.redactError(fmt.Errorf("decode sendPhoto: %w", err))
+	}
+	if !result.OK {
+		return b.redactError(fmt.Errorf("sendPhoto failed: %s", result.Desc))
 	}
 	return nil
 }

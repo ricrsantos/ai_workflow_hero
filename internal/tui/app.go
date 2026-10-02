@@ -25,6 +25,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/media"
 	"github.com/ricrsantos/ai_workflow_hero/internal/modelprops"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
+	"github.com/ricrsantos/ai_workflow_hero/internal/testaccess"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
@@ -132,6 +133,7 @@ type model struct {
 	assets                    []harness.Asset
 	assetCursor               int
 	assetFocus                bool
+	screenshots               screenshotCollectionState
 	assetSavePending          bool
 	assetSaveOverwritePending bool
 	assetSaveSource           string
@@ -185,6 +187,9 @@ type model struct {
 	awaitingRejectReason          bool   // Chat is collecting rejection feedback before Runtime Execute
 	executeSeq                    int    // monotonic id for tagged concurrent Executes
 	executes                      map[string]convExecute
+	budgetMonitorCancel           context.CancelFunc
+	budgetMonitorKey              string
+	validationProgress            validationProgressState
 
 	stageHandoffLive                 bool
 	stageHandoffStage                string
@@ -210,6 +215,8 @@ type model struct {
 	stageHandoffReproRunning    bool
 	stageHandoffReproResults    map[string]*cycle.ReproGateError
 	stageHandoffReproError      string
+	stageBrowserPreparation     *stageBrowserPreparation
+	stagePreparationOverride    func(context.Context, string, string, string, time.Duration) testaccess.BoundedPreparationResult
 	stageProgressCTAKey         string // last idle CTA; de-dupes watchdog/lifecycle repeats
 	stageProgressHoldUntilStart bool   // user cancelled; do not auto-redispatch until /hero-start
 
@@ -277,12 +284,13 @@ type model struct {
 	pendingHarnessPermissionNotices []harness.PermissionRequest
 
 	// Harness-native question prompt (OpenCode question.asked).
-	harnessQuestionPending bool
-	harnessQuestionMsg     string
-	harnessQuestionReq     harness.QuestionRequest
-	harnessQuestionRespCh  chan harness.QuestionResponse
-	harnessQuestionIndex   int
-	harnessQuestionAnswers [][]string
+	harnessQuestionPending   bool
+	harnessQuestionMsg       string
+	harnessQuestionReq       harness.QuestionRequest
+	harnessQuestionRespCh    chan harness.QuestionResponse
+	harnessQuestionExecuteID string
+	harnessQuestionIndex     int
+	harnessQuestionAnswers   [][]string
 
 	// Harness watchdog (v2.3): runtime health during TUI Execute only (warn-only).
 	harnessWatchdog         harness.Watchdog
@@ -367,7 +375,10 @@ type actionResultMsg struct {
 
 // heroResumeDoneMsg reports the deterministic cycle-state transition before
 // the standard /hero-start bootstrap reloads context and restarts the cycle.
-type heroResumeDoneMsg struct{ err error }
+type heroResumeDoneMsg struct {
+	err            error
+	archivedTarget bool
+}
 
 func newModel(svc *cycle.Service) model {
 	m := model{
@@ -482,6 +493,13 @@ func (m model) executeDir() string {
 
 func (m model) Init() tea.Cmd {
 	slog.Debug("tui init")
+	if m.svc != nil && m.svc.Engine != nil {
+		if interrupted, err := m.svc.Engine.RecoverActiveStageBudgets(); err != nil {
+			slog.Error("tui stage budget recovery failed", "error", redact.Error(err))
+		} else if len(interrupted) > 0 {
+			slog.Info("tui recovered interrupted stage budgets", "count", len(interrupted))
+		}
+	}
 	// Timer ownership is established by Update paths after the model state is
 	// installed. Init cannot persist ensureTimerLoop's mutation, so starting a
 	// tick here could create a second loop when the first refresh also starts it.
@@ -575,7 +593,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Resume is not a chat-only context lookup: after reactivating the
 		// selected cycle, immediately run the existing asynchronous /hero-start
 		// bootstrap, which reloads context and dispatches the current stage.
-		return m.beginHeroStart()
+		next, cmd := m.beginHeroStart()
+		if msg.archivedTarget {
+			next.transcript = append(next.transcript, convMessage{
+				role:    convRoleWarning,
+				content: "Archived cycle resumed. Its project-local .env.hero credentials were removed during archive. If a login stage is required, reconfigure Test users in Config before Browser UI Validation or QA End-to-End.",
+			})
+			next.bumpTranscriptLayout()
+			next = next.maybeFollowTranscriptBottom()
+		}
+		return next, cmd
+
+	case configTestUsersLoadedMsg, configTestUsersSavedMsg:
+		return m.handleConfigTestUsersMsg(msg)
 
 	case configLoadedMsg, configSavedMsg, configRetryMsg:
 		return m.handleConfigMsg(msg)
@@ -719,6 +749,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case screenshotSnapshotMsg:
+		next := m.handleScreenshotSnapshot(msg)
+		next, deliveryCmd := next.forwardScreenshotSnapshot(msg)
+		return next, deliveryCmd
+
+	case screenshotWatchTickMsg:
+		return m.handleScreenshotWatchTick(msg)
+
+	case screenshotWatchSnapshotMsg:
+		return m.handleScreenshotWatchSnapshot(msg)
+
+	case telegramScreenshotSnapshotMsg:
+		return m.handleTelegramScreenshotSnapshot(msg)
+
+	case telegramImageDeliveryResultMsg:
+		return m.handleTelegramImageDeliveryResult(msg)
+
+	case telegramImageSendErrorMsg:
+		return m.handleTelegramImageSendError(msg)
+
+	case screenshotActionMsg:
+		return m.handleScreenshotAction(msg), nil
+
+	case screenshotBatchNextMsg:
+		if m.screenshots.open && m.screenshots.batchRunning && msg.generation == m.screenshots.batchGeneration {
+			return m, m.launchNextScreenshotCmd()
+		}
+		return m, nil
+
+	case screenshotViewerResultMsg:
+		return m.handleScreenshotViewerResult(msg)
+
 	case mediaCleanupMsg:
 		if msg.err != nil {
 			m = m.setStatusWarning("media", "session asset cleanup failed")
@@ -726,7 +788,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg, heroSessionBoundMsg, sessionPersistErrMsg, sessionPersistOKMsg, sessionLeaseLostMsg, sessionLeaseReleaseResultMsg, sessionLeaseReleaseRetryMsg, chatTranscriptRestoreMsg, sessionRecoverPollTickMsg, sessionRecoverDismissedMsg, sessionRecoverAttachDoneMsg, sessionDeleteRetryResultMsg:
+	case conversationBatchMsg, streamDeltaMsg, executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg, heroSessionBoundMsg, stageBrowserPreparationDoneMsg, stageBudgetTickMsg, stageBudgetExpiredMsg, stageBudgetCancelDoneMsg, sessionPersistErrMsg, sessionPersistOKMsg, sessionLeaseLostMsg, sessionLeaseReleaseResultMsg, sessionLeaseReleaseRetryMsg, chatTranscriptRestoreMsg, sessionRecoverPollTickMsg, sessionRecoverDismissedMsg, sessionRecoverAttachDoneMsg, sessionDeleteRetryResultMsg:
 		// Always process stream messages so the goroutine is never orphaned when
 		// the user navigates away from the Chat screen while streaming.
 		return m.handleConversationMsg(msg)
@@ -789,6 +851,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.confirmPending {
 			return m.handleConfirmKey(msg)
 		}
+		if m.screenshots.open {
+			return m.handleScreenshotCollectionKey(msg)
+		}
+		if key.Matches(msg, screenshotCollectionKey) {
+			return m.openScreenshotCollection(screenshotSelectorLatest, "")
+		}
 		// C5: warnings clear on the next user action (UI-C05-001 §5). The action
 		// itself may set a new warning later in this same processing pass.
 		m = m.clearPropsWarning()
@@ -812,6 +880,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handlePaletteKey(msg)
 		}
 		if m.screen == screenConversation {
+			if strings.EqualFold(msg.String(), "enter") {
+				if selector, id, ok := parseScreenshotSlash(m.input); ok {
+					m = m.clearChatInput()
+					if m.freeChatMode {
+						m = m.setStatusWarning("/hero-screenshot", "screenshots are unavailable in free chat")
+						return m, nil
+					}
+					return m.openScreenshotCollection(selector, id)
+				}
+			}
 			return m.handleConversationKey(msg)
 		}
 		if m.screen == screenConfig {
@@ -1127,6 +1205,9 @@ func (m model) runPaletteAction(item paletteItem) (model, tea.Cmd) {
 	case actionKeyboardHelp:
 		m = m.closePalette()
 		return m.openKeyboardHelp(), nil
+	case actionScreenshots:
+		m = m.closePalette()
+		return m.openScreenshotCollection(item.screenshotSelector, "")
 	}
 
 	if m.actionBusy {
@@ -1634,7 +1715,18 @@ func (m model) beginHeroResumeExecute(cycleN int) (model, tea.Cmd) {
 		if svc == nil {
 			return heroResumeDoneMsg{err: fmt.Errorf("cycle service unavailable")}
 		}
-		return heroResumeDoneMsg{err: svc.Resume(cycleN)}
+		archivedTarget := false
+		if cycleN > 0 && svc.Store != nil {
+			if cycles, err := svc.Store.ListCycles(); err == nil {
+				for _, c := range cycles {
+					if c.Number == cycleN {
+						archivedTarget = c.Status == store.CycleStatusArchived
+						break
+					}
+				}
+			}
+		}
+		return heroResumeDoneMsg{err: svc.Resume(cycleN), archivedTarget: archivedTarget}
 	}
 }
 
@@ -1775,6 +1867,10 @@ func (m model) beginHeroContinue(extra int) (model, tea.Cmd) {
 }
 
 func (m model) beginHeroContinueExecute(extra int) (model, tea.Cmd) {
+	return m.beginHeroContinueWithBudget(extra, 0)
+}
+
+func (m model) beginHeroContinueWithBudget(extra int, budgetIncrease time.Duration) (model, tea.Cmd) {
 	if m.streaming {
 		m = m.setStatusBusyBlocked()
 		return m, nil
@@ -1793,9 +1889,17 @@ func (m model) beginHeroContinueExecute(extra int) (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-continue", noActiveCycleForStartMessage())
 		return m, nil
 	}
-	if escalatedStage(st) == "" {
-		m = m.setStatusResult(false, "/hero-continue", noEscalatedStageMessage())
+	stageName, budgetErr := m.prepareContinueBudget(budgetIncrease)
+	if budgetErr != nil {
+		m = m.setStatusResult(false, "/hero-continue", budgetErr.Error())
+		m.convError = budgetErr.Error()
 		return m, nil
+	}
+	if stageName == "" {
+		if escalatedStage(st) == "" {
+			m = m.setStatusResult(false, "/hero-continue", noEscalatedStageMessage())
+			return m, nil
+		}
 	}
 	m, cmd, slug, ok := m.orchestratorExecuteModel("/hero-continue")
 	if !ok {

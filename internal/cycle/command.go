@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/common/clierr"
@@ -41,7 +42,11 @@ func withService(run func(cmd *cobra.Command, svc *Service) error) func(cmd *cob
 			clierr.Format(stderr, e)
 			return e
 		}
-		defer svc.Close()
+		defer func() {
+			if err := svc.Close(); err != nil {
+				slog.Error("cycle service close failed")
+			}
+		}()
 		if err := run(cmd, svc); err != nil {
 			e := mapCLIError(err)
 			clierr.Format(stderr, e)
@@ -549,6 +554,7 @@ func newCycleResumeCommand() *cobra.Command {
 				return err
 			}
 			output.Success(cmd.OutOrStdout(), "Cycle resumed.")
+			output.Warning(cmd.OutOrStdout(), "Archived test credentials are not restored. Reconfigure Test users before resuming validation that requires login.")
 			return nil
 		}),
 	}
@@ -604,7 +610,9 @@ func printMetricsTable(w io.Writer, view MetricsView) {
 		})
 	}
 	output.Table(w, headers, rows)
-	fmt.Fprintf(w, "\nTotal: %d in / %d out tokens, ~$%.6f USD\n", view.TotalIn, view.TotalOut, view.TotalCost)
+	if _, err := fmt.Fprintf(w, "\nTotal: %d in / %d out tokens, ~$%.6f USD\n", view.TotalIn, view.TotalOut, view.TotalCost); err != nil {
+		slog.Error("cycle metrics output failed")
+	}
 }
 
 func printEventsTable(w io.Writer, view EventsView) {

@@ -2776,6 +2776,9 @@ func TestHeroContinueRequiresEscalatedStage(t *testing.T) {
 }
 
 func TestHeroContinueInlineExtra(t *testing.T) {
+	if extra, ok := parseHeroContinueInline("/hero-continue 3"); !ok || extra != 3 {
+		t.Fatalf("parseHeroContinueInline()=(%d, %v), want (3, true)", extra, ok)
+	}
 	dir := t.TempDir()
 	setupHeroApproveRuntimeFiles(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, ".cursor", "commands", "hero-continue.md"), []byte("# /hero-continue\n\nINLINE_CONTINUE"), 0o644); err != nil {

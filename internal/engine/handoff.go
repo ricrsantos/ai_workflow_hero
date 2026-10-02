@@ -12,6 +12,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/conversation"
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
+	"github.com/ricrsantos/ai_workflow_hero/internal/testaccess"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
@@ -49,7 +50,7 @@ func (e *Engine) CloseStageFailedWithFindings(cycleID int64, stageName string, r
 		return empty, err
 	}
 
-	ctx, err := e.decodeContextForCycle(cycleID)
+	ctx, err := e.ValidationDecodeContextForStage(cycleID, stageName)
 	if err != nil {
 		return empty, err
 	}
@@ -343,6 +344,64 @@ func decodeFailedValidationReport(stageName string, data []byte, ctx reports.Dec
 // ValidationDecodeContext builds report decoders' scope and store-backed validators for a cycle.
 func (e *Engine) ValidationDecodeContext(cycleID int64) (reports.DecodeContext, error) {
 	return e.decodeContextForCycle(cycleID)
+}
+
+// ValidationDecodeContextForStage adds Planning-owned browser coverage and
+// managed-evidence validation for browser validation reports.
+func (e *Engine) ValidationDecodeContextForStage(cycleID int64, stageName string) (reports.DecodeContext, error) {
+	ctx, err := e.decodeContextForCycle(cycleID)
+	if err != nil {
+		return reports.DecodeContext{}, err
+	}
+	if stageName != reports.SourceBrowserUI && stageName != reports.SourceQAEndToEnd {
+		return ctx, nil
+	}
+	if err := e.verifyApprovedCoveragePlan(cycleID, stageName); err != nil {
+		return reports.DecodeContext{}, err
+	}
+	rows, err := e.Store.ListStageCoverage(cycleID, stageName)
+	if err != nil {
+		return reports.DecodeContext{}, err
+	}
+	if len(rows) == 0 {
+		return reports.DecodeContext{}, errors.New("approved browser coverage plan is unavailable")
+	}
+	plan, err := e.loadStageBrowserPlan(stageName)
+	if err != nil {
+		return reports.DecodeContext{}, err
+	}
+	ctx.ExpectedBrowserMethod = reportBrowserMethod(plan.Method.Method)
+	ctx.ExpectedBrowserTool = plan.Method.ToolName
+	ctx.MinimumPlaywrightVersion = testaccess.MinimumPlaywrightVersion
+	ctx.CoveragePlan = make([]reports.CoveragePlanItem, 0, len(rows))
+	for _, row := range rows {
+		ctx.CoveragePlan = append(ctx.CoveragePlan, reports.CoveragePlanItem{
+			ID: row.ID, Requirement: row.RequirementRef, Acceptance: row.ExpectedResult,
+			ScreenJourney: row.ScreenJourney, UserID: row.UserID, ProfileID: row.ProfileID,
+			Mandatory: row.Mandatory, ExpectedResult: row.ExpectedResult,
+			EvidenceRequirements:    append([]string(nil), row.EvidenceRequirements...),
+			OptionalReferenceWidths: append([]int(nil), row.OptionalReferenceWidths...),
+		})
+	}
+	ctx.EvidenceReferenceValidator = e.blockedEvidenceReferenceValidator(cycleID)
+	return ctx, nil
+}
+
+func reportBrowserMethod(method testaccess.ExecutionMethod) string {
+	switch method {
+	case testaccess.MethodPlaywrightTestSuite:
+		return "playwright_test"
+	case testaccess.MethodPlaywrightCLI:
+		return "cli_skill"
+	case testaccess.MethodPlaywrightCLINoSkill:
+		return "cli"
+	case testaccess.MethodMCP:
+		return "mcp"
+	case testaccess.MethodHTTP:
+		return "http"
+	default:
+		return "unknown"
+	}
 }
 
 func (e *Engine) decodeContextForCycle(cycleID int64) (reports.DecodeContext, error) {

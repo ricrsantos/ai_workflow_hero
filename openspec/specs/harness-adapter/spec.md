@@ -5,6 +5,13 @@ TBD - created by archiving change slash-parity-tui-harness. Update Purpose after
 
 ## Requirements
 
+### Requirement: Stage deadline cancellation SHALL be separate from adapter health
+TUI scheduler-owned budget enforcement SHALL cancel only the active stage's owned executions at expiry after revoking generation acceptance. Adapter transport recovery SHALL retain remaining stage budget. CheckHealth, Watchdog.Evaluate consumers and handleHarnessHealthResult SHALL never cancel, restart or correct execution; diagnostic repeated-event warnings SHALL remain passive. A late result from expired/cancelled/interrupted work SHALL not be accepted (C17 FR-09–FR-11, ADR-105; target pending implementation).
+
+#### Scenario: Patch activity continues past deadline
+- **WHEN** OpenCode streams repeated patch parts while the stage exhausts active time
+- **THEN** independent budget enforcement cancels owned work; the health path only observes and patch diagnostics never expose raw content
+
 ### Requirement: Dispatch SHALL accept expanded command markdown as prompt
 `HarnessAdapter.Dispatch` SHALL accept a `Prompt` that may be the full body of a Cursor custom command markdown file (after optional frontmatter strip). Cursor adapter behavior remains best-effort; IDE chat injection remains out of scope (ADR-016 as amended by ADR-021; PRD-C02-001 §5.2).
 

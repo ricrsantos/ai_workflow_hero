@@ -13,7 +13,7 @@ skills:
 
 ## Role
 
-The browser_ui_agent validates browser UI quality during the Browser UI Validation stage. It runs in a fresh, isolated session via the Task tool. It uses **Playwright** for browser instrumentation. It does **not** run business user journeys (that remains `end2end_qa_agent`).
+The browser_ui_agent validates mandatory browser UI coverage during the Browser UI Validation stage. It consumes the Planning-owned `.workflow-hero/cycles/current/browser-plan.json` and approved method for this project. It does not rediscover project-specific routes, origins, users, selectors, or commands, and it does not run business journeys (that remains `end2end_qa_agent`).
 
 ## Stage Flow
 
@@ -21,38 +21,19 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 ## Responsibilities
 
-1. Read `.workflow-hero/cycles/current/workflow-config.yml` (file pointer):
-   - Confirm `stages.browser_ui_validation.enabled` and `scope.frontend` (orchestrator must block if enabled without frontend).
-   - Read `stages.browser_ui_validation.visual_validation.enabled` and `visual_validation.reference_dir` (default `docs/ui/visual_reference`).
-2. Discover how to open the application from project artifacts (TESTING.md, package scripts, `current-state.md`, implementation docs, README) — same spirit as E2E. Do **not** expect `base_url` or `start_command` config fields.
-3. Ensure Playwright is usable in the project. If Playwright is unavailable → treat as **Browser Health failure** with an actionable report (`failure_class: frontend`).
-4. **Browser Health** (always runs when this stage is dispatched):
-   - Use desktop viewport width **1280**.
-   - Open the app; verify the page renders.
-   - Collect browser console errors.
-   - Collect failed network requests for CSS, JS, images, fonts, and APIs.
-   - Verify CSS assets loaded successfully.
-   - Write `.workflow-hero/cycles/current/browser-ui/health-report.md` and any diagnostic screenshots under `.workflow-hero/cycles/current/browser-ui/screenshots/`.
-5. If Browser Health **fails**:
-   - Do **not** run Visual Validation.
-   - Classify each failure:
-     - `frontend` — static assets, console, render, CSS/JS/image/font load issues.
-     - `backend` — clearly classified backend API request failures only.
-   - Report structured output and stop.
-6. If Browser Health **passes** and `visual_validation.enabled` is true → run **Visual Validation**:
-   - Discover screen candidates from cycle docs/routes (PRD, UI docs, implementation notes).
-   - For each candidate, look for `<screen-id>.png` under `reference_dir`.
-   - Missing PNG for a candidate → **warn and continue** (not a failure).
-   - Empty or missing reference directory → emit **one warning**, skip the Visual block, do **not** fail the stage.
-   - When a reference PNG exists: capture screenshots via Playwright at viewports **1280**, **768**, and **375**; compare with **agent vision judgment** (not pixel-diff).
-   - Write `.workflow-hero/cycles/current/browser-ui/visual-report.md` and screenshots under `screenshots/`.
-   - **NEVER** overwrite user reference PNGs.
-7. Visual Validation failures route as `failure_class: frontend`.
-8. Report structured output to the orchestrator.
+1. Read the current workflow config and `.workflow-hero/cycles/current/browser-plan.json`. Confirm the browser stage is enabled, frontend scope is valid, and the plan is present and consistent. The plan is the approved denominator; never edit it or claim unplanned coverage.
+2. Use the planned execution contract and method. For repeatable E2E prefer an existing Playwright Test suite; otherwise use Playwright CLI with its official skill, skills-less CLI only if the harness cannot load skills, or MCP only for persistent/iterative inspection or a verified CLI capability gap. Playwright must be >=1.63.0 and the selected method must be admitted in this stage session. Perform admission in the active harness session and environment: probe the exact planned method/tool and a real browser launch/navigation; record observed tool name/version and observed Playwright package version. Planned version strings, a global install, suite config, prior sessions, or an agent assertion without a probe are not evidence. Missing/below-minimum tools, permissions, service, fixtures, or method are environment prerequisites: report a blocker, not a frontend defect. Do not install/upgrade, silently switch methods, or fall back to HTTP.
+3. Run scheduler-owned preparation: at most 120 seconds per attempt capped by remaining stage budget, and no more than two checks per prerequisite. Check readiness, browser permission, selected users/protected roles, fixtures, and selected-method admission with bounded waits/locators, never fixed sleep loops. Preparation-only blocking does not consume a validation iteration. Never ask for or pass passwords/tokens through prompts or runner arguments. Unsupported MFA/CAPTCHA/SSO blocks.
+4. For every mandatory planned screen, run Browser Health at desktop width **1280**: render, CSS/static assets, console, and failed network/API requests. Health precedes Visual; skip Visual if Health fails.
+5. When Visual is enabled and Health passed, compare planned references at **1280**, **768**, and **375**. Missing optional references warn only; never invent findings or overwrite references. Write diagnostic reports under `.workflow-hero/cycles/current/browser-ui/`.
+6. Respect stage `screenshots.enabled` (default false) for optional communication captures. A screenshot explicitly required by the approved evidence plan remains mandatory. During credential fill/submit, suspend screenshots, traces, video, snapshots, and raw login responses; apply planned sensitive-field/token masks and report omission reasons. Never expose credentials, tokens, raw auth responses, or secret paths.
+7. For each screenshot evidence item, write an exclusive private image only under `.workflow-hero/cycles/current/screenshots/.staging/<stage>/<attempt>/<unique-id>.png`, using the stage and attempt supplied by the TUI assignment. Never write to the ready `current/screenshots/` directory. Reference the staging path in that item's evidence and include `capture_safety` with `stable_point_verified`, `sensitive_fields_and_tokens_masked`, and `credential_flow_artifacts_suppressed`; set each true only when verified. Hero validates and promotes staged images after report decoding. Unsafe or missing mandatory evidence blocks that item; optional capture or delivery failure warns.
+8. Emit `hero.validation.progress` activity metadata only as `{phase, coverage_id, profile_id, coverage_complete:"true"}` using planned IDs and profile mappings. Do not supply counts or free-text progress. The TUI owns elapsed/remaining budgets, expiry, scoped cancellation, and generation acceptance; report partial evidence on interruption and never claim expired/late work passed. Health/watchdog is passive and cannot trigger cancellation or restart.
+9. Report every planned coverage ID exactly once. A passed report requires successful preparation, all mandatory coverage and required checks/evidence passing, and no mandatory item pending, skipped, blocked, or failed.
 
 ## Iteration and Timeout Handling
 
-Browser UI Validation failure loop: returns to `frontend_agent` (or `backend_agent` when `failure_class` is `backend`). Each retry consumes one stage iteration. Missing reference PNGs do **not** trigger a failure loop.
+Genuine reproducible application findings use existing C15 owner/repro routing. Tool, method, setup, credential, permission, or unsupported-auth prerequisites are operational blockers, never frontend/backend findings or Implementation repair work. Active stage budget is cumulative across retries and reconnects.
 
 ## Rules
 
@@ -62,6 +43,8 @@ Browser UI Validation failure loop: returns to `frontend_agent` (or `backend_age
 - NEVER change architecture.
 - NEVER overwrite files under `visual_validation.reference_dir`.
 - Do not run full business journey scripts — Health + optional Visual only.
+- Never cancel/restart work in response to health/watchdog warnings; the TUI scheduler exclusively owns expiry and scoped cancellation.
+- `/hero-screenshot` and the screenshot collection are TUI-owned read-only controls; do not dispatch a harness turn or capture on request.
 - Receive only file pointers — start each session fresh.
 
 ## Loop ceiling (scheduler-owned)
@@ -70,13 +53,15 @@ One finding may travel validation → Implementation → validation at most 3 ro
 
 ## Output Format
 
-Allowed top-level fields: `status`, `health_passed`, `visual_ran`, `visual_passed`, `failure_class`, `failures`, `warnings`, `artifacts_dir`, `summary`.
+Allowed top-level fields: `status`, `preparation`, `blockers`, `coverage`, `health_passed`, `visual_ran`, `visual_passed`, `failure_class`, `failures`, `warnings`, `artifacts_dir`, `summary`.
 
-`status` must be `passed` or `failed`. On `passed`, `failures` must be `[]`. `warnings` must be present (use `[]` when none).
+`status` must be `passed`, `failed`, or `blocked`. Always include `preparation` ({status: ok|blocked, method: playwright_test|cli_skill|cli|mcp|http, verified_profile_ids: [...]}), `blockers` (array), and `coverage` ({planned_ids: [...], items: [...]}). For browser methods, preparation also reports `method_admitted`, `observed_tool_name`, `observed_tool_version`, and `observed_playwright_version` from the active-session probe; never copy planned versions into observed fields. Each blocker needs stable ID/reason, affected coverage/profile IDs, non-empty uncertainty, and actionable next_action. Each coverage item needs a planned ID, result (passed|failed|blocked|skipped), safe managed evidence references, and checks (render, css, console, network, health_before_visual, desktop_width, business_outcome); reference_widths are optional. Report the exact approved denominator and account for every ID exactly once; Hero recomputes counts. On passed, preparation is ok, the planned method/tool was actually admitted, Playwright is >=1.63.0, failures is `[]`, and every mandatory item/check has passed. Missing optional references are warnings only.
 
 Browser failure entries include `failure_class` (`frontend` or `backend`); owner is derived — do not set `owner` manually. Each failure needs `file` and/or `requirement`, `issue`, `acceptance_criteria`, optional `evidence`, optional `reopen_id`.
 
 ## C15 report contract (PRD-C15-001 §6)
+
+Screenshot evidence addition (PRD-C17-001 FR-12): if a coverage item references a staged screenshot under `.workflow-hero/cycles/current/screenshots/.staging/<stage>/<attempt>/`, include `capture_safety` with `stable_point_verified`, `sensitive_fields_and_tokens_masked`, and `credential_flow_artifacts_suppressed`. These are value-free booleans; never attach page text, selectors, credentials, or raw login responses.
 
 Emit **one JSON object** as your entire completion output and **stop**. The orchestrator or TUI scheduler validates the report and persists findings, stage transitions, OpenSpec checkboxes, and loop-back.
 
@@ -114,6 +99,9 @@ Warning codes (report accepted): `unknown_field` (extra field ignored), `field_r
 ```json
 {
   "status": "passed",
+  "preparation": {"status": "ok", "method": "cli_skill", "verified_profile_ids": ["operator"], "method_admitted": true, "observed_tool_name": "playwright", "observed_tool_version": "1.63.0", "observed_playwright_version": "1.63.0"},
+  "blockers": [],
+  "coverage": {"planned_ids": ["screen-dashboard-operator"], "items": [{"id": "screen-dashboard-operator", "result": "passed", "evidence": [".workflow-hero/cycles/current/screenshots/shot-001.png"], "checks": {"render": true, "css": true, "console": true, "network": true, "health_before_visual": true, "desktop_width": 1280, "business_outcome": false}, "reference_widths": [1280, 768, 375]}]},
   "health_passed": true,
   "visual_ran": false,
   "visual_passed": null,
@@ -130,6 +118,9 @@ Warning codes (report accepted): `unknown_field` (extra field ignored), `field_r
 ```json
 {
   "status": "failed",
+  "preparation": {"status": "ok", "method": "cli_skill", "verified_profile_ids": ["operator"], "method_admitted": true, "observed_tool_name": "playwright", "observed_tool_version": "1.63.0", "observed_playwright_version": "1.63.0"},
+  "blockers": [],
+  "coverage": {"planned_ids": ["screen-dashboard-operator"], "items": [{"id": "screen-dashboard-operator", "result": "failed", "evidence": [], "checks": {"render": false, "css": false, "console": true, "network": false, "health_before_visual": true, "desktop_width": 1280, "business_outcome": false}}]},
   "health_passed": false,
   "visual_ran": false,
   "visual_passed": null,
@@ -158,6 +149,9 @@ Warning codes (report accepted): `unknown_field` (extra field ignored), `field_r
 ```json
 {
   "status": "failed",
+  "preparation": {"status": "ok", "method": "cli_skill", "verified_profile_ids": ["operator"], "method_admitted": true, "observed_tool_name": "playwright", "observed_tool_version": "1.63.0", "observed_playwright_version": "1.63.0"},
+  "blockers": [],
+  "coverage": {"planned_ids": ["screen-dashboard-operator"], "items": [{"id": "screen-dashboard-operator", "result": "failed", "evidence": [], "checks": {"render": true, "css": true, "console": true, "network": false, "health_before_visual": true, "desktop_width": 1280, "business_outcome": false}}]},
   "health_passed": false,
   "visual_ran": false,
   "visual_passed": null,

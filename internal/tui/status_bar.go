@@ -231,6 +231,7 @@ func (m model) statusBarAllLines(width int) []string {
 	if m.confirmPending {
 		return wrapStatusPlain(m.confirmMsg, warnStyle, width)
 	}
+	var lines []string
 	switch m.statusKind {
 	case statusRunning:
 		label := m.statusLabel
@@ -238,20 +239,25 @@ func (m model) statusBarAllLines(width int) []string {
 			label = "action"
 		}
 		head := fmt.Sprintf("● %s  running", label)
-		return []string{infoStyle.Render(head)}
+		lines = []string{infoStyle.Render(head)}
 	case statusOK:
-		return wrapStatusMessageAll("✓", m.statusLabel, m.statusText, successStyle, width)
+		lines = wrapStatusMessageAll("✓", m.statusLabel, m.statusText, successStyle, width)
 	case statusErr:
-		return wrapStatusMessageAll("✗", m.statusLabel, m.statusText, errorStyle, width)
+		lines = wrapStatusMessageAll("✗", m.statusLabel, m.statusText, errorStyle, width)
 	case statusWarn:
-		return wrapStatusMessageAll("⚠", m.statusLabel, m.statusText, warnStyle, width)
+		lines = wrapStatusMessageAll("⚠", m.statusLabel, m.statusText, warnStyle, width)
 	default:
-		lines := []string{mutedStyle.Render("ready")}
+		lines = []string{mutedStyle.Render("ready")}
 		if hint := m.conversationStatusHint(); hint != "" {
 			lines = append(lines, wrapStatusPlain(hint, mutedStyle, width)...)
 		}
-		return lines
 	}
+	if progress := m.validationProgressStatusLines(m.validationProgressNow()); len(progress) > 0 {
+		for _, line := range progress {
+			lines = append(lines, wrapStatusPlain(line, mutedStyle, width)...)
+		}
+	}
+	return lines
 }
 
 // withStatusScrollHint indica scroll pendente sem consumir linha extra: o

@@ -1,6 +1,7 @@
 package upgrade_test
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -75,6 +76,95 @@ func TestUpgrade_UnmodifiedFilesAreUpdated(t *testing.T) {
 	}
 	if _, ok := heroJSON.Harnesses["cursor"]; !ok {
 		t.Fatal("upgrade should ensure harnesses.cursor defaults")
+	}
+}
+
+func TestEnvHeroExample_UpgradePreservesCustomFilesWithoutCredentialLeak(t *testing.T) {
+	dir := makeInstalledDir(t)
+	credential := []byte("HERO_TEST_USER_ADMINISTRATOR_PASSWORD=UPGRADE_SENTINEL_SECRET\n")
+	example := []byte("# project-auth guide\nHERO_TEST_USERS=custom\n")
+	applicationEnv := []byte("DATABASE_URL=APP_LOCAL_VALUE\n")
+	for path, contents := range map[string][]byte{
+		".env.hero":         credential,
+		".env.hero.example": example,
+		".env":              applicationEnv,
+	} {
+		mode := os.FileMode(0o600)
+		if path == ".env.hero.example" {
+			mode = 0o644
+		}
+		if err := os.WriteFile(filepath.Join(dir, path), contents, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checksumsPath := filepath.Join(dir, cursoradapter.ChecksumsJSONPath)
+	checksumsData, err := os.ReadFile(checksumsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var originalChecksums install.Checksums
+	if err := json.Unmarshal(checksumsData, &originalChecksums); err != nil {
+		t.Fatal(err)
+	}
+	originalChecksums[".env.hero"] = sha256hex(credential)
+	checksumsData, err = json.Marshal(originalChecksums)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(checksumsPath, checksumsData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	if _, err := upgrade.Run(upgrade.Options{ProjectDir: dir, Version: "1.1.0", AssetsFS: assets.FS}, &out, &out); err != nil {
+		t.Fatalf("upgrade.Run: %v", err)
+	}
+	if strings.Contains(out.String(), "UPGRADE_SENTINEL_SECRET") {
+		t.Fatal("upgrade output disclosed .env.hero content")
+	}
+	for path, want := range map[string][]byte{
+		".env.hero":         credential,
+		".env.hero.example": example,
+		".env":              applicationEnv,
+	} {
+		got, err := os.ReadFile(filepath.Join(dir, path))
+		if err != nil || !bytes.Equal(got, want) {
+			t.Errorf("%s changed during upgrade: got %q, err=%v", path, got, err)
+		}
+	}
+	checksums, err := os.ReadFile(checksumsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(checksums, []byte("UPGRADE_SENTINEL_SECRET")) || bytes.Contains(checksums, []byte(`".env.hero"`)) {
+		t.Fatalf("checksums contain credentials or a root credential-file entry: %q", checksums)
+	}
+	assertNoCredentialCopyOutsideLocalEnvs(t, dir, "UPGRADE_SENTINEL_SECRET")
+}
+
+func assertNoCredentialCopyOutsideLocalEnvs(t *testing.T, root, sentinel string) {
+	t.Helper()
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if path == filepath.Join(root, ".env.hero") || path == filepath.Join(root, ".env") {
+			return nil
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(contents, []byte(sentinel)) {
+			t.Errorf("credential sentinel copied outside local dotenv files: %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan upgraded project: %v", err)
 	}
 }
 
@@ -362,7 +452,11 @@ func TestUpgrade_ImportsLegacyCycleFrom09LikeFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Error("close upgrade verification store")
+		}
+	})
 
 	cycles, err := s.ListCycles()
 	if err != nil {

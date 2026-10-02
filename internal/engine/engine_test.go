@@ -853,10 +853,14 @@ func TestTimeoutEscalationBetweenIterations(t *testing.T) {
 	if st.StartedAt != "2026-08-07T12:00:00Z" {
 		t.Fatalf("started_at=%q", st.StartedAt)
 	}
+	// Charge six active minutes in the first attempt, then pause while the
+	// scheduler waits between attempts.
+	now = now.Add(6 * time.Minute)
 	if err := e.CloseStage(id, "research", StageCloseInput{Summary: "iter1"}); err != nil {
 		t.Fatal(err)
 	}
-	// Rework loop: back to Waiting with iterations remaining, clock still from first start.
+	// Rework loop: back to Waiting with iterations remaining. The paused interval
+	// does not consume active time.
 	st, _ = s.GetStage(id, "research")
 	st.Status = store.StageWaiting
 	st.CompletedAt = ""
@@ -864,11 +868,16 @@ func TestTimeoutEscalationBetweenIterations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Advance past timeout_minutes (10) between iterations.
-	now = now.Add(11 * time.Minute)
-	err = e.StartStage(id, "research")
-	if err == nil {
-		t.Fatal("expected timeout escalation on StartStage")
+	// Five offline/waiting minutes do not count; the second attempt consumes
+	// the remaining four active minutes and is then escalated.
+	now = now.Add(5 * time.Minute)
+	if err := e.StartStage(id, "research"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(5 * time.Minute)
+	err = e.EscalateIfTimedOut(id, "research")
+	if err != nil {
+		t.Fatal(err)
 	}
 	st, _ = s.GetStage(id, "research")
 	if st.Status != store.StageEscalated {
@@ -879,6 +888,9 @@ func TestTimeoutEscalationBetweenIterations(t *testing.T) {
 		t.Fatal("expected refuse while Escalated")
 	}
 
+	if _, err := e.IncreaseStageBudget(id, "research", 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
 	if err := e.Continue("cli-1", 1); err != nil {
 		t.Fatal(err)
 	}
@@ -886,10 +898,21 @@ func TestTimeoutEscalationBetweenIterations(t *testing.T) {
 	if st.Status != store.StageWaiting || st.StartedAt != "" {
 		t.Fatalf("after continue want Waiting + cleared StartedAt, got %+v", st)
 	}
-	// Fresh clock after continue — start must succeed.
+	paused, err := e.StageBudget(id, "research")
+	if err != nil || paused.State != store.StageBudgetWaiting {
+		t.Fatalf("continue should leave the budget paused until dispatch: budget=%+v err=%v", paused, err)
+	}
+	// Time between /hero-continue and scheduler dispatch is idle, not active.
 	now = now.Add(time.Minute)
+	if got := paused.RemainingAt(now); got != 10*time.Minute {
+		t.Fatalf("continue-to-dispatch delay consumed budget: remaining=%s", got)
+	}
 	if err := e.StartStage(id, "research"); err != nil {
 		t.Fatal(err)
+	}
+	active, err := e.StageBudget(id, "research")
+	if err != nil || active.State != store.StageBudgetActive {
+		t.Fatalf("StartStage did not activate continued budget: budget=%+v err=%v", active, err)
 	}
 }
 
@@ -912,6 +935,9 @@ func TestEscalateIfExhaustedTimeout(t *testing.T) {
 			StartedAt: "2026-08-07T12:00:00Z", Iteration: 1,
 		},
 	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.BeginStageBudget(id, "qa"); err != nil {
 		t.Fatal(err)
 	}
 

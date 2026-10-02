@@ -7,6 +7,11 @@ workflow_config:
   # Override only when the user explicitly asks for a different chat language.
   user_preferred_language: EN
 
+# Opt-in gate for test accounts stored privately in the project-root .env.hero.
+# Credentials never belong in this YAML file.
+test_access:
+  enabled: false
+
 # Optional: how a validation finding proves itself. Hero re-runs the repro of
 # every finding an implementation agent claims as fixed before it may be marked
 # done, so a "fixed" claim is verified instead of trusted.
@@ -42,6 +47,8 @@ scope:
   script: false
   infrastructure: false
 
+# timeout_minutes is the cumulative active wall-time budget for the stage across
+# attempts, partial waves, reconnects, and resumptions. Parallel work counts once.
 stages:
   research:
     enabled: true
@@ -89,6 +96,9 @@ stages:
     visual_validation:
       enabled: false
       reference_dir: docs/ui/visual_reference
+    # Optional communication captures, independent of Visual Validation.
+    screenshots:
+      enabled: false
 
   qa_end_to_end:
     enabled: true
@@ -100,6 +110,9 @@ stages:
     # for browser journeys. Must be false when scope.frontend is false
     # (direct HTTP calls only). Independent of browser_ui_validation.
     use_playwright: false
+    # HTTP-only E2E cannot enable browser screenshots.
+    screenshots:
+      enabled: false
 
 agents:
   # Hero 2.0+: every agent and fallback_model require `harness` (cursor | opencode | codex)

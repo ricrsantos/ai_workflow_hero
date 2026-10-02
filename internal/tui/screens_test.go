@@ -45,7 +45,7 @@ func TestFooterShowsOnlyPrimaryBindings(t *testing.T) {
 	m = SetWidth(m, 80)
 	m = EnterConversationForTest(m)
 
-	want := "/help shortcuts · tab focus · alt+enter send · ctrl+c interrupt · alt+q exit"
+	want := "/help shortcuts · alt+b screenshots · tab focus · alt+enter send · ctrl+c interrupt · alt+q exit"
 	for _, state := range []struct {
 		screen    screen
 		streaming bool

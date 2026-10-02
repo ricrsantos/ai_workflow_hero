@@ -5,6 +5,21 @@ Telegram help, command forwarding, and compact status rendering for findings, de
 
 ## Requirements
 
+### Requirement: Cycle screenshots SHALL use configured asynchronous image routing
+Generated safe cycle screenshots SHALL be available locally as TUI cards and sent as actual images to the paired selected Telegram chat only when project always_send is enabled. Browser-stage Screenshots options SHALL default off independently. /hero-screenshot with latest default, list, an ID, or todos SHALL retrieve ready active-cycle captures during streaming without invoking a harness or capturing a new screen. todos SHALL snapshot all ready images and deliver ordered bounded batches with progress and explicit partial failures; no silent truncation. Safe captures SHALL survive cycle archive while root .env.hero SHALL never enter archives/IPC/captions (C17 FR-12–FR-13, ADR-106; target pending implementation).
+
+#### Scenario: Request all while tests run
+- **WHEN** /hero-screenshot todos arrives during a browser Execute
+- **THEN** TUI lists all ready cards asynchronously and, if always_send is enabled, the addressed Telegram edge delivers all snapshot images in batches without interrupting tests
+
+#### Scenario: Image forwarding disabled
+- **WHEN** the selected Telegram chat requests a screenshot and always_send is false
+- **THEN** text explains how to enable forwarding and that captures remain locally available; images are not transmitted
+
+#### Scenario: Partial delivery fails
+- **WHEN** some screenshot batches cannot be delivered
+- **THEN** local evidence remains, failed IDs and retry instructions are shown, and optional delivery failure does not become an application validation defect
+
 ### Requirement: Telegram help SHALL list add-todo and complete-todo
 Telegram help SHALL include `/hero-add-todo` and `/hero-complete-todo` among project-control commands. These commands SHALL reject image or other attachments (PRD-C15-001 §10.3; UI-C15-001 §13).
 

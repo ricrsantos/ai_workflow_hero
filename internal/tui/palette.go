@@ -47,6 +47,7 @@ const (
 	actionHarnessReset
 	actionSelectHarnessReset
 	actionConfigUpdate
+	actionScreenshots
 )
 
 // TUI slash labels (chat-oriented commands use non-/hero names).
@@ -58,14 +59,15 @@ const (
 )
 
 type paletteItem struct {
-	label        string
-	hint         string
-	action       paletteAction
-	screen       screen
-	commandPath  string
-	commandLabel string
-	modelSlug    string
-	harnessID    string
+	label              string
+	hint               string
+	action             paletteAction
+	screen             screen
+	commandPath        string
+	commandLabel       string
+	modelSlug          string
+	harnessID          string
+	screenshotSelector string
 }
 
 func defaultHeroPaletteItems() []paletteItem {
@@ -85,6 +87,9 @@ func defaultHeroPaletteItems() []paletteItem {
 		{label: "/hero-finish", hint: "complete cycle", action: actionFinish},
 		{label: "/hero-archive", hint: "archive cycle", action: actionArchive},
 		{label: "/hero-status", hint: "cycle status", action: actionStatus},
+		{label: "/hero-screenshot", hint: "latest screenshot", action: actionScreenshots, screenshotSelector: screenshotSelectorLatest},
+		{label: "/hero-screenshot list", hint: "ready screenshots", action: actionScreenshots, screenshotSelector: screenshotSelectorList},
+		{label: "/hero-screenshot todos", hint: "all ready screenshots", action: actionScreenshots, screenshotSelector: screenshotSelectorTodos},
 		{label: "/hero-cycles", hint: "list cycles", action: actionCycles},
 		{label: "/hero-todos", hint: "pending items", action: actionTodos},
 		{label: "/hero-sync", hint: "sync project", action: actionSync},

@@ -68,14 +68,18 @@ func TestEmbeddedC15ExamplesDecode(t *testing.T) {
 		{
 			agent: "browser_ui_agent",
 			decode: func(raw []byte, obj map[string]json.RawMessage) *DiagnosticError {
-				_, err := DecodeBrowserUI(raw, ctx)
+				exampleCtx := ctx
+				exampleCtx.CoveragePlan = exampleCoveragePlan(obj)
+				_, err := DecodeBrowserUI(raw, exampleCtx)
 				return err
 			},
 		},
 		{
 			agent: "end2end_qa_agent",
 			decode: func(raw []byte, obj map[string]json.RawMessage) *DiagnosticError {
-				_, err := DecodeQAEndToEnd(raw, ctx)
+				exampleCtx := ctx
+				exampleCtx.CoveragePlan = exampleCoveragePlan(obj)
+				_, err := DecodeQAEndToEnd(raw, exampleCtx)
 				return err
 			},
 		},
@@ -108,6 +112,36 @@ func TestEmbeddedC15ExamplesDecode(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The browser report's denominator is scheduler-owned and therefore is not
+// repeated in agent JSON examples. Build the synthetic approved scope from
+// each example's planned IDs to exercise the same decoder gates.
+func exampleCoveragePlan(obj map[string]json.RawMessage) []CoveragePlanItem {
+	var coverage struct {
+		PlannedIDs []string `json:"planned_ids"`
+	}
+	if json.Unmarshal(obj["coverage"], &coverage) != nil {
+		return nil
+	}
+	plan := make([]CoveragePlanItem, 0, len(coverage.PlannedIDs))
+	for _, id := range coverage.PlannedIDs {
+		item := CoveragePlanItem{
+			ID: id, Requirement: "synthetic requirement", Acceptance: "synthetic acceptance",
+			ScreenJourney: "synthetic journey", Mandatory: true, ExpectedResult: "synthetic expected outcome",
+		}
+		if strings.HasSuffix(id, "-operator") {
+			item.UserID = "operator"
+			item.ProfileID = "operator"
+		} else if strings.HasSuffix(id, "-admin") {
+			item.UserID = "administrator"
+			item.ProfileID = "admin"
+		} else if strings.HasSuffix(id, "-anonymous") {
+			item.ProfileID = "anonymous"
+		}
+		plan = append(plan, item)
+	}
+	return plan
 }
 
 func decodeImplementationExample(raw []byte, obj map[string]json.RawMessage) *DiagnosticError {

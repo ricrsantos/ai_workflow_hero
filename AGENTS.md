@@ -104,8 +104,8 @@ Colocated `*_test.go` in each `internal/<feature>/` package; golden tests for te
 ## Secrets and Environment Variables
 
 - Never commit secrets, API keys, tokens, private keys, or credential files.
-- Commit only `.env.example` (placeholders). Keep real values in local `.env` (gitignored).
-- Do not stage `.env`, `.env.*` (except `.env.example`), `*.pem`, `credentials.json`, or `secrets.json`.
+- Commit only `.env.example` and `.env.hero.example` (placeholders). Keep real values in local `.env` or project-root `.env.hero` (gitignored).
+- Do not stage `.env`, `.env.*` (except those two placeholder examples), `*.pem`, `credentials.json`, or `secrets.json`.
 - If a secret was committed, stop and tell the user to rotate and untrack it.
 
 _To be maintained by agents._

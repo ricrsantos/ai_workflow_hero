@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,8 +87,66 @@ CREATE TABLE IF NOT EXISTS telegram_selection (
   singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
   address TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS telegram_image_deliveries (
+  delivery_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL CHECK(status IN ('sending', 'delivered', 'failed')),
+  updated_at TEXT NOT NULL
+);
+UPDATE telegram_image_deliveries SET status = 'failed' WHERE status = 'sending';
 `)
 	return err
+}
+
+// ClaimImageDelivery atomically claims a sanitized, derived delivery ID. A
+// delivered image is never sent twice; a failed or interrupted attempt may be
+// retried. The caller stores only a one-way digest, never paths or chat IDs.
+func (s *Store) ClaimImageDelivery(deliveryID string, now time.Time) (claimed, delivered bool, err error) {
+	if s == nil || s.db == nil || len(deliveryID) != 64 || !validDeliveryID(deliveryID) {
+		return false, false, fmt.Errorf("invalid image delivery ID")
+	}
+	stamp := now.UTC().Format(time.RFC3339Nano)
+	result, err := s.db.Exec(`INSERT OR IGNORE INTO telegram_image_deliveries(delivery_id, status, updated_at) VALUES(?, 'sending', ?)`, deliveryID, stamp)
+	if err != nil {
+		return false, false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, false, err
+	}
+	if rows == 1 {
+		return true, false, nil
+	}
+	var status string
+	if err := s.db.QueryRow(`SELECT status FROM telegram_image_deliveries WHERE delivery_id = ?`, deliveryID).Scan(&status); err != nil {
+		return false, false, err
+	}
+	if status == "delivered" {
+		return false, true, nil
+	}
+	updated, err := s.db.Exec(`UPDATE telegram_image_deliveries SET status = 'sending', updated_at = ? WHERE delivery_id = ? AND status = 'failed'`, stamp, deliveryID)
+	if err != nil {
+		return false, false, err
+	}
+	rows, err = updated.RowsAffected()
+	return rows == 1, false, err
+}
+
+// FinishImageDelivery stores only the derived delivery ID and outcome.
+func (s *Store) FinishImageDelivery(deliveryID string, delivered bool, now time.Time) error {
+	if s == nil || s.db == nil || len(deliveryID) != 64 || !validDeliveryID(deliveryID) {
+		return fmt.Errorf("invalid image delivery ID")
+	}
+	status := "failed"
+	if delivered {
+		status = "delivered"
+	}
+	_, err := s.db.Exec(`UPDATE telegram_image_deliveries SET status = ?, updated_at = ? WHERE delivery_id = ?`, status, now.UTC().Format(time.RFC3339Nano), deliveryID)
+	return err
+}
+
+func validDeliveryID(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == 32
 }
 
 // Close closes the underlying database.

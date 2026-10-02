@@ -2,6 +2,7 @@ package reports
 
 // QAEndToEndReport is the decoded QA End-to-End stage-agent payload.
 type QAEndToEndReport struct {
+	BrowserExecution
 	Status         string
 	UsePlaywright  *bool
 	TestsPassed    *bool
@@ -13,6 +14,7 @@ type QAEndToEndReport struct {
 }
 
 var e2eAllowed = map[string]struct{}{
+	"preparation": {}, "blockers": {}, "coverage": {},
 	"status": {}, "use_playwright": {}, "tests_passed": {}, "flows_validated": {},
 	"failures": {}, "summary": {},
 }
@@ -26,7 +28,7 @@ func DecodeQAEndToEnd(data []byte, ctx DecodeContext) (*QAEndToEndReport, *Diagn
 	var warnings []ReportWarning
 	collect(&warnings, dropUnknownFields(root, e2eAllowed, ""))
 
-	status, err := parseValidationStatus(root)
+	status, err := parseBrowserStatus(root)
 	if err != nil {
 		return nil, err
 	}
@@ -36,6 +38,11 @@ func DecodeQAEndToEnd(data []byte, ctx DecodeContext) (*QAEndToEndReport, *Diagn
 	}
 
 	report := &QAEndToEndReport{Status: status, Summary: summary}
+	report.BrowserExecution, err = decodeBrowserExecution(root, status, SourceQAEndToEnd, ctx)
+	if err != nil {
+		return nil, err
+	}
+	collect(&warnings, report.Warnings)
 	report.UsePlaywright, err = optionalBoolPtr(root, "use_playwright")
 	if err != nil {
 		return nil, err

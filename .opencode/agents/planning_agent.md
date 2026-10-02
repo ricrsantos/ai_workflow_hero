@@ -1,7 +1,7 @@
 ---
-name: planning_agent
 description: Converts approved specifications into a complete OpenSpec SDD during the Planning stage.
-model: inherit
+model: opencode-go/muse-spark-1.3-contributor
+name: planning_agent
 ---
 
 # planning_agent — OpenSpec Planning Agent

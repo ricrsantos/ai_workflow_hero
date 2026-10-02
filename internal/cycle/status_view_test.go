@@ -1,13 +1,61 @@
 package cycle_test
 
 import (
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
+
+func TestStatusBudgetUsesActiveElapsedAndPreservesHumanPause(t *testing.T) {
+	dir := setupProject(t)
+	svc, err := cycle.OpenService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := svc.Close(); err != nil {
+			t.Error("close status verification service")
+		}
+	})
+	if _, err := svc.NewCycle("", ""); err != nil {
+		t.Fatal(err)
+	}
+	c, err := svc.Store.GetActiveCycle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	svc.Engine.Now = func() time.Time { return now }
+	if err := svc.Engine.StartStage(c.ID, "research"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(3 * time.Second)
+	view, err := svc.Status()
+	if err != nil || len(view.StageBudgets) != 1 {
+		t.Fatalf("budget projection missing: %v", err)
+	}
+	row := view.StageBudgets[0]
+	if row.State != "active" || row.ConsumedMS != 3000 || row.RemainingMS <= 0 {
+		t.Fatalf("active elapsed incorrectly projected: %+v", row)
+	}
+	budget, err := svc.Engine.StageBudget(c.ID, "research")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Engine.PauseStageBudget(c.ID, "research", budget.Generation, "human_question"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(24 * time.Hour)
+	view, err = svc.Status()
+	if err != nil || view.StageBudgets[0].ConsumedMS != row.ConsumedMS || view.StageBudgets[0].RemainingMS != row.RemainingMS || view.StageBudgets[0].PauseReason != "human_question" {
+		t.Fatalf("paused budget counted offline time: %+v, %v", view.StageBudgets, err)
+	}
+}
 
 func TestStatusJSONNoCycleBackwardCompatible(t *testing.T) {
 	dir := setupProject(t)
@@ -15,7 +63,11 @@ func TestStatusJSONNoCycleBackwardCompatible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer svc.Close()
+	t.Cleanup(func() {
+		if err := svc.Close(); err != nil {
+			t.Error("close status verification service")
+		}
+	})
 
 	st, err := svc.Status()
 	if err != nil {
@@ -45,7 +97,11 @@ func TestStatusJSONEmptyCycleAdditiveFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer svc.Close()
+	t.Cleanup(func() {
+		if err := svc.Close(); err != nil {
+			t.Error("close status verification service")
+		}
+	})
 	if _, err := svc.NewCycle("", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +150,11 @@ func TestStatusJSONEmptyCycleAdditiveFields(t *testing.T) {
 
 func TestStatusJSONFindingsLoopBacksAndActions(t *testing.T) {
 	svc, cycleID := handoffProject(t)
-	defer svc.Close()
+	t.Cleanup(func() {
+		if err := svc.Close(); err != nil {
+			t.Error("close status verification service")
+		}
+	})
 	seedImplementationPipeline(t, svc.Store, cycleID)
 
 	if err := svc.Engine.StartStage(cycleID, "qa"); err != nil {
@@ -155,7 +215,11 @@ func TestStatusJSONCompletionDisposition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer svc.Close()
+	t.Cleanup(func() {
+		if err := svc.Close(); err != nil {
+			t.Error("close status verification service")
+		}
+	})
 	res, err := svc.NewCycle("", "")
 	if err != nil {
 		t.Fatal(err)
@@ -179,5 +243,107 @@ func TestStatusJSONCompletionDisposition(t *testing.T) {
 	}
 	if st.CompletionDisposition == nil || *st.CompletionDisposition != store.CompletionDispositionDeferredTodos {
 		t.Fatalf("disposition=%v", st.CompletionDisposition)
+	}
+}
+
+func TestBlockedStateStatusProjectionAndContinueAction(t *testing.T) {
+	svc, cycleID := handoffProject(t)
+	t.Cleanup(func() {
+		if err := svc.Close(); err != nil {
+			t.Error("close status verification service")
+		}
+	})
+	if err := svc.Store.CreateStages([]store.Stage{{
+		CycleID: cycleID, Name: "browser_ui_validation", Status: store.StageBlocked, MaxIterations: 2, SortOrder: 6,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Store.InTx(func(tx *sql.Tx) error {
+		return svc.Store.ReplaceActiveStageBlockersTx(tx, cycleID, "browser_ui_validation", []store.StageBlocker{{
+			ID: "browser-capability-missing", Reason: "tool_unavailable",
+			AffectedCoverageIDs: []string{"screen-dashboard"}, AffectedProfileIDs: []string{"operator"},
+			DiagnosticUncertainty: "SENTINEL_STATUS_SECRET",
+			NextAction:            "SENTINEL_STATUS_SECRET",
+		}}, "2026-08-07T12:00:00Z")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.BlockedStages) != 1 || view.BlockedStages[0].Name != "Browser Ui Validation" || len(view.BlockedStages[0].Blockers) != 1 {
+		t.Fatalf("blocked status=%+v", view.BlockedStages)
+	}
+	canContinue := false
+	for _, action := range view.AvailableActions {
+		canContinue = canContinue || action == "hero-continue"
+	}
+	if !canContinue {
+		t.Fatalf("available actions=%v, want hero-continue", view.AvailableActions)
+	}
+	raw, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "tool_unavailable") || !strings.Contains(string(raw), "screen-dashboard") || !strings.Contains(string(raw), "Configure the selected browser method") {
+		t.Fatalf("status omitted corrective blocker details: %s", raw)
+	}
+	if strings.Contains(string(raw), "SENTINEL_STATUS_SECRET") {
+		t.Fatalf("status projection exposed report free text: %s", raw)
+	}
+}
+
+func TestNoAutoAdvanceWhileBlocked(t *testing.T) {
+	svc, cycleID := handoffProject(t)
+	t.Cleanup(func() {
+		if err := svc.Close(); err != nil {
+			t.Error("close blocked-cycle service")
+		}
+	})
+	stages, err := svc.Store.ListStages(cycleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := make(map[string]bool, len(stages))
+	for _, stage := range stages {
+		known[stage.Name] = true
+	}
+	var missing []store.Stage
+	for _, stage := range []store.Stage{
+		{CycleID: cycleID, Name: "browser_ui_validation", Status: store.StageBlocked, MaxIterations: 2, SortOrder: 6},
+		{CycleID: cycleID, Name: "qa_end_to_end", Status: store.StageWaiting, MaxIterations: 2, SortOrder: 7},
+	} {
+		if !known[stage.Name] {
+			missing = append(missing, stage)
+		}
+	}
+	if len(missing) > 0 {
+		if err := svc.Store.CreateStages(missing); err != nil {
+			t.Fatal(err)
+		}
+		stages, err = svc.Store.ListStages(cycleID)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range stages {
+		switch stages[i].Name {
+		case "browser_ui_validation":
+			stages[i].Status = store.StageBlocked
+		case "qa_end_to_end":
+			stages[i].Status = store.StageWaiting
+		default:
+			stages[i].Status = store.StageCompleted
+		}
+		if err := svc.Store.UpdateStage(stages[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := svc.ActiveStage(); err == nil || !strings.Contains(err.Error(), "is blocked") {
+		t.Fatalf("ActiveStage() error=%v, want blocked scheduler stop", err)
+	}
+	if _, err := svc.ActiveRunStage(); err == nil || !strings.Contains(err.Error(), "is blocked") {
+		t.Fatalf("ActiveRunStage() error=%v, want blocked scheduler stop", err)
 	}
 }

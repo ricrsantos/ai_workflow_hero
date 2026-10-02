@@ -1,7 +1,7 @@
 ---
-name: judge_agent
 description: Validates SDD requirement coverage during the Judge stage. Does not assess code style.
-model: inherit
+model: opencode-go/mimo-v2.6-pro
+name: judge_agent
 ---
 
 # judge_agent — SDD Coverage Judge Agent

@@ -58,7 +58,7 @@ func timerTickCmd(generation uint64) tea.Cmd {
 
 func (m model) hasTimerWork() bool {
 	return m.sessionTimer.running || m.aiTimer.running || m.aiResponseTimer.running || m.telegramAutoReportEnabled() ||
-		strings.TrimSpace(m.heroLeasedSessionID) != ""
+		strings.TrimSpace(m.heroLeasedSessionID) != "" || m.validationProgress.active
 }
 
 func (m *model) ensureTimerLoop() tea.Cmd {
@@ -280,6 +280,8 @@ func (m model) handleTimerTick(msg timerTickMsg) (model, tea.Cmd) {
 	if m.aiResponseTimer.running {
 		m.aiResponseTimer.displayed = m.aiResponseTimer.elapsedAt(at)
 	}
+	m = m.refreshValidationProgressBudget(at)
+	m = m.validationProgressWarningTick(at)
 	var saveCmd tea.Cmd
 	if m.sessionTimer.running {
 		seconds := int64(m.sessionTimer.displayed / time.Second)

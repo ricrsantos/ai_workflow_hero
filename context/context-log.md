@@ -1,5 +1,11 @@
 # Context Log
 
+## 2026-10-01 — Safe leveled logging for Telegram screenshot delivery
+
+**Change**: Telegram image delivery now records debug batch counts, info-level successful or policy-skipped outcomes, and error-level delivery/response failures. Log attributes are limited to counts and fixed reason/error codes; raw transport errors and image or chat data are omitted.
+
+**Validation**: `TestQAImageDeliveryUsesRequiredLeveledLogging` failed before the fix and passes after it; `go test ./...` and `openspec validate browser-validation-execution-budgets --strict` pass.
+
 ## 2026-09-30 — Add Codex-native GPT-6.1 Sol to model catalog
 
 **Change**: Added `gpt-6.1-sol` to `assets/models/codex.yml` and the `.workflow-hero/models/codex.yml` overlay (kept byte-identical). From the OpenAI model page (launched 2026-09-29): input $2.00 / output $10.00, cached input $0.10, cache_write $2.50 (1.25x-input convention), 1,050,000 context window, 128,000 max output, knowledge cutoff 2026-04-30, `reasoning.effort` `low/medium/high/xhigh/max` (no `none`/`minimal`, like Astra). Following the established `gpt-6-sol` / `gpt-5.6-sol` precedent, the row stays codex-only (not mirrored into `openai.yml`/`opencode.yml`). `internal/modelprops/codex_catalog_test.go` coverage list now includes `gpt-6.1-sol`; `last_updated` bumped to `2026-09-30`.
@@ -2813,3 +2819,427 @@ clean; full `go test ./... -count=1` exit 0 with the live OpenCode serve
 **Artifacts**: Added `docs/idea/browser_improvements.md` with acceptance matrix, implementation touchpoints, security/archive boundaries and unresolved Research decisions; updated current-state. No code or canonical architecture changed.
 
 **Verification**: Documentation reviewed and `git diff --check` run. Go tests are not required for this documentation-only change.
+
+## 2026-09-30 — C17 Research: browser validation, active budgets and screenshots
+
+Research ran interactively as discover_agent inside Hero TUI, in PT-BR. Active idea files were read first. The injected authoritative pending-ToDo list was empty; no adoption mutation occurred. Each substantive decision was confirmed. The mandatory pre-document gate was answered with no additions and explicit authorization to generate documents. Documents are English.
+
+Confirmed: cumulative active wall-time timeout across waves/retries/restarts, human-only waits paused, parallel agents counted once, explicit continuation with preserved remaining balance; blocked prerequisites consume preparation time but no pre-validation iteration; clear messages must state reason, affected coverage/profile, exact fix and /hero-continue. Mixed genuine findings remain preserved while blocked. Form login/password only, fresh isolated context and private executor; interactive MFA/CAPTCHA/SSO block. Root .env.hero plus root .env.hero.example, arbitrary accounts/profiles, local Config opt-in, masked secret handling, stale-write refusal and exact planned user assignment. User approved the placeholder policy exception; disabling setup does not waive required authentication.
+
+Prefer existing suites, otherwise Planning explicitly selects exploratory assertions or Implementation provisioning; actual stage-harness browser capability must be verified. Preparation defaults to 120 seconds and two attempts per prerequisite. Mandatory coverage cannot pass unexecuted/blocked. Archive alone removes credentials; other lifecycle actions retain them, uninstall discloses retention, failed cleanup leaves archive pending. Passive health remains inviolable. Warnings after 60 seconds without coverage progress or 30 repetitive events are diagnostic only.
+
+Scope correction: user discontinued IDE execution as a target and explicitly deferred IDE-specific removal to another cycle. Existing ADR-C17-001 (ADR-099–102) was discovered and preserved; new browser ADR uses C17 sequence 002 and ADR-103–106. No additional IDE removal is authorized here.
+
+Screenshot addition: user rejected a new-capture command because TUI chat is busy during agents. Instead, opt-in Screenshots per Browser UI/browser E2E (default off) captures each tested screen into the cycle; existing viewer/card actions and busy-state collection access present it. /hero-screenshot asynchronously retrieves existing latest/list/id/todos, including all images in one request without harness dispatch. Actual Telegram image delivery follows existing always_send for both automatic and requested captures; safe screenshots survive archive. Login secrets/tokens remain excluded. Broader Telegram image input is not introduced.
+
+Artifacts: PRD-C17-001-browser-validation-execution-budgets, UI-C17-001-browser-validation-execution-budgets, ADR-C17-002-browser-validation-execution-budgets and browser-validation-user-guide; registered in documents.json. Updated PRD/UI/ADR indexes, architecture target flow, TESTING/DEPLOY, targeted living OpenSpec specs, AGENTS secret example policy and current-state. All behavior is marked target/pending implementation, not shipped functionality. Context7 official Playwright material confirmed isolated contexts, locator auto-waits and screenshot masking support; this informed evidence/isolation requirements, without selecting a universal CLI/MCP default. Exact SDD config/report fields and compatible runner integrations remain Planning design work under these constraints.
+
+Verification: documentation-only; no Go/runtime code edited. C17 registry/path/numbering checks passed for four new documents; git diff --check passed. Strict OpenSpec validation passed for browser-test-access, runtime-workflow-execution, structured-stage-reports, harness-adapter and telegram-project-control (informational long-requirement suggestions only, no errors). Go tests were not required for documentation-only Research. Stage closes through hero stage close; the metrics JSON is an empty array so the TUI's measured metrics remain authoritative rather than inventing agent token estimates. No later agent is dispatched from this session.
+
+## 2026-09-30 — C17 implementation foundations (partial assignment)
+
+Implemented task-01, task-02, and task-04 from
+`openspec/changes/browser-validation-execution-budgets/tasks.md`:
+`internal/testaccess` directly parses/validates/serializes dotenv accounts without
+evaluation, preserves unrelated entries, redacts formatting/JSON and diagnostics,
+and exposes private selected-account snapshots. SafeStore uses an anchored
+project root, cooperative lifetime ownership, manual-file owner/mode/link and
+Git checks, foreign/stale draft refusal, root ignore rules, atomic 0600 writes,
+and interrupted temporary-write recovery. File revisions are checked immediately
+before commit; the ownership lock coordinates cooperating TUIs, not arbitrary
+same-user tools or editors. It is not a filesystem sandbox.
+
+SQLite v16 transactionally adds stage budget, blocker, coverage, and screenshot
+manifest tables. A populated real v15 fixture retains its operational, audit,
+finding/ToDo, and session-history rows exactly; new tables start empty. Tests
+cover rollback/retry and idempotence. Architecture overview now distinguishes
+these foundations from pending consumer integration.
+
+Verification: the assigned focused commands, `go test ./...`, `go vet ./...`,
+race tests for testaccess/store, and temporary Hero/Telegram-daemon builds passed.
+The new testaccess package and lint of changed store/testaccess code passed.
+Global staticcheck and golangci-lint remain non-green with diagnostics in earlier
+code (including import_legacy.go, adapters, and TUI). No unrelated code was
+rewritten to suppress those diagnostics.
+
+Remaining assignment work is not claimed complete. Design D2/ADR-103 require an
+exact project-specific login recipe and compatible executor/context capability
+before coding; the supplied SDD does not declare that integration. D3/D5/D8 and
+ADR-106 also delegate exact report/config fields, checkpoint interval, termination
+grace, screenshot shortcut, and verified Telegram transfer limits to Planning
+without providing their final values/contracts. Requested clarification while
+implementing independent foundations. No task checkbox, cycle/stage transition,
+or current-state operational projection was edited; the C15 agent contract
+reserves those mutations for the scheduler/runtime.
+
+## 2026-09-30 — C17 dynamic Playwright contract and preference
+
+**User clarification**: Hero is generic and resolves application-specific
+browser specifications on the fly. The shared recipe shape is stable, but
+origins, routes, locators, protected targets, fixtures, and runner commands
+must be planned per consuming application, not hardcoded in Hero. Hero's own
+acceptance tests use the synthetic local protected fixture with operator/admin
+roles; never use real credentials or the user's Angular application.
+
+**Tool policy**: For repeatable E2E, prefer an existing Playwright Test suite.
+For coding-agent browser control, prefer Playwright CLI with the official CLI
+skill; if the harness cannot load skills, use the CLI's documented skills-less
+mode. Use MCP for persistent browser state/iterative page inspection or when a
+verified CLI capability is insufficient. Skills are CLI guidance, not a
+separate executor. This follows the official Playwright coding-agent guidance:
+https://playwright.dev/docs/getting-started-cli and
+https://playwright.dev/docs/getting-started-mcp.
+
+**Version baseline**: The local Playwright package/CLI is 1.63.0
+(`npx --no-install playwright --version` and
+`npx --no-install playwright cli --version`). The standalone
+`playwright-cli` command is not on PATH. User set 1.63.0 as the minimum
+baseline; project preflight validates its actual version/capability and does
+not install or upgrade during QA.
+
+## 2026-09-30 — C17 termination grace
+
+**User decision**: Set the active-budget post-expiry termination grace to 15
+seconds. The checkpoint interval remains undecided and must not be inferred
+from this grace period.
+
+## 2026-09-30 — C17 one-wave lint exception
+
+**User decision**: For the next resumed Implementation wave only, pre-existing
+repository-wide lint diagnostics outside changed files are non-blocking. The
+wave must still pass all assigned tests/builds and changed-code checks, report
+the exact baseline diagnostics, and introduce no new or worsened diagnostics.
+This does not waive task-19 final verification or change the general lint
+policy. The stage remains Running; the next wave is requested through
+`/hero-start` in the Hero TUI.
+
+## 2026-09-30 — C17 budget checkpoint interval
+
+**User decision**: Persist active-budget consumption every 5 seconds. Persist
+immediately at start, pause, resume, and termination as already specified; on
+restart, charge from the last persisted checkpoint and require `/hero-continue`.
+
+## 2026-09-30 — C17 implementation wave: foundations and archive safety
+
+Verified the assigned dotenv/safe-store foundations and real v15-to-v16 fixture;
+made screenshot primary keys explicitly NOT NULL. Added managed per-browser-stage
+screenshot settings, shared 5-second checkpoint/15-second termination constants,
+and placeholder-only root `.env.hero.example` materialization with custom-example
+preservation. No root credential values are generated or copied by maintenance.
+
+Archive now holds both the project filesystem lease and an exact cycle claim,
+checks that the SQLite store belongs to that project, verifies SQL finalization
+before destructive cleanup, and removes only safe project-root `.env.hero`.
+OpenSpec refusal/failure retains credentials. A durable non-secret directory
+identity intent supports retry after an interrupted evidence move, including
+interruption after credential cleanup. Real temporary-files/SQLite tests cover
+crash recovery, collision refusal, competing ownership, injected SQL failure,
+missing credentials, retained screenshots, and finish/cancel/uninstall retention.
+
+Browser typed-report admission now recognizes operational `blocked`, preparation,
+actionable blockers, and plan-bound coverage accounting. Existing cycles without
+a coverage plan remain compatible; an associated plan cannot be shrunk by a
+report. Mandatory health/visual and business-outcome claims are checked; optional
+1280/768/375 reference omissions warn rather than fail. Production scheduler
+integration and other C17 tasks remain in progress, not accepted as complete.
+
+The exact pre-existing lint baseline is retained in the change's
+`verification-wave-1-lint-baseline.txt`; its one-wave waiver applies only to
+unchanged files. No operational stage transition, task checkbox, or current-state
+projection was mutated by this implementation agent.
+
+## 2026-09-30 — C17 resumed implementation verification and integration gaps
+
+Verified the existing dotenv parser, safe store, additive v15-to-v16 migration,
+archive lifecycle, and managed screenshot/template settings. Upgrade now filters
+sensitive paths from inherited checksums, including a legacy `.env.hero` key.
+
+Removed duplicated Test users editor methods and routed asynchronous load/save
+messages to the editor. Added behavioral tests for password masking, cancellation,
+stale Reload refusal, execution guards, and screenshot toggle rendering. The
+editor's opt-in remains session-only pending the exact persistence contract.
+
+Blocked report admission now requires an approved coverage denominator even for
+blocked outcomes; mandatory authenticated passing items require their planned
+profile to be verified. Registered evidence resolves from the actual project root.
+Status JSON, TUI, and compact Telegram status expose durable active budgets and
+corrective blocked information. A fake-clock status test verifies human/offline
+waits do not consume active time. Human-wait reason selection is deterministic
+across concurrent executions; its regression passed 50 repeated runs.
+
+Added a synthetic localhost operator/admin form-login fixture. Focused executor
+and race tests pass; production browser-provider wiring and sentinel assertions
+through prompts, persisted reports, YAML, events, and captures remain unverified.
+Capture service logging is leveled and value-safe, but production post-assertion
+capture hookup remains outstanding. No task checkbox, stage transition, or
+current-state projection was changed. Full assignment completion is not claimed.
+
+Bounded preparation now has a fake-clock 120-second/remaining-budget ceiling,
+at most two attempts per prerequisite, context cancellation, and sanitized coded
+diagnostics. It still needs a production stage caller and actual tool admission.
+The local screenshot collection is asynchronous during streaming, with Alt+B,
+ready-set cards, viewer/copy/0600 atomic Save, and bounded Open-all progress.
+Save refuses credential destinations and managed source overwrite. Telegram
+image forwarding and partial ready-set failure attribution remain outstanding.
+
+The pending user choices are the persistent Test users opt-in key and the
+Planning recipe/coverage artifact path. No choice or approval was inferred.
+Production capture/browser integration, startup budget ownership, four-harness
+contract parity, and full release acceptance remain unfinished. Changed-file
+lint is clean; exact unrelated global lint diagnostics are preserved in
+`verification-wave-2-lint.txt`. Go engineering and TUI skill guidance informed
+behavioral tests, leveled safe logs, and asynchronous model/update integration.
+
+## 2026-09-30 — C17 remaining contracts approved
+
+The user accepted both recommendations and authorized further Implementation:
+
+- Persist the Test users opt-in as top-level `test_access.enabled` in
+  `workflow-config.yml`, default false when absent. Config and execution share
+  this setting; disabled required-login preparation blocks with enable
+  instructions. Implementation must replace the editor's session-only flag.
+- `planning_agent` creates `.workflow-hero/cycles/current/browser-plan.json`
+  during Planning for each consuming application with browser validation.
+  The artifact contains the shared non-secret recipe, coverage and approved
+  execution method. Deterministic preparation validates and consumes it;
+  Browser UI/E2E agents use it. Implementation owns the shared schema,
+  loader/validation and four-harness instructions. Credentials remain in
+  `.env.hero` and private executor memory; C17 tests use synthetic local users.
+
+Updated PRD/UI/ADR, OpenSpec design/specs/task clarifications, architecture
+overview, and current-state to make the approved choices available on disk.
+No task checkbox or implementation code was changed by this decision record.
+The earlier one-wave lint exception was consumed by resumed wave 2 and was
+not extended to subsequent waves or final acceptance.
+
+Read-only CLI inspection also confirmed Implementation is Escalated and its
+event reason is `timeout`, with `timeout_minutes: 60` in the cycle config.
+ADR-105 requires an explicit validated budget increase when exhausted; the
+additional active time is being requested separately before resuming work.
+
+Verification of this decision-only update: strict OpenSpec validation and
+`git diff --check` passed. The task list retains six checked and thirteen
+unchecked IDs, all owned by `generic_agent`; no checkboxes were edited.
+
+## 2026-09-30 — C17 Implementation budget increased to 180 minutes
+
+The user explicitly authorized a total Implementation budget of 180 minutes
+and had already authorized resuming Implementation after accepting both
+contract recommendations. Updated the active cycle's
+`stages.implementation.timeout_minutes` from 60 to 180 (+120 minutes total
+capacity). Under ADR-105, prior consumed active time remains chargeable;
+this is not a fresh budget on retry. Base iteration configuration and all
+other stage limits remain unchanged.
+
+The pending wave remains owned by `generic_agent`: task-03, task-06, task-07,
+task-08, task-09, task-10, task-11, task-12, task-13, task-14, task-16,
+task-18 and task-19. No task checkbox, implementation code, or stage metrics
+were edited. The supported CLI continuation/start sequence will resume the
+stage, and the TUI owns the named-agent execution and completion gates.
+
+Verification: `git diff --check` and `hero cycle sync-config` succeeded.
+`hero continue --extra 1` succeeded, clearing Escalated to Waiting and
+raising the SQLite iteration allowance from 4 to 5; the YAML base remains 4.
+The next `hero stage start --name implementation` is the TUI handoff for
+the resumed wave, with the approved 180-minute total configuration.
+
+## 2026-10-01 — C17 implementation wave 1 follow-up
+
+Added an integration sentinel check using only the synthetic operator fixture.
+It exercises private credential loading and verifies password/token markers do
+not appear in the embedded Browser UI prompt with its safe plan/result,
+workflow YAML, SQLite database/event, logs, or published screenshot manifest
+and image. Updated the C17 testing status to record this coverage. Corrected
+the Test users Off screen so it explains persistence through the Config save.
+Documented that Telegram's individual sendPhoto cap is conservative and
+Bot-API-derived; Hero's four-image IPC batch is an application retry bound, not
+a sendMediaGroup assumption.
+
+Focused verification passed for assigned task-03, task-06, task-07, task-08,
+task-10, task-12, task-14, and task-16. `go test ./...`, `go test -race ./...`,
+`go vet ./...`, both CLI/daemon builds, strict OpenSpec validation, and
+`git diff --check` pass. No `.env.hero` file, tracked credential file, or
+credential marker was found in current/archive cycle artifacts. Scoped lint
+results contain no diagnostic in this wave's edited files.
+
+Remaining assigned work: task-09 still lacks live stage-session method
+admission; task-11 still lacks a production post-assertion capture hook; and
+task-13 still lacks automatic forwarding when a capture becomes ready.
+Task-18 updated TESTING and the decision log, but its required
+`context/current-state.md` edit is forbidden by the active implementation
+report contract. Task-19 remains open: `staticcheck ./...` reports 189 findings
+(U1000 65, ST1005 73, SA4006 39, S1011 3, S1016 2, S1039 1, ST1018 3, S1029 1,
+SA6003 1, SA4005 1); `golangci-lint run` reports 149 issues (errcheck 50,
+ineffassign 17, staticcheck 32, unused 50). No task checkbox, stage transition,
+or other operational state was changed.
+
+## 2026-10-01 — C17 implementation wave 1 verification
+
+Implemented and verified the scheduler-owned v17 coverage traceability extension:
+the engine snapshots the Planning denominator and complete non-secret plan
+digest before browser validation, rejects silent changes, and only refreshes
+the snapshot during explicit Planning approval. Updated the active OpenSpec
+proposal/design/store delta, architecture overview, TESTING status, and
+traceability matrix. Updated TUI budget/progress fixtures to provide the
+synthetic Planning plan now required at browser-stage start. No task checkbox
+was edited. `context/current-state.md` was not modified because the active
+TUI implementation report contract forbids changing that projection.
+
+Assigned focused gates completed: task-06, task-07, task-08, task-10, task-12,
+task-14, and task-16. `go test ./...`, `go test -race ./...`, `go vet ./...`,
+both CLI/daemon builds, strict OpenSpec validation, and whitespace checks pass.
+Repository-wide `staticcheck ./...` and `golangci-lint run` remain non-green;
+focused C17 production files reviewed after remediation show no remaining
+diagnostics in the new executor/coverage/budget/capture code paths.
+
+Remaining assigned work: task-03 lacks the complete sentinel proof across every
+prompt/storage/event/capture sink; task-09's bounded preparation is implemented
+but not invoked for live stage-session method admission; task-11's safe capture
+service is not wired to a production post-assertion browser hook; task-13 does
+not forward automatically captured screenshots at capture time; task-18 cannot
+update `current-state.md` under the report contract; task-19 remains open because
+the repository-wide static/lint gates fail. The credential-artifact scan found
+no `.env.hero` files, tracked credential files, or credential assignments in
+cycle current/archive artifacts. No workflow transition or operational state
+was changed by this implementation agent.
+
+## 2026-10-01 — C17 implementation wave 1 method/report and image-delivery gates
+
+Bound successful Browser UI/E2E report admission to the Planning-approved method,
+tool name, observed tool version, and Playwright minimum; aligned the four
+harness projections and runtime help on real active-session probing, explicit
+HTTP mode, and environment/tool-absence blocking. Added a TUI ready-manifest
+watcher that polls during active browser stages and queues only new managed
+captures when Always-send, pairing, connection, address, and daemon capability
+gates pass. Delivery remains asynchronous and does not dispatch a harness turn.
+Fixed blocked-report test fixtures to match their approved method and checked
+pipe cleanup in the added screenshot watcher tests.
+
+Verified assigned focused gates for tasks 03, 06, 07, 08, 09, 10, 11, 12, 13,
+14 and 16; `go test ./...`, `go test -race ./...`, `go vet ./...`, CLI and
+Telegram-daemon builds, strict OpenSpec validation, whitespace checks, and the
+credential-path scan pass. Focused lint/static checks over changed C17 files
+show no diagnostics. Full `staticcheck ./...` remains non-green with 189
+repository-wide diagnostics; `golangci-lint run` remains non-green with 149
+repository-wide issues. No current-state projection, task checkbox, or workflow
+transition was changed.
+
+Still incomplete: task-09 has no live selected-method capability probe in the
+stage session; task-11's safe capture service has no production post-assertion
+browser producer; task-18 cannot write `context/current-state.md` under the
+active C15 report contract; task-19's required repository-wide lint/static
+gates are not green. The new report gate checks the method/tool/version fields
+claimed by the stage agent but does not itself perform that live probe.
+
+## 2026-10-01 — C17 Implementation deadlock unblocked (user-approved SDD amendment)
+
+Investigation: four consecutive Implementation waves were discarded by the TUI
+completion gate (`internal/tui/stage_handoff.go`, `completedGateFailure`): any
+report with `tasks_completed` and `tests_passed=false` rejects every claimed
+task, so no checkbox progress was recorded and the scheduler returned to the
+orchestrator instead of starting a fresh wave. The flag was forced false by two
+unsatisfiable Planning tasks — task-19 required repository-wide lint green
+against 189 staticcheck / 149 golangci diagnostics that pre-date C17, and task-18
+required editing `context/current-state.md`, which the C15 generic_agent contract
+forbids — and the scheduler assigns all pending tasks in one wave, so task-19
+contaminated every report.
+
+Decision (user-approved, exceptional): amended `tasks.md` and `design.md` —
+permanent no-new-diagnostics lint baseline rule (D9) replacing the consumed
+one-wave exception; report flags cover only `go test ./...` plus completed IDs'
+Verify commands; task-18 no longer touches `current-state.md`; task-19 uses the
+baseline rule; D10 fixes production call sites for task-09 (pre-dispatch
+`Preparer.PreparePlan`), task-11 (staged-file ingestion through
+`CapturePlannedEvidence`) and task-13 (existing `beginScreenshotAutoWatch`).
+Re-ran each Verify command and marked task-03, task-06, task-07, task-08,
+task-10 and task-14 complete (all pass); task-12 and task-16 left open because
+the latest agent report tied them to task-09/task-11. Lint debt recorded under
+Known Technical Debt.
+
+Follow-up (not done): Hero gate fixes — per-task acceptance with scheduler-run
+Verify commands, dependency-aware wave assignment, lint baselines, Planning SDD
+lint, and no-progress escalation — require an OpenSpec change and ADR.
+
+## 2026-10-01 — C17 implementation wave 1 screenshot staging and traceability
+
+Connected the TUI validation handoff to the safe screenshot staging pipeline:
+report-referenced staged images are promoted only after typed validation and
+capture-safety attestations, mandatory evidence failures block their coverage
+item, optional capture failures remain warnings, and the ready-set decoder is
+refreshed after promotion. Added private stage/attempt staging validation and
+real-file tests. Updated all four browser-stage prompt projections to require
+exclusive attempt-scoped staging paths and credential-flow suppression.
+
+Expanded `traceability.md` to map each B01–B21 acceptance criterion explicitly
+to its FR and implementation tasks. Updated TESTING.md to distinguish the
+working staged-file producer/ingestion path from a Hero-owned browser runtime;
+selected-method pre-dispatch admission is still outstanding. Updated all four
+Planning projections to include the fixed-argv `tool_version_command` schema.
+No task checkbox or `context/current-state.md` was edited.
+
+## 2026-10-01 — C17 implementation wave 1 delivery and verification follow-up
+
+Completed the screenshot collection/control and addressed Telegram image-delivery
+paths, updated the four harness planning projections and help, and recorded the
+B01–B21 traceability map. Telegram's official Bot API documentation confirms a
+10 MB `sendPhoto` limit and 2–10 items for `sendMediaGroup`; Hero uses a 9 MiB
+local cap and individual photo sends, with its four-image retry batch confined
+to IPC. Full Go tests, race tests, vet, both builds, focused gates, whitespace
+checks, and strict OpenSpec validation pass. Preparation remains unconnected at
+the stage pre-dispatch call site. The recorded baseline comparison has no new
+staticcheck findings. Although golangci-lint's aggregate count is lower, it has
+eight current-only diagnostic keys in untouched files, and baseline findings
+remain in several C17-changed files; the strict lint gate is therefore unmet.
+Task-19 is not reported complete. No task checkboxes or
+`context/current-state.md` were edited.
+
+## 2026-10-01 — C17 second unblock: lint rule made exact, task-09 decisions
+
+The next wave verified task-11, task-12, task-13, task-16 and task-18 but again
+reported `required_tests_passed=false` because task-19 lint stayed open; the
+generic_agent contract ("set unmet gates false") overrides prose in tasks.md, so
+the gate discarded the five IDs. Its "eight new golangci keys" were false
+positives: the wave-1 golangci baseline was captured with the default issue cap
+(152 rows vs 487 unlimited), and the "zero diagnostics in C17-changed files"
+clause wrongly counted pre-existing diagnostics in touched files.
+`golangci-lint run --new-from-rev=a74db0f` found one real new diagnostic
+(unchecked `file.Close` in `internal/telegram/daemon/image_delivery_test.go`),
+now fixed; staticcheck has no keys outside the baseline.
+
+Decisions (user-approved): D9 lint acceptance is now two exact commands
+(`--new-from-rev=a74db0f` exit 0; no staticcheck key outside baseline). D10
+task-09: Preparer checks project-relative fixture paths, label fixtures stay with
+the stage session; planned HTTP/API E2E skips browser admission with screenshots
+off; pre-dispatch preparation is local only, login/protected-role verification
+stays in the dispatched session, no adapter API. Re-ran Verify commands and
+marked task-11, task-12, task-13, task-16 and task-18 complete. Remaining:
+task-09, task-19.
+
+## 2026-10-01 — C17 bounded preparation and final verification
+
+Wired bounded pre-dispatch preparation into Browser UI/E2E stage handoff. It
+uses the remaining active stage budget, makes at most two bounded attempts per
+prerequisite, checks selected harness/tool/version, selected users, readiness,
+and safe project-relative fixtures, and returns typed blocked handoffs without
+consuming a validation iteration. Explicit HTTP E2E receives readiness-only
+checks; active selected-method admission remains enforced by the dispatched
+stage report. Added stale-result and cancellation coverage.
+
+Verification passed: the task-09 focused preparation command, `go test ./...`,
+`go test -race ./...`, `go vet ./...`, both CLI builds, harness parity,
+archive-lifecycle checks, strict OpenSpec validation, and the exact lint rule
+(`golangci-lint` has zero new issues; staticcheck has zero new baseline keys).
+The credential-boundary integration test passed; no `.env.hero`, credential
+file paths, or credential sentinels were found in repository cycle snapshots.
+All 19 task entries have generic-agent ownership and a Verify clause. No task
+checkbox or `context/current-state.md` was edited.
+
+## 2026-10-01 — C17 final QA and Judge handoff
+
+Final QA passed the full Go suite and formatting repro; Judge passed with no
+implementation gaps or SDD ambiguity. All 19 OpenSpec tasks are checked and the
+scheduler records find-qa-1, find-judge-1 and find-qa-2 as done. Judge independently
+confirmed pre-dispatch preparation wiring and both approved D9 lint gates.
+The orchestrator refreshed the C17 current-state summary to remove obsolete
+pending-work and one-wave lint-exception descriptions. Browser UI Validation
+and QA End-to-End remain disabled by this cycle's native-scope configuration.

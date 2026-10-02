@@ -67,6 +67,17 @@ func (m model) helpGroups() []helpGroup {
 			{"Enter / O", "Open focused image"},
 			{"C / A / S / X", "Copy / attach / save / remove focused image"},
 		}},
+		{"SCREENSHOTS", []helpEntry{
+			{"Alt+B", "Open the ready screenshot collection"},
+			{"/hero-screenshot", "Show the latest ready capture"},
+			{"/hero-screenshot list", "List ready IDs and metadata"},
+			{"/hero-screenshot <id>", "Select a capture by ID"},
+			{"/hero-screenshot todos", "Snapshot all ready captures"},
+			{"↑ / ↓, PgUp/PgDn", "Scroll and select screenshot cards"},
+			{"Enter / O", "Open selected image in the system viewer"},
+			{"C / S / A", "Copy path / save / open all"},
+			{"Esc", "Close screenshot collection"},
+		}},
 		{"HISTORY", []helpEntry{
 			{"↑ / ↓", "Choose a session"},
 			{"← / →", "Active / archived sessions"},

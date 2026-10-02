@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -30,6 +32,9 @@ type Engine struct {
 	// Telegram outbound adapter can filter locally without importing harness
 	// types (conversation-service R3; PRD-C09-001 §3.3). May be nil.
 	Notifier conversation.Notifier
+	// BlockedPrerequisiteCheck is an optional trusted browser-capability
+	// rechecker used by /hero-continue. Nil fails closed for blocked validation.
+	BlockedPrerequisiteCheck func(context.Context, int64, string) error
 }
 
 // New creates an Engine bound to s.
@@ -146,6 +151,18 @@ func (e *Engine) StartStage(cycleID int64, stageName string) error {
 			return fmt.Errorf("stage %s timeout exhausted", stageName)
 		}
 		return fmt.Errorf("stage %s iteration budget exhausted", stageName)
+	}
+	if err := e.ensureApprovedCoveragePlan(cycleID, stageName); err != nil {
+		return fmt.Errorf("admit browser coverage plan: %w", err)
+	}
+	if _, err := e.BeginStageBudget(cycleID, stageName); err != nil {
+		if errors.Is(err, store.ErrStageBudgetExpired) || errors.Is(err, store.ErrStageBudgetExhausted) {
+			return fmt.Errorf("stage %s timeout exhausted: %w", stageName, err)
+		}
+		if errors.Is(err, store.ErrStageBudgetInterrupted) {
+			return fmt.Errorf("stage %s is interrupted; run /hero-continue: %w", stageName, err)
+		}
+		return fmt.Errorf("begin stage budget: %w", err)
 	}
 	st.Iteration++
 	st.Status = store.StageRunning
@@ -337,6 +354,9 @@ func (e *Engine) CloseStage(cycleID int64, stageName string, in StageCloseInput)
 	if st.Status != store.StageRunning {
 		return fmt.Errorf("stage %s is %s, expected Running", stageName, st.Status)
 	}
+	if err := e.acceptAndPauseStageBudget(cycleID, stageName, in.Failed); err != nil {
+		return err
+	}
 	if err := e.persistMetrics(cycleID, stageName, in.Metrics); err != nil {
 		return err
 	}
@@ -379,6 +399,11 @@ func (e *Engine) Approve(holder string, summary string, metrics []MetricInput) e
 		st, err := e.findPending(c.ID)
 		if err != nil {
 			return err
+		}
+		if st.Name == "planning" {
+			if err := e.applyApprovedCoveragePlanUpdate(c.ID); err != nil {
+				return fmt.Errorf("approve Planning coverage update: %w", err)
+			}
 		}
 		if err := e.persistMetrics(c.ID, st.Name, metrics); err != nil {
 			return err
@@ -467,6 +492,11 @@ func (e *Engine) Continue(holder string, extra int) error {
 		extra = 1
 	}
 	return e.withLock(holder, func(c store.Cycle) error {
+		if handled, err := e.continueBlockedInCycle(c, extra); handled {
+			return err
+		} else if err != nil {
+			return err
+		}
 		stages, err := e.Store.ListStages(c.ID)
 		if err != nil {
 			return err
@@ -480,6 +510,36 @@ func (e *Engine) Continue(holder string, extra int) error {
 		}
 		if st == nil {
 			return fmt.Errorf("no escalated stage to continue")
+		}
+		if budget, budgetErr := e.Store.GetStageBudget(c.ID, st.Name); budgetErr == nil {
+			if budget.State == store.StageBudgetExpired || budget.RemainingAt(e.Now()) <= 0 {
+				if budget.State == store.StageBudgetActive {
+					if _, expired, expireErr := e.ExpireStageBudget(c.ID, st.Name, budget.Generation); expireErr != nil {
+						return expireErr
+					} else if !expired {
+						return store.ErrStageBudgetExhausted
+					}
+				}
+				return store.ErrStageBudgetExpired
+			}
+			switch budget.State {
+			case store.StageBudgetBlocked, store.StageBudgetInterrupted:
+				continued, continueErr := e.Store.ContinueStageBudget(c.ID, st.Name, e.Now())
+				if continueErr != nil {
+					return continueErr
+				}
+				e.recordStageBudgetEvent(continued, "continue")
+			case store.StageBudgetWaiting:
+				// Remain paused until StartStage dispatches this attempt.
+			case store.StageBudgetActive:
+				return fmt.Errorf("stage %s still has an active budget generation", st.Name)
+			case store.StageBudgetExpired:
+				return store.ErrStageBudgetExpired
+			default:
+				return fmt.Errorf("unsupported stage budget state %q", budget.State)
+			}
+		} else if !errors.Is(budgetErr, store.ErrNotFound) {
+			return fmt.Errorf("load stage budget: %w", budgetErr)
 		}
 		st.ExtraIterations += extra
 		st.Status = store.StageWaiting
@@ -545,21 +605,18 @@ func (e *Engine) budgetExhausted(st store.Stage) (reason string, exhausted bool)
 // stageTimedOut reports whether the stage wall-clock timeout is spent, measured
 // from the first StartStage.
 func (e *Engine) stageTimedOut(st store.Stage) bool {
-	if st.TimeoutMinutes <= 0 || st.StartedAt == "" {
+	if st.TimeoutMinutes <= 0 {
 		return false
 	}
-	started, err := time.Parse(time.RFC3339, st.StartedAt)
+	budget, err := e.Store.GetStageBudget(st.CycleID, st.Name)
+	if errors.Is(err, store.ErrNotFound) {
+		return false
+	}
 	if err != nil {
-		e.Logger.Error("parse stage started_at", "stage", st.Name, "started_at", st.StartedAt, "err", err)
+		e.Logger.Error("load stage budget", "cycle_id", st.CycleID, "stage", st.Name, "error", err)
 		return false
 	}
-	elapsed := e.Now().UTC().Sub(started.UTC())
-	if elapsed < time.Duration(st.TimeoutMinutes)*time.Minute {
-		return false
-	}
-	e.Logger.Info("stage timeout exceeded",
-		"stage", st.Name, "timeout_minutes", st.TimeoutMinutes, "elapsed", elapsed.String())
-	return true
+	return budget.State == store.StageBudgetExpired || budget.RemainingAt(e.Now()) <= 0
 }
 
 // EscalateStage moves a live stage to Escalated for an explicit scheduler
@@ -580,6 +637,21 @@ func (e *Engine) EscalateStage(cycleID int64, stageName, reason string) error {
 }
 
 func (e *Engine) escalateStage(cycleID int64, st store.Stage, reason string) error {
+	if budget, err := e.Store.GetStageBudget(cycleID, st.Name); err == nil {
+		stopped, stopErr := e.Store.EscalateStageBudget(cycleID, st.Name, budget.Generation, reason, e.Now())
+		if stopErr != nil {
+			return stopErr
+		}
+		transition := "escalate"
+		if stopped.State == store.StageBudgetExpired {
+			transition = "expired"
+		}
+		e.recordStageBudgetEvent(stopped, transition)
+		e.Logger.Info("stage escalated", "cycle_id", cycleID, "stage", st.Name, "reason", reason)
+		return nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
 	st.Status = store.StageEscalated
 	if err := e.Store.UpdateStage(st); err != nil {
 		return err

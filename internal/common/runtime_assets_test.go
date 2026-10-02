@@ -134,8 +134,8 @@ func TestRuntimeAssets_ImplementationCompletionContractParity(t *testing.T) {
 		schedulerMark := strings.Index(body, "marks the reported completed IDs")
 		schedulerReread := strings.Index(body, "rereads `tasks.md`")
 		noPendingGate := strings.Index(body, "global no-pending-checklist condition")
-		if schedulerMark < 0 || schedulerReread < 0 || noPendingGate < 0 ||
-			!(schedulerMark < schedulerReread && schedulerReread < noPendingGate) {
+		ordered := schedulerMark >= 0 && schedulerReread > schedulerMark && noPendingGate > schedulerReread
+		if !ordered {
 			t.Errorf("%s must evaluate the no-pending gate only after scheduler mark and reread", path)
 		}
 	}
@@ -848,6 +848,113 @@ func TestRuntimeAssets_BrowserUIValidation(t *testing.T) {
 	if !strings.Contains(string(workflow), "Browser UI Validation") {
 		t.Error("templates/workflow.md must include Browser UI Validation stage row")
 	}
+}
+
+// TestHarnessParity proves C17 browser-validation guidance is identical across
+// the four embedded harness projections; only managed frontmatter may differ.
+func TestHarnessParity(t *testing.T) {
+	harnesses := []string{"cursor", "opencode", "codex", "claude"}
+	agents := []string{"planning_agent", "browser_ui_agent", "end2end_qa_agent", "orchestration_agent"}
+	for _, agent := range agents {
+		t.Run(agent, func(t *testing.T) {
+			var canonical string
+			for i, harness := range harnesses {
+				body := readHarnessAgentBody(t, harness, agent)
+				if i == 0 {
+					canonical = body
+					continue
+				}
+				if body != canonical {
+					t.Errorf("%s projection differs from Cursor for %s", harness, agent)
+				}
+			}
+		})
+	}
+}
+
+// TestProjectionMatch verifies every harness carries the current typed,
+// blocked/preparation, budget, progress and screenshot contracts.
+func TestProjectionMatch(t *testing.T) {
+	contract := map[string][]string{
+		"planning_agent": {
+			".workflow-hero/cycles/current/browser-plan.json",
+			"schema_version", "requirement_ref", "expected_access",
+			"Playwright >=1.63.0", "explicit user approval",
+		},
+		"browser_ui_agent": {
+			"status` must be `passed`, `failed`, or `blocked`",
+			"preparation", "blockers", "coverage", "health_before_visual",
+			"method_admitted", "observed_tool_version", "observed_playwright_version",
+			"1280", "768", "375", "Tool, method, setup", "optional references",
+		},
+		"end2end_qa_agent": {
+			"status` must be `passed`, `failed`, or `blocked`",
+			"method_admitted", "observed_tool_version", "observed_playwright_version",
+			"If false, HTTP/API E2E is explicit", "HTTP/API E2E is explicit", "business_outcome",
+			"never silently switch", "HTTP-only E2E cannot enable screenshots",
+		},
+		"orchestration_agent": {
+			"browser-plan.json", "15-second termination grace",
+			"Health and watchdog checks are passive", "hero.validation.progress",
+			"environment/tool-absence block",
+			"always_send", "/hero-screenshot",
+		},
+	}
+	for _, harness := range []string{"cursor", "opencode", "codex", "claude"} {
+		for agent, keywords := range contract {
+			t.Run(harness+"/"+agent, func(t *testing.T) {
+				body := readHarnessAgentBody(t, harness, agent)
+				for _, keyword := range keywords {
+					if strings.Contains(body, keyword) {
+						continue
+					}
+					t.Errorf("%s/%s is missing C17 projection contract %q", harness, agent, keyword)
+				}
+				if strings.Contains(body, "Playwright absence is a Health failure") {
+					t.Errorf("%s retains the obsolete missing-Playwright frontend-failure policy", harness)
+				}
+			})
+		}
+	}
+}
+
+func TestWorkflowHelpRoutesMissingBrowserToolsToBlockedContinuation(t *testing.T) {
+	help, err := fs.ReadFile(assets.FS, "docs/workflow-help.md")
+	if err != nil {
+		t.Fatalf("read workflow help: %v", err)
+	}
+	body := string(help)
+	for _, required := range []string{
+		"environment/tool-absence blockers, never frontend findings or repair loops",
+		"HTTP is not a browser fallback",
+		"`/hero-continue`",
+		"Ausência de ferramenta/permissão",
+	} {
+		if !strings.Contains(body, required) {
+			t.Errorf("workflow help missing browser prerequisite guidance %q", required)
+		}
+	}
+	if strings.Contains(body, "Playwright missing at execution → Health failure") {
+		t.Error("workflow help retains the obsolete missing-Playwright frontend-failure route")
+	}
+}
+
+func readHarnessAgentBody(t *testing.T, harness, agent string) string {
+	t.Helper()
+	path := harness + "/agents/" + agent + ".md"
+	data, err := fs.ReadFile(assets.FS, path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	content := string(data)
+	if !strings.HasPrefix(content, "---\n") {
+		t.Fatalf("%s has no frontmatter", path)
+	}
+	frontmatterEnd := strings.Index(content[4:], "\n---\n")
+	if frontmatterEnd < 0 {
+		t.Fatalf("%s has unterminated frontmatter", path)
+	}
+	return strings.TrimSpace(content[4+frontmatterEnd+len("\n---\n"):])
 }
 
 // TestRuntimeAssets_HyphenSlashVocabulary verifies Runtime assets prefer /hero-<name> (hyphen) CTAs (ADR-024).

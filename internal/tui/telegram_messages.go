@@ -79,6 +79,12 @@ func (m model) handleTelegramMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.telegram.daemonVersion = msg.daemonVersion
 		m.telegram.daemonCaps = append([]string(nil), msg.capabilities...)
 		slog.Info("telegram client registered", "address", msg.address, "paired", msg.paired, "daemon_version", msg.daemonVersion, "capabilities", msg.capabilities)
+		versionMismatch := msg.daemonVersion != "" && m.telegram.pluginVersion != "" && msg.daemonVersion != m.telegram.pluginVersion
+		if versionMismatch && !m.telegram.versionMismatchWarned {
+			m = m.appendTelegramNotice("⚠ Telegram plugin and daemon versions differ; update or restart the daemon. Screenshot cards remain available locally.")
+			m = m.setStatusWarning("telegram", "Telegram plugin and daemon versions differ; update or restart the daemon.")
+		}
+		m.telegram.versionMismatchWarned = versionMismatch
 		m, notificationCmd := m.flushPendingTelegramNotifications()
 		return m, combineTimerCmds(notificationCmd, m.ensureTimerLoop())
 
@@ -169,6 +175,10 @@ func (m model) handleTelegramEvent(msg telegramEventMsg) model {
 // acknowledges queued deliveries (telegram-ipc R3).
 func (m model) handleTelegramInbound(msg telegramInboundMsg) (model, tea.Cmd) {
 	ack := m.telegramAckCmd(msg.inboundID)
+	if selector, screenshotID, matched := parseScreenshotSlash(msg.text); matched {
+		next, cmd := m.telegramScreenshotRequest(msg.address, selector, screenshotID)
+		return next, combineTimerCmds(ack, cmd)
+	}
 	if telegram.IsHelpCommand(msg.text) {
 		return m, combineTimerCmds(ack, m.telegramOutboundCmd(telegram.CommandHelpText()))
 	}

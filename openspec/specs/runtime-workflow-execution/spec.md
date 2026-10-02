@@ -26,12 +26,28 @@ Every stage closure SHALL summarize output, request approval when required, upda
 - **WHEN** a stage has `require_human_approval: false`
 - **THEN** Runtime auto-completes the stage, records state, posts summary, and proceeds to the next configured stage
 
-### Requirement: Runtime SHALL enforce iteration and timeout escalation behavior
-Each stage SHALL honor `max_iterations` and `timeout_minutes`, escalate with `Human Approval = Escalated` when exhausted, and support `/hero:continue` extra-iteration grants tracked in workflow state (PRD §5.4).
+### Requirement: Runtime SHALL enforce iteration and active timeout escalation behavior
+Each enabled TUI stage SHALL honor `max_iterations` and a cumulative active wall-time `timeout_minutes` budget across attempts, partial waves, reconnects and explicit resumptions. Concurrent agents SHALL count elapsed time once. Human-only waits and offline time SHALL pause accounting without resetting consumption. Engine/store SHALL persist budget and interruption state; TUI SHALL enforce expiry during Execute independently of stream traffic/health. Expiry SHALL revoke acceptance before scoped cancellation and bounded termination, persist timeout escalation, and reject late completion/task/finding mutation. Health/watchdog SHALL remain observational. Free chat SHALL not inherit stage timeouts (C17 PRD FR-09–FR-11, ADR-105; confirmed design pending implementation).
 
 #### Scenario: Iteration budget exhausted
 - **WHEN** a stage reaches its iteration or timeout limit
 - **THEN** Runtime escalates and waits for `/hero:continue` before additional iterations
+
+#### Scenario: Execute streams beyond remaining active time
+- **WHEN** an active stage reaches its budget while generic events keep arriving
+- **THEN** the independent scheduler revokes execution admission, cancels only owned work, retains evidence/metrics and escalates with timeout rather than leaving Running
+
+#### Scenario: Interrupted TUI restarts
+- **WHEN** a stage had an active execution at shutdown/restart
+- **THEN** it is reconciled as interrupted, offline time is excluded, consumed time is preserved and explicit /hero-continue is required; no late output is accepted
+
+#### Scenario: A sibling is still working during a human wait
+- **WHEN** one concurrent agent awaits a user while another performs stage work
+- **THEN** active wall time continues once until no stage work remains active
+
+#### Scenario: Expired balance is continued
+- **WHEN** the user runs /hero-continue with no active budget remaining
+- **THEN** the stage requests an explicit validated limit increase and does not silently reset its timeout
 
 ### Requirement: Runtime SHALL implement backtracking and retry loops as specified
 QA/Judge failures SHALL route back to implementation agents for fixes; `/hero:back` SHALL reopen Planning and reset downstream stage statuses for re-execution (PRD §5.4).
@@ -117,7 +133,7 @@ User-visible strings in Runtime assets (`hero-*.md`, orchestration skill / agent
 - **THEN** Runtime MUST NOT run Visual Validation and MUST enter the stage failure loop
 
 ### Requirement: Runtime SHALL dispatch browser_ui_agent for Browser UI Validation
-When Browser UI Validation is enabled, Runtime SHALL invoke `browser_ui_agent` via an isolated Task session with Model Resolution from `agents.browser_ui_agent`, using Playwright for browser instrumentation. The agent SHALL discover how to open the application from project artifacts (not from `base_url`/`start_command` config fields). Playwright unavailability at execution time SHALL be treated as a Browser Health failure.
+When Browser UI Validation is enabled, TUI SHALL Execute `browser_ui_agent` on its configured harness/model, using the explicitly planned Playwright method. The agent SHALL use Planning's non-secret execution contract, document registry and TESTING.md instead of repeatedly rediscovering commands. Missing tools/accounts/services SHALL yield a blocked prerequisite with corrective instructions, not a Browser Health application finding (C17 FR-05–FR-08; target pending implementation).
 
 #### Scenario: Dispatching browser_ui_agent
 - **WHEN** Runtime reaches an enabled Browser UI Validation stage
@@ -125,7 +141,7 @@ When Browser UI Validation is enabled, Runtime SHALL invoke `browser_ui_agent` v
 
 #### Scenario: Playwright missing at execution
 - **WHEN** `browser_ui_agent` cannot use Playwright in the project
-- **THEN** Browser Health fails with an actionable report and Runtime routes the failure loop to `frontend_agent`
+- **THEN** the stage blocks with the declared missing prerequisite, affected coverage, exact setup action and /hero-continue, without automatic frontend loop-back
 
 ### Requirement: Runtime SHALL define Browser Health checks
 Browser Health SHALL verify: application opens; page renders; browser console errors; failed network requests for CSS, JS, images, fonts, and APIs; and that CSS assets loaded successfully. Health SHALL use a desktop viewport (1280px width).

@@ -64,9 +64,10 @@ type Daemon struct {
 	chatID string
 	bot    BotAPI
 
-	shutdownMu sync.Mutex
-	shutdownFn func()
-	exitTimer  *time.Timer
+	shutdownMu      sync.Mutex
+	shutdownFn      func()
+	exitTimer       *time.Timer
+	imageDeliveryMu sync.Mutex
 }
 
 const disconnectNotificationTimeout = 2 * time.Second
@@ -254,11 +255,28 @@ func (d *Daemon) unregisterClient(ctx context.Context, c *client) {
 func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 	c := ipc.NewConn(conn)
 	defer c.Close()
+	connCtx, cancelConn := context.WithCancel(ctx)
 
 	var reg *client
 	outbound := make(chan ipc.Message, 256)
+	type imageBatchWork struct {
+		client  *client
+		message ipc.Message
+	}
+	imageBatches := make(chan imageBatchWork, 8)
 	defer func() {
+		cancelConn()
 		d.unregisterClient(ctx, reg)
+	}()
+	go func() {
+		for {
+			select {
+			case <-connCtx.Done():
+				return
+			case work := <-imageBatches:
+				d.sendImageBatch(connCtx, c, work.client, work.message)
+			}
+		}
 	}()
 
 	// Reader goroutine forwards frames so writes never deadlock behind a read.
@@ -273,7 +291,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 			}
 			select {
 			case inbound <- m:
-			case <-ctx.Done():
+			case <-connCtx.Done():
 				return
 			}
 		}
@@ -310,6 +328,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 					d.log.Warn("client and daemon versions differ; keeping protocol-compatible connection", "client_version", m.PluginVersion, "daemon_version", d.version)
 				}
 				reg, _ = d.registry.register(m.ProjectDir, m.Mode, m.ProjectAbbrev, outbound)
+				reg.capabilities = append([]string(nil), m.ClientCapabilities...)
 				d.cancelScheduledShutdown()
 				if d.store != nil {
 					_ = d.store.MarkAddressKnown(reg.address, m.Mode, m.ProjectAbbrev, d.now())
@@ -320,7 +339,7 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 					Address:       reg.address,
 					Paired:        d.Paired(),
 					DaemonVersion: d.version,
-					Capabilities:  []string{ipc.CapabilityUpdateRestart},
+					Capabilities:  []string{ipc.CapabilityUpdateRestart, ipc.CapabilityImageDelivery},
 				}); err != nil {
 					return
 				}
@@ -350,6 +369,16 @@ func (d *Daemon) handleConn(ctx context.Context, conn net.Conn) {
 					addr := reg.address
 					text := m.OutboundText
 					go d.sendOutbound(ctx, addr, text)
+				}
+			case ipc.TypeOutboundImageBatch:
+				if reg == nil {
+					_ = c.Send(ipc.Message{Type: ipc.TypeImageDeliveryResult, ImageBatchID: m.ImageBatchID, ImageRetryAttempt: m.ImageRetryAttempt, FailedScreenshotIDs: safeScreenshotIDs(m.Images), ImageDeliveryErrorCode: "address_not_available"})
+					continue
+				}
+				select {
+				case imageBatches <- imageBatchWork{client: reg, message: m}:
+				default:
+					_ = c.Send(ipc.Message{Type: ipc.TypeImageDeliveryResult, ImageBatchID: m.ImageBatchID, ImageRetryAttempt: m.ImageRetryAttempt, FailedScreenshotIDs: safeScreenshotIDs(m.Images), ImageDeliveryErrorCode: "delivery_queue_full"})
 				}
 			default:
 				if err := c.Send(ipc.Message{

@@ -3,6 +3,7 @@ package telegram
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 )
@@ -13,7 +14,7 @@ const telegramMaxActionableIDs = 3
 // IDs from the additive status JSON (UI-C15-001 §13). It returns an empty
 // string when there is no findings or escalation data to show.
 func CompactFindingsStatus(view cycle.StatusView) string {
-	if view.Findings == nil && len(view.AvailableActions) == 0 {
+	if view.Findings == nil && len(view.BlockedStages) == 0 && len(view.StageBudgets) == 0 && len(view.AvailableActions) == 0 {
 		return ""
 	}
 
@@ -32,6 +33,26 @@ func CompactFindingsStatus(view cycle.StatusView) string {
 				lines = append(lines, "Actionable: "+strings.Join(ids, ", "))
 			}
 		}
+	}
+	for _, blocked := range view.BlockedStages {
+		for _, blocker := range blocked.Blockers {
+			line := fmt.Sprintf("Blocked: %s — %s", blocked.Name, blocker.Reason)
+			if len(blocker.AffectedCoverageIDs) > 0 {
+				line += " · coverage " + strings.Join(blocker.AffectedCoverageIDs, ", ")
+			}
+			if len(blocker.AffectedProfileIDs) > 0 {
+				line += " · profiles " + strings.Join(blocker.AffectedProfileIDs, ", ")
+			}
+			lines = append(lines, line)
+			if action := strings.TrimSpace(blocker.NextAction); action != "" {
+				lines = append(lines, "Next: "+action)
+			}
+		}
+		lines = append(lines, fmt.Sprintf("Active budget remaining: %s · /hero-continue rechecks prerequisites", time.Duration(blocked.RemainingBudgetMS)*time.Millisecond))
+	}
+	for _, budget := range view.StageBudgets {
+		lines = append(lines, fmt.Sprintf("Budget: %s · %s · elapsed %s · remaining %s", budget.Name, budget.State,
+			time.Duration(budget.ConsumedMS)*time.Millisecond, time.Duration(budget.RemainingMS)*time.Millisecond))
 	}
 	if actions := formatTelegramAvailableActions(view.AvailableActions); actions != "" {
 		lines = append(lines, actions)

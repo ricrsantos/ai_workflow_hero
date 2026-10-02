@@ -11,11 +11,12 @@ import (
 
 // client is a live registered TUI connection.
 type client struct {
-	address    string
-	projectDir string
-	mode       string
-	abbrev     string
-	outbound   chan ipc.Message
+	address      string
+	projectDir   string
+	mode         string
+	abbrev       string
+	capabilities []string
+	outbound     chan ipc.Message
 }
 
 // registry tracks live clients and owns instance suffix allocation. A single

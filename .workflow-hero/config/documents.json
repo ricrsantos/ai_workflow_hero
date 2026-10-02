@@ -2,6 +2,38 @@
   "documents": [
     {
       "category": "PRD",
+      "cycle": "C17",
+      "seq": 1,
+      "slug": "browser-validation-execution-budgets",
+      "path": "docs/product/PRD-C17-001-browser-validation-execution-budgets.md",
+      "title": "Browser Validation, Test Access, and Active Execution Budgets"
+    },
+    {
+      "category": "ADR",
+      "cycle": "C17",
+      "seq": 2,
+      "slug": "browser-validation-execution-budgets",
+      "path": "docs/architecture/ADR-C17-002-browser-validation-execution-budgets.md",
+      "title": "Browser Access, Stage Budgets, and Cycle Screenshots (ADR-103–106)"
+    },
+    {
+      "category": "UI",
+      "cycle": "C17",
+      "seq": 1,
+      "slug": "browser-validation-execution-budgets",
+      "path": "docs/product/UI-C17-001-browser-validation-execution-budgets.md",
+      "title": "Browser Validation, Blocking, and Screenshot UX"
+    },
+    {
+      "category": "TESTING",
+      "cycle": "C17",
+      "seq": 0,
+      "slug": "browser-validation-user-guide",
+      "path": "docs/testing/browser-validation-user-guide.md",
+      "title": "Browser Validation User Guide (C17 target behavior)"
+    },
+    {
+      "category": "PRD",
       "cycle": "C13",
       "seq": 1,
       "slug": "claude-code-adapter",

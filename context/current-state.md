@@ -34,6 +34,14 @@
 | Target platforms (V1) | Linux and macOS, `amd64` and `arm64` |
 | Versioning | SemVer via `-ldflags "-X main.version=..."` |
 
+## C17 — browser validation and active budgets
+
+Research confirmed TUI-only execution; additional IDE-resource removal is deferred. PRD-C17-001, UI-C17-001 and ADR-C17-002 (ADR-103–106) define the implemented contract: root .env.hero with opt-in Config Test users and approved root .env.hero.example placeholder exception; isolated fresh form login; declared browser method and mandatory coverage; 120-second/two-attempt preparation; durable actionable blocked outcomes and explicit /hero-continue; cumulative active wall-time budgets across retries/restarts with scheduler-owned cancellation and passive health. Mixed findings survive blockers. Archive alone deletes credentials, preserving safe cycle screenshots; other lifecycle actions retain them. Screenshots default off per browser stage; latest/list/id/todos retrieval is asynchronous during active agents, and actual Telegram images follow always_send. All 19 tasks are complete; final QA and Judge passed on 2026-10-01, and all three findings are done. Pre-dispatch preparation, safe staged screenshot ingestion, Telegram delivery, budget ownership, progress display and four-harness parity are implemented. Browser UI Validation and QA End-to-End are disabled for this native-scope cycle. No pending ToDos were adopted.
+The browser execution contract is generic and resolved dynamically per consuming application. Prefer an existing Playwright Test suite for repeatable E2E; for coding-agent browser control prefer Playwright CLI with its official skill, then skills-less CLI, and MCP for persistent/iterative inspection or verified CLI capability gaps. The minimum Playwright baseline is 1.63.0; each project/harness validates its version and actual capability. C17 fixes termination grace at 15 seconds and active-budget checkpoints every 5 seconds. User-approved D9 supersedes the one-wave lint exception: golangci-lint against pre-C17 revision a74db0f must exit 0, and staticcheck must have no new file|message keys outside the recorded baseline. Both acceptance gates pass; standalone staticcheck still reports existing debt.
+The user accepted both contract recommendations on 2026-09-30: persistent top-level `test_access.enabled` in workflow-config.yml, default false with disabled-required-login blocking; and `.workflow-hero/cycles/current/browser-plan.json`, produced by planning_agent during Planning for consuming applications with browser validation. The file carries the non-secret recipe, coverage and approved method; deterministic preparation validates it before Browser UI/E2E execution. Credentials remain in .env.hero and private executor memory. D10 preparation runs before stage dispatch; explicit HTTP-only E2E skips browser admission with screenshots off, while login and protected-role proof remain in the stage session.
+
+For active C17, the user raised the total Implementation limit from 60 to 180 minutes and authorized resumption on 2026-09-30. The cycle's `stages.implementation.timeout_minutes` is 180; the cumulative-budget contract retains prior consumption. Other stage limits and template defaults are unchanged.
+
 ## TUI keyboard help
 
 The TUI keyboard footer occupies one row with `/help` shortcuts, Tab focus, Alt+Enter send, Ctrl+C interrupt, and Alt+Q exit. `/help` opens the local shortcut guide from Chat or the command palette; Alt+F1 also works if the host terminal forwards it. Closing the guide preserves the screen, focus, and unsent composer text. Narrow terminals keep Help and Exit when both fit.
@@ -303,6 +311,7 @@ OpenCode orphan reap is project-scoped. `harness_serve_registry` rows are filter
 - `update-models` upstream URL assumes `main` branch raw assets on this GitHub repo.
 - `.workflow-hero/config/documents.json` omits living PRD/UI index docs (`docs/product/PRD.md`, `docs/product/UI.md`).
 - Cursor may still override Task/frontmatter models on some plans (known IDE limits).
+- Repository-wide lint/static debt pre-dating C17: `staticcheck ./...` reports 189 diagnostics (mostly ST1005 capitalized error strings, some U1000/SA4006) and `golangci-lint run` reports 149; exact list in `openspec/changes/browser-validation-execution-budgets/verification-wave-1-lint-baseline.txt`. C17 gates use a no-new-diagnostics baseline rule; cleanup belongs to a dedicated cycle.
 
 ## Next Steps
 

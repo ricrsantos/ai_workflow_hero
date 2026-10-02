@@ -6,6 +6,7 @@ import (
 
 // BrowserUIReport is the decoded Browser UI Validation payload.
 type BrowserUIReport struct {
+	BrowserExecution
 	Status       string
 	HealthPassed *bool
 	VisualRan    *bool
@@ -21,6 +22,7 @@ type BrowserUIReport struct {
 }
 
 var browserUIAllowed = map[string]struct{}{
+	"preparation": {}, "blockers": {}, "coverage": {},
 	"status": {}, "health_passed": {}, "visual_ran": {}, "visual_passed": {},
 	"failure_class": {}, "failures": {}, "warnings": {}, "artifacts_dir": {}, "summary": {},
 }
@@ -34,7 +36,7 @@ func DecodeBrowserUI(data []byte, ctx DecodeContext) (*BrowserUIReport, *Diagnos
 	var warnings []ReportWarning
 	collect(&warnings, dropUnknownFields(root, browserUIAllowed, ""))
 
-	status, err := parseValidationStatus(root)
+	status, err := parseBrowserStatus(root)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +46,11 @@ func DecodeBrowserUI(data []byte, ctx DecodeContext) (*BrowserUIReport, *Diagnos
 	}
 
 	report := &BrowserUIReport{Status: status, Summary: summary}
+	report.BrowserExecution, err = decodeBrowserExecution(root, status, SourceBrowserUI, ctx)
+	if err != nil {
+		return nil, err
+	}
+	collect(&warnings, report.BrowserExecution.Warnings)
 	report.HealthPassed, err = optionalBoolPtr(root, "health_passed")
 	if err != nil {
 		return nil, err

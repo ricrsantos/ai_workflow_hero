@@ -15,6 +15,7 @@ const (
 	StagePendingApproval = "PendingApproval"
 	StageCompleted       = "Completed"
 	StageEscalated       = "Escalated"
+	StageBlocked         = "Blocked"
 	StageFailed          = "Failed"
 	StageSkipped         = "Skipped"
 )
@@ -31,7 +32,9 @@ const (
 	EventFinished                    = "finished"
 	EventContinued                   = "continued"
 	EventEscalated                   = "escalated"
+	EventStageBlocked                = "stage_blocked"
 	EventStageRetried                = "stage_retried"
+	EventStageBudget                 = "stage_budget"
 	EventLoopBack                    = "loop_back"
 	EventHarnessInvoked              = "harness_invoked"
 	EventLegacyImported              = "legacy_imported"
@@ -92,6 +95,16 @@ type Stage struct {
 	// HarnessPermissionPaused is true only while an active TUI turn is awaiting
 	// an explicit harness permission decision (schema v9).
 	HarnessPermissionPaused bool
+}
+
+// StageCoveragePlanSnapshot is the digest of the Planning-owned browser plan
+// admitted for a validation stage. It is immutable after initial admission;
+// changing the file requires an explicitly approved plan update.
+type StageCoveragePlanSnapshot struct {
+	CycleID    int64
+	StageName  string
+	Digest     string
+	ApprovedAt string
 }
 
 // Event is an append-only operational event.

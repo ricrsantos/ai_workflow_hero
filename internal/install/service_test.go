@@ -1,6 +1,7 @@
 package install_test
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -186,6 +187,85 @@ func TestRun_BasicInstall(t *testing.T) {
 	}
 	if len(cycles) != 0 {
 		t.Errorf("fresh install should have no cycles, got %d", len(cycles))
+	}
+}
+
+func TestEnvHeroExample_InstallCreatesPlaceholdersWithoutCredentialLeak(t *testing.T) {
+	dir := makeGitRepo(t)
+	credential := []byte("HERO_TEST_USER_OPERATOR_PASSWORD=INSTALL_SENTINEL_SECRET\n")
+	applicationEnv := []byte("DATABASE_URL=APP_LOCAL_VALUE\n")
+	if err := os.WriteFile(filepath.Join(dir, ".env.hero"), credential, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), applicationEnv, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	if err := install.Run(install.Options{
+		ProjectDir: dir,
+		Name:       "Test Project",
+		Summary:    "C17 template acceptance",
+		Tools:      []string{"cursor"},
+		Version:    "1.0.0",
+		AssetsFS:   assets.FS,
+	}, &out, &out); err != nil {
+		t.Fatalf("install.Run: %v", err)
+	}
+	if strings.Contains(out.String(), string(credential)) {
+		t.Fatal("install output disclosed .env.hero content")
+	}
+	gotCredential, err := os.ReadFile(filepath.Join(dir, ".env.hero"))
+	if err != nil || !bytes.Equal(gotCredential, credential) {
+		t.Fatalf(".env.hero changed during install: %q, err=%v", gotCredential, err)
+	}
+	gotApplicationEnv, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil || !bytes.Equal(gotApplicationEnv, applicationEnv) {
+		t.Fatalf("application .env changed during install: %q, err=%v", gotApplicationEnv, err)
+	}
+	heroExample, err := os.ReadFile(filepath.Join(dir, ".env.hero.example"))
+	if err != nil {
+		t.Fatalf("root .env.hero.example missing: %v", err)
+	}
+	if bytes.Contains(heroExample, []byte("INSTALL_SENTINEL_SECRET")) || !bytes.Contains(heroExample, []byte(`HERO_TEST_USER_OPERATOR_PASSWORD=""`)) {
+		t.Fatalf("root .env.hero.example must contain placeholders only: %q", heroExample)
+	}
+	checksums, err := os.ReadFile(filepath.Join(dir, cursoradapter.ChecksumsJSONPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(checksums, []byte("INSTALL_SENTINEL_SECRET")) || bytes.Contains(checksums, []byte(`".env.hero"`)) {
+		t.Fatalf("checksums contain credentials or a root credential-file entry: %q", checksums)
+	}
+	if strings.Contains(string(checksums), `".env.hero.example"`) {
+		t.Fatal("generated root placeholder should be provisioned outside managed asset checksums")
+	}
+	assertSecretAbsentOutsideLocalEnvs(t, dir, "INSTALL_SENTINEL_SECRET")
+}
+
+func assertSecretAbsentOutsideLocalEnvs(t *testing.T, root, sentinel string) {
+	t.Helper()
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if path == filepath.Join(root, ".env.hero") || path == filepath.Join(root, ".env") {
+			return nil
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(contents, []byte(sentinel)) {
+			t.Errorf("credential sentinel copied outside local dotenv files: %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scan installed project: %v", err)
 	}
 }
 

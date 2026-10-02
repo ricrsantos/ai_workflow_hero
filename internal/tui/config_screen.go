@@ -69,6 +69,7 @@ type configScreen struct {
 	pickerItems     []string
 	pickerIndex     int
 	pickerOffset    int
+	testUsers       configTestUsersScreen
 }
 
 type configLoadedMsg struct {
@@ -326,6 +327,8 @@ func (m model) configFieldsCached(c *configRenderCache) []configField {
 		{"scope.infrastructure", "Infrastructure", "bool", "", ""},
 		{"verification.repro.mode", "Repro mode", "choice", "", ""},
 		{"verification.repro.allow_evidence", "Allow evidence findings", "choice", "", ""},
+		{"test_access.enabled", "Test users enabled", "bool", "", ""},
+		{"test_access.editor", "Test users accounts", "action", "", ""},
 	}
 	requiredAgents := m.config.draft.RequiredAgentNames()
 	for _, name := range []string{"research", "planning", "implementation", "qa", "judge", "browser_ui_validation", "qa_end_to_end"} {
@@ -347,10 +350,14 @@ func (m model) configFieldsCached(c *configRenderCache) []configField {
 			fields = append(fields,
 				configField{"stages." + name + ".visual_validation.enabled", "Visual validation", "bool", name, ""},
 				configField{"stages." + name + ".visual_validation.reference_dir", "Reference directory", "text", name, ""},
+				configField{"stages." + name + ".screenshots.enabled", "Screenshots", "bool", name, ""},
 			)
 		}
-		if name == "qa_end_to_end" && m.config.draft.Scope.Frontend {
-			fields = append(fields, configField{"stages." + name + ".use_playwright", "Use Playwright", "bool", name, ""})
+		if name == "qa_end_to_end" {
+			if m.config.draft.Scope.Frontend {
+				fields = append(fields, configField{"stages." + name + ".use_playwright", "Use Playwright", "bool", name, ""})
+			}
+			fields = append(fields, configField{"stages." + name + ".screenshots.enabled", "Screenshots", "bool", name, ""})
 		}
 		for _, agent := range requiredAgents {
 			if configAgentStage(agent) != name {
@@ -529,6 +536,9 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.config.testUsers.open {
+		return m.handleConfigTestUsersKey(msg)
+	}
 	if m.config.modelPicker {
 		return m.handleConfigModelPickerKey(msg)
 	}
@@ -573,9 +583,15 @@ func (m model) handleConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if len(fields) > 0 && (key.Matches(msg, configKeys.Toggle) || key.Matches(msg, configKeys.Edit)) {
 		field := fields[m.config.focus%len(fields)]
-		if m.configReadOnly() || m.stageProtected(field.stage) {
+		if m.configReadOnly() || m.stageProtected(field.stage) || m.configFieldUnavailable(field) {
 			m.config.message = "Editing is available when execution/preflight finishes."
+			if m.configFieldUnavailable(field) {
+				m.config.message = "Browser screenshots require Playwright mode; HTTP-only E2E remains Off."
+			}
 			return m, nil
+		}
+		if field.kind == "action" && field.path == "test_access.editor" {
+			return m.openConfigTestUsers()
 		}
 		if field.kind == "bool" {
 			m = m.toggleConfigField(field)
@@ -721,6 +737,8 @@ func (m model) configFieldValue(field configField) string {
 		return c.Objective
 	case "workflow_config.user_preferred_language":
 		return c.WorkflowConfig.UserPreferredLanguage
+	case "test_access.enabled":
+		return fmt.Sprintf("%t", c.TestAccess.Enabled)
 	case "verification.repro.mode":
 		if mode := strings.TrimSpace(c.Verification.Repro.Mode); mode != "" {
 			return mode
@@ -747,6 +765,8 @@ func (m model) configFieldValue(field configField) string {
 			return fmt.Sprintf("%d", stage.TimeoutMinutes)
 		case strings.HasSuffix(field.path, ".visual_validation.reference_dir"):
 			return stage.VisualValidation.ReferenceDir
+		case strings.HasSuffix(field.path, ".screenshots.enabled"):
+			return fmt.Sprintf("%t", stage.Screenshots.Enabled)
 		}
 	}
 	if field.agent != "" {
@@ -804,6 +824,8 @@ func (m model) setConfigField(field configField, value string) model {
 				_, _ = fmt.Sscanf(value, "%d", &stage.TimeoutMinutes)
 			case strings.HasSuffix(field.path, ".visual_validation.reference_dir"):
 				stage.VisualValidation.ReferenceDir = value
+			case strings.HasSuffix(field.path, ".screenshots.enabled"):
+				stage.Screenshots.Enabled = value == "true"
 			}
 			c.Stages[field.stage] = stage
 		} else if field.agent != "" {
@@ -843,6 +865,8 @@ func (m model) setConfigField(field configField, value string) model {
 func (m model) toggleConfigField(field configField) model {
 	c := m.config.draft
 	switch field.path {
+	case "test_access.enabled":
+		c.TestAccess.Enabled = !c.TestAccess.Enabled
 	case "scope.backend":
 		c.Scope.Backend = !c.Scope.Backend
 	case "scope.frontend":
@@ -865,6 +889,11 @@ func (m model) toggleConfigField(field configField) model {
 				stage.VisualValidation.Enabled = !stage.VisualValidation.Enabled
 			case field.path == "stages."+field.stage+".use_playwright":
 				stage.UsePlaywright = !stage.UsePlaywright
+			case field.path == "stages."+field.stage+".screenshots.enabled":
+				if field.stage == "qa_end_to_end" && !stage.UsePlaywright {
+					return m
+				}
+				stage.Screenshots.Enabled = !stage.Screenshots.Enabled
 			}
 			c.Stages[field.stage] = stage
 		} else if field.agent != "" {
@@ -1397,6 +1426,11 @@ func (m model) renderConfig() string {
 		b.WriteString(m.renderConfigModelPicker())
 		return b.String()
 	}
+	if m.config.testUsers.open {
+		b.WriteByte('\n')
+		b.WriteString(m.renderConfigTestUsers())
+		return b.String()
+	}
 	b.WriteByte('\n')
 	cache := newConfigRenderCache()
 	fields := m.configFieldsCached(cache)
@@ -1422,13 +1456,31 @@ func (m model) renderConfig() string {
 			lastSection = section
 		}
 		value := m.configFieldValue(field)
-		if field.kind == "bool" || field.kind == "property" && strings.HasSuffix(field.path, ".enable_fast_model") {
+		if field.path == "test_access.editor" {
+			value = "Manage accounts"
+		}
+		if isScreenshotToggle(field) {
+			value = "Off"
+			if configBoolValue(m.config.draft, field) {
+				value = "On"
+			}
+			if m.configFieldUnavailable(field) {
+				value = "Off · HTTP-only E2E"
+			}
+		} else if field.kind == "bool" || field.kind == "property" && strings.HasSuffix(field.path, ".enable_fast_model") {
 			value = "[ ]"
 			if configBoolValue(m.config.draft, field) {
 				value = "[x]"
 			}
 		}
-		line := m.renderConfigField(field.label, value, i == focus, m.stageProtected(field.stage))
+		unavailable := m.configFieldUnavailable(field)
+		line := m.renderConfigFieldState(field.label, value, i == focus, m.stageProtected(field.stage), unavailable)
+		if field.path == "test_access.enabled" && !m.config.draft.TestAccess.Enabled {
+			line += "  " + mutedStyle.Render("required-login browser plans are blocked while Off")
+		}
+		if unavailable {
+			line += "  " + mutedStyle.Render("browser screenshots require Playwright")
+		}
 		if field.stage != "" && strings.HasSuffix(field.path, ".enabled") && !configBoolValue(m.config.draft, field) {
 			line += "  " + mutedStyle.Render("configuration retained")
 		}
@@ -1498,6 +1550,8 @@ func configFieldSection(field configField) string {
 	switch {
 	case strings.HasPrefix(field.path, "title"), strings.HasPrefix(field.path, "objective"), strings.HasPrefix(field.path, "workflow_config."):
 		return "Identity"
+	case strings.HasPrefix(field.path, "test_access."):
+		return "Test users"
 	case strings.HasPrefix(field.path, "scope."):
 		return "Scope"
 	case strings.HasPrefix(field.path, "verification."):
@@ -1539,12 +1593,16 @@ func (m model) configValueWidth() int {
 // editing, the current buffer and caret render in place with a subtle value
 // background, so the user never needs to look for input below the viewport.
 func (m model) renderConfigField(label, value string, focused, protected bool) string {
+	return m.renderConfigFieldState(label, value, focused, protected, false)
+}
+
+func (m model) renderConfigFieldState(label, value string, focused, protected, unavailable bool) string {
 	prefix := label + ": "
 	valueWidth := m.configValueWidth() - lipgloss.Width("  "+prefix)
 	if valueWidth < 8 {
 		valueWidth = 8
 	}
-	disabled := protected || m.configReadOnly() || m.config.saving
+	disabled := protected || unavailable || m.configReadOnly() || m.config.saving
 	editing := focused && m.config.editing
 	if editing {
 		value = configValueWithCaret(m.config.editBuffer, m.config.editCursor)
@@ -1619,6 +1677,8 @@ func renderConfigEditingValue(value string, fallback lipgloss.Style) string {
 
 func configBoolValue(c workflowconfig.ManagedConfig, field configField) bool {
 	switch field.path {
+	case "test_access.enabled":
+		return c.TestAccess.Enabled
 	case "scope.backend":
 		return c.Scope.Backend
 	case "scope.frontend":
@@ -1641,6 +1701,8 @@ func configBoolValue(c workflowconfig.ManagedConfig, field configField) bool {
 			return stage.VisualValidation.Enabled
 		case field.path == "stages."+field.stage+".use_playwright":
 			return stage.UsePlaywright
+		case strings.HasSuffix(field.path, ".screenshots.enabled"):
+			return stage.Screenshots.Enabled
 		}
 	}
 	if field.agent != "" {
@@ -1664,6 +1726,17 @@ func configBoolValue(c workflowconfig.ManagedConfig, field configField) bool {
 		}
 	}
 	return false
+}
+
+func isScreenshotToggle(field configField) bool {
+	return strings.HasSuffix(field.path, ".screenshots.enabled")
+}
+
+func (m model) configFieldUnavailable(field configField) bool {
+	if field.path != "stages.qa_end_to_end.screenshots.enabled" {
+		return false
+	}
+	return !m.config.draft.Stages["qa_end_to_end"].UsePlaywright
 }
 
 func configStageLabel(name string) string {

@@ -2,9 +2,11 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -216,6 +218,9 @@ func (m *model) conversationExecuteCmds() tea.Cmd {
 	cmds := []tea.Cmd{convWaitTickCmd()}
 	if !m.testMode {
 		cmds = append(cmds, harnessHealthProbeCmd())
+	}
+	if m.screenshots.autoWatchActive {
+		cmds = append(cmds, screenshotWatchTickCmd(m.screenshots.autoWatchGen))
 	}
 	if timerCmd := m.ensureTimerLoop(); timerCmd != nil {
 		cmds = append(cmds, timerCmd)
@@ -569,6 +574,7 @@ func (m model) resetChatSession() (model, tea.Cmd) {
 // a later Execute completion cannot be interpreted as part of a new wave.
 // Keep any future assignment/ownership fields in this helper as well.
 func (m model) clearStageHandoffState() model {
+	m = m.discardStageBrowserPreparation(false)
 	m.stageHandoffLive = false
 	m.stageHandoffStage = ""
 	m.stageHandoffOutputs = nil
@@ -859,7 +865,7 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 	if m.executes == nil {
 		m.executes = make(map[string]convExecute)
 	}
-	m.executes[executeID] = convExecute{
+	execute := convExecute{
 		ID:              executeID,
 		AgentName:       parentName,
 		HarnessID:       parentHarness,
@@ -876,9 +882,14 @@ func (m model) startTaggedExecute(labelRole convRole, userLabel, executePrompt s
 		OccupancyKey:    occupancyKey,
 		HeroSessionID:   strings.TrimSpace(m.heroChatSessionID),
 	}
+	execute = m.captureActiveStageBudget(execute)
+	if execute.BudgetCycleID > 0 && execute.BudgetGeneration > 0 {
+		m = m.startStageBudgetMonitor(execute.BudgetCycleID, execute.StageName, execute.BudgetGeneration)
+	}
+	m.executes[executeID] = execute
 
 	relay := newConversationStreamRelay(executeID, m.convSink)
-	execute := m.executes[executeID]
+	execute = m.executes[executeID]
 	execute.relay = relay
 	m.executes[executeID] = execute
 	m.startConversationExecute(executeID, userLabel, executePrompt, origin, labelRole, relay)
@@ -1334,10 +1345,15 @@ func (m model) submitConversation() (model, tea.Cmd) {
 		return m.beginHeroCancelExecute(reason)
 	}
 
-	if extra, ok := parseHeroContinueInline(text); ok {
+	if request, ok := parseHeroContinueRequest(text); ok {
 		m = m.clearChatInput()
 		m.convError = ""
-		return m.beginHeroContinueExecute(extra)
+		if request.invalid {
+			m.convError = "Usage: /hero-continue [EXTRA-ITERATIONS] [--budget-increase MINUTES] (all values must be positive integers)."
+			m = m.setStatusWarning("/hero-continue", m.convError)
+			return m, nil
+		}
+		return m.beginHeroContinueWithBudget(request.extraIterations, request.budgetIncrease)
 	}
 
 	if ids, ok := parseHeroAddTodoInline(text); ok {
@@ -1618,25 +1634,62 @@ func parseHeroCancelInline(text string) (string, bool) {
 	return "", false
 }
 
-// parseHeroContinueInline returns (extra, true) when text is /hero-continue with optional N.
-func parseHeroContinueInline(text string) (int, bool) {
-	lower := strings.ToLower(strings.TrimSpace(text))
-	if lower == "/hero-continue" {
-		return 1, true
+type heroContinueRequest struct {
+	extraIterations int
+	budgetIncrease  time.Duration
+	invalid         bool
+}
+
+func parseHeroContinueRequest(text string) (heroContinueRequest, bool) {
+	trimmed := strings.TrimSpace(text)
+	lower := strings.ToLower(trimmed)
+	if lower != "/hero-continue" && !strings.HasPrefix(lower, "/hero-continue ") {
+		return heroContinueRequest{}, false
 	}
-	const prefix = "/hero-continue "
-	if !strings.HasPrefix(lower, prefix) {
+	request := heroContinueRequest{extraIterations: 1}
+	fields := strings.Fields(trimmed)
+	positional := false
+	for i := 1; i < len(fields); i++ {
+		field := strings.ToLower(fields[i])
+		if field == "--budget-increase" || field == "--budget-increase-minutes" {
+			if request.budgetIncrease > 0 || i+1 >= len(fields) {
+				request.invalid = true
+				continue
+			}
+			minutes, err := strconv.ParseInt(fields[i+1], 10, 64)
+			i++
+			if err != nil || minutes <= 0 || minutes > int64((time.Duration(1<<63-1))/time.Minute) {
+				request.invalid = true
+				continue
+			}
+			request.budgetIncrease = time.Duration(minutes) * time.Minute
+			continue
+		}
+		if strings.HasPrefix(field, "--") || positional {
+			request.invalid = true
+			continue
+		}
+		extra, err := strconv.Atoi(fields[i])
+		if err != nil || extra <= 0 {
+			request.invalid = true
+			continue
+		}
+		request.extraIterations = extra
+		positional = true
+	}
+	return request, true
+}
+
+// parseHeroContinueInline preserves the earlier test/helper contract.
+func parseHeroContinueInline(text string) (int, bool) {
+	request, ok := parseHeroContinueRequest(text)
+	if !ok {
 		return 0, false
 	}
-	arg := strings.TrimSpace(text[len(prefix):])
-	if arg == "" {
-		return 1, true
+	if request.invalid {
+		return 0, true
 	}
-	var extra int
-	if _, err := fmt.Sscanf(arg, "%d", &extra); err != nil || extra <= 0 {
-		return 0, true // matched command but invalid N — caller shows error
-	}
-	return extra, true
+	return request.extraIterations, true
 }
 
 // parseHeroResumeInline returns (cycleNumber, true) when text is /hero-resume with optional N.
@@ -1694,11 +1747,14 @@ func (m model) startConversationExecute(executeID, userText, prompt, origin stri
 		wg.Add(1)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	if ex, ok := m.executes[executeID]; ok {
 		ex.cancel = cancel
+		ex.done = done
 		m.executes[executeID] = ex
 	}
 	go func() {
+		defer close(done)
 		if wg != nil {
 			defer wg.Done()
 		}
@@ -1858,7 +1914,7 @@ func (m model) executeConversationTurn(ctx context.Context, executeID, prompt st
 			if err := ctx.Err(); err != nil {
 				return harness.QuestionResponse{Rejected: true}, err
 			}
-			if !relay.SendControl(harnessQuestionRequestMsg{req: qreq, respCh: respCh}) {
+			if !relay.SendControl(harnessQuestionRequestMsg{executeID: executeID, req: qreq, respCh: respCh}) {
 				return harness.QuestionResponse{Rejected: true}, context.Canceled
 			}
 			select {
@@ -1905,7 +1961,7 @@ const (
 
 func isImmediateConversationMessage(msg tea.Msg) bool {
 	switch msg.(type) {
-	case executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg:
+	case executeDoneMsg, streamCancelDoneMsg, harnessPermissionRequestMsg, harnessQuestionRequestMsg, executePairMsg, stageBrowserPreparationDoneMsg:
 		return true
 	default:
 		return false
@@ -1916,10 +1972,15 @@ func (m *model) cancelStreamCmd() tea.Cmd {
 	executes := make([]convExecute, 0, len(m.executes))
 	for _, ex := range m.executes {
 		executes = append(executes, ex)
+	}
+	m.revokeStageBudgetsForCancellation(executes)
+	*m = m.discardStageBrowserPreparation(true)
+	for _, ex := range executes {
 		if ex.cancel != nil {
 			ex.cancel()
 		}
 	}
+	*m = m.stopStageBudgetMonitor()
 	// Invalidate the model's acceptance set synchronously while retaining the
 	// copied executions for the asynchronous Cancel calls below. ExecuteDone
 	// messages can race with streamCancelDoneMsg; an execution removed here is
@@ -1938,7 +1999,11 @@ func (m *model) cancelStreamCmd() tea.Cmd {
 	}
 	wg := m.executeWG
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), workflowconfig.TerminationGracePeriod)
+		defer cancel()
 		var err error
+		cancelResults := make(chan error, len(executes)+1)
+		pendingCancels := 0
 		for _, ex := range executes {
 			// The TUI stops accepting this execution before cancelling the
 			// harness, so a relay blocked on a full chat channel cannot leak.
@@ -1948,35 +2013,66 @@ func (m *model) cancelStreamCmd() tea.Cmd {
 				continue
 			}
 			sid := strings.TrimSpace(ex.SessionID)
-			if cerr := adapter.Cancel(context.Background(), sid); cerr != nil {
-				slog.Error("tui stream cancel failed", "error", redact.Error(cerr))
-				err = cerr
-			}
+			pendingCancels++
+			go func(adapter harness.HarnessAdapter, sessionID string) {
+				cancelResults <- adapter.Cancel(ctx, sessionID)
+			}(adapter, sid)
 		}
 		if len(executes) == 0 && fallbackAdapter != nil {
-			if cerr := fallbackAdapter.Cancel(context.Background(), ""); cerr != nil {
-				err = cerr
-			}
+			pendingCancels++
+			go func() { cancelResults <- fallbackAdapter.Cancel(ctx, "") }()
 		}
 		// Join in-flight execute workers so interrupt finalization cannot race
-		// late result/binding writes (find-qa-19).
+		// late result/binding writes. Adapter termination and joining share the
+		// same fixed grace window.
+		var workersDone <-chan struct{}
 		if wg != nil {
 			done := make(chan struct{})
 			go func() {
 				wg.Wait()
 				close(done)
 			}()
+			workersDone = done
+		}
+		for pendingCancels > 0 || workersDone != nil {
 			select {
-			case <-done:
-			case <-time.After(15 * time.Second):
-				slog.Error("tui execute worker join timed out")
-				if err == nil {
-					err = fmt.Errorf("execute worker join timed out")
+			case cancelErr := <-cancelResults:
+				pendingCancels--
+				if cancelErr != nil && err == nil {
+					err = cancelErr
+					slog.Error("tui stream cancel failed", "error", redact.Error(cancelErr))
 				}
+			case <-workersDone:
+				workersDone = nil
+			case <-ctx.Done():
+				if err == nil {
+					err = fmt.Errorf("termination grace elapsed")
+				}
+				slog.Error("tui execute termination grace elapsed")
 				return streamCancelDoneMsg{err: err, workerStillActive: true}
 			}
 		}
 		return streamCancelDoneMsg{err: err}
+	}
+}
+
+func (m *model) revokeStageBudgetsForCancellation(executes []convExecute) {
+	if m == nil || m.svc == nil || m.svc.Engine == nil {
+		return
+	}
+	seen := make(map[string]struct{})
+	for _, ex := range executes {
+		if ex.Freechat || ex.BudgetCycleID <= 0 || ex.BudgetGeneration <= 0 || strings.TrimSpace(ex.StageName) == "" {
+			continue
+		}
+		key := stageBudgetMonitorKey(ex.BudgetCycleID, ex.StageName, ex.BudgetGeneration)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if _, err := m.svc.Engine.InterruptStageBudget(ex.BudgetCycleID, ex.StageName, ex.BudgetGeneration, "user_interrupt"); err != nil && !errors.Is(err, store.ErrStageBudgetGeneration) {
+			slog.Error("tui stage budget interruption failed", "cycle_id", ex.BudgetCycleID, "stage", ex.StageName, "error", redact.Error(err))
+		}
 	}
 }
 
@@ -2294,6 +2390,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case harnessPermissionRequestMsg:
+		m = m.setExecuteWaiting(msg.executeID, "human_permission")
 		m = m.clearHarnessHealthWarnings()
 		m.harnessWatchdog.Pause(time.Now())
 		m = m.trackHarnessPermission(msg)
@@ -2305,9 +2402,11 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, combineTimerCmds(permissionCmd, m.ensureTimerLoop())
 
 	case harnessQuestionRequestMsg:
+		m = m.setExecuteWaiting(msg.executeID, "human_question")
 		m = m.clearHarnessHealthWarnings()
 		m.harnessWatchdog.Pause(time.Now())
 		m.harnessQuestionPending = true
+		m.harnessQuestionExecuteID = msg.executeID
 		m.harnessQuestionReq = msg.req
 		m.harnessQuestionRespCh = msg.respCh
 		m.harnessQuestionIndex = 0
@@ -2342,6 +2441,15 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.executeCancelled {
 			return m, nil
+		}
+		if trackedExecute {
+			accepted, _, acceptErr := m.acceptStageExecution(executeMeta)
+			if acceptErr != nil || !accepted {
+				if acceptErr != nil {
+					slog.Debug("tui rejected stale stage execution result", "cycle_id", executeMeta.BudgetCycleID, "stage", executeMeta.StageName, "error", redact.Error(acceptErr))
+				}
+				return m.rejectExpiredStageResult(executeMeta)
+			}
 		}
 		m = m.bindExecuteView(msg.executeID)
 		stageForMetrics := strings.TrimSpace(m.conversationStage)
@@ -2388,6 +2496,9 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.executeID != "" {
 			delete(m.executes, msg.executeID)
 			m = m.removeLiveAgent(msg.executeID)
+			if executeMeta.BudgetCycleID > 0 {
+				m = m.refreshStageBudgetWait(executeMeta.BudgetCycleID, executeMeta.StageName)
+			}
 		}
 		siblingsRemain := len(m.executes) > 0
 		if !siblingsRemain {
@@ -2641,6 +2752,7 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.liveAgents = nil
 		m.executes = nil
 		m = m.clearStageHandoffState()
+		m = m.markValidationProgressInterrupted(false)
 		m.stageProgressHoldUntilStart = m.orchestrationLive
 		m.confirmPending = false
 		m.confirmMsg = ""
@@ -2684,6 +2796,24 @@ func (m model) handleConversationMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return next.afterExecuteTelegramDrain(combineTimerCmds(persistCmd, interruptCmd, progressCmd, next.ensureTimerLoop()))
 		}
 		return m.afterExecuteTelegramDrain(combineTimerCmds(persistCmd, interruptCmd, m.ensureTimerLoop()))
+
+	case stageBudgetTickMsg:
+		return m.handleStageBudgetTick(msg)
+
+	case stageBrowserPreparationDoneMsg:
+		return m.handleStageBrowserPreparationDone(msg)
+
+	case stageBudgetExpiredMsg:
+		m = m.stopStageBudgetMonitor()
+		return m.cancelStageBudgetExecutions(msg.cycleID, msg.stageName, msg.generation, true)
+
+	case stageBudgetCancelDoneMsg:
+		m.maybeLogBudgetCancel(msg)
+		if msg.workersActive > 0 || msg.err != nil {
+			m.convError = "The timed-out stage has been revoked, but the harness did not confirm termination within the grace period. Late results will be ignored; partial evidence is preserved."
+			m = m.setStatusWarning("stage timeout", firstStatusLine(m.convError))
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -2730,8 +2860,31 @@ func (m *model) applyStreamDelta(msg streamDeltaMsg) {
 	if m.harnessWatchdog.LastActivityAt().After(prevActivity) {
 		*m = m.clearHarnessHealthWarnings()
 	}
+	progressOnly := false
+	if execute, ok := m.executes[msg.executeID]; ok && !execute.Freechat && isValidationProgressStage(execute.StageName) {
+		var warning string
+		var warn bool
+		*m, warning, warn = m.recordValidationProgressDelta(msg.delta, m.validationProgressNow())
+		if warn {
+			m.transcript = append(m.transcript, convMessage{role: convRoleWarning, content: warning})
+			m.bumpTranscriptLayout()
+		}
+		// Validation lifecycle events can contain provider payloads, file paths,
+		// commands, or page content. Keep only Hero's store-validated progress
+		// markers and generic lifecycle state in the status display.
+		switch msg.delta.Kind {
+		case harness.StreamKindTool, harness.StreamKindActivity, harness.StreamKindWarning, harness.StreamKindSession:
+			progressOnly = true
+		}
+	}
 	beforeAssets := len(m.assets)
-	*m = m.appendStreamDeltaForTurn(msg.delta, turnIndex)
+	if !progressOnly {
+		*m = m.appendStreamDeltaForTurn(msg.delta, turnIndex)
+	}
+	if progressOnly {
+		m.streamPersistHeroID = prevPersistHero
+		return
+	}
 	if msg.delta.Kind == harness.StreamKindAsset && msg.delta.Asset != nil && len(m.assets) > beforeAssets {
 		if err := m.queueSessionAssetOn(heroID, *msg.delta.Asset); err != nil {
 			m.sessionPersistBlocked = true
@@ -3082,8 +3235,13 @@ func (m model) replyHarnessPermissionID(id string, approved bool, reason string)
 	if !ok {
 		// Preserve compatibility with prompts created before keyed tracking.
 		if m.harnessPermissionPending && harnessPermissionKey(m.harnessPermissionReq) == key {
+			executeID := ""
+			if len(m.harnessPermissionOrder) > 0 {
+				executeID = m.harnessPermissionRequests[m.harnessPermissionOrder[0]].executeID
+			}
 			sendHarnessPermissionResponse(m.harnessPermissionRespCh, harness.PermissionResponse{Approved: approved, Reason: reason})
 			m = m.persistHarnessPermissionPause(false)
+			m = m.refreshExecuteWaitReason(executeID)
 			return m.clearHarnessPermissionDisplay()
 		}
 		return m
@@ -3091,6 +3249,7 @@ func (m model) replyHarnessPermissionID(id string, approved bool, reason string)
 	sendHarnessPermissionResponse(pending.respCh, harness.PermissionResponse{Approved: approved, Reason: reason})
 	m = m.removePendingHarnessPermissionNotice(key)
 	m = m.removeHarnessPermissionKey(key)
+	m = m.refreshExecuteWaitReason(pending.executeID)
 	if len(m.harnessPermissionRequests) == 0 {
 		m = m.persistHarnessPermissionPause(false)
 		return m.clearHarnessPermissionDisplay()

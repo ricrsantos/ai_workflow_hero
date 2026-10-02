@@ -48,6 +48,15 @@ func (f ActionableFindingCheckFunc) HasActionableFindings(sourceStage string, en
 
 // DecodeContext carries scope and optional store-backed validators.
 type DecodeContext struct {
+	// EvidenceReferenceValidator verifies readiness and cycle ownership after
+	// lexical reference validation at the persistence boundary.
+	EvidenceReferenceValidator func(string) bool
+	CoveragePlan               []CoveragePlanItem
+	// ExpectedBrowserMethod is the approved Planning method in report-safe form.
+	// Browser reports cannot silently claim a different runner at close time.
+	ExpectedBrowserMethod      string
+	ExpectedBrowserTool        string
+	MinimumPlaywrightVersion   string
 	ActiveOwners               ActiveOwners
 	ActiveImplementationAgents []string
 	ReopenIDs                  ReopenIDValidator

@@ -1,7 +1,9 @@
 ---
-name: orchestration_agent
 description: Hero workflow orchestrator — coordinates stages, dispatches subagents via Task, maintains cycle state.
-model: inherit
+model: gpt-6.1-sol
+name: orchestration_agent
+reasoningEffort: medium
+thinking: "off"
 ---
 
 # orchestration_agent — Hero Workflow Orchestrator

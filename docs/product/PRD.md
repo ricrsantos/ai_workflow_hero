@@ -4,6 +4,8 @@
 
 ## Cycle PRDs
 
+C17 browser/test execution: [PRD-C17-001-browser-validation-execution-budgets.md](PRD-C17-001-browser-validation-execution-budgets.md) defines authenticated coverage, blocked prerequisites, cumulative active TUI budgets and optional cycle screenshots. Confirmed Research design; implementation pending. IDE asset removal is excluded.
+
 | Document | Cycle | Summary |
 |---|---|---|
 | [PRD-C01-001-hero-1-0.md](PRD-C01-001-hero-1-0.md) | C1 | Hero 1.0: AI Loop in Go, SQLite ops store, dual UI (chat + TUI), Cursor HarnessAdapter, deferred list D1–D13 |
@@ -121,7 +123,7 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 ### 5.4 Iteration and Timeout Handling
 
-- Each stage has a `max_iterations` and `timeout_minutes` budget. Timeout is checked **between** iterations (not mid-execution); if exceeded, treated the same as exhausting `max_iterations`.
+- Each stage has a `max_iterations` and `timeout_minutes` budget. Historically timeout was checked **between** iterations. C17 amends the TUI contract: `timeout_minutes` is cumulative active wall time across attempts, waves and reconnects, enforced during Execute by a scheduler-owned deadline independent of health. Parallel executions count elapsed once; human-only waits and offline time pause accounting; restart preserves the balance and requires explicit continuation. Expiry revokes acceptance, cancels owned work and escalates. See [C17 FR-09–FR-11](PRD-C17-001-browser-validation-execution-budgets.md#4-continuous-tui-execution-budget); this is target behavior pending implementation.
 - On exhaustion, the orchestrator escalates to the user (`Human Approval = Escalated`) and waits for `/hero:continue` (user specifies how many extra iterations to grant; recorded in `workflow.md` as `Extra Iterations Granted`, without altering `workflow-config.yml`).
 - **QA / Browser UI Validation / QA End-to-End failure loop**: returns to the implementation agent(s) referenced in the error report; each retry consumes one iteration. Browser UI Validation routes asset/console/render/visual failures to `frontend_agent`, and clearly classified backend API failures to `backend_agent`.
 - **Judge failure loop**: implementation gaps follow the same pattern as QA. If, after exhausting implementation gaps, the Judge identifies **ambiguity in the SDD itself**, it stops and asks the user to choose between `/hero:back` (reopen Planning) or `/hero:approve` (accept as-is, noted in `context-log.md`).
@@ -167,6 +169,8 @@ Each Runtime command maps to exactly one embedded asset file (`hero-<command>.md
 - Token/cost estimation uses a simple heuristic (character count ÷ ~4, multiplied by the model's price from `models/*.yml`).
 
 ## 6. Non-Functional Requirements
+
+C17 amendments (pending implementation): authenticated Browser UI/E2E must satisfy planned mandatory coverage; missing Playwright/tools/accounts are blocked prerequisites with corrective instructions and explicit retry, never automatic frontend findings. Test secrets use root `.env.hero`, while `.env.hero.example` is an approved committed placeholder exception. Archive deletes credentials only after prerequisites and safe cleanup, retaining sanitized screenshots. TUI-only scope and screenshot Telegram routing are specified in the C17 PRD; older browser/IDE defaults yield to this narrower contract.
 
 - **Determinism**: the CLI never performs LLM reasoning; only the Runtime does. This boundary must never be crossed (see [ADR-003](../architecture/ADR.md#adr-003-cli-vs-runtime-separation)).
 - **Concurrency safety**: a lock file (`cycles/current/.lock`) prevents two chat sessions from corrupting the same cycle state.

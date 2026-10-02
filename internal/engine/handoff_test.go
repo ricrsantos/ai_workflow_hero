@@ -292,6 +292,8 @@ func assertNoHandoffSideEffects(t *testing.T, s *store.Store, cycleID int64, wan
 func TestEscalateIfTimedOutIgnoresIterationBudget(t *testing.T) {
 	e, s := openTestEngine(t)
 	now := e.Now().UTC()
+	current := now
+	e.Now = func() time.Time { return current }
 	cycleID, err := s.CreateCycle(store.Cycle{Number: 1, Title: "t", Status: store.CycleStatusActive})
 	if err != nil {
 		t.Fatal(err)
@@ -301,6 +303,9 @@ func TestEscalateIfTimedOutIgnoresIterationBudget(t *testing.T) {
 		Iteration: 1, MaxIterations: 1, TimeoutMinutes: 30,
 		StartedAt: now.Add(-5 * time.Minute).Format(time.RFC3339), SortOrder: 1,
 	}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.BeginStageBudget(cycleID, "implementation"); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.EscalateIfTimedOut(cycleID, "implementation"); err != nil {
@@ -314,10 +319,7 @@ func TestEscalateIfTimedOutIgnoresIterationBudget(t *testing.T) {
 		t.Fatalf("status=%s want Running: a spent iteration budget must not stop a productive wave", st.Status)
 	}
 
-	st.StartedAt = now.Add(-31 * time.Minute).Format(time.RFC3339)
-	if err := s.UpdateStage(st); err != nil {
-		t.Fatal(err)
-	}
+	current = now.Add(31 * time.Minute)
 	if err := e.EscalateIfTimedOut(cycleID, "implementation"); err != nil {
 		t.Fatal(err)
 	}

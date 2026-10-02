@@ -3,7 +3,9 @@ package cycle
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
 )
@@ -48,6 +50,34 @@ type StatusTodosBlock struct {
 	DeferredFromCycle int `json:"deferredFromCycle"`
 }
 
+// StatusBlockedStage contains the additive operational pause and the safe
+// corrective actions needed before the scheduler can continue that stage.
+type StatusBlockedStage struct {
+	Name              string               `json:"name"`
+	Blockers          []StatusStageBlocker `json:"blockers"`
+	RemainingBudgetMS int64                `json:"remainingBudgetMs,omitempty"`
+}
+
+// StatusStageBlocker is the non-secret projection of one active blocker.
+type StatusStageBlocker struct {
+	ID                  string   `json:"id"`
+	Reason              string   `json:"reason"`
+	AffectedCoverageIDs []string `json:"affectedCoverageIds,omitempty"`
+	AffectedProfileIDs  []string `json:"affectedProfileIds,omitempty"`
+	Uncertainty         string   `json:"uncertainty"`
+	NextAction          string   `json:"nextAction"`
+}
+
+// StatusStageBudget exposes cumulative active time without execution payloads.
+type StatusStageBudget struct {
+	Name               string `json:"name"`
+	State              string `json:"state"`
+	ConsumedMS         int64  `json:"consumedMs"`
+	RemainingMS        int64  `json:"remainingMs"`
+	PauseReason        string `json:"pauseReason,omitempty"`
+	InterruptionReason string `json:"interruptionReason,omitempty"`
+}
+
 func (s *Service) enrichStatusView(view *StatusView, c store.Cycle, stages []store.Stage) error {
 	if s == nil || s.Store == nil || view == nil {
 		return errors.New("cycle service unavailable")
@@ -57,6 +87,19 @@ func (s *Service) enrichStatusView(view *StatusView, c store.Cycle, stages []sto
 		return err
 	}
 	view.Findings = buildStatusFindings(findings)
+	now := time.Now()
+	if s.Engine != nil && s.Engine.Now != nil {
+		now = s.Engine.Now()
+	}
+	blocked, err := buildStatusBlockedStages(s.Store, c.ID, stages, now)
+	if err != nil {
+		return err
+	}
+	view.BlockedStages = blocked
+	view.StageBudgets, err = buildStatusStageBudgets(s.Store, c.ID, stages, now)
+	if err != nil {
+		return err
+	}
 	view.LoopBacks = buildStatusLoopBacks(s.Store, c.ID)
 	todos, err := buildStatusTodos(s.Store, c.ID)
 	if err != nil {
@@ -66,6 +109,27 @@ func (s *Service) enrichStatusView(view *StatusView, c store.Cycle, stages []sto
 	view.CompletionDisposition = statusCompletionDisposition(s.Store, c.ID)
 	view.AvailableActions = statusAvailableActions(c, stages, view.Findings.Counts)
 	return nil
+}
+
+func buildStatusStageBudgets(st *store.Store, cycleID int64, stages []store.Stage, now time.Time) ([]StatusStageBudget, error) {
+	var budgets []StatusStageBudget
+	for _, stage := range stages {
+		budget, err := st.GetStageBudget(cycleID, stage.Name)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		remaining := budget.RemainingAt(now)
+		budgets = append(budgets, StatusStageBudget{
+			Name: displayStageName(stage.Name), State: string(budget.State),
+			ConsumedMS: (budget.Limit - remaining).Milliseconds(), RemainingMS: remaining.Milliseconds(),
+			PauseReason: budget.PauseReason, InterruptionReason: budget.InterruptionReason,
+		})
+	}
+	slog.Debug("stage budget status projected", "cycle_id", cycleID, "count", len(budgets))
+	return budgets, nil
 }
 
 func buildStatusFindings(findings []store.Finding) *StatusFindingsBlock {
@@ -176,7 +240,7 @@ func statusAvailableActions(c store.Cycle, stages []store.Stage, counts StatusFi
 	}
 	escalated := false
 	for _, st := range stages {
-		if st.Status == store.StageEscalated {
+		if st.Status == store.StageEscalated || st.Status == store.StageBlocked {
 			escalated = true
 			break
 		}
@@ -190,4 +254,81 @@ func statusAvailableActions(c store.Cycle, stages []store.Stage, counts StatusFi
 	}
 	actions = append(actions, "hero-cancel", "hero-finish")
 	return actions
+}
+
+func buildStatusBlockedStages(st *store.Store, cycleID int64, stages []store.Stage, now time.Time) ([]StatusBlockedStage, error) {
+	var blocked []StatusBlockedStage
+	for _, stage := range stages {
+		if stage.Status != store.StageBlocked {
+			continue
+		}
+		rows, err := st.ListActiveStageBlockers(cycleID, stage.Name)
+		if err != nil {
+			return nil, err
+		}
+		item := StatusBlockedStage{Name: displayStageName(stage.Name), Blockers: make([]StatusStageBlocker, 0, len(rows))}
+		for _, row := range rows {
+			reason := safeBlockedStatusReason(row.Reason)
+			uncertainty, nextAction := safeBlockedStatusDetails(reason)
+			item.Blockers = append(item.Blockers, StatusStageBlocker{
+				ID: row.ID, Reason: reason,
+				AffectedCoverageIDs: append([]string(nil), row.AffectedCoverageIDs...),
+				AffectedProfileIDs:  append([]string(nil), row.AffectedProfileIDs...),
+				Uncertainty:         uncertainty, NextAction: nextAction,
+			})
+		}
+		budget, err := st.GetStageBudget(cycleID, stage.Name)
+		if err == nil {
+			remaining := budget.RemainingAt(now)
+			if remaining > 0 {
+				item.RemainingBudgetMS = remaining.Milliseconds()
+			}
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		blocked = append(blocked, item)
+	}
+	return blocked, nil
+}
+
+// Blocker status data is sent to the TUI and addressed Telegram chats. The
+// report's reason is reduced to a known value code and free-text diagnostics
+// are replaced with deterministic actions, so a malformed harness/provider
+// response cannot turn this status projection into a credential echo surface.
+func safeBlockedStatusReason(reason string) string {
+	switch strings.TrimSpace(reason) {
+	case "service_unavailable", "browser_permission_unavailable", "selected_account_unavailable",
+		"protected_access_unverified", "fixtures_unavailable", "method_unavailable",
+		"tool_unavailable", "tool_missing", "tool_version", "tool_version_incompatible",
+		"unsupported_authentication", "invalid_recipe", "test_access_disabled",
+		"preparation_attempt_timed_out", "stage_budget_exhausted", "prerequisite_attempt_limit",
+		"preparation_interrupted", "preparation_capability_unavailable", "prerequisite_check_failed",
+		"credentials_unavailable", "account_unusable", "invalid_account", "login_unverified",
+		"role_unverified", "context_unavailable", "execution_unavailable", "session_cleanup",
+		"artifact_suppression":
+		return strings.TrimSpace(reason)
+	default:
+		return "prerequisite_check_failed"
+	}
+}
+
+func safeBlockedStatusDetails(reason string) (uncertainty, nextAction string) {
+	switch reason {
+	case "tool_unavailable", "tool_missing", "tool_version", "tool_version_incompatible", "method_unavailable":
+		return "the selected browser method is unavailable or below its required version", "Configure the selected browser method using the project setup instructions; Hero does not install tools."
+	case "credentials_unavailable", "selected_account_unavailable", "account_unusable", "invalid_account", "test_access_disabled":
+		return "the selected test account could not be verified", "Enable Config → Test users and configure the selected account locally in the project-root .env.hero; credential values are not shown."
+	case "unsupported_authentication":
+		return "the login requires an unsupported interactive authentication step", "Use an approved test account with a supported login flow, then run /hero-continue."
+	case "browser_permission_unavailable":
+		return "the required browser permission is unavailable", "Grant the permission in the stage TUI session, then run /hero-continue."
+	case "fixtures_unavailable":
+		return "the planned local fixtures are unavailable", "Provide the declared local fixtures from Planning, then run /hero-continue."
+	case "stage_budget_exhausted", "preparation_attempt_timed_out":
+		return "the active execution budget or bounded preparation limit was reached", "Explicitly increase an expired stage budget before /hero-continue."
+	case "preparation_interrupted":
+		return "preparation was interrupted before validation", "Review the current prerequisites, then run /hero-continue."
+	default:
+		return "a required browser prerequisite could not be verified", "Review the browser plan, test users and selected-method configuration, then run /hero-continue."
+	}
 }

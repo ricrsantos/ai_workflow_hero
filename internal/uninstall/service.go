@@ -20,8 +20,15 @@ type Options struct {
 // Preserved: AGENTS.md, context/, docs/, openspec/, and user-added files under
 // .opencode/ or .codex/ that Hero does not manage (ADR-046).
 func Run(opts Options, stdout, stderr io.Writer) error {
-	_ = stdout
 	_ = stderr
+	if _, err := os.Lstat(filepath.Join(opts.ProjectDir, ".env.hero")); err == nil {
+		if _, err := fmt.Fprintln(stdout, "Project-root .env.hero credentials are retained. Remove that file locally when no longer needed."); err != nil {
+			return fmt.Errorf("report retained credentials: %w", err)
+		}
+		slog.Info("uninstall preserves project-root test credentials")
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect retained test credentials: %w", err)
+	}
 
 	// Claude projection ownership is file-granular so user files under .claude/
 	// survive uninstall. Its marked root context is managed independently.

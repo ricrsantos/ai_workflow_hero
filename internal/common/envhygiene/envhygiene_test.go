@@ -1,6 +1,7 @@
 package envhygiene_test
 
 import (
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,27 @@ func TestEnsureProjectRoot_CreatesFiles(t *testing.T) {
 	if !strings.Contains(string(envEx), "never commit") {
 		t.Errorf(".env.example missing guidance text")
 	}
+	heroExample, err := os.ReadFile(filepath.Join(dir, envhygiene.EnvHeroExamplePath))
+	if err != nil {
+		t.Fatalf(".env.hero.example missing: %v", err)
+	}
+	for _, placeholder := range []string{
+		"HERO_TEST_USERS=operator,administrator",
+		"HERO_TEST_USER_OPERATOR_LOGIN=\"\"",
+		"HERO_TEST_USER_OPERATOR_PASSWORD=\"\"",
+		"HERO_TEST_USER_ADMINISTRATOR_LOGIN=\"\"",
+		"HERO_TEST_USER_ADMINISTRATOR_PASSWORD=\"\"",
+	} {
+		if !strings.Contains(string(heroExample), placeholder) {
+			t.Errorf(".env.hero.example missing placeholder %q", placeholder)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(dir, ".env.hero")); !os.IsNotExist(err) {
+		t.Fatalf("EnsureProjectRoot must not create .env.hero, stat err=%v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, ".env")); !os.IsNotExist(err) {
+		t.Fatalf("EnsureProjectRoot must not create application .env, stat err=%v", err)
+	}
 
 	gi, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
 	if err != nil {
@@ -40,8 +62,104 @@ func TestEnsureProjectRoot_CreatesFiles(t *testing.T) {
 	if !strings.Contains(content, "!.env.example") {
 		t.Error(".gitignore missing !.env.example exception")
 	}
+	if !strings.Contains(content, "!.env.hero.example") {
+		t.Error(".gitignore missing !.env.hero.example exception")
+	}
 	if !strings.Contains(content, envhygiene.TUILogGitignorePath) {
 		t.Error(".gitignore missing TUI log path")
+	}
+}
+
+func TestEnsureProjectRoot_PreservesCustomEnvHeroExampleAndApplicationEnv(t *testing.T) {
+	dir := t.TempDir()
+	example := []byte("# custom test account documentation\nHERO_TEST_USERS=local-users\n")
+	applicationEnv := []byte("DATABASE_URL=application-local-value\n")
+	if err := os.WriteFile(filepath.Join(dir, envhygiene.EnvHeroExamplePath), example, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), applicationEnv, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := envhygiene.EnsureProjectRoot(dir, assets.FS); err != nil {
+		t.Fatalf("EnsureProjectRoot: %v", err)
+	}
+	gotExample, err := os.ReadFile(filepath.Join(dir, envhygiene.EnvHeroExamplePath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotExample) != string(example) {
+		t.Fatalf("custom .env.hero.example changed: %q", gotExample)
+	}
+	gotEnv, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotEnv) != string(applicationEnv) {
+		t.Fatalf("application .env changed: %q", gotEnv)
+	}
+}
+
+func TestEnvHeroExampleTemplateContainsOnlyEmptyCredentials(t *testing.T) {
+	body, err := fs.ReadFile(assets.FS, "templates/env.hero.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"HERO_TEST_USERS":                       "operator,administrator",
+		"HERO_TEST_USER_OPERATOR_LOGIN":         `""`,
+		"HERO_TEST_USER_OPERATOR_PASSWORD":      `""`,
+		"HERO_TEST_USER_OPERATOR_PROFILE":       "operator",
+		"HERO_TEST_USER_ADMINISTRATOR_LOGIN":    `""`,
+		"HERO_TEST_USER_ADMINISTRATOR_PASSWORD": `""`,
+		"HERO_TEST_USER_ADMINISTRATOR_PROFILE":  "admin",
+	}
+	seen := make(map[string]string)
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			t.Fatalf("malformed placeholder assignment %q", line)
+		}
+		if _, duplicate := seen[key]; duplicate {
+			t.Fatalf("duplicate placeholder assignment %q", key)
+		}
+		seen[key] = value
+	}
+	if len(seen) != len(want) {
+		t.Fatalf("template has %d assignments, want %d", len(seen), len(want))
+	}
+	for key, value := range want {
+		got, ok := seen[key]
+		if !ok || got != value {
+			t.Errorf("template %s = %q, want %q", key, got, value)
+		}
+	}
+}
+
+func TestEnsureProjectRoot_RefusesSymlinkedEnvHeroExample(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "custom-example.txt")
+	contents := []byte("leave this target unchanged\n")
+	if err := os.WriteFile(target, contents, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, envhygiene.EnvHeroExamplePath)); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	if err := envhygiene.EnsureProjectRoot(dir, assets.FS); err == nil || !strings.Contains(err.Error(), "unsafe .env.hero.example") {
+		t.Fatalf("err=%v, want unsafe symlink refusal", err)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(contents) {
+		t.Fatalf("symlink target changed: %q", got)
 	}
 }
 
@@ -250,7 +368,10 @@ func TestTrackedSensitiveFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".env.example"), []byte("SECRET=\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	add := exec.Command("git", "-C", dir, "add", "-f", ".env", ".env.example")
+	if err := os.WriteFile(filepath.Join(dir, envhygiene.EnvHeroExamplePath), []byte("HERO_TEST_USER_OPERATOR_PASSWORD=\"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	add := exec.Command("git", "-C", dir, "add", "-f", ".env", ".env.example", envhygiene.EnvHeroExamplePath)
 	if out, err := add.CombinedOutput(); err != nil {
 		t.Fatalf("git add: %v\n%s", err, out)
 	}
@@ -261,6 +382,15 @@ func TestTrackedSensitiveFiles(t *testing.T) {
 	}
 	if len(found) != 1 || found[0] != ".env" {
 		t.Errorf("TrackedSensitiveFiles = %v, want [.env]", found)
+	}
+}
+
+func TestIsSensitivePath_AllowsOnlyRootHeroPlaceholder(t *testing.T) {
+	if envhygiene.IsSensitivePath(envhygiene.EnvHeroExamplePath) {
+		t.Fatal("root .env.hero.example placeholder should be an allowed tracked exception")
+	}
+	if !envhygiene.IsSensitivePath("nested/" + envhygiene.EnvHeroExamplePath) {
+		t.Fatal("nested .env.hero.example should remain sensitive")
 	}
 }
 

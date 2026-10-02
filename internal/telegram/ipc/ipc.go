@@ -27,6 +27,8 @@ const (
 	TypeUnregister           = "unregister"
 	TypeAckDelivery          = "ack_delivery"
 	TypeOutbound             = "outbound"
+	TypeOutboundImageBatch   = "outbound_image_batch"
+	TypeImageDeliveryResult  = "image_delivery_result"
 	TypeRegistered           = "registered"
 	TypeInbound              = "inbound"
 	TypeEvent                = "event"
@@ -45,6 +47,7 @@ const (
 // that every optional message type is understood.
 const (
 	CapabilityUpdateRestart = "update_restart"
+	CapabilityImageDelivery = "image_delivery"
 )
 
 // Registration modes.
@@ -100,7 +103,15 @@ type Message struct {
 	IsCommand bool   `json:"is_command,omitempty"`
 
 	// outbound (TUI → daemon)
-	OutboundText string `json:"outbound_text,omitempty"`
+	OutboundText      string               `json:"outbound_text,omitempty"`
+	ImageBatchID      string               `json:"image_batch_id,omitempty"`
+	ImageRetryAttempt int                  `json:"image_retry_attempt,omitempty"`
+	Images            []ScreenshotImageRef `json:"images,omitempty"`
+
+	// image_delivery_result (daemon → addressed TUI)
+	DeliveredScreenshotIDs []string `json:"delivered_screenshot_ids,omitempty"`
+	FailedScreenshotIDs    []string `json:"failed_screenshot_ids,omitempty"`
+	ImageDeliveryErrorCode string   `json:"image_delivery_error_code,omitempty"`
 
 	// event (daemon → TUI)
 	EventType string `json:"event_type,omitempty"`
@@ -111,6 +122,21 @@ type Message struct {
 
 	// ack_delivery (TUI → daemon)
 	AckID string `json:"ack_id,omitempty"`
+}
+
+// ScreenshotImageRef is a sanitized, cycle-managed image reference. It never
+// carries image bytes, a caption, a Telegram chat ID, or a credential.
+type ScreenshotImageRef struct {
+	ScreenshotID string `json:"screenshot_id"`
+	CycleID      int64  `json:"cycle_id"`
+	StageName    string `json:"stage_name"`
+	Attempt      int    `json:"attempt"`
+	CoverageID   string `json:"coverage_id,omitempty"`
+	UserID       string `json:"user_id,omitempty"`
+	ProfileID    string `json:"profile_id,omitempty"`
+	CapturedAt   string `json:"captured_at"`
+	Path         string `json:"path"`
+	Result       string `json:"result"`
 }
 
 // VersionOK reports whether the frame declares the current protocol version.

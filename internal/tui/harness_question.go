@@ -10,8 +10,9 @@ import (
 )
 
 type harnessQuestionRequestMsg struct {
-	req    harness.QuestionRequest
-	respCh chan harness.QuestionResponse
+	executeID string
+	req       harness.QuestionRequest
+	respCh    chan harness.QuestionResponse
 }
 
 func formatHarnessQuestion(req harness.QuestionRequest, index int) string {
@@ -116,6 +117,7 @@ func (m model) clearHarnessQuestionState() model {
 	m.harnessQuestionMsg = ""
 	m.harnessQuestionReq = harness.QuestionRequest{}
 	m.harnessQuestionRespCh = nil
+	m.harnessQuestionExecuteID = ""
 	m.harnessQuestionIndex = 0
 	m.harnessQuestionAnswers = nil
 	m.statusScrollOffset = 0
@@ -124,26 +126,32 @@ func (m model) clearHarnessQuestionState() model {
 }
 
 func (m model) clearHarnessQuestion() model {
+	executeID := m.harnessQuestionExecuteID
 	if m.harnessQuestionPending && m.harnessQuestionRespCh != nil {
 		m.harnessQuestionRespCh <- harness.QuestionResponse{Rejected: true, Reason: "cancelled"}
 	}
+	m = m.refreshExecuteWaitReason(executeID)
 	return m.clearHarnessQuestionState()
 }
 
 func (m model) finishHarnessQuestionAnswers() model {
+	executeID := m.harnessQuestionExecuteID
 	if m.harnessQuestionRespCh != nil {
 		m.harnessQuestionRespCh <- harness.QuestionResponse{Answers: m.harnessQuestionAnswers}
 	}
 	m.chatInputFocused = true
+	m = m.refreshExecuteWaitReason(executeID)
 	return m.clearHarnessQuestionState()
 }
 
 func (m model) rejectHarnessQuestion() model {
+	executeID := m.harnessQuestionExecuteID
 	if m.harnessQuestionRespCh != nil {
 		m.harnessQuestionRespCh <- harness.QuestionResponse{Rejected: true, Reason: "rejected"}
 	}
 	m.insertBeforeAgent(convMessage{role: convRoleWarning, content: "Harness question rejected."})
 	m = m.clearChatInput()
+	m = m.refreshExecuteWaitReason(executeID)
 	return m.clearHarnessQuestionState()
 }
 

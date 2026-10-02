@@ -50,6 +50,9 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 	// Preserve checksums for paths not refreshed in this pass (e.g. disabled harness
 	// projections left on disk after disable — ADR-046).
 	for k, v := range originalChecksums {
+		if envhygiene.IsSensitivePath(k) {
+			continue
+		}
 		newChecksums[k] = v
 	}
 
@@ -211,12 +214,19 @@ func Run(opts Options, stdout, stderr io.Writer) (Result, error) {
 
 // ensureStoreAndImportLegacy opens hero.db and, when the store has no cycles yet,
 // imports legacy workflow.md / metrics.md from the current cycle directory.
-func ensureStoreAndImportLegacy(opts Options, result *Result, stderr io.Writer) error {
+func ensureStoreAndImportLegacy(opts Options, result *Result, stderr io.Writer) (resultErr error) {
 	s, ensureRes, err := cycle.EnsureOperationalStore(opts.ProjectDir)
 	if err != nil {
 		return err
 	}
-	defer s.Close()
+	defer func() {
+		if closeErr := s.Close(); closeErr != nil {
+			slog.Error("upgrade operational store close failed")
+			if resultErr == nil {
+				resultErr = fmt.Errorf("close upgrade operational store: %w", closeErr)
+			}
+		}
+	}()
 
 	slog.Info("operational store ready", "path", filepath.Join(opts.ProjectDir, store.RelativeDBPath))
 

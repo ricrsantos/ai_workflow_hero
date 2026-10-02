@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
@@ -21,10 +22,63 @@ func (m model) appendStatusHandoffSections(b *strings.Builder) {
 		return
 	}
 	m.writeStatusLoopBacks(b)
+	m.writeStatusBlockedStages(b)
+	m.writeStatusStageBudgets(b)
 	m.writeStatusFindings(b)
 	m.writeStatusTodosSummary(b)
 	m.writeStatusDisposition(b)
 	m.writeStatusEscalatedCTAs(b)
+}
+
+func (m model) writeStatusStageBudgets(b *strings.Builder) {
+	if len(m.status.StageBudgets) == 0 {
+		return
+	}
+	b.WriteByte('\n')
+	b.WriteString(headerStyle.Render("Active execution budgets"))
+	b.WriteByte('\n')
+	for _, budget := range m.status.StageBudgets {
+		line := fmt.Sprintf("%s · %s · elapsed %s · remaining %s", budget.Name, budget.State,
+			time.Duration(budget.ConsumedMS)*time.Millisecond, time.Duration(budget.RemainingMS)*time.Millisecond)
+		if budget.InterruptionReason != "" {
+			line += " · " + budget.InterruptionReason
+		} else if budget.PauseReason != "" {
+			line += " · " + budget.PauseReason
+		}
+		if budget.State == string(store.StageBudgetInterrupted) || budget.State == string(store.StageBudgetExpired) {
+			line += " · evidence preserved; /hero-continue"
+		}
+		for _, wrapped := range wrapOutputLine(safeTestUserDisplay(line), max(1, m.width-4)) {
+			b.WriteString(mutedStyle.Render("  " + wrapped))
+			b.WriteByte('\n')
+		}
+	}
+}
+
+func (m model) writeStatusBlockedStages(b *strings.Builder) {
+	for _, stage := range m.status.BlockedStages {
+		b.WriteByte('\n')
+		b.WriteString(warnStyle.Render("→ " + stage.Name + " blocked"))
+		b.WriteByte('\n')
+		for _, blocker := range stage.Blockers {
+			lines := []string{
+				"Reason: " + blocker.Reason,
+				"Coverage: " + strings.Join(blocker.AffectedCoverageIDs, ", "),
+				"Profiles: " + strings.Join(blocker.AffectedProfileIDs, ", "),
+				"Uncertainty: " + blocker.Uncertainty,
+				"Next: " + blocker.NextAction,
+			}
+			for _, line := range lines {
+				for _, wrapped := range wrapOutputLine(safeTestUserDisplay(line), max(1, m.width-4)) {
+					b.WriteString(mutedStyle.Render("  " + wrapped))
+					b.WriteByte('\n')
+				}
+			}
+		}
+		remaining := time.Duration(stage.RemainingBudgetMS) * time.Millisecond
+		b.WriteString(mutedStyle.Render(fmt.Sprintf("  Active budget remaining: %s · /hero-continue rechecks prerequisites", remaining)))
+		b.WriteByte('\n')
+	}
 }
 
 func (m model) writeStatusLoopBacks(b *strings.Builder) {

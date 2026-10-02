@@ -5,6 +5,21 @@ Typed validation and Implementation JSON contracts that fail closed with field-s
 
 ## Requirements
 
+### Requirement: Browser reports SHALL validate preparation, coverage and blockers
+Browser UI/E2E reports SHALL support passed, failed and blocked with structured preparation, blocker and coverage data. Mandatory unexecuted/blocked/skipped coverage SHALL forbid passing. Blockers SHALL include reason, affected coverage/profile IDs and exact next action without secret values. Missing credentials/tools/fixtures/services SHALL not allocate application findings. A mixed valid report SHALL preserve C15 genuine findings atomically while blocking auto-advance/repair until explicit prerequisite retry. The scheduler alone SHALL apply state changes (C17 FR-07–FR-08, ADR-104; target pending implementation).
+
+#### Scenario: Login-only report cannot satisfy protected coverage
+- **WHEN** login passes but required protected screens were not executed
+- **THEN** the report cannot pass and names outstanding coverage and the corrective action
+
+#### Scenario: Real defect and missing account coexist
+- **WHEN** a report contains a verified code defect plus blocked administrator coverage
+- **THEN** the finding is retained, the stage is Blocked, no prerequisite is assigned to Implementation, and explicit /hero-continue rechecks access before repair/coverage continuation
+
+#### Scenario: Preflight blocks without testing
+- **WHEN** bounded preparation stops for a missing tool before validation starts
+- **THEN** active time is consumed but a validation iteration is not; retry never resets the stage balance
+
 ### Requirement: Validation agents SHALL emit one JSON object and stop
 QA, Judge, Browser UI Validation, and QA End-to-End SHALL emit one JSON object. They MUST NOT call `hero stage close`, `hero stage loop-back`, or another transition; MUST NOT edit OpenSpec checkboxes; MUST NOT write `qa-gaps.md`, `judge-gaps.md`, or another operational gap file; MUST NOT edit `context/current-state.md`; and MUST NOT invent `find-*` IDs not provided in their current context. Success SHALL return empty failure/gap arrays (PRD-C15-001 §6.1; ADR-086).
 

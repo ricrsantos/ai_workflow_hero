@@ -2,17 +2,16 @@ package store
 
 import (
 	"fmt"
-	"log/slog"
 )
 
 // currentSchemaVersion is the latest migration version applied by Open.
-const currentSchemaVersion = 15
+const currentSchemaVersion = 17
 
 func (s *Store) migrate() error {
 	return s.migrateTo(currentSchemaVersion)
 }
 
-// migrateTo applies migrations up to maxVersion (test hook for v4→v5 coverage).
+// migrateTo applies migrations up to maxVersion for migration-boundary tests.
 func (s *Store) migrateTo(maxVersion int) error {
 	if maxVersion > currentSchemaVersion {
 		maxVersion = currentSchemaVersion
@@ -428,6 +427,117 @@ func (s *Store) applyMigration(version int) error {
 				return fmt.Errorf("migration %d: %w", version, err)
 			}
 		}
+	case 16:
+		// C17 / ADR-104–106: persist stage budgets, blocked coverage, and
+		// cycle-owned screenshot metadata without rewriting earlier state.
+		stmts := []string{
+			`CREATE TABLE stage_budgets (
+  cycle_id INTEGER NOT NULL,
+  stage_name TEXT NOT NULL,
+  limit_ms INTEGER NOT NULL CHECK (limit_ms > 0),
+  consumed_ms INTEGER NOT NULL DEFAULT 0 CHECK (consumed_ms >= 0),
+  state TEXT NOT NULL DEFAULT 'active'
+    CHECK (state IN ('active', 'waiting', 'blocked', 'expired', 'interrupted')),
+  pause_reason TEXT NOT NULL DEFAULT '',
+  interruption_reason TEXT NOT NULL DEFAULT '',
+  generation INTEGER NOT NULL DEFAULT 0 CHECK (generation >= 0),
+  started_at TEXT NOT NULL,
+  active_since TEXT,
+  checkpoint_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (cycle_id, stage_name),
+  FOREIGN KEY (cycle_id, stage_name) REFERENCES stages(cycle_id, name) ON DELETE CASCADE
+)`,
+			`CREATE TABLE stage_blockers (
+  cycle_id INTEGER NOT NULL,
+  stage_name TEXT NOT NULL,
+  blocker_id TEXT NOT NULL,
+  reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+  affected_coverage_ids_json TEXT NOT NULL DEFAULT '[]',
+  affected_profile_ids_json TEXT NOT NULL DEFAULT '[]',
+  diagnostic_uncertainty TEXT NOT NULL DEFAULT '',
+  next_action TEXT NOT NULL CHECK (length(trim(next_action)) > 0),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'resolved')),
+  created_at TEXT NOT NULL,
+  resolved_at TEXT,
+  PRIMARY KEY (cycle_id, stage_name, blocker_id),
+  FOREIGN KEY (cycle_id, stage_name) REFERENCES stages(cycle_id, name) ON DELETE CASCADE,
+  CHECK ((status = 'active' AND resolved_at IS NULL) OR
+         (status = 'resolved' AND resolved_at IS NOT NULL))
+)`,
+			`CREATE TABLE stage_coverage (
+  cycle_id INTEGER NOT NULL,
+  stage_name TEXT NOT NULL,
+  coverage_id TEXT NOT NULL,
+  user_id TEXT NOT NULL DEFAULT '',
+  profile_id TEXT NOT NULL DEFAULT '',
+  mandatory INTEGER NOT NULL CHECK (mandatory IN (0, 1)),
+  expected_result TEXT NOT NULL,
+  result TEXT NOT NULL DEFAULT 'planned'
+    CHECK (result IN ('planned', 'executed', 'passed', 'failed', 'blocked', 'skipped')),
+  reason TEXT NOT NULL DEFAULT '',
+  evidence_json TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (cycle_id, stage_name, coverage_id, user_id),
+  FOREIGN KEY (cycle_id, stage_name) REFERENCES stages(cycle_id, name) ON DELETE CASCADE
+)`,
+			`CREATE TABLE screenshot_manifests (
+  screenshot_id TEXT PRIMARY KEY NOT NULL,
+  cycle_id INTEGER NOT NULL,
+  stage_name TEXT NOT NULL,
+  attempt INTEGER NOT NULL CHECK (attempt > 0),
+  coverage_id TEXT NOT NULL DEFAULT '',
+  user_id TEXT NOT NULL DEFAULT '',
+  profile_id TEXT NOT NULL DEFAULT '',
+  captured_at TEXT NOT NULL,
+  path TEXT NOT NULL DEFAULT '',
+  result TEXT NOT NULL CHECK (result IN ('passed', 'failed', 'blocked', 'skipped')),
+  capture_status TEXT NOT NULL CHECK (capture_status IN ('ready', 'omitted', 'failed')),
+  omission_reason TEXT NOT NULL DEFAULT '',
+  FOREIGN KEY (cycle_id, stage_name) REFERENCES stages(cycle_id, name) ON DELETE CASCADE,
+  CHECK (
+    (capture_status = 'ready' AND path <> '' AND omission_reason = '') OR
+    (capture_status IN ('omitted', 'failed') AND path = '' AND length(trim(omission_reason)) > 0)
+  ),
+  CHECK (
+    path = '' OR (
+      substr(path, 1, 1) <> '/' AND
+      path <> '..' AND
+      path NOT GLOB '../*' AND
+      path NOT GLOB '*/../*' AND
+      path NOT GLOB '*/..' AND
+      instr(path, char(92)) = 0
+    )
+  )
+)`,
+			`CREATE INDEX idx_screenshot_manifests_cycle_time
+  ON screenshot_manifests(cycle_id, captured_at DESC, screenshot_id)`,
+		}
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("migration %d: %w", version, err)
+			}
+		}
+	case 17:
+		stmts := []string{
+			`ALTER TABLE stage_coverage ADD COLUMN requirement_ref TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE stage_coverage ADD COLUMN screen_journey TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE stage_coverage ADD COLUMN evidence_requirements_json TEXT NOT NULL DEFAULT '[]'`,
+			`ALTER TABLE stage_coverage ADD COLUMN optional_reference_widths_json TEXT NOT NULL DEFAULT '[]'`,
+			`CREATE TABLE stage_coverage_plans (
+  cycle_id INTEGER NOT NULL,
+  stage_name TEXT NOT NULL,
+  plan_digest TEXT NOT NULL CHECK (length(plan_digest) = 64),
+  approved_at TEXT NOT NULL,
+  PRIMARY KEY (cycle_id, stage_name),
+  FOREIGN KEY (cycle_id, stage_name) REFERENCES stages(cycle_id, name) ON DELETE CASCADE
+)`,
+		}
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("migration %d: %w", version, err)
+			}
+		}
 	default:
 		return fmt.Errorf("unknown schema migration version %d", version)
 	}
@@ -438,7 +548,15 @@ func (s *Store) applyMigration(version int) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit migration %d: %w", version, err)
 	}
-	slog.Debug("schema migration applied", "version", version)
+	s.log.Debug("schema migration applied", "version", version)
+	if version == 16 {
+		s.log.Debug("browser validation schema row counts",
+			"stage_budgets", 0,
+			"stage_blockers", 0,
+			"stage_coverage", 0,
+			"screenshot_manifests", 0,
+		)
+	}
 	return nil
 }
 

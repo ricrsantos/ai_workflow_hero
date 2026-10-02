@@ -17,6 +17,7 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr"
 	"github.com/ricrsantos/ai_workflow_hero/internal/lifecycle"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
+	"github.com/ricrsantos/ai_workflow_hero/internal/testaccess"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
@@ -143,7 +144,7 @@ func resolvedUserHomeDir() string {
 }
 
 // ErrNotInstalled is returned when no Hero project is found.
-var ErrNotInstalled = errors.New("Hero is not installed in this project — run: hero install and select harnesses interactively, or enable them later in the TUI with /hero-harness")
+var ErrNotInstalled = errors.New("hero is not installed in this project — run: hero install and select harnesses interactively, or enable them later in the TUI with /hero-harness")
 
 // StatusView is the JSON/table shape for hero status.
 type StatusView struct {
@@ -155,6 +156,8 @@ type StatusView struct {
 	Stages         []StatusStage `json:"stages"`
 
 	Findings              *StatusFindingsBlock `json:"findings,omitempty"`
+	BlockedStages         []StatusBlockedStage `json:"blockedStages,omitempty"`
+	StageBudgets          []StatusStageBudget  `json:"stageBudgets,omitempty"`
 	LoopBacks             []StatusLoopBackRow  `json:"loopBacks,omitempty"`
 	Todos                 *StatusTodosBlock    `json:"todos,omitempty"`
 	CompletionDisposition *string              `json:"completionDisposition"`
@@ -195,9 +198,10 @@ func (s *Service) Status() (StatusView, error) {
 		approval := "N/A"
 		if st.RequireHumanApproval {
 			approval = "Required"
-			if st.Status == store.StagePendingApproval {
+			switch st.Status {
+			case store.StagePendingApproval:
 				approval = "Pending"
-			} else if st.Status == store.StageCompleted {
+			case store.StageCompleted:
 				approval = "Approved"
 			}
 		} else if st.Status == store.StageCompleted {
@@ -521,10 +525,28 @@ func (s *Service) Archive() (ArchiveResult, error) {
 // ArchiveWithOptions archives the cycle after optional OpenSpec archive (ADR-023)
 // and moves active docs/idea entries into docs/idea/archive.
 func (s *Service) ArchiveWithOptions(opts ArchiveOptions) (ArchiveResult, error) {
+	if err := s.verifyArchiveProjectOwnership(); err != nil {
+		return ArchiveResult{}, err
+	}
 	c, err := s.resolveArchiveCycle()
 	if err != nil {
 		return ArchiveResult{}, err
 	}
+	access, err := testaccess.OpenSafeStore(s.ProjectDir, slog.Default())
+	if err != nil {
+		return ArchiveResult{}, fmt.Errorf("archive pending: %w", err)
+	}
+	defer func() { _ = access.Close() }()
+	// The exclusive project lease proves no other archive is still executing.
+	// Recover only archive-owned claims; never replace a live stage lock.
+	if err := s.Store.RecoverArchiveLock(c.ID); err != nil {
+		return ArchiveResult{}, fmt.Errorf("archive pending: recover archive ownership: %w", err)
+	}
+	holder := fmt.Sprintf("archive-%d-%d", os.Getpid(), time.Now().UnixNano())
+	if err := s.Store.AcquireArchiveLock(c.ID, holder, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return ArchiveResult{}, fmt.Errorf("archive pending: another operation owns this cycle: %w", err)
+	}
+	defer func() { _ = s.Store.ReleaseArchiveLock(c.ID, holder) }()
 
 	name, err := s.resolveOpenspecChangeName(c, opts.OpenspecChange)
 	if err != nil {
@@ -538,6 +560,9 @@ func (s *Service) ArchiveWithOptions(opts ArchiveOptions) (ArchiveResult, error)
 		if err := s.openspecRunner()(context.Background(), name); err != nil {
 			if !forced {
 				return ArchiveResult{}, fmt.Errorf("%w: %v\n\n%s", ErrOpenspecArchiveFailed, err, ManualOpenspecArchiveInstructions(name))
+			}
+			if _, credentialErr := os.Lstat(filepath.Join(s.ProjectDir, ".env.hero")); !errors.Is(credentialErr, os.ErrNotExist) {
+				return ArchiveResult{}, fmt.Errorf("%w: archive pending: OpenSpec failed; credentials are retained. Resolve OpenSpec and run /hero-archive again", ErrOpenspecArchiveFailed)
 			}
 			slog.Info("openspec archive failed; forcing hero archive", "change", name, "error", err)
 			result.OpenspecForced = true
@@ -554,8 +579,12 @@ func (s *Service) ArchiveWithOptions(opts ArchiveOptions) (ArchiveResult, error)
 		return ArchiveResult{}, err
 	}
 
-	heroResult, err := s.archiveHeroCycle(c)
+	heroResult, err := s.archiveHeroCycle(c, access, holder)
 	if err != nil {
+		err = fmt.Errorf("archive pending: resolve local file/store access and run /hero-archive again: %w", err)
+		if _, eventErr := s.Store.AppendEvent(store.Event{CycleID: c.ID, Type: "archive_pending", PayloadJSON: `{"reason":"archive_incomplete","next_action":"resolve local archive prerequisites and run /hero-archive"}`}); eventErr != nil {
+			err = errors.Join(err, eventErr)
+		}
 		if rollbackErr := ideaPlan.rollback(); rollbackErr != nil {
 			return ArchiveResult{}, errors.Join(err, fmt.Errorf("restore idea entries after archive failure: %w", rollbackErr))
 		}
@@ -590,7 +619,7 @@ func (s *Service) resolveArchiveCycle() (*store.Cycle, error) {
 	return &c, nil
 }
 
-func (s *Service) archiveHeroCycle(c *store.Cycle) (ArchiveResult, error) {
+func (s *Service) archiveHeroCycle(c *store.Cycle, access *testaccess.SafeStore, holder string) (ArchiveResult, error) {
 	completed := c.CompletedAt
 	if completed == "" {
 		completed = time.Now().UTC().Format(time.RFC3339)
@@ -610,21 +639,74 @@ func (s *Service) archiveHeroCycle(c *store.Cycle) (ArchiveResult, error) {
 	current := filepath.Join(s.ProjectDir, cursoradapter.HeroCurrentCycleDir)
 	archiveRoot := filepath.Join(s.ProjectDir, cursoradapter.HeroCyclesDir, "archive")
 	dest := filepath.Join(archiveRoot, name)
+	// Check every managed directory component before moving evidence. Never
+	// follow a cycle/archive symlink to another project's data.
+	for _, path := range []string{filepath.Dir(archiveRoot), current, archiveRoot} {
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) && path != filepath.Dir(archiveRoot) {
+			continue
+		}
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return ArchiveResult{}, errors.New("archive pending: unsafe cycle directory; correct the managed path and run /hero-archive again")
+		}
+	}
+	recoverMove := false
+	if info, err := os.Lstat(dest); err == nil {
+		matches, matchErr := s.matchesArchiveMove(c.ID, name, info)
+		if matchErr != nil || !matches {
+			return ArchiveResult{}, errors.New("archive pending: destination already exists; resolve the collision and run /hero-archive again")
+		}
+		if entries, readErr := os.ReadDir(current); readErr == nil {
+			if len(entries) != 0 {
+				return ArchiveResult{}, errors.New("archive pending: both current and archived evidence exist; resolve ownership before retry")
+			}
+			if err := os.Remove(current); err != nil {
+				return ArchiveResult{}, err
+			}
+		} else if !errors.Is(readErr, os.ErrNotExist) {
+			return ArchiveResult{}, readErr
+		}
+		recoverMove = true
+		slog.Info("recovering interrupted archive move", "cycle", c.Number)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ArchiveResult{}, errors.New("archive pending: cannot inspect destination; correct access and run /hero-archive again")
+	}
 
 	if err := os.MkdirAll(archiveRoot, 0o755); err != nil {
 		return ArchiveResult{}, err
 	}
-	if _, err := os.Stat(current); err == nil {
+	moved := recoverMove
+	if info, err := os.Lstat(current); err == nil && !recoverMove {
+		if err := s.recordArchiveMove(c.ID, name, info); err != nil {
+			return ArchiveResult{}, err
+		}
 		if err := os.Rename(current, dest); err != nil {
 			return ArchiveResult{}, fmt.Errorf("move current cycle: %w", err)
 		}
-		// Recreate empty current for next cycle.
-		if err := os.MkdirAll(current, 0o755); err != nil {
-			return ArchiveResult{}, err
-		}
+		moved = true
 	}
-	if err := s.Store.UpdateCycleStatus(c.ID, store.CycleStatusArchived, c.CompletedAt); err != nil {
-		return ArchiveResult{}, err
+	rollback := func(cause error) (ArchiveResult, error) {
+		if moved {
+			if err := os.Rename(dest, current); err != nil {
+				return ArchiveResult{}, errors.Join(cause, fmt.Errorf("archive pending: restore cycle evidence: %w", err))
+			}
+		}
+		return ArchiveResult{}, cause
+	}
+	if err := os.MkdirAll(current, 0o755); err != nil {
+		return rollback(fmt.Errorf("archive pending: recreate current directory: %w", err))
+	}
+	// Check filesystem and SQL prerequisites before destroying credentials. SQL
+	// status stays uncommitted until cleanup succeeds; no credential copy exists.
+	if err := s.Store.FinalizeArchive(c.ID, holder, func() error {
+		return access.RemoveForArchive(context.Background())
+	}); err != nil {
+		if moved {
+			if removeErr := os.Remove(current); removeErr != nil {
+				return ArchiveResult{}, errors.Join(err, removeErr)
+			}
+		}
+		return rollback(err)
 	}
 	slog.Info("hero cycle archived", "cycle", c.Number, "dir", dest)
 	return ArchiveResult{CycleNumber: c.Number, ArchiveDir: dest}, nil
@@ -667,7 +749,13 @@ func (s *Service) Resume(cycleNumber int) error {
 			_ = s.Store.UpdateCycleStatus(c.ID, store.CycleStatusArchived, c.CompletedAt)
 		}
 	}
-	return s.Store.UpdateCycleStatus(target.ID, store.CycleStatusActive, "")
+	if err := s.Store.UpdateCycleStatus(target.ID, store.CycleStatusActive, ""); err != nil {
+		return err
+	}
+	if target.Status == store.CycleStatusArchived {
+		slog.Info("resumed archived cycle requires test-access reconfiguration", "cycle", target.Number)
+	}
+	return nil
 }
 
 // StartStage starts a named stage on the active cycle.
@@ -821,15 +909,20 @@ func (s *Service) RunWith(opts RunOptions) (RunResult, error) {
 }
 
 func (s *Service) resolveRunStage(cycleID int64, stage string) (string, error) {
+	stages, err := s.Store.ListStages(cycleID)
+	if err != nil {
+		return "", err
+	}
+	for _, candidate := range stages {
+		if candidate.Status == store.StageBlocked {
+			return "", fmt.Errorf("stage %s is blocked; correct its prerequisites and run /hero-continue", candidate.Name)
+		}
+	}
 	if stage != "" {
 		if _, err := s.Store.GetStage(cycleID, stage); err != nil {
 			return "", fmt.Errorf("unknown stage %q", stage)
 		}
 		return stage, nil
-	}
-	stages, err := s.Store.ListStages(cycleID)
-	if err != nil {
-		return "", err
 	}
 	for _, prefer := range []string{store.StageRunning, store.StageEscalated, store.StagePendingApproval, store.StageWaiting} {
 		for _, st := range stages {

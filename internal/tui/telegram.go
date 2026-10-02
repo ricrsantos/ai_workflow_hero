@@ -48,11 +48,12 @@ type telegramState struct {
 
 	// abbrev is the editable project abbreviation (display-only live suffix is
 	// in address).
-	abbrev            string
-	autoReportMinutes int
-	alwaysSend        bool
-	nextAutoReportAt  time.Time
-	lastAutoReportAt  time.Time
+	abbrev                string
+	autoReportMinutes     int
+	alwaysSend            bool
+	nextAutoReportAt      time.Time
+	lastAutoReportAt      time.Time
+	versionMismatchWarned bool
 
 	client *telegramClient // nil when the plugin is not installed
 
@@ -68,10 +69,6 @@ type telegramState struct {
 	// workflow-config.yml remains the only persisted source of truth.
 	configWizard *telegramConfigWizard
 }
-
-// telegramMsg is the base for all tea.Msg payloads delivered from the client
-// goroutine into the Update loop.
-type telegramMsg struct{}
 
 type telegramRegisteredMsg struct {
 	address       string
@@ -90,6 +87,19 @@ type telegramInboundMsg struct {
 type telegramEventMsg struct {
 	eventType string
 	data      string
+}
+
+type telegramImageDeliveryResultMsg struct {
+	batchID      string
+	retryAttempt int
+	delivered    []string
+	failed       []string
+	errorCode    string
+}
+
+type telegramImageSendErrorMsg struct {
+	batchID string
+	failed  []string
 }
 
 type telegramDisconnectedMsg struct {
@@ -184,16 +194,6 @@ func (c *telegramClient) run() {
 			return
 		default:
 		}
-		if err == nil {
-			backoff = telegramInitialBackoff
-			select {
-			case <-c.quit:
-				return
-			case <-time.After(100 * time.Millisecond):
-			}
-			continue
-		}
-
 		c.emit(telegramDisconnectedMsg{err: err.Error()})
 
 		if c.daemonPath != "" && (lastSpawn.IsZero() || time.Since(lastSpawn) >= 2*time.Second) {
@@ -232,7 +232,7 @@ func (c *telegramClient) connectOnce() error {
 		Mode:               c.mode,
 		ProjectAbbrev:      c.abbrev,
 		PluginVersion:      c.pluginVersion,
-		ClientCapabilities: []string{ipc.CapabilityUpdateRestart},
+		ClientCapabilities: []string{ipc.CapabilityUpdateRestart, ipc.CapabilityImageDelivery},
 		UID:                ipc.CurrentUID(),
 	}); err != nil {
 		_ = pc.Close()
@@ -292,6 +292,14 @@ func (c *telegramClient) connectOnce() error {
 			})
 		case ipc.TypeEvent:
 			c.emit(telegramEventMsg{eventType: m.EventType, data: m.EventData})
+		case ipc.TypeImageDeliveryResult:
+			c.emit(telegramImageDeliveryResultMsg{
+				batchID:      m.ImageBatchID,
+				retryAttempt: m.ImageRetryAttempt,
+				delivered:    append([]string(nil), m.DeliveredScreenshotIDs...),
+				failed:       append([]string(nil), m.FailedScreenshotIDs...),
+				errorCode:    m.ImageDeliveryErrorCode,
+			})
 		case ipc.TypeError:
 			c.emit(telegramDisconnectedMsg{err: m.ErrorText})
 		}
@@ -353,7 +361,11 @@ func spawnDaemon(daemonPath, socketPath string) error {
 		cmd.Stdin = dn
 		cmd.Stdout = dn
 		cmd.Stderr = dn
-		defer dn.Close()
+		defer func() {
+			if err := dn.Close(); err != nil {
+				slog.Debug("telegram daemon stdio handle close failed", "error", err)
+			}
+		}()
 	}
 	if err := cmd.Start(); err != nil {
 		slog.Warn("telegram daemon spawn failed", "path", daemonPath, "error", err)
@@ -468,7 +480,6 @@ func (m model) stopTelegram() {
 	m.telegram.client = nil
 	if m.telegramMsgCh != nil {
 		close(m.telegramMsgCh)
-		m.telegramMsgCh = nil
 	}
 }
 

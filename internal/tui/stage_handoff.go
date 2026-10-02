@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	cursoradapter "github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor"
@@ -19,28 +20,33 @@ import (
 	"github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports"
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/store"
+	"github.com/ricrsantos/ai_workflow_hero/internal/testaccess"
 	"github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig"
 )
 
 type convExecute struct {
-	ID              string
-	AgentName       string
-	HarnessID       string
-	Model           string
-	Prompt          string
-	Attachments     []harness.Attachment
-	AttachmentChips []tuiAttachment
-	StageName       string
-	Wave            int
-	UsageGeneration int64
-	SessionID       string
-	AgentMsgIndex   int
-	Origin          string // telegram:<address> when the turn came from Telegram
-	Freechat        bool
-	OccupancyKey    string
-	HeroSessionID   string
-	relay           *conversationStreamRelay
-	cancel          context.CancelFunc
+	ID               string
+	AgentName        string
+	HarnessID        string
+	Model            string
+	Prompt           string
+	Attachments      []harness.Attachment
+	AttachmentChips  []tuiAttachment
+	StageName        string
+	BudgetCycleID    int64
+	BudgetGeneration int64
+	WaitingReason    string
+	Wave             int
+	UsageGeneration  int64
+	SessionID        string
+	AgentMsgIndex    int
+	Origin           string // telegram:<address> when the turn came from Telegram
+	Freechat         bool
+	OccupancyKey     string
+	HeroSessionID    string
+	relay            *conversationStreamRelay
+	cancel           context.CancelFunc
+	done             <-chan struct{}
 }
 
 // stageAgentReport is the deliberately small contract between a stage agent
@@ -87,7 +93,10 @@ type stageHandoffDecision struct {
 	ChatCopy        string
 	OmitAgentOutput bool
 	// SchedulerHandledFailure is true when validation failed close + loop-back was persisted.
-	SchedulerHandledFailure  bool
+	SchedulerHandledFailure bool
+	// SchedulerHandledBlocked is true when an operational validation blocker was
+	// atomically persisted. It deliberately does not resume an orchestrator turn.
+	SchedulerHandledBlocked  bool
 	JudgeSDDAmbiguity        bool
 	CloseImplementationEmpty bool
 	// EscalateReason stops the loop and hands the decision to the user instead
@@ -96,7 +105,9 @@ type stageHandoffDecision struct {
 	// ContractWarnings are deviations Hero tolerated while decoding the report
 	// (ignored extra fields, normalized key names). They are shown to the user
 	// so a drifting agent prompt is visible, and never block the stage.
-	ContractWarnings []reports.ReportWarning
+	ContractWarnings      []reports.ReportWarning
+	ScreenshotWarnings    []string
+	NormalizedAgentOutput string
 }
 
 const (
@@ -306,9 +317,13 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	// iterations and the engine moves the stage back to Waiting. Never let a
 	// stale TUI handoff launch an agent directly from Escalated.
 	if st.Status != store.StageRunning {
+		m = m.discardStageBrowserPreparation(false)
 		return m.progressCTAForStage(st)
 	}
 	stage := strings.TrimSpace(st.Name)
+	if !isValidationProgressStage(stage) && m.stageBrowserPreparation != nil {
+		m = m.discardStageBrowserPreparation(false)
+	}
 	if stage == stageImplementation {
 		empty, emptyErr := m.svc.ImplementationWorkloadEmpty()
 		if emptyErr != nil {
@@ -339,6 +354,29 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 		m.convError = "resolve active stage: active stage has an empty name"
 		m.stageHandoffInterventionRequired = true
 		return m.emitSchedulerCTA(schedulerCTAStartFailed, st, "active stage has an empty name")
+	}
+	preparationJSON := ""
+	if isValidationProgressStage(stage) {
+		cycle, cycleErr := m.svc.SessionCycle()
+		if cycleErr != nil || cycle == nil {
+			return m.returnStageAgentPreparationFailure(stage, "active cycle is unavailable for browser preparation")
+		}
+		preparation := m.stageBrowserPreparation
+		if preparation == nil || preparation.cycleID != cycle.ID || preparation.stage != stage || preparation.iteration != st.Iteration {
+			return m.beginStageBrowserPreparation(st, agents)
+		}
+		if preparation.pending || preparation.result == nil {
+			return m, nil
+		}
+		result := blockedPreparationResult(*preparation.result, testaccess.PreparationReasonCheckFailed)
+		if result.Status != testaccess.PreparationReady {
+			return m.reportStageBrowserPreparationBlocked(preparation, result)
+		}
+		encoded, marshalErr := json.Marshal(result)
+		if marshalErr != nil {
+			return m.returnStageAgentPreparationFailure(stage, "bounded preparation result could not be serialized safely")
+		}
+		preparationJSON = string(encoded)
 	}
 	if m.stageHandoffStage != stage {
 		m.stageHandoffWave = 0
@@ -413,6 +451,9 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 		if stageSummary != "" {
 			prompt += "\n## Orchestrator assignment (loop-back)\n\n" + stageSummary + "\n"
 		}
+		if preparationJSON != "" {
+			prompt += "\n## Hero bounded preparation result (sanitized)\n\n" + preparationJSON + "\n"
+		}
 		if feedback := strings.TrimSpace(m.stageHandoffReportFeedback); feedback != "" {
 			prompt += "\n## Previous report rejected — reissue it\n\n" +
 				"Hero could not decode your last report and persisted nothing. " +
@@ -439,6 +480,8 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	m.stageProgressHoldUntilStart = false
 	m.stageProgressCTAKey = ""
 	m.stageHandoffStage = stage
+	m.stageBrowserPreparation = nil
+	m = m.beginScreenshotAutoWatch(stage, st.Iteration)
 	m.stageHandoffOutputs = nil
 	m.stageHandoffPreparationError = ""
 	m = m.clearReproGateState()
@@ -447,6 +490,7 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	m.harnessSessionID = ""
 	m.harnessSessionHarnessID = ""
 	m.conversationStage = stage
+	m = m.beginValidationProgress(stage)
 	m.runtimeCommandName = ""
 	m.stageHandoffPendingBefore = append([]string(nil), checklist.Pending...)
 	if m.stageHandoffAssignments == nil {
@@ -1185,6 +1229,16 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	m.stageHandoffExpectedAgents = nil
 	m.stageHandoffPreparationError = ""
 	m = m.clearReproGateState()
+	if decision.SchedulerHandledBlocked {
+		m = m.stopStageBudgetMonitor()
+		progress := m.validationProgress
+		progress.active = false
+		progress.waiting = false
+		progress.phase = "report"
+		m.validationProgress = progress
+	} else {
+		m = m.stopValidationProgress()
+	}
 	m.stageHandoffInterventionRequired = !decision.Complete && !decision.SchedulerHandledFailure
 	if decision.SchedulerHandledFailure {
 		// Loop-back already moved Implementation to Waiting. This is a fresh
@@ -1236,6 +1290,33 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	}
 	if warnCopy := formatContractWarnings(stage, decision.ContractWarnings); warnCopy != "" {
 		m.transcript = append(m.transcript, convMessage{role: convRoleWarning, content: warnCopy})
+	}
+	for _, warning := range decision.ScreenshotWarnings {
+		m.transcript = append(m.transcript, convMessage{role: convRoleWarning, content: "⚠ " + warning})
+	}
+	if decision.NormalizedAgentOutput != "" {
+		outputs = decision.NormalizedAgentOutput
+	}
+	if decision.SchedulerHandledBlocked {
+		copy := strings.TrimSpace(decision.ChatCopy)
+		if copy == "" {
+			copy = validationBlockedFallbackCopy(stage, m.userPreferredLanguage())
+		}
+		m.transcript = append(m.transcript, convMessage{role: convRoleSystem, content: copy})
+		m.bumpTranscriptLayout()
+		m.runtimeCommandName = ""
+		m = m.setStatusWarning("validation blocked", firstStatusLine(copy))
+		if m.svc != nil {
+			if status, err := m.svc.Status(); err == nil {
+				m.status = status
+			} else {
+				slog.Error("tui refresh blocked validation status failed", "stage", stage, "error", redact.Error(err))
+			}
+		}
+		// A blocked operational prerequisite is a scheduler stop. In particular,
+		// do not resume the orchestration model or dispatch automatic
+		// Implementation repair; only an explicit /hero-continue may recheck.
+		return m, m.refreshCmd()
 	}
 	// The stage is ending (closing, or closed-failed with loop-back), so this
 	// is the stage-close moment the metrics summary belongs to. The TUI prints
@@ -1312,7 +1393,7 @@ func (m model) evaluateValidationStageHandoff(stage, outputs string) stageHandof
 		decision.Reason = "no stage-agent reports were captured"
 		return decision
 	}
-	ctx, err := m.svc.ValidationDecodeContext()
+	ctx, err := m.svc.ValidationDecodeContextForStage(stage)
 	if err != nil {
 		decision.Reason = err.Error()
 		return decision
@@ -1323,6 +1404,20 @@ func (m model) evaluateValidationStageHandoff(stage, outputs string) stageHandof
 		decision.OmitAgentOutput = true
 		decision.Reason = derr.Error()
 		return decision
+	}
+	ingested := m.ingestStageScreenshots(stage, reportJSON, ctx)
+	decision.ScreenshotWarnings = ingested.Warnings
+	if string(ingested.ReportJSON) != string(reportJSON) {
+		reportJSON = ingested.ReportJSON
+		decision.NormalizedAgentOutput = string(reportJSON)
+		// The original decoder context snapshots the ready screenshot set before
+		// ingestion. Refresh it so promoted immutable manifests are eligible in
+		// the final typed-report validation.
+		ctx, err = m.svc.ValidationDecodeContextForStage(stage)
+		if err != nil {
+			decision.Reason = err.Error()
+			return decision
+		}
 	}
 	status, judgeAmbiguity, contractWarnings, decodeErr := decodeValidationReportStatus(stage, reportJSON, ctx)
 	if decodeErr != nil {
@@ -1342,6 +1437,29 @@ func (m model) evaluateValidationStageHandoff(stage, outputs string) stageHandof
 	}
 	if status == reports.ValidationStatusPassed {
 		decision.Complete = true
+		return decision
+	}
+	if status == reports.ValidationStatusBlocked {
+		_, closeErr := m.svc.CloseStageBlockedWithReport(stage, reportJSON, "")
+		if closeErr != nil {
+			var rve *cycle.ReportValidationError
+			if errors.As(closeErr, &rve) && rve != nil && rve.Diagnostic != nil {
+				decision.ChatCopy = formatValidationReportRejected(stage, rve.Diagnostic)
+				decision.OmitAgentOutput = true
+				decision.Reason = rve.Diagnostic.Error()
+				return decision
+			}
+			decision.Reason = redact.Error(closeErr)
+			if errors.Is(closeErr, store.ErrStageBudgetExpired) {
+				decision.ChatCopy = validationBudgetExpiredCopy(stage, m.userPreferredLanguage())
+				decision.OmitAgentOutput = true
+			}
+			return decision
+		}
+		decision.SchedulerHandledBlocked = true
+		decision.OmitAgentOutput = true
+		decision.ChatCopy = m.formatBlockedValidationChat(stage, reportJSON, ctx)
+		decision.Reason = "operational browser prerequisite requires explicit correction and /hero-continue"
 		return decision
 	}
 	slog.Info("validation stage failed; invoking atomic close handoff", "stage", stage)
@@ -1376,6 +1494,190 @@ func validationReportBody(outputs string, chunks []string) string {
 		return strings.TrimSpace(raw[idx+1:])
 	}
 	return raw
+}
+
+func (m model) userPreferredLanguage() string {
+	if m.svc == nil || strings.TrimSpace(m.svc.ProjectDir) == "" {
+		return "EN"
+	}
+	doc, err := workflowconfig.LoadCurrentDocument(m.svc.ProjectDir)
+	if err != nil || doc == nil {
+		return "EN"
+	}
+	language := strings.TrimSpace(doc.Config.WorkflowConfig.UserPreferredLanguage)
+	if language == "" {
+		return "EN"
+	}
+	return language
+}
+
+func (m model) formatBlockedValidationChat(stage string, reportJSON []byte, ctx reports.DecodeContext) string {
+	var preparation reports.Preparation
+	var blockers []reports.Blocker
+	var decodeErr error
+	if stage == stageBrowserUI {
+		var report *reports.BrowserUIReport
+		report, diag := reports.DecodeBrowserUI(reportJSON, ctx)
+		if diag != nil {
+			decodeErr = diag
+		} else {
+			preparation = *report.Preparation
+			blockers = report.Blockers
+		}
+	} else {
+		var report *reports.QAEndToEndReport
+		report, diag := reports.DecodeQAEndToEnd(reportJSON, ctx)
+		if diag != nil {
+			decodeErr = diag
+		} else {
+			preparation = *report.Preparation
+			blockers = report.Blockers
+		}
+	}
+	if decodeErr != nil || len(blockers) == 0 {
+		return validationBlockedFallbackCopy(stage, m.userPreferredLanguage())
+	}
+
+	var coverageIDs, profileIDs []string
+	for _, blocker := range blockers {
+		for _, id := range blocker.AffectedCoverageIDs {
+			if safeValidationID(id) {
+				coverageIDs = appendUniqueValidationID(coverageIDs, id)
+			}
+		}
+		for _, id := range blocker.AffectedProfileIDs {
+			if safeValidationID(id) {
+				profileIDs = appendUniqueValidationID(profileIDs, id)
+			}
+		}
+	}
+	sort.Strings(coverageIDs)
+	sort.Strings(profileIDs)
+	primaryReason := strings.TrimSpace(blockers[0].Reason)
+	reason, action := safeBlockedReasonAction(primaryReason, preparation.Method, profileIDs, m.userPreferredLanguage())
+	remaining := "unlimited"
+	if m.svc != nil && m.svc.Engine != nil {
+		if cycle, err := m.svc.SessionCycle(); err == nil && cycle != nil {
+			if budget, err := m.svc.Engine.StageBudget(cycle.ID, stage); err == nil && budget.Limit > 0 {
+				remaining = budget.RemainingAt(m.validationProgressNow()).Truncate(time.Second).String()
+			}
+		}
+	}
+	coverage := safeIDList(coverageIDs, ", ")
+	profiles := safeIDList(profileIDs, ", ")
+	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(m.userPreferredLanguage())), "PT") {
+		if coverage == "—" {
+			coverage = "nenhuma ID de cobertura identificada"
+		}
+		if profiles == "—" {
+			profiles = "nenhum perfil identificado"
+		}
+		return fmt.Sprintf("→ %s bloqueado: %s\n→ Não validadas: %s. Perfis afetados: %s.\n→ %s\n→ Depois execute /hero-continue. Restam %s de execução ativa.\n",
+			validationStageTitle(stage), reason, coverage, profiles, action, remaining)
+	}
+	if coverage == "—" {
+		coverage = "no coverage IDs identified"
+	}
+	if profiles == "—" {
+		profiles = "no profiles identified"
+	}
+	return fmt.Sprintf("→ %s blocked: %s\n→ Not validated: %s. Affected profiles: %s.\n→ %s\n→ Run /hero-continue. Active budget remaining: %s.\n",
+		validationStageTitle(stage), reason, coverage, profiles, action, remaining)
+}
+
+func safeBlockedReasonAction(reason, method string, profiles []string, language string) (string, string) {
+	methodLabel := safeBrowserMethod(method)
+	pt := strings.HasPrefix(strings.ToUpper(strings.TrimSpace(language)), "PT")
+	profile := safeIDList(profiles, ", ")
+	switch strings.TrimSpace(reason) {
+	case "tool_unavailable", "tool_missing", "tool_version", "tool_version_incompatible", "method_unavailable":
+		if pt {
+			return "o método de navegador selecionado (" + methodLabel + ") está indisponível ou abaixo da versão exigida", "Instale ou configure o método selecionado conforme as instruções do projeto; o Hero não instala ferramentas."
+		}
+		return "the selected browser method (" + methodLabel + ") is unavailable or below the required version", "Install or configure the selected method using the project setup instructions; Hero does not install tools."
+	case "credentials_unavailable", "selected_account_unavailable", "account_unusable", "invalid_account", "test_access_disabled":
+		if pt {
+			if strings.Contains(profile, "admin") {
+				return "falta o usuário administrator com perfil admin", "Habilite Config → Test users e configure localmente a conta selecionada no .env.hero da raiz; valores de credenciais não são exibidos."
+			}
+			return "a conta de teste selecionada não está disponível para o perfil " + profile, "Habilite Config → Test users e configure localmente a conta selecionada no .env.hero da raiz; valores de credenciais não são exibidos."
+		}
+		return "the selected test account is unavailable for profile " + profile, "Enable Config → Test users and configure the selected account locally in the project-root .env.hero; credential values are not shown."
+	case "unsupported_authentication":
+		if pt {
+			return "o fluxo de login exige autenticação interativa não compatível (MFA/CAPTCHA/SSO)", "Use uma conta de teste aprovada com fluxo de login compatível e execute /hero-continue."
+		}
+		return "the login flow requires unsupported interactive authentication (MFA/CAPTCHA/SSO)", "Use an approved test account with a supported login flow, then run /hero-continue."
+	case "browser_permission_unavailable":
+		if pt {
+			return "a permissão necessária do navegador não foi concedida", "Conceda a permissão no TUI para a sessão do estágio e execute /hero-continue."
+		}
+		return "the required browser permission is unavailable", "Grant the permission in the stage TUI session, then run /hero-continue."
+	case "fixtures_unavailable":
+		if pt {
+			return "os fixtures locais planejados não estão disponíveis", "Disponibilize os fixtures locais declarados durante Planning e execute /hero-continue."
+		}
+		return "the planned local fixtures are unavailable", "Provide the declared local fixtures from Planning, then run /hero-continue."
+	default:
+		if pt {
+			return "um pré-requisito do navegador não pôde ser verificado", "Revise o browser plan, os usuários de teste e a configuração do método selecionado; depois execute /hero-continue."
+		}
+		return "a browser prerequisite could not be verified", "Review the browser plan, test users and selected-method configuration, then run /hero-continue."
+	}
+}
+
+func safeBrowserMethod(method string) string {
+	switch strings.TrimSpace(method) {
+	case "playwright_test":
+		return "Playwright Test"
+	case "cli_skill":
+		return "Playwright CLI with skill"
+	case "cli":
+		return "Playwright CLI"
+	case "mcp":
+		return "MCP"
+	case "http":
+		return "HTTP"
+	default:
+		return "planned browser method"
+	}
+}
+
+func safeIDList(values []string, separator string) string {
+	ids := make([]string, 0, len(values))
+	for _, value := range values {
+		if safeValidationID(value) {
+			ids = appendUniqueValidationID(ids, value)
+		}
+	}
+	sort.Strings(ids)
+	if len(ids) == 0 {
+		return "—"
+	}
+	return strings.Join(ids, separator)
+}
+
+func appendUniqueValidationID(ids []string, value string) []string {
+	for _, existing := range ids {
+		if existing == value {
+			return ids
+		}
+	}
+	return append(ids, value)
+}
+
+func validationBlockedFallbackCopy(stage, language string) string {
+	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(language)), "PT") {
+		return fmt.Sprintf("→ %s bloqueado: um pré-requisito do navegador não pôde ser verificado.\n→ Revise a configuração local e execute /hero-continue; a configuração atual será revalidada.\n", validationStageTitle(stage))
+	}
+	return fmt.Sprintf("→ %s blocked: a browser prerequisite could not be verified.\n→ Review local configuration and run /hero-continue; current configuration will be rechecked.\n", validationStageTitle(stage))
+}
+
+func validationBudgetExpiredCopy(stage, language string) string {
+	if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(language)), "PT") {
+		return fmt.Sprintf("→ %s: o orçamento de execução expirou; evidências parciais foram preservadas. Aumente o limite explicitamente antes de executar /hero-continue.\n", validationStageTitle(stage))
+	}
+	return fmt.Sprintf("→ %s: active execution budget expired; partial evidence was preserved. Explicitly increase the limit before /hero-continue.\n", validationStageTitle(stage))
 }
 
 func decodeValidationReportStatus(stage string, reportJSON []byte, ctx reports.DecodeContext) (string, bool, []reports.ReportWarning, *reports.DiagnosticError) {

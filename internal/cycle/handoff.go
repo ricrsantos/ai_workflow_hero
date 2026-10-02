@@ -23,6 +23,9 @@ type ReportValidationError = engine.ReportValidationError
 // FailedCloseHandoffResult is returned after a successful atomic failed validation close.
 type FailedCloseHandoffResult = engine.FailedCloseHandoffResult
 
+// BlockedCloseHandoffResult is the durable operational-blocked report result.
+type BlockedCloseHandoffResult = engine.BlockedCloseHandoffResult
+
 // ImplementationAssignmentInput exposes the task-* and find-* union for scheduling.
 type ImplementationAssignmentInput struct {
 	TasksPath string
@@ -45,6 +48,20 @@ func (s *Service) ValidationDecodeContext() (reports.DecodeContext, error) {
 		return empty, err
 	}
 	return s.Engine.ValidationDecodeContext(c.ID)
+}
+
+// ValidationDecodeContextForStage returns decoder scope with the current
+// Planning denominator for Browser UI/E2E reports.
+func (s *Service) ValidationDecodeContextForStage(stageName string) (reports.DecodeContext, error) {
+	var empty reports.DecodeContext
+	if s == nil || s.Engine == nil || s.Store == nil {
+		return empty, errors.New("cycle service unavailable")
+	}
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return empty, err
+	}
+	return s.Engine.ValidationDecodeContextForStage(c.ID, stageName)
 }
 
 // CloseStageFailedWithFindings validates reportJSON and atomically persists findings,
@@ -74,6 +91,25 @@ func (s *Service) CloseStageFailedWithFindings(stageName string, reportJSON []by
 		return empty, err
 	}
 	return out, nil
+}
+
+// CloseStageBlockedWithReport persists validated blockers, denominator results,
+// metrics and genuine findings without scheduling repair or advancing a stage.
+// The only way out of Blocked is an explicit Service/Engine Continue call.
+func (s *Service) CloseStageBlockedWithReport(stageName string, reportJSON []byte, metricsJSON string) (BlockedCloseHandoffResult, error) {
+	var empty BlockedCloseHandoffResult
+	if s == nil || s.Engine == nil || s.Store == nil {
+		return empty, errors.New("cycle service unavailable")
+	}
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return empty, err
+	}
+	metrics, err := engine.ParseMetricsJSON(metricsJSON)
+	if err != nil {
+		return empty, err
+	}
+	return s.Engine.CloseStageBlockedWithReport(c.ID, stageName, reportJSON, metrics)
 }
 
 // ListActionableFindings returns open/reopened findings for the active cycle.

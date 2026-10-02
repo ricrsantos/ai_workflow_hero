@@ -19,6 +19,7 @@ type ManagedConfig struct {
 	Title          string                      `yaml:"title"`
 	Objective      string                      `yaml:"objective"`
 	WorkflowConfig WorkflowPreferences         `yaml:"workflow_config"`
+	TestAccess     TestAccessConfig            `yaml:"test_access"`
 	Scope          Scope                       `yaml:"scope"`
 	Stages         map[string]ManagedStage     `yaml:"stages"`
 	Agents         map[string]AgentModelConfig `yaml:"agents"`
@@ -34,6 +35,12 @@ type WorkflowPreferences struct {
 	UserPreferredLanguage string `yaml:"user_preferred_language"`
 }
 
+// TestAccessConfig controls the opt-in gate for project-local browser test users.
+// Credential values remain in the root .env.hero file.
+type TestAccessConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
 // Scope contains the implementation scopes supported by Hero.
 type Scope struct {
 	Backend        bool `yaml:"backend"`
@@ -43,8 +50,10 @@ type Scope struct {
 	Infrastructure bool `yaml:"infrastructure"`
 }
 
-// ManagedStage is a stage configuration shown by the TUI. The two nested
-// fields are used only by their matching stages and are otherwise preserved.
+// ManagedStage is a stage configuration shown by the TUI. timeout_minutes is
+// the cumulative active wall-time budget shared by a stage's attempts, partial
+// waves, reconnects, and resumptions. Nested fields are used only by their
+// matching stages and are otherwise preserved.
 type ManagedStage struct {
 	Enabled              bool             `yaml:"enabled"`
 	Purpose              string           `yaml:"purpose"`
@@ -53,6 +62,13 @@ type ManagedStage struct {
 	RequireHumanApproval bool             `yaml:"require_human_approval"`
 	VisualValidation     VisualValidation `yaml:"visual_validation"`
 	UsePlaywright        bool             `yaml:"use_playwright"`
+	Screenshots          ScreenshotConfig `yaml:"screenshots"`
+}
+
+// ScreenshotConfig controls optional, safe communication captures for a stage.
+// Browser UI and browser-based E2E each own an independent toggle.
+type ScreenshotConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 // VisualValidation is the Browser UI Validation optional visual-comparison
@@ -77,6 +93,18 @@ func (d *Document) Path() string {
 		return ""
 	}
 	return d.path
+}
+
+// HasExplicitStageField reports whether a stage setting is present in the
+// source YAML, rather than only having its zero value after decoding.
+func (d *Document) HasExplicitStageField(stageName, fieldName string) bool {
+	if d == nil || len(d.root.Content) == 0 {
+		return false
+	}
+	root := d.root.Content[0]
+	stages := mappingValue(root, "stages")
+	stage := mappingValue(stages, stageName)
+	return mappingValue(stage, fieldName) != nil
 }
 
 // LoadDocument reads a round-trip-safe workflow configuration document.
@@ -158,6 +186,9 @@ func (c ManagedConfig) Validate(opts ValidationOptions) error {
 	}
 	if stage, ok := c.Stages["qa_end_to_end"]; ok && stage.UsePlaywright && !c.Scope.Frontend {
 		return fmt.Errorf("stages.qa_end_to_end.use_playwright requires scope.frontend")
+	}
+	if stage, ok := c.Stages["qa_end_to_end"]; ok && stage.Screenshots.Enabled && !stage.UsePlaywright {
+		return fmt.Errorf("stages.qa_end_to_end.screenshots.enabled requires stages.qa_end_to_end.use_playwright")
 	}
 	if err := c.validateVerification(); err != nil {
 		return err
@@ -343,6 +374,7 @@ func ManagedDiff(before, after ManagedConfig) []string {
 	add("objective", before.Objective != after.Objective)
 	add("workflow_config.user_preferred_language",
 		before.WorkflowConfig.UserPreferredLanguage != after.WorkflowConfig.UserPreferredLanguage)
+	add("test_access.enabled", before.TestAccess.Enabled != after.TestAccess.Enabled)
 	add("verification.repro.mode",
 		strings.TrimSpace(before.Verification.Repro.Mode) != strings.TrimSpace(after.Verification.Repro.Mode))
 	add("verification.repro.allow_evidence",
@@ -380,6 +412,9 @@ func ManagedDiff(before, after ManagedConfig) []string {
 		}
 		if name == "qa_end_to_end" {
 			add("stages."+name+".use_playwright", b.UsePlaywright != a.UsePlaywright)
+		}
+		if name == "browser_ui_validation" || name == "qa_end_to_end" {
+			add("stages."+name+".screenshots.enabled", b.Screenshots.Enabled != a.Screenshots.Enabled)
 		}
 	}
 	for _, name := range managedAgentNamesUnion(before, after) {
@@ -458,6 +493,7 @@ func applyDraft(root yaml.Node, draft ManagedConfig) (yaml.Node, error) {
 	setString(&root, []string{"title"}, draft.Title)
 	setString(&root, []string{"objective"}, draft.Objective)
 	setString(&root, []string{"workflow_config", "user_preferred_language"}, draft.WorkflowConfig.UserPreferredLanguage)
+	setBool(&root, []string{"test_access", "enabled"}, draft.TestAccess.Enabled)
 	setBool(&root, []string{"scope", "backend"}, draft.Scope.Backend)
 	setBool(&root, []string{"scope", "frontend"}, draft.Scope.Frontend)
 	setBool(&root, []string{"scope", "native"}, draft.Scope.Native)
@@ -481,6 +517,9 @@ func applyDraft(root yaml.Node, draft ManagedConfig) (yaml.Node, error) {
 		}
 		if name == "qa_end_to_end" {
 			setBool(&root, append(base, "use_playwright"), stage.UsePlaywright)
+		}
+		if name == "browser_ui_validation" || name == "qa_end_to_end" {
+			setBool(&root, append(base, "screenshots", "enabled"), stage.Screenshots.Enabled)
 		}
 	}
 	for _, name := range managedAgentNames(draft) {

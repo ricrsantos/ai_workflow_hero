@@ -99,6 +99,14 @@ rm -f ./temp/hero
 
 ## 4. Build & Release Process (V1: manual, script-assisted)
 
+### C17 planned release gate
+
+The browser-validation/budget design is not yet shipped. Its release must update the binary and enabled harness projections together under existing checksum/conflict rules. Additive SQLite migration must preserve cycle/stage/event/metric/session/finding/ToDo data and retain historical interrupted/paused states; choose the next free schema version during Planning. Do not recreate hero.db or infer free new budgets for existing attempts. Migration needs explicit safe initialization/recovery semantics for legacy running stages.
+
+Provision root .env.hero.example placeholders without overwriting a customized example or application .env. Never create credential values on upgrade or copy .env.hero into checksums, backups, snapshots or release artifacts. Preserve credentials on finish/cancel/upgrade/uninstall; archive cleanup and its failure retry are explicit release gates. Existing IDE resources are not removed by this browser cycle.
+
+Update the optional Telegram daemon and versioned image-delivery capability with Hero; unsupported/mismatched daemon versions produce actionable delivery warnings, retain local screenshots, and do not block unrelated tests. Verify API size/group constraints before choosing transfer batches; no release relies on guessed limits or includes real credentials. The C17 test matrix in TESTING.md, four-harness parity, safe archive and active cancellation/race tests must pass before publishing. Supported platforms and packaging remain unchanged.
+
 V1 does not use CI/CD. Releases are cut manually by the maintainer, but the repetitive cross-compilation work is automated by a single script.
 
 **Testing gate**: `go test ./...` must pass with zero failures before tagging a release commit. If any test fails, analyze and fix it, then re-run the suite — never tag or run `scripts/release.sh` against a repository in a failing state (see [AGENTS.md — Testing](../../AGENTS.md#testing) and [ADR-009](../architecture/ADR.md#adr-009-test-real-dependencies-over-mocks)).

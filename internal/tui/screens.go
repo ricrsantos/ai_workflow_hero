@@ -444,6 +444,9 @@ func (m model) renderFrame() string {
 	if m.telegram != nil && m.telegram.pairing {
 		return m.renderTelegramPairingModal()
 	}
+	if m.screenshots.open {
+		return m.renderScreenshotCollectionFrame()
+	}
 	var bottom strings.Builder
 	bottom.WriteString(m.renderStatusBar())
 	bottom.WriteByte('\n')
@@ -508,7 +511,7 @@ func fitContentHeight(content string, height int, keepBottom bool) string {
 	return strings.Join(lines, "\n")
 }
 
-const fixedFooterHints = "/help shortcuts · tab focus · alt+enter send · ctrl+c interrupt · alt+q exit"
+const fixedFooterHints = "/help shortcuts · alt+b screenshots · tab focus · alt+enter send · ctrl+c interrupt · alt+q exit"
 
 func (m model) footerHints() string {
 	return fixedFooterHints

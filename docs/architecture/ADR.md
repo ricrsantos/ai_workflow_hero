@@ -5,6 +5,8 @@
 >
 > **Architecture overview** (high-level diagrams and package map; non-normative): [architecture-overview.md](architecture-overview.md).
 
+C17 browser execution design: [ADR-C17-002-browser-validation-execution-budgets.md](ADR-C17-002-browser-validation-execution-budgets.md), ADR-103–106, accepted in Research; implementation pending. Existing ADR-C17-001 is preserved; this cycle excludes additional IDE-removal work.
+
 | # | Title | Status |
 |---|---|---|
 | [ADR-001](#adr-001-go-cobra-and-embedfs-for-cli-distribution) | Go, Cobra, and `embed.FS` for CLI distribution | Accepted |
@@ -102,6 +104,11 @@
 | [ADR-102](ADR-C17-001-tui-only-runtime-report-tolerance.md#adr-102-a-rejected-report-retries-with-feedback-then-escalates-it-never-parks-the-cycle-silently) | A rejected report retries with feedback, then escalates; it never parks the cycle silently | Accepted |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
+
+- [ADR-103](ADR-C17-002-browser-validation-execution-budgets.md#adr-103-one-shared-test-access-service-owns-root-dotenv-credentials-and-login-preparation): shared test-access service and private authentication executor — accepted design.
+- [ADR-104](ADR-C17-002-browser-validation-execution-budgets.md#adr-104-preparation-and-coverage-are-validated-contracts-blockers-are-durable-scheduler-state): durable blocked state and coverage contracts — accepted design.
+- [ADR-105](ADR-C17-002-browser-validation-execution-budgets.md#adr-105-a-scheduler-execution-budget-owns-cancellation-independently-of-health): active cumulative scheduler budget — accepted design.
+- [ADR-106](ADR-C17-002-browser-validation-execution-budgets.md#adr-106-cycle-owned-screenshots-use-existing-image-cards-and-asynchronous-telegram-delivery): cycle screenshots and asynchronous image delivery — accepted design.
 
 ---
 
