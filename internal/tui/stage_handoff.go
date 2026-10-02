@@ -62,11 +62,35 @@ type stageAgentReport struct {
 	TestsPassed      bool
 	AcceptanceGates  bool
 	AcceptanceValues map[string]bool
+	SDDAmbiguity     bool
+	Blocker          string
 	Valid            bool
 	ValidationError  string
 }
 
 const maxImplementationHandoffWaves = 8
+
+// Implementation escalation reasons recorded on the stage and its events.
+const (
+	escalateImplementationWaveLimit    = "implementation_wave_limit"
+	escalateImplementationNoProgress   = "implementation_no_progress"
+	escalateImplementationSDDAmbiguity = "implementation_sdd_ambiguity"
+	escalatePlanningSDDInvalid         = "planning_sdd_invalid"
+)
+
+// implementationAmbiguityQuestions joins the blockers of reports that flagged
+// sdd_ambiguity; the blocker field carries the open questions.
+func implementationAmbiguityQuestions(reports []stageAgentReport) string {
+	var parts []string
+	for _, r := range reports {
+		if r.SDDAmbiguity {
+			if q := strings.TrimSpace(r.Blocker); q != "" {
+				parts = append(parts, q)
+			}
+		}
+	}
+	return strings.Join(parts, " | ")
+}
 
 // maxFindingRounds is how many times one finding may travel
 // validation → Implementation → validation before Hero stops re-dispatching it.
@@ -99,6 +123,9 @@ type stageHandoffDecision struct {
 	SchedulerHandledBlocked  bool
 	JudgeSDDAmbiguity        bool
 	CloseImplementationEmpty bool
+	// PlanningSDDProblems lists Planning SDD contracts Implementation could
+	// not satisfy (ADR-107). Planning stays open while it is non-empty.
+	PlanningSDDProblems []string
 	// EscalateReason stops the loop and hands the decision to the user instead
 	// of asking the orchestrator for yet another wave.
 	EscalateReason string
@@ -454,13 +481,8 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 		if preparationJSON != "" {
 			prompt += "\n## Hero bounded preparation result (sanitized)\n\n" + preparationJSON + "\n"
 		}
-		if feedback := strings.TrimSpace(m.stageHandoffReportFeedback); feedback != "" {
-			prompt += "\n## Previous report rejected — reissue it\n\n" +
-				"Hero could not decode your last report and persisted nothing. " +
-				"Do not redo the stage work; re-emit the same findings as one valid JSON object.\n\n" +
-				"Diagnostic: " + feedback + "\n\n" +
-				"Extra fields are ignored with a warning, so the report fails only on a missing or malformed field. " +
-				"Emit the JSON object as your entire completion output and stop.\n"
+		if feedback := strings.TrimSpace(m.stageHandoffRetryFeedback); feedback != "" {
+			prompt += "\n" + feedback + "\n"
 		}
 		if strings.TrimSpace(prompt) == "" {
 			return m.returnStageAgentPreparationFailure(stage, fmt.Sprintf("empty prompt for %s", agent))
@@ -476,7 +498,7 @@ func (m model) startStageAgentSessions(agents []string) (model, tea.Cmd) {
 	m.stageHandoffInterventionRequired = false
 	// The diagnostic is now baked into the prompts above; a later wave must not
 	// inherit a stale "your report was rejected" block.
-	m.stageHandoffReportFeedback = ""
+	m.stageHandoffRetryFeedback = ""
 	m.stageProgressHoldUntilStart = false
 	m.stageProgressCTAKey = ""
 	m.stageHandoffStage = stage
@@ -775,6 +797,8 @@ func parseStageAgentReport(raw, agent string) stageAgentReport {
 	report.TasksCompleted = append([]string{}, decoded.TasksCompleted...)
 	report.TasksRemaining = append([]string{}, decoded.TasksRemaining...)
 	report.TestsPassed = decoded.TestsPassed
+	report.SDDAmbiguity = decoded.SDDAmbiguity
+	report.Blocker = decoded.Blocker
 	report.AcceptanceValues = decoded.AcceptanceGates
 	allGates := true
 	for _, v := range decoded.AcceptanceGates {
@@ -955,6 +979,15 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 			decision.Reason = "stage agents returned no report"
 			return decision
 		}
+		if stage == stagePlanning {
+			if problems := m.planningSDDProblems(); len(problems) > 0 {
+				decision.PlanningSDDProblems = problems
+				decision.Reason = fmt.Sprintf("planning SDD failed %d Hero check(s)", len(problems))
+				decision.ChatCopy = formatPlanningSDDRejected(problems)
+				decision.OmitAgentOutput = true
+				return decision
+			}
+		}
 		decision.Complete = true
 		return decision
 	}
@@ -986,6 +1019,7 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 	allAccepted := true
 	allRemainingEmpty := true
 	anyBlocked := false
+	anyAmbiguity := false
 	completedGateFailure := false
 	completedIDs := make([]string, 0)
 	completedSet := make(map[string]struct{})
@@ -1027,6 +1061,9 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 		if report.Status == "blocked" {
 			anyBlocked = true
 		}
+		if report.SDDAmbiguity {
+			anyAmbiguity = true
+		}
 		if !report.TestsPassed {
 			allPassed = false
 		}
@@ -1037,7 +1074,11 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 			allRemainingEmpty = false
 		}
 		if len(report.TasksCompleted) > 0 {
-			if !report.TestsPassed || !report.AcceptanceGates {
+			// The canonical acceptance gates speak for the claimed IDs only.
+			// tests_passed describes the whole suite and gates stage close, not
+			// per-task acceptance: an unrelated open task must never discard the
+			// verified work reported next to it (ADR-107).
+			if !report.AcceptanceGates {
 				completedGateFailure = true
 			}
 			for _, id := range report.TasksCompleted {
@@ -1074,12 +1115,8 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 		decision.Reason = err.Error()
 		return decision
 	}
-	if completedGateFailure {
-		decision.Reason = "reports with completed tasks must pass tests and all canonical acceptance gates"
-		return decision
-	}
 	findingProgress := false
-	if allValid && len(completedIDs) > 0 {
+	if allValid && !completedGateFailure && len(completedIDs) > 0 {
 		taskIDs := implementationOpenSpecTaskIDs(completedIDs)
 		findingIDs := implementationFindingIDs(completedIDs)
 		if len(findingIDs) > 0 {
@@ -1131,6 +1168,13 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 	}
 	checklistProgress := decision.Checklist.Linked && decision.Checklist.Ready && pendingTaskProgress(m.stageHandoffPendingBefore, decision.Checklist.Pending)
 	progress := checklistProgress || findingProgress
+	if allValid && anyAmbiguity {
+		// Re-dispatching the same contract cannot answer a question the SDD
+		// left open. Verified work above is already recorded.
+		decision.Reason = "implementation reported sdd_ambiguity: " + implementationAmbiguityQuestions(decision.Reports)
+		decision.EscalateReason = escalateImplementationSDDAmbiguity
+		return decision
+	}
 	if allValid && !anyBlocked && progress {
 		if m.stageHandoffWave < maxImplementationHandoffWaves {
 			decision.PartialProgress = true
@@ -1138,12 +1182,14 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 			return decision
 		}
 		decision.Reason = fmt.Sprintf("implementation wave limit reached (%d)", maxImplementationHandoffWaves)
-		decision.EscalateReason = "implementation_wave_limit"
+		decision.EscalateReason = escalateImplementationWaveLimit
 		return decision
 	}
 	switch {
 	case !allValid:
 		decision.Reason = "one or more stage-agent reports are invalid or missing required gate fields"
+	case completedGateFailure:
+		decision.Reason = "a report claimed completed IDs with a false acceptance gate; its claims were not accepted"
 	case anyBlocked:
 		decision.Reason = "one or more stage agents reported blocked"
 	case !allPassed:
@@ -1156,6 +1202,11 @@ func (m model) evaluateStageHandoff(stage, outputs string) stageHandoffDecision 
 		decision.Reason = fmt.Sprintf("%d unchecked OpenSpec task(s) remain", len(decision.Checklist.Pending))
 	default:
 		decision.Reason = "stage-agent reports are incomplete"
+	}
+	if allValid && !anyBlocked {
+		// A valid wave that recorded nothing would repeat itself if re-run
+		// unchanged; hand the decision to the user instead of a blind retry.
+		decision.EscalateReason = escalateImplementationNoProgress
 	}
 	if !decision.Complete && !decision.PartialProgress {
 		decision.ChatCopy = formatImplementationHandoffDiagnostics(decision.Reports, m)
@@ -1262,6 +1313,16 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 		}
 		decision.EscalateReason = "report_contract"
 	}
+	if stage == stagePlanning && len(decision.PlanningSDDProblems) > 0 {
+		if retry, ok := m.nextReportRetry(stage); ok {
+			m.transcript = append(m.transcript, convMessage{
+				role:    convRoleWarning,
+				content: decision.ChatCopy + fmt.Sprintf("\n→ Re-running Planning with these checks (attempt %d of %d)", retry, maxReportRetries),
+			})
+			return m.retryStageAgentsWithFeedback(stage, planningSDDFeedbackSection(decision.PlanningSDDProblems))
+		}
+		decision.EscalateReason = escalatePlanningSDDInvalid
+	}
 	m = m.restoreOrchestratorSession()
 	m = m.withRuntimeAgent(agentOrchestration)
 	m.runtimeCommandName = "start"
@@ -1272,16 +1333,18 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 			m.conversationStage = s
 		}
 	}
+	escalated := false
 	if reason := strings.TrimSpace(decision.EscalateReason); reason != "" && m.svc != nil {
 		if err := m.svc.EscalateStage(stage, reason); err != nil {
 			slog.Error("stage escalation failed", "stage", stage, "reason", reason, "error", redact.Error(err))
 		} else {
+			escalated = true
 			decision.ChatCopy = strings.TrimSpace(decision.ChatCopy+"\n\n⚠ "+stageTitleForChat(stage)+" escalated · "+decision.Reason+
-				"\n→ Run /hero-continue to grant more iterations, /hero-add-todo to defer a blocking finding, or /hero-cancel / /hero-finish.") + "\n"
+				"\n"+escalationNextSteps(reason)) + "\n"
 		}
 	}
 	canClose := decision.Complete
-	if stage != stageImplementation && outputs != "" && !isValidationHandoffStage(stage) {
+	if stage != stageImplementation && outputs != "" && !isValidationHandoffStage(stage) && len(decision.PlanningSDDProblems) == 0 {
 		// Planning and other text handoffs remain compatible with legacy Output Formats.
 		canClose = true
 	}
@@ -1340,6 +1403,8 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 		prompt += tuiHeroStartContinueAfterStagePreamble(stage)
 	case decision.OmitAgentOutput && strings.Contains(decision.ChatCopy, "report rejected"):
 		prompt += tuiHeroStartContinueAfterValidationReportRejectedPreamble(stage)
+	case escalated:
+		prompt += tuiHeroStartContinueAfterEscalatedStagePreamble(stage, decision.Reason)
 	default:
 		prompt += tuiHeroStartContinueAfterIncompleteStagePreamble(stage, decision.Reason)
 	}
@@ -1349,6 +1414,22 @@ func (m model) resumeOrchestratorAfterStageHandoff() (model, tea.Cmd) {
 	label := handoffResumeLabel(stage, canClose, decision)
 	m = m.beginSystemConversationExecute(label, prompt)
 	return m, m.conversationExecuteCmds()
+}
+
+// escalationNextSteps names the commands that can actually move an escalated
+// stage forward. Re-running /hero-start is never one of them: the stage is not
+// Running, and an unchanged contract would repeat the same wave.
+func escalationNextSteps(reason string) string {
+	switch reason {
+	case escalateImplementationSDDAmbiguity:
+		return "→ Run /hero-back to reopen Planning with these questions, or amend the SDD and run /hero-continue. /hero-cancel / /hero-finish stop the cycle."
+	case escalatePlanningSDDInvalid:
+		return "→ Fix the listed problems in the linked OpenSpec change (tasks.md, design.md, proposal.md), then run /hero-continue to re-run Planning. /hero-cancel / /hero-finish stop the cycle."
+	case escalateImplementationNoProgress:
+		return "→ Fix the cause listed above (task contract, environment, or code), then run /hero-continue. Use /hero-back if the SDD itself is wrong, /hero-add-todo to defer a blocking finding, or /hero-cancel / /hero-finish."
+	default:
+		return "→ Run /hero-continue to grant more iterations, /hero-add-todo to defer a blocking finding, or /hero-cancel / /hero-finish."
+	}
 }
 
 func isValidationHandoffStage(stage string) bool {
@@ -1968,6 +2049,21 @@ func (m *model) nextReportRetry(stage string) (int, bool) {
 // diagnostic attached, without touching persisted state: a rejected report
 // still applies nothing.
 func (m model) retryStageAgentsAfterRejectedReport(stage, diagnostic string) (model, tea.Cmd) {
+	return m.retryStageAgentsWithFeedback(stage, rejectedReportFeedbackSection(diagnostic))
+}
+
+func rejectedReportFeedbackSection(diagnostic string) string {
+	return "## Previous report rejected — reissue it\n\n" +
+		"Hero could not decode your last report and persisted nothing. " +
+		"Do not redo the stage work; re-emit the same findings as one valid JSON object.\n\n" +
+		"Diagnostic: " + strings.TrimSpace(diagnostic) + "\n\n" +
+		"Extra fields are ignored with a warning, so the report fails only on a missing or malformed field. " +
+		"Emit the JSON object as your entire completion output and stop."
+}
+
+// retryStageAgentsWithFeedback re-dispatches the stage agents of a Running
+// stage with one corrective prompt section attached.
+func (m model) retryStageAgentsWithFeedback(stage, feedback string) (model, tea.Cmd) {
 	if m.svc == nil {
 		return m, nil
 	}
@@ -1987,7 +2083,7 @@ func (m model) retryStageAgentsAfterRejectedReport(stage, diagnostic string) (mo
 	m.stageHandoffLive = false
 	m.stageHandoffOutputs = nil
 	m.stageHandoffDoneKey = ""
-	m.stageHandoffReportFeedback = strings.TrimSpace(diagnostic)
+	m.stageHandoffRetryFeedback = strings.TrimSpace(feedback)
 	m = m.clearReproGateState()
 	m = m.restoreOrchestratorSession()
 	m.runtimeCommandName = ""

@@ -327,6 +327,96 @@ func (e *Engine) LoopBackToImplementation(cycleID int64, fromStage, reason strin
 	return e.appendLoopBackEvent(cycleID, fromStage, reason)
 }
 
+var reopenPlanningSources = map[string]struct{}{
+	"implementation": {},
+	"judge":          {},
+}
+
+// ReopenPlanning returns the cycle to Planning when the SDD itself is wrong:
+// Judge or Implementation reported sdd_ambiguity (ADR-107). Planning and every
+// later enabled stage return to Waiting; Planning keeps its iteration counter
+// and carries the reason as its summary, which the TUI hands to planning_agent
+// as the loop-back assignment. A Running source stage is escalated first so
+// its budget generation is closed before the reset.
+func (e *Engine) ReopenPlanning(cycleID int64, fromStage, reason string) (err error) {
+	fromStage = strings.TrimSpace(fromStage)
+	reason = strings.TrimSpace(reason)
+	defer func() {
+		if err != nil {
+			e.Logger.Error("reopen planning failed", "cycle_id", cycleID, "from_stage", fromStage, "error", err)
+		}
+	}()
+	if _, ok := reopenPlanningSources[fromStage]; !ok {
+		return fmt.Errorf("reopening planning from %q is not allowed; use implementation or judge", fromStage)
+	}
+	if reason == "" {
+		return fmt.Errorf("reopen reason is required")
+	}
+	stages, err := e.Store.ListStages(cycleID)
+	if err != nil {
+		return err
+	}
+	var planning, from *store.Stage
+	for i := range stages {
+		st := &stages[i]
+		switch st.Name {
+		case "planning":
+			planning = st
+		case fromStage:
+			from = st
+		}
+		if st.Status == store.StageRunning && st.Name != fromStage {
+			return fmt.Errorf("stage %s is Running; stop it before reopening planning", st.Name)
+		}
+	}
+	if planning == nil {
+		return fmt.Errorf("planning stage is not in this cycle")
+	}
+	if planning.Status != store.StageCompleted {
+		return fmt.Errorf("planning is %s; only a completed Planning can be reopened", planning.Status)
+	}
+	if from == nil {
+		return fmt.Errorf("stage %s is not in this cycle", fromStage)
+	}
+	switch from.Status {
+	case store.StageEscalated, store.StagePendingApproval, store.StageFailed:
+	case store.StageRunning:
+		if err := e.escalateStage(cycleID, *from, "sdd_ambiguity"); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("stage %s is %s; reopen planning from an escalated, pending or failed stage", fromStage, from.Status)
+	}
+	// Re-read: escalation may have changed the source row.
+	stages, err = e.Store.ListStages(cycleID)
+	if err != nil {
+		return err
+	}
+	for _, st := range stages {
+		if st.SortOrder < planning.SortOrder || st.Status == store.StageSkipped {
+			continue
+		}
+		st.Status = store.StageWaiting
+		st.StartedAt = ""
+		st.CompletedAt = ""
+		if st.Name == "planning" {
+			st.Summary = reason
+		}
+		if err := e.Store.UpdateStage(st); err != nil {
+			return err
+		}
+	}
+	_, err = e.Store.AppendEvent(store.Event{
+		CycleID: cycleID, Type: store.EventPlanningReopened,
+		PayloadJSON: fmt.Sprintf(`{"from":%q,"reason":%q}`, fromStage, reason),
+	})
+	if err != nil {
+		return err
+	}
+	e.Logger.Info("planning reopened", "cycle_id", cycleID, "from_stage", fromStage)
+	return nil
+}
+
 func (e *Engine) appendLoopBackEvent(cycleID int64, fromStage, reason string) error {
 	payload, err := json.Marshal(map[string]string{
 		"from":   fromStage,

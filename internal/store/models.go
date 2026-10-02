@@ -36,6 +36,7 @@ const (
 	EventStageRetried                = "stage_retried"
 	EventStageBudget                 = "stage_budget"
 	EventLoopBack                    = "loop_back"
+	EventPlanningReopened            = "planning_reopened"
 	EventHarnessInvoked              = "harness_invoked"
 	EventLegacyImported              = "legacy_imported"
 	EventCycleCompletedDeferredTodos = "cycle_completed_with_deferred_todos"

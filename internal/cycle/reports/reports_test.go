@@ -1,6 +1,7 @@
 package reports
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -446,5 +447,25 @@ func TestDiagnosticError_ErrorString(t *testing.T) {
 	err := diag(CodeMissingField, "failures[0].acceptance_criteria", "", "field is required")
 	if !strings.Contains(err.Error(), "missing_field") {
 		t.Fatalf("error: %s", err.Error())
+	}
+}
+
+func TestDecodeImplementation_SDDAmbiguity(t *testing.T) {
+	base := `{"stage":"implementation","agent":"generic_agent","status":"%s","tasks_completed":["task-01"],"tasks_remaining":%s,` +
+		`"tests_passed":true,"acceptance_gates":{"completed_tasks_verified":true,"task_ownership_respected":true,"required_tests_passed":true},` +
+		`"blocker":"Which key? Recommend test_access.enabled.","next_action":"reopen planning","summary":"s"%s}`
+	assign := []string{"task-01", "task-02"}
+
+	got, derr := DecodeImplementation([]byte(fmt.Sprintf(base, "partial", `["task-02"]`, `,"sdd_ambiguity":true`)), "generic_agent", assign, DecodeContext{})
+	if derr != nil || !got.SDDAmbiguity {
+		t.Fatalf("partial ambiguity: got=%+v err=%v", got, derr)
+	}
+	got, derr = DecodeImplementation([]byte(fmt.Sprintf(base, "partial", `["task-02"]`, ``)), "generic_agent", assign, DecodeContext{})
+	if derr != nil || got.SDDAmbiguity {
+		t.Fatalf("absent field must default false: got=%+v err=%v", got, derr)
+	}
+	_, derr = DecodeImplementation([]byte(fmt.Sprintf(base, "complete", `[]`, `,"sdd_ambiguity":true`)), "generic_agent", []string{"task-01"}, DecodeContext{})
+	if derr == nil || derr.Field != "sdd_ambiguity" {
+		t.Fatalf("complete with ambiguity must be rejected, got %v", derr)
 	}
 }

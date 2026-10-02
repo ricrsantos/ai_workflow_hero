@@ -1,0 +1,95 @@
+C17 resumed wave verification — 2026-09-30
+
+Result: PARTIAL assignment, not release acceptance.
+Verified complete IDs: task-01, task-02, task-04, task-05, task-15, task-17.
+Unfinished IDs: task-03, task-06, task-07, task-08, task-09, task-10, task-11, task-12, task-13, task-14, task-16, task-18, task-19.
+
+Checks completed after final code edits:
+- go test ./...: exit 0
+- host builds for cmd/hero and cmd/hero-telegram-daemon below temp/: exit 0; temporary binaries cleaned
+- go vet ./...: exit 0
+- broad focused race check for credential, budget, blocked, coverage, screenshot, editor, preparation and collection behaviors: exit 0
+- final race follow-up for changed status, upgrade and screenshot collection tests: exit 0
+- openspec validate browser-validation-execution-budgets --strict: exit 0
+- git diff --check: exit 0
+- staticcheck and unlimited golangci diagnostics: unchanged-file baseline only; changed files clean; exact diagnostics in verification-wave-2-lint.txt
+- assigned task file re-read: all 19 owner markers generic_agent, checkboxes untouched
+- no project .env.hero found outside ignored temporary/release build directories; tracked secret-pattern check finds only approved .env.example
+
+Remaining acceptance gaps:
+Persistent opt-in and Planning recipe/coverage artifact location need an explicit user decision.
+Production browser provider, stage preparation caller, credential artifact suppression/capture hookup and complete cross-surface sentinel coverage remain unverified.
+Startup/recovery budget ownership must not revoke another live TUI; cumulative-budget acceptance is not complete.
+Coverage execution and current-configuration /hero-continue rechecks need full production admission.
+Screenshot todos forwarding, per-ID ready-set failure attribution and addressed Telegram image IPC remain incomplete.
+Four-harness projections, complete progress UI, traceability/documentation and final release verification remain unfinished.
+No stage transition, task checkbox or context/current-state.md mutation was performed by this execution.
+
+FULL SUITE OUTPUT
+?   	github.com/ricrsantos/ai_workflow_hero/assets	[no test files]
+ok  	github.com/ricrsantos/ai_workflow_hero/cmd/hero	0.110s
+?   	github.com/ricrsantos/ai_workflow_hero/cmd/hero-telegram-daemon	[no test files]
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/adapters/claude	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/adapters/codex	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/adapters/cursor	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/adapters/opencode	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/autoupdate	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/common	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/common/assetconflict	(cached)
+?   	github.com/ricrsantos/ai_workflow_hero/internal/common/clierr	[no test files]
+?   	github.com/ricrsantos/ai_workflow_hero/internal/common/debug	[no test files]
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/common/envhygiene	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/common/findingrepro	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/common/logrotate	(cached)
+?   	github.com/ricrsantos/ai_workflow_hero/internal/common/output	[no test files]
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/common/redact	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/common/template	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/common/userpath	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/conversation	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/cycle	1.430s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/cycle/reprotest	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/cycle/screenshots	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/doctor	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/engine	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/harness	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/harnessmgr	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/ideadocs	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/install	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/integration	11.758s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/lifecycle	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/media	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/modelprops	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/plugin	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/status	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/store	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/telegram	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/telegram/daemon	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/telegram/ipc	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/telegram/vault	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/testaccess	(cached)
+?   	github.com/ricrsantos/ai_workflow_hero/internal/testsupport	[no test files]
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/todos	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/tui	65.398s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/uninstall	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/update_models	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/upgrade	0.260s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/variables	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/workflowconfig	(cached)
+ok  	github.com/ricrsantos/ai_workflow_hero/scripts	(cached)
+
+BROAD FOCUSED RACE OUTPUT
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/testaccess	1.108s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/store	3.321s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/engine	2.204s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/cycle	1.421s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/cycle/reports	1.077s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/cycle/reprotest	1.023s [no tests to run]
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/cycle/screenshots	3.264s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/telegram	1.057s [no tests to run]
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/tui	5.651s
+
+FINAL RACE FOLLOW-UP OUTPUT
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/cycle	1.325s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/upgrade	1.327s
+ok  	github.com/ricrsantos/ai_workflow_hero/internal/tui	2.747s

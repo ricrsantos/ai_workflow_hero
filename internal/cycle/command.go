@@ -226,7 +226,7 @@ func newStageCommand() *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmd.AddCommand(newStageStartCommand(), newStageCloseCommand(), newStageLoopBackCommand())
+	cmd.AddCommand(newStageStartCommand(), newStageCloseCommand(), newStageLoopBackCommand(), newStageReopenPlanningCommand())
 	return cmd
 }
 
@@ -397,6 +397,29 @@ func newStageLoopBackCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&from, "from", "", "Stage that failed (qa, judge, browser_ui_validation, qa_end_to_end)")
 	cmd.Flags().StringVar(&reason, "reason", "", "Failure report passed to Implementation")
+	_ = cmd.MarkFlagRequired("from")
+	_ = cmd.MarkFlagRequired("reason")
+	return cmd
+}
+
+func newStageReopenPlanningCommand() *cobra.Command {
+	var from, reason string
+	cmd := &cobra.Command{
+		Use:           "reopen-planning",
+		Short:         "Reopen Planning after an SDD ambiguity",
+		Long:          `Return Planning and every later enabled stage to Waiting when Judge or Implementation reported that the SDD itself is ambiguous (ADR-107). The reason becomes the Planning assignment. Keeps iteration counters.`,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: withService(func(cmd *cobra.Command, svc *Service) error {
+			if err := svc.ReopenPlanning(from, reason); err != nil {
+				return err
+			}
+			output.Successf(cmd.OutOrStdout(), "Planning reopened from %s.", from)
+			return nil
+		}),
+	}
+	cmd.Flags().StringVar(&from, "from", "", "Stage that reported the ambiguity (implementation or judge)")
+	cmd.Flags().StringVar(&reason, "reason", "", "Open questions passed to Planning")
 	_ = cmd.MarkFlagRequired("from")
 	_ = cmd.MarkFlagRequired("reason")
 	return cmd

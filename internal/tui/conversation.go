@@ -586,7 +586,7 @@ func (m model) clearStageHandoffState() model {
 	m.stageHandoffInterventionRequired = false
 	m.stageHandoffReportRetries = 0
 	m.stageHandoffRetryStage = ""
-	m.stageHandoffReportFeedback = ""
+	m.stageHandoffRetryFeedback = ""
 	m.stageHandoffDoneKey = ""
 	m.stageProgressCTAKey = ""
 	return m

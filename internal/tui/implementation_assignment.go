@@ -28,6 +28,7 @@ var (
 	implementationTaskHeaderRE = regexp.MustCompile(`^([ \t]*)([-*+]|[0-9]+[.)])[ \t]+(\[[ xX]\])[ \t]+(.*)$`)
 	implementationTaskIDRE     = regexp.MustCompile(`\[task-[^\]\s]+\]`)
 	implementationAgentTagRE   = regexp.MustCompile(`\[agent:([^\]\s]+)\]`)
+	implementationAfterTagRE   = regexp.MustCompile(`\[after:([^\]]*)\]`)
 )
 
 // implementationTaskBlock is the smallest unit that can be delegated safely.
@@ -44,6 +45,9 @@ type implementationTaskBlock struct {
 	EndLine       int
 	Pending       bool
 	InvalidReason string
+	// After lists the task IDs that must be checked before this task may be
+	// assigned, from `[after:task-a,task-b]` header tags.
+	After []string
 
 	headerStart   int
 	checkboxStart int
@@ -52,11 +56,14 @@ type implementationTaskBlock struct {
 
 // implementationTaskPlan is fail-closed: callers must check Valid before
 // using ByAgent. Unassigned tasks are retained for diagnostics and recovery.
+// Deferred tasks are pending but wait on an unchecked dependency; they are not
+// part of this wave and are not an error.
 type implementationTaskPlan struct {
 	Tasks      []implementationTaskBlock
 	ByAgent    map[string][]implementationTaskBlock
 	Unassigned []implementationTaskBlock
 	Invalid    []implementationTaskBlock
+	Deferred   []implementationTaskBlock
 	Errors     []string
 	Valid      bool
 }
@@ -79,9 +86,11 @@ func partitionImplementationTasks(raw string, activeAgents []string) implementat
 
 	allTasks := parseImplementationTaskBlocks(raw)
 	allCounts := make(map[string]int, len(allTasks))
+	pendingByID := make(map[string]bool, len(allTasks))
 	for _, task := range allTasks {
 		if task.ID != "" {
 			allCounts[task.ID]++
+			pendingByID[task.ID] = task.Pending
 		}
 	}
 	reportedDuplicates := make(map[string]struct{})
@@ -144,10 +153,70 @@ func partitionImplementationTasks(raw string, activeAgents []string) implementat
 			plan.Errors = append(plan.Errors, fmt.Sprintf("task %q owner %q is not active", task.ID, owner))
 			continue
 		}
+		waiting, depErrors := implementationTaskWaitsOn(task, pendingByID)
+		if len(depErrors) > 0 {
+			task.InvalidReason = "task dependency is invalid"
+			plan.Invalid = append(plan.Invalid, task)
+			plan.Errors = append(plan.Errors, depErrors...)
+			continue
+		}
+		if waiting {
+			plan.Deferred = append(plan.Deferred, task)
+			continue
+		}
 		plan.ByAgent[owner] = append(plan.ByAgent[owner], task)
+	}
+	if len(plan.Errors) == 0 && len(plan.Deferred) > 0 && len(plan.ByAgent) == 0 {
+		// Every dependency of a deferred task is itself pending and deferred,
+		// so nothing can ever become ready.
+		ids := make([]string, 0, len(plan.Deferred))
+		for _, task := range plan.Deferred {
+			ids = append(ids, task.ID)
+		}
+		plan.Errors = append(plan.Errors, "no pending task is ready; dependency cycle among "+strings.Join(ids, ", "))
 	}
 	plan.Valid = len(plan.Errors) == 0
 	return plan
+}
+
+// implementationTaskWaitsOn reports whether a pending task still waits on an
+// unchecked dependency. Unknown and self references are errors so a typo can
+// never silently hold a task back forever.
+func implementationTaskWaitsOn(task implementationTaskBlock, pendingByID map[string]bool) (bool, []string) {
+	waiting := false
+	var errs []string
+	for _, dep := range task.After {
+		pending, known := pendingByID[dep]
+		switch {
+		case dep == task.ID:
+			errs = append(errs, fmt.Sprintf("task %q depends on itself", task.ID))
+		case !known:
+			errs = append(errs, fmt.Sprintf("task %q depends on unknown task %q", task.ID, dep))
+		case pending:
+			waiting = true
+		}
+	}
+	return waiting, errs
+}
+
+// implementationTaskAfter parses `[after:task-a,task-b]` tags from a task header.
+func implementationTaskAfter(header string) []string {
+	var out []string
+	seen := map[string]struct{}{}
+	for _, match := range implementationAfterTagRE.FindAllStringSubmatch(header, -1) {
+		for _, raw := range strings.Split(match[1], ",") {
+			id := strings.TrimSpace(raw)
+			if id == "" {
+				continue
+			}
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func normalizeImplementationAgents(activeAgents []string) ([]string, []string) {
@@ -249,6 +318,7 @@ func parseImplementationTaskBlocks(raw string) []implementationTaskBlock {
 			Checkbox:      header.checkbox,
 			Header:        line.text,
 			Pending:       header.checkbox == "[ ]",
+			After:         implementationTaskAfter(header.rest),
 			Line:          line.line,
 			headerStart:   line.start,
 			checkboxStart: line.start + header.checkboxStart,

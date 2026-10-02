@@ -89,6 +89,8 @@ The report `status` MUST be exactly one of `complete`, `partial`, or `blocked`:
 - `partial`: useful work was completed but one or more assigned tasks remain; explain the remaining work in non-empty `blocker` and `next_action` fields.
 - `blocked`: no safe progress is possible; explain the blocker and the concrete next action in non-empty `blocker` and `next_action` fields.
 - `tasks_completed` and `tasks_remaining` MUST contain only IDs from the explicit assignment. `completed_tasks_verified` is true only when every ID in `tasks_completed` is verified; `task_ownership_respected` is false if any task was outside this agent's ownership.
+- The three `acceptance_gates` speak **only for the IDs in `tasks_completed`**: `required_tests_passed` is true when the verification commands of those IDs pass. Unfinished IDs belong in `tasks_remaining` and never make a gate false. The scheduler records every claimed ID whose gates are true, even in a `partial` report.
+- `tests_passed` describes the whole test suite (for Go: `go test ./...`). It gates stage completion, not acceptance of the IDs you completed. A pre-existing failure that no assigned ID asks you to fix is reported as `tests_passed: false` with the cause in `blocker`; it does not invalidate verified work.
 
 A green test subset does not make an incomplete assignment complete. Never claim `complete` merely because the tests you chose passed.
 ## C15 assignment IDs (PRD-C15-001 §6.5)
@@ -113,7 +115,11 @@ Emit **one JSON object** as your entire completion output and **stop**. The orch
 - do **not** edit OpenSpec `tasks.md` checkboxes or write gap files (`qa-gaps.md`, `judge-gaps.md`, etc.);
 - do **not** edit `context/current-state.md`;
 
-Allowed top-level fields only: `stage`, `agent`, `status`, `tasks_completed`, `tasks_remaining`, `files_changed`, `acceptance_gates`, `tests_passed`, `blocker`, `next_action`, `summary`.
+Allowed top-level fields only: `stage`, `agent`, `status`, `tasks_completed`, `tasks_remaining`, `files_changed`, `acceptance_gates`, `tests_passed`, `blocker`, `next_action`, `summary`, and optional `sdd_ambiguity`.
+
+### Open SDD decisions (`sdd_ambiguity`)
+
+Never stop mid-wave to ask the user a question. When a task cannot be implemented without a decision the SDD leaves open (an undefined key, file, constant, contract, or call site), finish every independent assigned task first, then report `status: "partial"` (or `"blocked"` if nothing was possible) with `"sdd_ambiguity": true`, list the affected IDs in `tasks_remaining`, and put the concrete questions in `blocker`, each with your recommended answer. Hero records your verified work and escalates the stage so the user can reopen Planning with `/hero-back`. Never use `sdd_ambiguity` for work that is merely hard or unfinished, and never with `status: "complete"`.
 
 `status` must be `complete`, `partial`, or `blocked` — never `passed` or `failed`. Do **not** emit `failures` or any other field outside the contract: Hero ignores it and records an `unknown_field` warning.
 
@@ -147,7 +153,7 @@ The implementation report MUST be valid JSON and MUST include the completion con
 }
 ```
 
-For `partial` or `blocked` reports, set `status` accordingly, list all unfinished assigned task IDs in `tasks_remaining`, set any unmet `acceptance_gates` values to `false`, and provide non-empty `blocker` and `next_action` strings. Do not use `complete` while any assigned task remains. Never claim that an unassigned or differently owned task was completed.
+For `partial` or `blocked` reports, set `status` accordingly, list all unfinished assigned task IDs in `tasks_remaining`, set an `acceptance_gates` value to `false` only when it fails for the IDs in `tasks_completed`, and provide non-empty `blocker` and `next_action` strings. Do not use `complete` while any assigned task remains. Never claim that an unassigned or differently owned task was completed.
 
 ### Empty verification wave example
 

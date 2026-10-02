@@ -26,7 +26,7 @@ Core ideas:
 | **Development Cycle** | One unit of work (feature, bugfix, greenfield). Stages can be enabled or disabled per cycle. |
 | **Project vs Hero artifacts** | Permanent knowledge lives in `AGENTS.md`, `docs/`, `context/`, `openspec/`. Hero-only state lives under `.workflow-hero/`. |
 | **Context compression** | Agents keep `current-state.md` and `context-log.md` up to date so later sessions stay cheap and consistent. |
-| **Human in the loop** | Stages can require approval; escalation waits for `/hero-continue`; Judge SDD ambiguity uses `/hero-back` or `/hero-approve`. |
+| **Human in the loop** | Stages can require approval; escalation waits for `/hero-continue`; SDD ambiguity (Judge or escalated Implementation) uses `/hero-back`; Judge may also `/hero-approve`. |
 | **Determinism where it matters** | Specs, ADRs, tests, logging standards, and scope routing reduce “prompt lottery” outcomes. |
 
 Stage flow:
@@ -242,6 +242,7 @@ QA End-to-End Playwright journeys (`use_playwright`) remain separate business fl
 - `require_human_approval: false` → stage auto-advances after summary (you can still interrupt before the next stage starts).
 - Iteration/timeout exhaustion → escalates; grant more work with `/hero-continue`.
 - Judge finds SDD ambiguity → `/hero-back` (reopen Planning) or `/hero-approve` (accept as-is).
+- Implementation escalates with open SDD questions or no progress → `/hero-back` (reopen Planning with the questions) or fix the cause and `/hero-continue`. Never repeat `/hero-start` on an unchanged contract.
 
 ### 8.5 Model fallback
 
@@ -432,7 +433,7 @@ Ideias centrais:
 | **Ciclo de desenvolvimento** | Unidade de trabalho (feature, bug, projeto novo). Stages ligáveis/desligáveis por ciclo. |
 | **Artefatos de projeto vs Hero** | Conhecimento permanente: `AGENTS.md`, `docs/`, `context/`, `openspec/`. Estado do Hero: `.workflow-hero/`. |
 | **Compressão de contexto** | `current-state.md` e `context-log.md` mantidos atualizados. |
-| **Humano no loop** | Aprovação por stage, escalonamento com `/hero-continue`, ambiguidade de SDD com `/hero-back` ou `/hero-approve`. |
+| **Humano no loop** | Aprovação por stage, escalonamento com `/hero-continue`, ambiguidade de SDD (Judge ou Implementation escalada) com `/hero-back`; o Judge também aceita `/hero-approve`. |
 | **Determinismo onde importa** | Specs, ADRs, testes, padrão de logs e roteamento por scope. |
 
 Fluxo de stages:

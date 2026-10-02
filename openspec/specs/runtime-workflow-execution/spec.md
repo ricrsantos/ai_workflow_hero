@@ -50,7 +50,11 @@ Each enabled TUI stage SHALL honor `max_iterations` and a cumulative active wall
 - **THEN** the stage requests an explicit validated limit increase and does not silently reset its timeout
 
 ### Requirement: Runtime SHALL implement backtracking and retry loops as specified
-QA/Judge failures SHALL route back to implementation agents for fixes; `/hero:back` SHALL reopen Planning and reset downstream stage statuses for re-execution (PRD §5.4).
+QA/Judge failures SHALL route back to implementation agents for fixes; `/hero-back` SHALL reopen Planning through the deterministic `hero stage reopen-planning --from judge|implementation --reason …` verb, which resets Planning and every later enabled stage to Waiting, keeps iteration counters, and stores the reason as the Planning assignment (PRD §5.4; ADR-107). `/hero-back` SHALL be available when Judge is pending approval or Implementation is Escalated.
+
+#### Scenario: Implementation escalates on SDD ambiguity
+- **WHEN** an Implementation report sets `sdd_ambiguity: true` with status `partial` and the open questions in `blocker`
+- **THEN** the scheduler records the report's verified claims, escalates Implementation with `implementation_sdd_ambiguity`, and offers `/hero-back`
 
 #### Scenario: Judge reports SDD ambiguity after retries
 - **WHEN** Judge identifies unresolved SDD ambiguity after implementation-gap retries
@@ -228,6 +232,28 @@ For each active Implementation agent, the scheduler SHALL build one ordered, dup
 #### Scenario: Empty after deferral does not redispatch
 - **WHEN** the last remaining finding is deferred and no OpenSpec tasks remain unchecked
 - **THEN** Implementation closes without another Execute
+
+### Requirement: Runtime SHALL record Implementation progress per verified claim
+The Implementation gate SHALL record every ID in `tasks_completed` whose `completed_tasks_verified`, `task_ownership_respected`, and `required_tests_passed` gates are true, regardless of the report's `tests_passed` value or the presence of unfinished IDs; `tests_passed` SHALL gate only stage completion. A task line MAY declare `[after:task-a,task-b]`; the scheduler SHALL assign it only after every listed task is checked, and SHALL treat unknown or self dependencies, or a cycle that leaves no task ready, as an invalid plan. A valid, non-blocked wave that records nothing SHALL escalate Implementation with `implementation_no_progress` instead of asking for another `/hero-start` (ADR-107).
+
+#### Scenario: Open final-verification task does not discard verified work
+- **WHEN** a `partial` report lists `task-03` as completed with all three gates true, `tests_passed: false`, and `task-19` remaining
+- **THEN** `task-03` is checked in `tasks.md` and a fresh wave starts
+
+#### Scenario: Dependent task waits for its prerequisite
+- **WHEN** `task-19` declares `[after:task-09]` and `task-09` is unchecked
+- **THEN** `task-19` is deferred and not assigned in this wave
+
+#### Scenario: Wave without progress escalates
+- **WHEN** a valid, non-blocked wave records no checklist or finding progress
+- **THEN** Implementation is Escalated with `implementation_no_progress` and the copy lists `/hero-continue`, `/hero-back`, `/hero-add-todo`, `/hero-cancel`, and `/hero-finish`
+
+### Requirement: Runtime SHALL refuse unsatisfiable SDDs at Planning close
+Before Planning closes, the TUI SHALL check the linked OpenSpec change and refuse to close when tasks have plan errors, dependency cycles, no `Verify:` criterion, instructions to edit `context/current-state.md`, or when `tasks.md`, `design.md`, or `proposal.md` contain unresolved-decision markers. A refusal SHALL re-dispatch `planning_agent` with the list of problems at most twice, then escalate Planning with `planning_sdd_invalid` (ADR-107).
+
+#### Scenario: Task without verification is sent back to Planning
+- **WHEN** Planning finishes and `task-01` has no `Verify:` criterion
+- **THEN** Planning stays open and `planning_agent` is re-dispatched with the problem list
 
 ### Requirement: Runtime SHALL support Escalated finding triage
 When a loop is Escalated, `/hero-add-todo` SHALL let the user defer selected open/reopened findings to pending ToDos. Partial deferral SHALL leave the stage Escalated and SHALL require a separate `/hero-continue [N]` for remaining work. Deferring every remaining blocker after successful projection SHALL complete the cycle with status `completed` and disposition `completed_with_deferred_todos`, skip enabled downstream validation, and MUST NOT run an empty Implementation wave (PRD-C15-001 §8; ADR-088).

@@ -17,6 +17,10 @@ type ImplementationReport struct {
 	Summary         string
 	Blocker         string
 	NextAction      string
+	// SDDAmbiguity marks a report whose remaining work is blocked by a decision
+	// the SDD left open. The questions travel in Blocker; the scheduler
+	// escalates instead of re-dispatching the same contract.
+	SDDAmbiguity bool
 	// ContractWarnings records deviations Hero tolerated instead of rejecting.
 	ContractWarnings []ReportWarning
 }
@@ -25,6 +29,7 @@ var implementationAllowed = map[string]struct{}{
 	"stage": {}, "agent": {}, "status": {}, "tasks_completed": {}, "tasks_remaining": {},
 	"tests_passed": {}, "acceptance_gates": {}, "summary": {}, "blocker": {}, "next_action": {},
 	"files_changed": {}, // informational; ignored by the scheduler
+	"sdd_ambiguity": {},
 }
 
 const (
@@ -98,6 +103,15 @@ func DecodeImplementation(data []byte, expectedAgent string, assignment []string
 		return nil, err
 	}
 
+	ambiguity, err := optionalBoolPtr(root, "sdd_ambiguity")
+	if err != nil {
+		return nil, err
+	}
+	sddAmbiguity := ambiguity != nil && *ambiguity
+	if sddAmbiguity && status == ImplStatusComplete {
+		return nil, diag(CodeInvalidEnum, "sdd_ambiguity", "true", "sdd_ambiguity requires status partial or blocked")
+	}
+
 	report := &ImplementationReport{
 		Stage:            stage,
 		Agent:            agent,
@@ -107,6 +121,7 @@ func DecodeImplementation(data []byte, expectedAgent string, assignment []string
 		TestsPassed:      testsPassed,
 		AcceptanceGates:  gates,
 		Summary:          summary,
+		SDDAmbiguity:     sddAmbiguity,
 		ContractWarnings: warnings,
 	}
 

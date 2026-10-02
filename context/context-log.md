@@ -3243,3 +3243,51 @@ confirmed pre-dispatch preparation wiring and both approved D9 lint gates.
 The orchestrator refreshed the C17 current-state summary to remove obsolete
 pending-work and one-wave lint-exception descriptions. Browser UI Validation
 and QA End-to-End remain disabled by this cycle's native-scope configuration.
+
+## 2026-10-02 — C17 cycle completion
+
+Validated `hero status` against workflow-config.yml: Research, Planning,
+Implementation, QA and Judge are Completed with Auto approval; Browser UI
+Validation and QA End-to-End are disabled and Skipped. All 19 linked OpenSpec
+tasks are checked. All three findings are done, with zero open/reopened findings
+and zero pending, adopted or deferred ToDos. Final QA/Judge verification remains
+the completion evidence; no code was changed during closure.
+
+Executed `hero finish --metrics-json '[]'` successfully and confirmed status
+`completed` via `hero status --json`. The empty metrics array honors the explicit
+TUI command override while preserving harness-recorded metrics without estimates
+or duplicate rows. No workflow.md or metrics.md was written. Updated
+current-state.md. The linked `browser-validation-execution-budgets` change awaits
+`/hero-archive` in the Hero TUI; OpenSpec archive precedes cycle-folder archive,
+whose date is derived from the store's completed_at.
+
+## 2026-10-02 — Implementation gate root-cause fix (ADR-107)
+
+Context: C17 finished only after manual SDD amendments; the root causes were in
+Hero. User chose to implement S1–S6 directly in this repo with an ADR (not as a
+Hero cycle).
+
+Changes:
+- S1 per-claim acceptance (`internal/tui/stage_handoff.go`): claims are checked
+  when the three acceptance gates are true; `tests_passed` gates only close.
+- S2 dependency-aware waves (`implementation_assignment.go`): `[after:...]`
+  tags defer tasks; unknown/self/cyclic dependencies invalidate the plan.
+- S3 contracts: implementation agents (generic/backend/frontend) and
+  planning_agent in all four harness trees.
+- S4 Planning SDD check (`implementation_sdd_lint.go`): plan/dependency errors,
+  per-task `Verify:`, no `current-state.md` edit tasks (edit-verb rule, tuned to
+  avoid the C17 "is not part of this task" false positive), no open-decision
+  markers; retry with feedback twice, then `planning_sdd_invalid`.
+- S5 no-progress escalation `implementation_no_progress`; escalated orchestrator
+  preamble never suggests `/hero-start`.
+- S6 optional implementation `sdd_ambiguity`, escalation
+  `implementation_sdd_ambiguity`, engine `ReopenPlanning` + CLI
+  `hero stage reopen-planning`, `/hero-back` from escalated Implementation,
+  hero-back command assets rewritten (no LLM-driven state juggling).
+
+Evidence: archived changes probed with the SDD check — pre-C15 archives clean;
+recent ones flag only missing `Verify:` (new rule) and real `Update
+context/current-state.md` tasks. `go test ./...`, `go vet ./...`,
+`golangci-lint --new-from-rev=HEAD`, and `openspec validate --specs --strict`
+pass. Docs: ADR-C17-003 (ADR-107), ADR index, documents.json,
+runtime-workflow-execution spec, workflow-help, architecture overview.

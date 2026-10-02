@@ -205,10 +205,11 @@ type model struct {
 	// produce a valid report escalates to the user instead of looping.
 	stageHandoffReportRetries int
 	stageHandoffRetryStage    string
-	// stageHandoffReportFeedback is the decoder diagnostic handed to the stage
-	// agent on a retry, so it corrects the report instead of repeating it.
-	stageHandoffReportFeedback string
-	stageHandoffDoneKey        string // "stage:iteration" already TUI-executed this session
+	// stageHandoffRetryFeedback is the prompt section handed to the stage agent
+	// on a retry (a rejected report or a rejected Planning SDD), so it corrects
+	// the output instead of repeating it.
+	stageHandoffRetryFeedback string
+	stageHandoffDoneKey       string // "stage:iteration" already TUI-executed this session
 	// Repro gate state for the current Implementation wave. The gate runs
 	// asynchronously, so the wave's decision waits for stageHandoffReproChecked.
 	stageHandoffReproChecked    bool
@@ -1922,7 +1923,7 @@ func (m model) beginHeroBack() (model, tea.Cmd) {
 		m = m.setStatusResult(false, "/hero-back", noActiveCycleForStartMessage())
 		return m, nil
 	}
-	if !strings.EqualFold(pendingApprovalStage(st), "judge") {
+	if heroBackSourceStage(st) == "" {
 		m = m.setStatusResult(false, "/hero-back", noJudgePendingApprovalMessage())
 		return m, nil
 	}
@@ -1950,7 +1951,20 @@ func noEscalatedStageMessage() string {
 }
 
 func noJudgePendingApprovalMessage() string {
-	return "No Judge stage pending approval for /hero-back."
+	return "/hero-back needs Judge pending approval or an escalated Implementation."
+}
+
+// heroBackSourceStage names the stage that may reopen Planning: Judge pending
+// approval after sdd_ambiguity, or Implementation escalated by the scheduler
+// (ADR-107). Empty means /hero-back is not available.
+func heroBackSourceStage(st cycle.StatusView) string {
+	if strings.EqualFold(pendingApprovalStage(st), "judge") {
+		return "judge"
+	}
+	if strings.EqualFold(escalatedStage(st), "implementation") {
+		return "implementation"
+	}
+	return ""
 }
 
 func (m model) beginHeroApprove() (model, tea.Cmd) {

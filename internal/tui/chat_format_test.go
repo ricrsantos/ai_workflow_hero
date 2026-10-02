@@ -327,8 +327,11 @@ func TestTUIRuntimeCommandPrompt_HeroBackOverrides(t *testing.T) {
 	if !strings.Contains(got, "planning_agent") {
 		t.Fatalf("missing planning_agent: %q", got)
 	}
-	if !strings.Contains(got, "no `hero back` CLI") {
-		t.Fatalf("missing no CLI verb note: %q", got)
+	if !strings.Contains(got, "hero stage reopen-planning --from <judge|implementation>") {
+		t.Fatalf("missing deterministic reopen verb: %q", got)
+	}
+	if !strings.Contains(got, "Do NOT dispatch Task for planning_agent") {
+		t.Fatalf("missing no-dispatch rule: %q", got)
 	}
 }
 

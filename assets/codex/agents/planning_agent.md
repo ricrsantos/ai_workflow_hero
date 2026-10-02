@@ -24,6 +24,8 @@ Configuration → Research → **Planning** → Implementation → QA → Judge 
 6. Give every implementation task exactly one canonical owner marker. The marker must appear on the task line; never emit multiple owners or an unowned implementation task when more than one implementation agent is active. Use only the canonical markers shown in the task format below.
 7. Decompose cross-cutting work into independently testable tasks with explicit dependencies, assigning one canonical owner to each resulting task. Never represent cross-cutting work with a multi-owner task or infer ownership from prose.
    Use the form `- [ ] [task-01] [agent:backend_agent] Implement the service`; use `[agent:frontend_agent]` or `[agent:generic_agent]` for tasks owned by those agents. Every task ID stays in brackets and every task line has exactly one owner marker.
+   Declare dependencies on the task line with `[after:task-01,task-02]`. Hero assigns a task to an Implementation wave only after every listed task is checked, so dependencies must be machine-readable — prose such as "after task-05" is not enforced. Every referenced ID must exist and the graph must be acyclic.
+   End every task with an executable `Verify:` criterion scoped to that task (a focused test command or a deterministic check). Hero accepts each completed task on its own verification.
 8. Prefer plans that encourage subagent use whenever independent work units exist — never force a fixed backend-first order unless the SDD requires it.
 9. Iterate with the user for refinement if needed (max_iterations from workflow-config.yml).
 10. When /hero-back is triggered: edit the existing OpenSpec proposal in place (do not archive and recreate).
@@ -59,6 +61,9 @@ The orchestrator applies **Model Resolution** (see `orchestration_agent`): the T
 - SDD must reference approved PRD sections for traceability.
 - Always mark parallel vs series in `tasks.md`; use subagents whenever possible.
 - Before completing Planning, verify that every implementation task has exactly one canonical owner marker and that every cross-cutting task was decomposed into dependent single-owner tasks.
+- Every task must be satisfiable by its owner within this change. Never create an Implementation task that edits `context/current-state.md` (the orchestrator updates it at Stage Close), edits `tasks.md` checkboxes, or requires repository-wide gates (lint, static analysis, full release verification) to be green beyond the files this change touches. Whole-project quality gates belong to the QA stage; pre-existing debt is recorded, not assigned.
+- Resolve every decision Implementation will need before Planning closes: configuration keys, file locations, constants, contracts, and production call sites. Do not leave `TBD`, "to be decided", "open question", or "needs decision" in `tasks.md`, `design.md`, or `proposal.md`; ask the user during Planning instead.
+- When Hero rejects the SDD with a list of problems, fix each one in place in the same OpenSpec change and emit your Output Format again.
 
 ## Output Format
 

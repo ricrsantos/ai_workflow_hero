@@ -5,6 +5,8 @@
 >
 > **Architecture overview** (high-level diagrams and package map; non-normative): [architecture-overview.md](architecture-overview.md).
 
+Post-C17 gate decision: [ADR-C17-003-implementation-gate-progress.md](ADR-C17-003-implementation-gate-progress.md) (ADR-107).
+
 C17 browser execution design: [ADR-C17-002-browser-validation-execution-budgets.md](ADR-C17-002-browser-validation-execution-budgets.md), ADR-103–106, accepted in Research; implementation pending. Existing ADR-C17-001 is preserved; this cycle excludes additional IDE-removal work.
 
 | # | Title | Status |
@@ -102,6 +104,7 @@ C17 browser execution design: [ADR-C17-002-browser-validation-execution-budgets.
 | [ADR-100](ADR-C17-001-tui-only-runtime-report-tolerance.md#adr-100-stage-metrics-are-measured-by-the-runtime-never-self-reported-by-agents) | Stage metrics are measured by the runtime, never self-reported by agents | Accepted |
 | [ADR-101](ADR-C17-001-tui-only-runtime-report-tolerance.md#adr-101-report-contracts-fail-closed-on-missing-fields-and-tolerate-extra-ones) | Report contracts fail closed on missing fields and tolerate extra ones | Accepted |
 | [ADR-102](ADR-C17-001-tui-only-runtime-report-tolerance.md#adr-102-a-rejected-report-retries-with-feedback-then-escalates-it-never-parks-the-cycle-silently) | A rejected report retries with feedback, then escalates; it never parks the cycle silently | Accepted |
+| [ADR-107](ADR-C17-003-implementation-gate-progress.md#adr-107-the-implementation-gate-records-progress-per-claim) | The Implementation gate records progress per claim, schedules by declared dependencies, escalates instead of repeating a wave, and checks the SDD at Planning close | Accepted |
 
 > **Numbering convention**: this index uses `ADR-NNN-title` anchors within a single file. If the number of ADRs grows large enough to hurt readability, split into one file per ADR under `docs/architecture/`, named `ADR-NNN-title.md` (e.g. `ADR-001-stack.md`), and keep this file as the index only. Not required while the set stays this size.
 

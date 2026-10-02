@@ -788,6 +788,15 @@ func (s *Service) LoopBackToImplementation(fromStage, reason string) error {
 	return s.Engine.LoopBackToImplementation(c.ID, fromStage, reason)
 }
 
+// ReopenPlanning returns the active cycle to Planning after an SDD ambiguity.
+func (s *Service) ReopenPlanning(fromStage, reason string) error {
+	c, err := s.Store.GetActiveCycle()
+	if err != nil {
+		return err
+	}
+	return s.Engine.ReopenPlanning(c.ID, fromStage, reason)
+}
+
 // EscalateStage stops a stage for an explicit scheduler reason and waits for a
 // human decision (/hero-continue, /hero-add-todo, /hero-cancel, /hero-finish).
 func (s *Service) EscalateStage(name, reason string) error {

@@ -132,6 +132,24 @@ func tuiHeroStartContinueAfterIncompleteStagePreamble(stageName, reason string) 
 		"\n---\n\n"
 }
 
+// tuiHeroStartContinueAfterEscalatedStagePreamble resumes the orchestrator after
+// the scheduler escalated a stage. The stage is no longer Running, so asking the
+// user for /hero-start would only repeat the same refusal.
+func tuiHeroStartContinueAfterEscalatedStagePreamble(stageName, reason string) string {
+	stageName = strings.TrimSpace(stageName)
+	reason = strings.TrimSpace(reason)
+	out := "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
+		"You are the orchestration agent resuming after the Hero TUI scheduler escalated " + stageName + ". Follow these overrides:\n\n" +
+		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ⚠).\n" +
+		"- Do NOT close, approve, advance, start, or continue any stage. The escalation is already persisted.\n" +
+		"- Explain the escalation reason and the evidence in the Chat handoff copy below in a few lines.\n" +
+		"- Do NOT tell the user to run /hero-start. List only the next steps named in the handoff copy and STOP.\n"
+	if reason != "" {
+		out += "\nEscalation reason: " + reason + "\n"
+	}
+	return out + "\n---\n\n"
+}
+
 func tuiDiscoverResearchPreamble() string {
 	return "## TUI execution context (Hero terminal UI — not Cursor IDE chat)\n\n" +
 		"You are running the Research stage inside the Hero TUI as discover_agent. Follow discover_agent.md with these overrides:\n\n" +
@@ -226,10 +244,10 @@ func tuiHeroBackPreamble() string {
 		"You are running /hero-back inside the Hero TUI as the orchestration agent. Follow the agent instructions and command instructions below with these overrides:\n\n" +
 		"- Output plain text only: no markdown tables, links, or bold syntax. Use arrow status lines (→, ✓, ⚠).\n" +
 		"- Do NOT ask the user to open a new Cursor chat or select an IDE orchestrator model.\n" +
-		"- Run `hero status` to confirm Judge stage context.\n" +
-		"- There is no `hero back` CLI verb — reopen Planning via Task `planning_agent` with Model Resolution from workflow-config.yml.\n" +
-		"- After Planning completes, re-run Implementation → QA → Judge with fresh Task sessions.\n" +
-		"- Persist each stage close via hero CLI with `--metrics-json` per Metrics Procedure.\n" +
+		"- Run `hero status` and identify the source stage: Judge pending approval, or Implementation Escalated.\n" +
+		"- Collect the open SDD questions from the source stage report (Judge ambiguity report, or the Implementation blocker shown in the escalation).\n" +
+		"- Run `hero stage reopen-planning --from <judge|implementation> --reason \"<the open questions>\"`, then `hero stage start --name planning`, and STOP.\n" +
+		"- Do NOT dispatch Task for planning_agent or any stage agent: the TUI Executes planning_agent with your reason as its assignment, then runs Implementation → QA → Judge.\n" +
 		"- Record the back-step decision in `context-log.md`.\n\n" +
 		"---\n\n"
 }
