@@ -26,7 +26,7 @@ Core ideas:
 | **Development Cycle** | One unit of work (feature, bugfix, greenfield). Stages can be enabled or disabled per cycle. |
 | **Project vs Hero artifacts** | Permanent knowledge lives in `AGENTS.md`, `docs/`, `context/`, `openspec/`. Hero-only state lives under `.workflow-hero/`. |
 | **Context compression** | Agents keep `current-state.md` and `context-log.md` up to date so later sessions stay cheap and consistent. |
-| **Human in the loop** | Stages can require approval; escalation waits for `/hero-continue`; Judge SDD ambiguity uses `/hero-back` or `/hero-approve`. |
+| **Human in the loop** | Stages can require approval; escalation waits for `/hero-continue`; SDD ambiguity (Judge or escalated Implementation) uses `/hero-back`; Judge may also `/hero-approve`. |
 | **Determinism where it matters** | Specs, ADRs, tests, logging standards, and scope routing reduce “prompt lottery” outcomes. |
 
 Stage flow:
@@ -225,12 +225,14 @@ If a harness asks for native access (for example, OpenCode tool permission), the
 
 When `stages.browser_ui_validation.enabled: true` (requires `scope.frontend: true`):
 
-1. **Browser Health** always runs via `browser_ui_agent` + Playwright: open app, render check, console errors, failed network (CSS/JS/images/fonts/APIs), CSS load. Desktop viewport 1280. Playwright missing at execution → Health failure → fix loop to `frontend_agent`.
+1. **Browser Health** always runs via `browser_ui_agent` + the Planning-approved browser method: open app, render check, console errors, failed network (CSS/JS/images/fonts/APIs), CSS load. Desktop viewport 1280. Prefer an existing Playwright Test suite for repeatable E2E; otherwise use Playwright CLI with its official skill, skills-less CLI only if skills cannot load, and MCP only for persistent/iterative inspection or a verified CLI capability gap. The active stage session must admit the selected method/tool and verify Playwright >=1.63.0. Missing/below-minimum tools or permissions block with setup instructions and `/hero-continue`; they are environment/tool-absence blockers, never frontend findings or repair loops. QA does not install or upgrade tools. HTTP is not a browser fallback.
 2. **Visual Validation** runs only if Health passed **and** `visual_validation.enabled: true`. Agent captures screenshots at 1280 / 768 / 375 and compares with agent vision against PNGs named `<screen-id>.png` under `reference_dir`. Missing PNG → warn and continue (not a failure). Empty/missing dir → one warning, skip Visual.
 3. Artifacts: `.workflow-hero/cycles/current/browser-ui/` (`health-report.md`, `screenshots/`, optional `visual-report.md`). User reference PNGs are never overwritten.
 4. Failure routing: asset/console/render/visual → `frontend_agent`; clearly classified API failures → `backend_agent`.
 
-Prerequisite: install/configure Playwright in the **consumer project** (Hero does not auto-install it).
+For planned screenshot evidence, the TUI assignment supplies the stage and attempt. The agent writes an exclusive image under `.workflow-hero/cycles/current/screenshots/.staging/<stage>/<attempt>/` and references it from the matching coverage item with the three `capture_safety` attestations. Never write directly to the ready `current/screenshots/` set. Optional communication captures obey that stage's `screenshots.enabled` toggle (default false); required planned evidence remains mandatory. Hero validates and promotes staged captures after typed report decoding.
+
+Prerequisite: Planning selects and validates the real consumer-project method/tool. Install/configure missing prerequisites outside QA; Hero does not auto-install or upgrade them.
 
 QA End-to-End Playwright journeys (`use_playwright`) remain separate business flows.
 
@@ -240,6 +242,7 @@ QA End-to-End Playwright journeys (`use_playwright`) remain separate business fl
 - `require_human_approval: false` → stage auto-advances after summary (you can still interrupt before the next stage starts).
 - Iteration/timeout exhaustion → escalates; grant more work with `/hero-continue`.
 - Judge finds SDD ambiguity → `/hero-back` (reopen Planning) or `/hero-approve` (accept as-is).
+- Implementation escalates with open SDD questions or no progress → `/hero-back` (reopen Planning with the questions) or fix the cause and `/hero-continue`. Never repeat `/hero-start` on an unchanged contract.
 
 ### 8.5 Model fallback
 
@@ -430,7 +433,7 @@ Ideias centrais:
 | **Ciclo de desenvolvimento** | Unidade de trabalho (feature, bug, projeto novo). Stages ligáveis/desligáveis por ciclo. |
 | **Artefatos de projeto vs Hero** | Conhecimento permanente: `AGENTS.md`, `docs/`, `context/`, `openspec/`. Estado do Hero: `.workflow-hero/`. |
 | **Compressão de contexto** | `current-state.md` e `context-log.md` mantidos atualizados. |
-| **Humano no loop** | Aprovação por stage, escalonamento com `/hero-continue`, ambiguidade de SDD com `/hero-back` ou `/hero-approve`. |
+| **Humano no loop** | Aprovação por stage, escalonamento com `/hero-continue`, ambiguidade de SDD (Judge ou Implementation escalada) com `/hero-back`; o Judge também aceita `/hero-approve`. |
 | **Determinismo onde importa** | Specs, ADRs, testes, padrão de logs e roteamento por scope. |
 
 Fluxo de stages:
@@ -561,6 +564,8 @@ O `/interrupt` do Telegram cancela o Execute em andamento no Chat (incluindo exe
 Se o harness pedir acesso nativo (por exemplo, uma permissão de ferramenta do OpenCode), a TUI mantém o prompt local `y`/`n` e encaminha uma aprovação separada para o Telegram pareado. Responda com `/hero-permission <id> allow` ou `/hero-permission <id> deny`; o ID impede que uma resposta antiga libere outra solicitação. Notificações de aprovação do ciclo geradas por comandos `hero` executados dentro do OpenCode também chegam pela TUI proprietária; o SQLite continua sendo o log de auditoria e não é consultado por polling para entrega ao vivo.
 
 Configure `workflow_config.user_preferred_language`, `scope`, `stages`, `agents`, `fallback_model`, `stages.browser_ui_validation` e `stages.qa_end_to_end.use_playwright` conforme a seção em inglês (§8) — os campos são os mesmos. Browser UI Validation exige Playwright no projeto consumidor; artefatos em `.workflow-hero/cycles/current/browser-ui/`.
+
+Ausência de ferramenta/permissão ou Playwright abaixo de 1.63.0 bloqueia a etapa com instruções de configuração e `/hero-continue`; não é defeito de frontend nem uma correção automática da QA. QA não instala ferramentas. O modo HTTP de End-to-End só vale quando planejado explicitamente e nunca substitui silenciosamente a validação no navegador. Capturas planejadas são gravadas apenas em `.staging/<stage>/<attempt>/`, com `capture_safety`; nunca escreva diretamente no conjunto pronto de screenshots.
 
 ---
 

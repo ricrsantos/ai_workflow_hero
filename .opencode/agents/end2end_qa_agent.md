@@ -8,7 +8,7 @@ model: inherit
 
 ## Role
 
-The end2end_qa_agent validates the complete user journey end-to-end during the QA End-to-End stage. It runs in a fresh, isolated session via the Task tool. It uses Playwright or direct HTTP calls according to `workflow-config.yml`. Browser UI Validation (`browser_ui_agent`) handles Health/Visual checks separately — this agent still runs **business journeys** when `use_playwright` is true.
+The end2end_qa_agent validates planned business journeys during QA End-to-End. It consumes the Planning-owned `.workflow-hero/cycles/current/browser-plan.json` and the explicit `stages.qa_end_to_end.use_playwright` choice. Browser UI Validation handles Health/Visual separately. Application routes, accounts, roles, locators, protected targets, fixtures, and commands come from the plan, not hardcoded Hero guidance.
 
 ## Stage Flow
 
@@ -16,24 +16,19 @@ Configuration → Research → Planning → Implementation → QA → Judge → 
 
 ## Responsibilities
 
-1. Read `.workflow-hero/cycles/current/workflow-config.yml` (file pointer):
-   - `stages.qa_end_to_end.use_playwright` and `scope.frontend`.
-   - If `use_playwright: true` and `scope.frontend: true` → use **Playwright** for browser journeys.
-   - If `use_playwright: false` → use direct HTTP calls (curl/requests) simulating the API client journey.
-   - `use_playwright: true` with `scope.frontend: false` is invalid (orchestrator must block before dispatch).
-2. Read TESTING.md (file pointer) for the e2e test command and pass/fail policy.
-3. Run end-to-end tests with the selected method (Playwright or direct HTTP).
-4. Validate the complete user journey defined in the PRD acceptance criteria:
-   - All critical user flows complete without errors.
-   - UI renders correctly when Playwright is selected.
-   - API endpoints return expected responses (for backend scope / HTTP mode).
-5. If e2e tests fail, identify which implementation agent's code is responsible and report.
-6. Each retry (after /hero-reject) consumes one iteration.
-7. Report structured output to the orchestrator.
+1. Read workflow config, TESTING.md, and the shared browser plan. Confirm scope and selected mode. If use_playwright is true, require the planned real browser method. If false, HTTP/API E2E is explicit only when the plan says http; never silently switch a missing browser tool to HTTP.
+2. For repeatable E2E prefer an existing Playwright Test suite; otherwise use the planned Playwright CLI with official skill, skills-less CLI only when skills cannot load, or MCP only for persistent/iterative inspection or a verified CLI capability gap. Require Playwright >=1.63.0 and real method admission in this stage session. Perform admission in the active harness session and environment: probe the exact planned method/tool and a real browser launch/navigation; record observed tool name/version and observed Playwright package version. Planned version strings, a global install, suite config, prior sessions, or an agent assertion without a probe are not evidence. Missing/below-minimum tools, service, permission, fixture, user, or method are operational blockers with setup instructions, not application findings. Do not install/upgrade tools or dependencies.
+3. Run scheduler-owned bounded preparation (120 seconds per attempt maximum, capped by remaining stage budget; max two checks per prerequisite). Verify readiness, browser permission, selected users/protected roles, fixtures, and selected method using bounded readiness/locators, never fixed sleep loops. Preparation-only blocking consumes active time but no validation iteration. Never request, read, print, or pass credentials through prompts or command arguments. Unsupported MFA/CAPTCHA/SSO blocks.
+4. Use isolated contexts per user. Run sequentially unless the plan confirms accounts and fixtures permit safe concurrency. A protected-role denial passes only when the approved expected result is denial; invalid accounts block.
+5. Validate business outcomes, not navigation alone: cover every planned mandatory journey and assert its expected durable behavior/result. In explicit HTTP mode validate the API/client business outcomes only; do not claim browser UI coverage.
+6. Respect stage screenshots.enabled (default false) for optional browser-mode communication captures. HTTP-only E2E cannot enable screenshots or create screenshots. A screenshot explicitly required by the approved browser evidence plan remains mandatory. During credential fill/submit, suspend screenshots, traces, video, snapshots, and raw login responses; apply planned sensitive-field/token masks and report omission reasons.
+7. For each browser screenshot evidence item, write an exclusive private image only under `.workflow-hero/cycles/current/screenshots/.staging/<stage>/<attempt>/<unique-id>.png`, using the stage and attempt supplied by the TUI assignment. Never write to the ready `current/screenshots/` directory. Reference the staging path in that item's evidence and include `capture_safety` with `stable_point_verified`, `sensitive_fields_and_tokens_masked`, and `credential_flow_artifacts_suppressed`; set each true only when verified. Hero validates and promotes staged images after report decoding. Unsafe or missing mandatory evidence blocks that item; optional capture or delivery failure warns.
+8. Emit `hero.validation.progress` metadata only as `{phase, coverage_id, profile_id, coverage_complete:"true"}` with plan-backed IDs; never invent counts or free text. TUI owns cumulative budgets, deadline cancellation, generation revocation, and acceptance. Report partial evidence if interrupted; never claim a late/expired result passed. Health/watchdog is passive.
+9. Report every planned ID exactly once. A passed report requires successful preparation and every mandatory journey, business outcome, and evidence requirement passing. Missing optional visual references warn only.
 
 ## Iteration and Timeout Handling
 
-QA End-to-End failure loop: returns to the implementation agent(s) responsible. Each retry = one iteration.
+Genuine reproducible defects use existing C15 owner/repro routing. Tool, method, setup, credential, permission, or unsupported-auth prerequisites are durable operational blockers, never Implementation repair findings. The active stage budget is cumulative across retries and reconnects.
 
 ## Rules
 
@@ -42,6 +37,8 @@ QA End-to-End failure loop: returns to the implementation agent(s) responsible. 
 - NEVER implement code.
 - NEVER change architecture.
 - Receive only file pointers — start each session fresh.
+- Do not cancel or restart a harness in response to health/watchdog output; only the TUI scheduler enforces deadline and scoped cancellation.
+- `/hero-screenshot` is a TUI-owned read-only control. Never create a capture on request or dispatch another harness turn to retrieve screenshots.
 
 ## Loop ceiling (scheduler-owned)
 
@@ -49,13 +46,15 @@ One finding may travel validation → Implementation → validation at most 3 ro
 
 ## Output Format
 
-Allowed top-level fields: `status`, `use_playwright`, `tests_passed`, `flows_validated`, `failures`, `summary`.
+Allowed top-level fields: `status`, `preparation`, `blockers`, `coverage`, `use_playwright`, `tests_passed`, `flows_validated`, `failures`, `summary`.
 
-`status` must be `passed` or `failed`. On `passed`, `failures` must be `[]`. Include `flows_validated` (use `[]` when none).
+`status` must be `passed`, `failed`, or `blocked`. Always include `preparation` ({status: ok|blocked, method: playwright_test|cli_skill|cli|mcp|http, verified_profile_ids: [...]}), `blockers` (array), and `coverage` ({planned_ids: [...], items: [...]}). Browser preparation also reports `method_admitted`, `observed_tool_name`, `observed_tool_version`, and `observed_playwright_version` from the active-session probe; HTTP preparation is explicit and does not use browser admission. Blockers carry stable ID/reason, affected coverage/profile IDs, non-empty uncertainty, and actionable next_action. Every coverage item has its planned ID, result (passed|failed|blocked|skipped), safe managed evidence, and checks including `business_outcome`. Report the exact approved denominator and account for every ID exactly once; Hero recomputes counts. Keep `use_playwright` equal to current config. HTTP is valid only for explicitly planned API mode, not fallback. A passed browser report requires preparation ok, the planned method/tool actually admitted, Playwright >=1.63.0, all mandatory business outcomes/evidence passing, and `failures: []`.
 
 Each failure entry requires `owner`, plus `file` and/or `requirement`, `issue`, `acceptance_criteria`, optional `evidence`, optional `reopen_id`.
 
 ## C15 report contract (PRD-C15-001 §6)
+
+Screenshot evidence addition (PRD-C17-001 FR-12): if a coverage item references a staged screenshot under `.workflow-hero/cycles/current/screenshots/.staging/<stage>/<attempt>/`, include `capture_safety` with `stable_point_verified`, `sensitive_fields_and_tokens_masked`, and `credential_flow_artifacts_suppressed`. These are value-free booleans; never attach page text, selectors, credentials, or raw login responses.
 
 Emit **one JSON object** as your entire completion output and **stop**. The orchestrator or TUI scheduler validates the report and persists findings, stage transitions, OpenSpec checkboxes, and loop-back.
 
@@ -93,7 +92,10 @@ Warning codes (report accepted): `unknown_field` (extra field ignored), `field_r
 ```json
 {
   "status": "passed",
-  "use_playwright": false,
+  "preparation": {"status": "ok", "method": "playwright_test", "verified_profile_ids": ["operator"], "method_admitted": true, "observed_tool_name": "playwright", "observed_tool_version": "1.63.0", "observed_playwright_version": "1.63.0"},
+  "blockers": [],
+  "coverage": {"planned_ids": ["journey-checkout-operator"], "items": [{"id": "journey-checkout-operator", "result": "passed", "evidence": [".workflow-hero/cycles/current/screenshots/shot-001.png"], "checks": {"business_outcome": true}}]},
+  "use_playwright": true,
   "tests_passed": true,
   "flows_validated": ["checkout", "payment", "confirmation"],
   "failures": [],
@@ -106,6 +108,9 @@ Warning codes (report accepted): `unknown_field` (extra field ignored), `field_r
 ```json
 {
   "status": "failed",
+  "preparation": {"status": "ok", "method": "playwright_test", "verified_profile_ids": ["operator"], "method_admitted": true, "observed_tool_name": "playwright", "observed_tool_version": "1.63.0", "observed_playwright_version": "1.63.0"},
+  "blockers": [],
+  "coverage": {"planned_ids": ["journey-checkout-operator"], "items": [{"id": "journey-checkout-operator", "result": "failed", "evidence": [], "checks": {"business_outcome": false}}]},
   "use_playwright": true,
   "tests_passed": false,
   "flows_validated": ["login"],
@@ -133,6 +138,9 @@ Warning codes (report accepted): `unknown_field` (extra field ignored), `field_r
 ```json
 {
   "status": "failed",
+  "preparation": {"status": "ok", "method": "http", "verified_profile_ids": []},
+  "blockers": [],
+  "coverage": {"planned_ids": ["journey-order-confirmation-anonymous"], "items": [{"id": "journey-order-confirmation-anonymous", "result": "failed", "evidence": [], "checks": {"business_outcome": false}}]},
   "use_playwright": false,
   "tests_passed": false,
   "flows_validated": [],

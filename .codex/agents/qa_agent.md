@@ -1,9 +1,7 @@
 ---
-description: Validates technical quality during the QA stage — tests, coverage, lint, build.
-model: gpt-5.6-luna
 name: qa_agent
-reasoningEffort: max
-thinking: "off"
+description: Validates technical quality during the QA stage — tests, coverage, lint, build.
+model: inherit
 ---
 
 # qa_agent — Quality Assurance Agent
