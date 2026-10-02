@@ -71,6 +71,17 @@ During `Execute` with `Stream: true`, adapters SHALL map harness-native events t
 - **WHEN** Cursor NDJSON includes a `type` not handled by the parser
 - **THEN** the adapter emits `StreamKindWarning` and continues parsing
 
+### Requirement: Adapters SHALL report every spawned subagent's lifecycle explicitly
+Every adapter SHALL emit one `StreamDelta` with `Subagent: true` and `Phase: started` when the harness spawns a nested agent, and one with `Phase: completed` when it ends, using the same `CallID` for both and the most specific available name in `AgentName`. Native sources: Claude `system/task_started` with `task_type` `local_agent` and its first terminal `task_updated`/`task_notification`; Cursor `taskToolCall` started/completed; OpenCode `message.part.updated` tool `task` at `running` and `completed`/`error`; Codex `subAgentActivity` `started`/`completed`/`interrupted` keyed by `agentThreadId`, with `collabAgentToolCall` spawn receivers and terminal `agentsStates` as fallback. The TUI Agents box SHALL list exactly these subagents under their parent Execute, on every stage including validation stages, and SHALL remove them when the parent Execute ends. It SHALL NOT infer subagents from tool names or text.
+
+#### Scenario: Codex spawn_agent appears in the Agents box
+- **WHEN** a Codex stage agent spawns two agents and the app-server reports `subAgentActivity` started for each
+- **THEN** the Agents box shows both under the stage agent until each `subAgentActivity` completed arrives
+
+#### Scenario: Background shell task is not a subagent
+- **WHEN** Claude reports `task_started` with `task_type: local_bash`
+- **THEN** no `Subagent` delta is emitted and the Agents box is unchanged
+
 ### Requirement: OpenCode adapter SHALL handle documented SSE event families
 
 The OpenCode adapter SHALL consume `/event` SSE and handle message, tool, permission, session, file, LSP, todo, shell, TUI, and server connection events documented for OpenCode serve. Tool events SHALL map to `StreamKindTool` with `started`/`completed` phases. Message reasoning parts SHALL map to `StreamKindThinking`. Its long-lived `serve` child SHALL inherit the owning TUI's private lifecycle-event endpoint when one is configured, so CLI-as-API commands launched by the harness can publish cycle transitions back to that TUI.

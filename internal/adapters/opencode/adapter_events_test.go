@@ -177,7 +177,7 @@ func TestProcessSSEEventTaskStartAttributesAgent(t *testing.T) {
 		t.Fatalf("deltas=%d want 1: %+v", len(got), got)
 	}
 	d := got[0]
-	if d.AgentName != "qa_agent" || d.CallID != "t-qa" || d.Phase != harness.StreamPhaseStarted {
+	if d.AgentName != "qa_agent" || d.CallID != "t-qa" || d.Phase != harness.StreamPhaseStarted || !d.Subagent {
 		t.Fatalf("named Task start=%+v", d)
 	}
 
@@ -200,7 +200,7 @@ func TestProcessSSEEventTaskStartAttributesAgent(t *testing.T) {
 		t.Fatalf("explore deltas=%d want 1", len(got))
 	}
 	d = got[0]
-	if d.AgentName != "explore" || d.CallID != "t-explore" || d.Phase != harness.StreamPhaseStarted {
+	if d.AgentName != "explore" || d.CallID != "t-explore" || d.Phase != harness.StreamPhaseStarted || !d.Subagent {
 		t.Fatalf("generic Task start=%+v", d)
 	}
 }

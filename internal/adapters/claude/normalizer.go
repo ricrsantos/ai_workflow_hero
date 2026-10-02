@@ -30,13 +30,18 @@ type resultAssembler struct {
 	debug           bool
 	toolPaths       []string
 	toolPathSet     map[string]struct{}
+	// subagentTasks holds task ids of running Agent/Task subagents, so their
+	// terminal notification closes the lifecycle while background shell
+	// tasks (task_type local_bash) never enter it.
+	subagentTasks map[string]struct{}
 }
 
 func newResultAssembler(debug bool) *resultAssembler {
 	return &resultAssembler{
-		properties:  make(map[string]string),
-		debug:       debug,
-		toolPathSet: make(map[string]struct{}),
+		properties:    make(map[string]string),
+		debug:         debug,
+		toolPathSet:   make(map[string]struct{}),
+		subagentTasks: make(map[string]struct{}),
 	}
 }
 
@@ -141,9 +146,9 @@ func (a *resultAssembler) system(event RawEvent, p map[string]any) ([]harness.St
 		return []harness.StreamDelta{harness.ActivityDelta("system.usage", "Claude usage updated", a.sessionID)}, nil
 	case "subagent_started":
 		name := firstNonEmpty(stringAt(p, "agent_type"), stringAt(p, "agent_id"), "subagent")
-		return []harness.StreamDelta{{Kind: harness.StreamKindTool, Text: "Claude subagent " + name, AgentName: stringAt(p, "agent_id"), Model: a.model, CallID: stringAt(p, "agent_id"), Phase: harness.StreamPhaseStarted, HarnessType: "system.subagent_started", SessionID: a.sessionID}}, nil
+		return []harness.StreamDelta{{Kind: harness.StreamKindTool, Text: "Claude subagent " + name, AgentName: name, Model: a.model, CallID: stringAt(p, "agent_id"), Phase: harness.StreamPhaseStarted, Subagent: true, HarnessType: "system.subagent_started", SessionID: a.sessionID}}, nil
 	case "subagent_completed":
-		return []harness.StreamDelta{{Kind: harness.StreamKindTool, Text: "Claude subagent completed", AgentName: stringAt(p, "agent_id"), CallID: stringAt(p, "agent_id"), Phase: harness.StreamPhaseCompleted, HarnessType: "system.subagent_completed", SessionID: a.sessionID}}, nil
+		return []harness.StreamDelta{{Kind: harness.StreamKindTool, Text: "Claude subagent completed", AgentName: stringAt(p, "agent_type"), CallID: stringAt(p, "agent_id"), Phase: harness.StreamPhaseCompleted, Subagent: true, HarnessType: "system.subagent_completed", SessionID: a.sessionID}}, nil
 	case "task_started":
 		return a.taskStarted(p), nil
 	case "task_updated":

@@ -20,6 +20,9 @@ type liveAgent struct {
 	Label   string
 	Model   string
 	Harness string // agent YAML harness when known (UI-C04 multi-harness speaker)
+	// Parent is the Execute that spawned this subagent; empty for the
+	// Execute's own entry. A finished Execute takes its subagents with it.
+	Parent string
 }
 
 var agentShortLabels = map[string]string{
@@ -59,15 +62,6 @@ func resolveAgentKey(name string) string {
 		}
 	}
 	return key
-}
-
-func isKnownHeroAgent(name string) bool {
-	key := resolveAgentKey(name)
-	if key == "" {
-		return false
-	}
-	_, ok := agentShortLabels[key]
-	return ok
 }
 
 func agentShortLabel(name string) string {

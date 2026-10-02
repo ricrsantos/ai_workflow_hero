@@ -19,6 +19,9 @@ import (
 
 // streamState tracks incremental message reconstruction across SSE events.
 type streamState struct {
+	// openTasks holds callIDs of task-tool subagents reported as started, so
+	// repeated part updates emit each lifecycle edge once.
+	openTasks            map[string]struct{}
 	partTexts            map[string]string
 	emittedText          map[string]string // text already sent to UI per stream key
 	assistantMsgID       string
@@ -36,6 +39,7 @@ type streamState struct {
 
 func newStreamState() *streamState {
 	return &streamState{
+		openTasks:    make(map[string]struct{}),
 		partTexts:    make(map[string]string),
 		emittedText:  make(map[string]string),
 		stepUsageIDs: make(map[string]struct{}),
@@ -575,7 +579,8 @@ func (h *streamHandler) emitToolPhase(props map[string]any, phase, evtType, suff
 	label := toolLabelByName(toolName)
 	agentName := h.state.agentName
 	model := ""
-	if harness.IsTaskToolName(toolName) {
+	subagent := harness.IsTaskToolName(toolName)
+	if subagent {
 		taskName, taskModel := taskInfoFromProps(props)
 		if taskName != "" {
 			agentName = taskName
@@ -597,10 +602,70 @@ func (h *streamHandler) emitToolPhase(props map[string]any, phase, evtType, suff
 		Model:       model,
 		CallID:      callID,
 		Phase:       phase,
+		Subagent:    subagent,
 		HarnessType: evtType,
 		SessionID:   h.sessionID,
 	})
 	return streamOutcome{}
+}
+
+// emitTaskPart reports a task-tool subagent from message.part.updated, the
+// event OpenCode serve actually streams for tools. The part moves pending →
+// running → completed|error; the subagent starts at running (when its input
+// is known) and ends at the terminal status.
+func (h *streamHandler) emitTaskPart(part map[string]any) {
+	callID := stringProp(part, "callID", "id")
+	if callID == "" {
+		return
+	}
+	state, _ := part["state"].(map[string]any)
+	status := stringProp(state, "status")
+	input, _ := state["input"].(map[string]any)
+	name := harness.HeroAgentFromLabel(stringProp(input, "subagent_type"))
+	if name == "" {
+		name = harness.HeroAgentFromLabel(stringProp(input, "description"))
+	}
+	if name == "" {
+		name = stringProp(input, "description", "subagent_type")
+	}
+	if name == "" {
+		name = "task"
+	}
+	model := ""
+	if meta, ok := state["metadata"].(map[string]any); ok {
+		if m, ok := meta["model"].(map[string]any); ok {
+			model = stringProp(m, "modelID")
+		}
+	}
+	_, open := h.state.openTasks[callID]
+	phase, suffix := "", ""
+	switch status {
+	case "running":
+		if open {
+			return
+		}
+		h.state.openTasks[callID] = struct{}{}
+		phase = harness.StreamPhaseStarted
+	case "completed", "error":
+		if !open {
+			return
+		}
+		delete(h.state.openTasks, callID)
+		phase, suffix = harness.StreamPhaseCompleted, " ("+status+")"
+	default:
+		return
+	}
+	h.emit(harness.StreamDelta{
+		Kind:        harness.StreamKindTool,
+		Text:        "Task " + name + suffix,
+		AgentName:   name,
+		Model:       model,
+		CallID:      callID,
+		Phase:       phase,
+		Subagent:    true,
+		HarnessType: "message.part.updated",
+		SessionID:   h.sessionID,
+	})
 }
 
 func toolNameFromProps(props map[string]any) string {
@@ -829,6 +894,10 @@ func (h *streamHandler) handlePartUpdated(props map[string]any) streamOutcome {
 		}
 		return streamOutcome{}
 	case "tool":
+		if harness.IsTaskToolName(stringProp(part, "tool")) {
+			h.emitTaskPart(part)
+			return streamOutcome{}
+		}
 		if h.req.Debug {
 			label := toolLabelFromProps(part)
 			if label == "" {

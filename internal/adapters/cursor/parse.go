@@ -281,6 +281,18 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 			Phase:     phase,
 		})
 	}
+	// emitTask reports the lifecycle of a Task subagent (Subagent=true).
+	emitTask := func(text, name, model, callID, phase string) {
+		emit(harness.StreamDelta{
+			Kind:      harness.StreamKindTool,
+			Text:      text,
+			AgentName: name,
+			Model:     model,
+			CallID:    callID,
+			Phase:     phase,
+			Subagent:  true,
+		})
+	}
 
 	for sc.Scan() {
 		line := bytes.TrimSpace(sc.Bytes())
@@ -343,7 +355,7 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 						info.Name = ev.AgentID
 					}
 					state.openTask(callID, info)
-					emitAttr(harness.StreamKindTool, label, info.Name, info.Model, callID, harness.StreamPhaseStarted)
+					emitTask(label, info.Name, info.Model, callID, harness.StreamPhaseStarted)
 					break
 				}
 				if label == "" {
@@ -375,10 +387,9 @@ func ParseStreamJSONWithOptions(ctx context.Context, r io.Reader, opts StreamPar
 						emitAttr(harness.StreamKindText, resultContent, info.Name, info.Model, callID, "")
 					}
 					if label != "" {
-						emitAttr(harness.StreamKindTool, label+" (completed)", info.Name, info.Model, callID, harness.StreamPhaseCompleted)
-					} else {
-						emitAttr(harness.StreamKindTool, "", info.Name, info.Model, callID, harness.StreamPhaseCompleted)
+						label += " (completed)"
 					}
+					emitTask(label, info.Name, info.Model, callID, harness.StreamPhaseCompleted)
 					break
 				}
 			}

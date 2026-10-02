@@ -2860,6 +2860,9 @@ func (m *model) applyStreamDelta(msg streamDeltaMsg) {
 	if m.harnessWatchdog.LastActivityAt().After(prevActivity) {
 		*m = m.clearHarnessHealthWarnings()
 	}
+	// Subagent lifecycle feeds the Agents box for every stage, including
+	// validation stages whose tool rows are reduced to progress below.
+	*m = m.trackSubagentDelta(msg.delta, msg.executeID)
 	progressOnly := false
 	if execute, ok := m.executes[msg.executeID]; ok && !execute.Freechat && isValidationProgressStage(execute.StageName) {
 		var warning string
@@ -2947,14 +2950,8 @@ func (m model) appendStreamDeltaForTurn(d harness.StreamDelta, turnIndex int) mo
 		}
 		return m
 	}
-	if d.Phase == harness.StreamPhaseStarted {
-		m = m.addLiveAgent(d)
-	}
-	if d.Phase == harness.StreamPhaseCompleted {
-		m = m.removeLiveAgent(d.CallID)
-		if d.Kind == harness.StreamKindTool {
-			return m
-		}
+	if d.Phase == harness.StreamPhaseCompleted && d.Kind == harness.StreamKindTool {
+		return m
 	}
 	if d.Phase == harness.StreamPhaseStarted && d.Kind == harness.StreamKindTool {
 		text := strings.TrimSpace(d.Text)
@@ -3353,9 +3350,25 @@ func (m model) applyExecutePair(harnessID, model string) model {
 	return m
 }
 
-func (m model) addLiveAgent(d harness.StreamDelta) model {
+// trackSubagentDelta maintains the Agents box from explicit subagent
+// lifecycle deltas (harness.StreamDelta.Subagent). Adapters decide what is a
+// subagent; the TUI never infers one from tool names or text.
+func (m model) trackSubagentDelta(d harness.StreamDelta, parentExecuteID string) model {
+	if !d.Subagent {
+		return m
+	}
+	switch d.Phase {
+	case harness.StreamPhaseStarted:
+		return m.addLiveAgent(d, parentExecuteID)
+	case harness.StreamPhaseCompleted:
+		return m.removeLiveAgent(d.CallID)
+	}
+	return m
+}
+
+func (m model) addLiveAgent(d harness.StreamDelta, parentExecuteID string) model {
 	callID := strings.TrimSpace(d.CallID)
-	if callID == "" {
+	if callID == "" || !d.Subagent {
 		return m
 	}
 	for _, a := range m.liveAgents {
@@ -3365,23 +3378,20 @@ func (m model) addLiveAgent(d harness.StreamDelta) model {
 	}
 	name := strings.TrimSpace(d.AgentName)
 	if name == "" {
-		return m
+		name = "task"
 	}
-	switch {
-	case isKnownHeroAgent(name):
-		if strings.TrimSpace(d.Text) != "" && !looksLikeTaskTool(d.Text) {
-			return m
-		}
-	case harness.IsGenericTaskType(name), looksLikeTaskTool(d.Text):
-	default:
-		return m
+	harnessID := m.agentHarnessForName(name)
+	if ex, ok := m.executes[parentExecuteID]; ok && strings.TrimSpace(ex.HarnessID) != "" {
+		// A subagent runs inside its parent's harness.
+		harnessID = ex.HarnessID
 	}
 	m.liveAgents = append(m.liveAgents, liveAgent{
 		CallID:  callID,
 		Name:    name,
 		Label:   agentShortLabel(name),
 		Model:   strings.TrimSpace(d.Model),
-		Harness: m.agentHarnessForName(name),
+		Harness: harnessID,
+		Parent:  strings.TrimSpace(parentExecuteID),
 	})
 	return m
 }
@@ -3391,9 +3401,11 @@ func (m model) removeLiveAgent(callID string) model {
 	if callID == "" {
 		return m
 	}
+	// An Execute's subagents leave with it, so a lost completion event can
+	// never leave a phantom entry in the Agents box.
 	out := m.liveAgents[:0]
 	for _, a := range m.liveAgents {
-		if a.CallID != callID {
+		if a.CallID != callID && a.Parent != callID {
 			out = append(out, a)
 		}
 	}
@@ -3467,14 +3479,6 @@ func (m *model) appendAttributed(role convRole, d harness.StreamDelta) {
 	if role == convRoleThinking {
 		m.thinkingMsgIndex = idx
 	}
-}
-
-func looksLikeTaskTool(text string) bool {
-	t := strings.ToLower(strings.TrimSpace(text))
-	if t == "" {
-		return false
-	}
-	return strings.HasPrefix(t, "task ") || t == "task" || harness.IsTaskToolName(t)
 }
 
 // insertBeforeAgent inserts msg just before the agent answer bubble and returns its index.

@@ -66,46 +66,104 @@ func (a *resultAssembler) controlRequest(p map[string]any) []harness.StreamDelta
 	}
 }
 
+// claudeSubagentName prefers a Hero agent named by subagent_type or the
+// description, then the subagent type, then the description. task_id is an
+// opaque handle and never a display name.
+func claudeSubagentName(p map[string]any) string {
+	subagentType := stringAt(p, "subagent_type")
+	description := stringAt(p, "description")
+	return firstNonEmpty(
+		harness.HeroAgentFromLabel(subagentType),
+		harness.HeroAgentFromLabel(description),
+		subagentType,
+		description,
+		"task",
+	)
+}
+
+// isClaudeSubagentTask reports whether task_started describes an Agent/Task
+// subagent. Background shell tasks share the task_* events but are not agents.
+func isClaudeSubagentTask(p map[string]any) bool {
+	switch stringAt(p, "task_type") {
+	case "local_agent", "remote_agent":
+		return true
+	case "":
+		return stringAt(p, "subagent_type") != ""
+	default:
+		return false
+	}
+}
+
 func (a *resultAssembler) taskStarted(p map[string]any) []harness.StreamDelta {
 	name := firstNonEmpty(stringAt(p, "description"), stringAt(p, "task_type"), "task")
 	id := firstNonEmpty(stringAt(p, "task_id"), stringAt(p, "tool_use_id"))
-	return []harness.StreamDelta{{
+	d := harness.StreamDelta{
 		Kind:        harness.StreamKindTool,
 		Text:        "Claude task " + name,
-		AgentName:   stringAt(p, "task_id"),
 		CallID:      id,
 		Phase:       harness.StreamPhaseStarted,
 		HarnessType: "system.task_started",
 		SessionID:   a.sessionID,
-	}}
+	}
+	if isClaudeSubagentTask(p) && id != "" {
+		d.Subagent = true
+		d.AgentName = claudeSubagentName(p)
+		a.subagentTasks[id] = struct{}{}
+	}
+	return []harness.StreamDelta{d}
 }
 
 func (a *resultAssembler) taskUpdated(p map[string]any) []harness.StreamDelta {
 	id := stringAt(p, "task_id")
 	patch, _ := p["patch"].(map[string]any)
 	status := firstNonEmpty(stringAt(patch, "status"), "updated")
-	return []harness.StreamDelta{{
+	d := harness.StreamDelta{
 		Kind:        harness.StreamKindTool,
 		Text:        "Claude task " + status,
-		AgentName:   id,
 		CallID:      id,
 		HarnessType: "system.task_updated",
 		SessionID:   a.sessionID,
-	}}
+	}
+	if isClaudeTerminalTaskStatus(status) {
+		d = a.closeSubagentTask(d, id)
+	}
+	return []harness.StreamDelta{d}
 }
 
 func (a *resultAssembler) taskNotification(p map[string]any) []harness.StreamDelta {
 	status := firstNonEmpty(stringAt(p, "status"), "completed")
 	id := firstNonEmpty(stringAt(p, "task_id"), stringAt(p, "tool_use_id"))
-	return []harness.StreamDelta{{
+	d := harness.StreamDelta{
 		Kind:        harness.StreamKindTool,
 		Text:        "Claude task " + status,
-		AgentName:   stringAt(p, "task_id"),
 		CallID:      id,
 		Phase:       harness.StreamPhaseCompleted,
 		HarnessType: "system.task_notification",
 		SessionID:   a.sessionID,
-	}}
+	}
+	return []harness.StreamDelta{a.closeSubagentTask(d, id)}
+}
+
+// closeSubagentTask turns d into the subagent's completion when id is a
+// running subagent task. Claude reports both task_updated(completed) and
+// task_notification; only the first one closes the lifecycle.
+func (a *resultAssembler) closeSubagentTask(d harness.StreamDelta, id string) harness.StreamDelta {
+	if _, ok := a.subagentTasks[id]; !ok {
+		return d
+	}
+	delete(a.subagentTasks, id)
+	d.Phase = harness.StreamPhaseCompleted
+	d.Subagent = true
+	return d
+}
+
+func isClaudeTerminalTaskStatus(status string) bool {
+	switch status {
+	case "completed", "failed", "killed", "stopped", "cancelled", "canceled", "error":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *resultAssembler) localCommandOutput(p map[string]any) []harness.StreamDelta {

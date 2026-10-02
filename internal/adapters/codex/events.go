@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/ricrsantos/ai_workflow_hero/internal/harness"
 	"github.com/ricrsantos/ai_workflow_hero/internal/media"
@@ -521,36 +522,61 @@ func (a *Adapter) handleItemLifecycle(method string, params map[string]any, sess
 			summary = itemType + ": " + cmd
 		}
 		emit(harness.StreamDelta{Kind: harness.StreamKindTool, Text: summary, HarnessType: method, SessionID: sessionID})
-	case "collabToolCall":
-		agentName := firstNonEmpty(
-			harness.HeroAgentFromLabel(stringField(item, "agent", "name", "title", "description")),
-			stringField(item, "agent", "name", "title"),
-			"task",
-		)
-		if harness.HeroAgentFromLabel(agentName) != "" {
-			agentName = harness.HeroAgentFromLabel(agentName)
+	case "subAgentActivity":
+		// Codex reports each spawned agent on the parent thread: kind started
+		// when spawn_agent returns, completed/interrupted when that agent's turn
+		// ends. Each event arrives as item/started and item/completed with the
+		// same payload; only item/completed is used so a lifecycle edge is
+		// reported once. The child thread's own items are filtered above.
+		if method != "item/completed" {
+			return streamOutcome{}
 		}
+		threadID := stringField(item, "agentThreadId")
+		if threadID == "" {
+			return streamOutcome{}
+		}
+		name := codexSubagentName(stringField(item, "agentPath"))
+		switch kind := stringField(item, "kind"); kind {
+		case "started":
+			emit(codexSubagentDelta(method, sessionID, threadID, name, "", harness.StreamPhaseStarted, "Subagent "+name))
+		case "completed", "interrupted":
+			emit(codexSubagentDelta(method, sessionID, threadID, name, "", harness.StreamPhaseCompleted, "Subagent "+name+" "+kind))
+		default:
+			if req.Debug {
+				emit(harness.ActivityDelta(method, "subagent "+name+" "+kind, sessionID))
+			}
+		}
+	case "collabAgentToolCall":
+		// Collaboration tools (spawnAgent, wait, closeAgent, ...). Lifecycle is
+		// normally carried by subAgentActivity; spawn receivers and terminal
+		// agentsStates are a fallback for servers that only send this item.
+		if method != "item/completed" {
+			return streamOutcome{}
+		}
+		tool := stringField(item, "tool")
 		model := stringField(item, "model")
-		callID := firstNonEmpty(stringField(item, "id", "itemId", "callId"), stringField(params, "itemId"))
-		if callID == "" {
-			callID = "collab:" + agentName
+		receivers := stringSlice(item["receiverThreadIds"])
+		switch tool {
+		case "spawnAgent":
+			for _, id := range receivers {
+				emit(codexSubagentDelta(method, sessionID, id, "task", model, harness.StreamPhaseStarted, "Subagent spawned"))
+			}
+		case "closeAgent":
+			for _, id := range receivers {
+				emit(codexSubagentDelta(method, sessionID, id, "task", "", harness.StreamPhaseCompleted, "Subagent closed"))
+			}
 		}
-		phase := harness.StreamPhaseStarted
-		label := "Task " + agentName
-		if method == "item/completed" {
-			phase = harness.StreamPhaseCompleted
-			label += " (completed)"
+		if states, ok := item["agentsStates"].(map[string]any); ok {
+			for id, raw := range states {
+				state, _ := raw.(map[string]any)
+				if codexTerminalAgentStatus(stringField(state, "status")) {
+					emit(codexSubagentDelta(method, sessionID, id, "task", "", harness.StreamPhaseCompleted, "Subagent "+stringField(state, "status")))
+				}
+			}
 		}
-		emit(harness.StreamDelta{
-			Kind:        harness.StreamKindTool,
-			Text:        label,
-			AgentName:   agentName,
-			Model:       model,
-			CallID:      callID,
-			Phase:       phase,
-			HarnessType: method,
-			SessionID:   sessionID,
-		})
+		if tool != "" {
+			emit(harness.StreamDelta{Kind: harness.StreamKindTool, Text: "collab " + tool, HarnessType: method, SessionID: sessionID})
+		}
 	case "fileChange":
 		emit(harness.ActivityDelta(method, "file change", sessionID))
 	case "plan":
@@ -568,11 +594,61 @@ func (a *Adapter) handleItemLifecycle(method string, params map[string]any, sess
 	default:
 		if itemType == "" {
 			emit(harness.WarningDelta(adapterName, method, sessionID, fmt.Sprintf("%v", item)))
-		} else if req.Debug {
+			break
+		}
+		// An unhandled item type is how a protocol rename hides (subagents were
+		// invisible while Codex emitted subAgentActivity). Log each new type
+		// once; the chat only shows it in debug.
+		if _, seen := unhandledCodexItemTypes.LoadOrStore(itemType, struct{}{}); !seen {
+			a.log().Warn("codex item type not handled", "type", itemType, "method", method)
+		}
+		if req.Debug {
 			emit(harness.ActivityDelta(method, itemType, sessionID))
 		}
 	}
 	return streamOutcome{}
+}
+
+// codexSubagentDelta reports one spawned agent's lifecycle edge. The agent's
+// thread id is its CallID, so start and completion pair up regardless of which
+// item carried them.
+func codexSubagentDelta(method, sessionID, threadID, name, model, phase, text string) harness.StreamDelta {
+	return harness.StreamDelta{
+		Kind:        harness.StreamKindTool,
+		Text:        text,
+		AgentName:   name,
+		Model:       model,
+		CallID:      "codex-agent:" + threadID,
+		Phase:       phase,
+		Subagent:    true,
+		HarnessType: method,
+		SessionID:   sessionID,
+	}
+}
+
+// codexSubagentName maps an agentPath such as "/root/alpha" to a display name,
+// preferring a Hero agent id when the path names one.
+func codexSubagentName(agentPath string) string {
+	name := strings.TrimSpace(agentPath)
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	if hero := harness.HeroAgentFromLabel(name); hero != "" {
+		return hero
+	}
+	if name == "" || name == "root" {
+		return "task"
+	}
+	return name
+}
+
+func codexTerminalAgentStatus(status string) bool {
+	switch status {
+	case "completed", "errored", "shutdown", "interrupted", "notFound":
+		return true
+	default:
+		return false
+	}
 }
 
 func (st *turnStreamState) emitAssetsFromPayload(method string, payload map[string]any, sessionID, baseDir string) {
@@ -915,4 +991,18 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// unhandledCodexItemTypes records item types already reported in the log.
+var unhandledCodexItemTypes sync.Map
+
+func stringSlice(v any) []string {
+	raw, _ := v.([]any)
+	out := make([]string, 0, len(raw))
+	for _, x := range raw {
+		if s, ok := x.(string); ok && strings.TrimSpace(s) != "" {
+			out = append(out, strings.TrimSpace(s))
+		}
+	}
+	return out
 }

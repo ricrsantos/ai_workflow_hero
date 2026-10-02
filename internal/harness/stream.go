@@ -45,6 +45,11 @@ type StreamDelta struct {
 	Model       string // kebab model slug when known
 	CallID      string // Task call_id when attributed to a subagent
 	Phase       string // StreamPhaseStarted / StreamPhaseCompleted, or empty
+	// Subagent marks Phase started/completed as the lifecycle of a nested
+	// agent the harness spawned (Task, Agent, spawn_agent). CallID identifies
+	// that agent for the whole lifecycle. Consumers list exactly these agents;
+	// they never infer a subagent from tool names or text.
+	Subagent    bool
 	HarnessType string // raw harness event type (permission.asked, tool_call, …)
 	SessionID   string
 	Metadata    map[string]string

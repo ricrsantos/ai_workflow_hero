@@ -3291,3 +3291,21 @@ context/current-state.md` tasks. `go test ./...`, `go vet ./...`,
 `golangci-lint --new-from-rev=HEAD`, and `openspec validate --specs --strict`
 pass. Docs: ADR-C17-003 (ADR-107), ADR index, documents.json,
 runtime-workflow-execution spec, workflow-help, architecture overview.
+
+## 2026-10-02 — Subagents from every harness in the Agents box
+
+Problem: subagents spawned by GPT (Codex) never appeared in the TUI Agents box.
+Recorded real streams with the installed harnesses (codex-cli 0.159.2
+app-server, Claude Code 2.1.287 stream-json, cursor-agent auto, opencode serve
+SSE) and found: Codex emits `subAgentActivity` (started/completed keyed by
+`agentThreadId`, path `/root/<name>`) while the adapter parsed a non-existent
+`collabToolCall`, and unknown item types were dropped silently; OpenCode serve
+streams task tools as `message.part.updated` parts the adapter only logged in
+debug; Claude named subagents by opaque `task_id`; the TUI filtered by name/text
+heuristics and skipped tool deltas entirely in validation stages.
+
+Decision: explicit `StreamDelta.Subagent` lifecycle contract set by every
+adapter; the TUI lists exactly flagged agents under their parent Execute and
+removes them when it ends. Heuristics deleted. Fixtures under
+`internal/adapters/*/testdata/subagents_*` (paths scrubbed) back replay tests.
+Spec: harness-adapter "report every spawned subagent's lifecycle explicitly".

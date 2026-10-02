@@ -3252,6 +3252,7 @@ func TestConversationAgentsBoxAddsHeroTaskNotGenericHARN(t *testing.T) {
 		Model:     "gpt-5.3-codex-medium",
 		CallID:    "t-plan",
 		Phase:     harness.StreamPhaseStarted,
+		Subagent:  true,
 	}})
 	got := LiveAgentsForTest(next.(model))
 	if len(got) != 2 {
@@ -3268,6 +3269,7 @@ func TestConversationAgentsBoxAddsHeroTaskNotGenericHARN(t *testing.T) {
 		Model:     "composer-2.5",
 		CallID:    "t-explore",
 		Phase:     harness.StreamPhaseStarted,
+		Subagent:  true,
 	}})
 	got = LiveAgentsForTest(next.(model))
 	if len(got) != 3 {
@@ -3298,6 +3300,7 @@ func TestConversationContextAgentChipsCTXNotTASK(t *testing.T) {
 		Model:     "composer-2.5",
 		CallID:    "t-ctx",
 		Phase:     harness.StreamPhaseStarted,
+		Subagent:  true,
 	}})
 	got := LiveAgentsForTest(next.(model))
 	if len(got) != 2 {

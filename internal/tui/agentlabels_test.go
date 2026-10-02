@@ -67,12 +67,3 @@ func TestWrapAgentLabels(t *testing.T) {
 		t.Fatal("expected empty wrap")
 	}
 }
-
-func TestIsKnownHeroAgent(t *testing.T) {
-	if !isKnownHeroAgent("planning_agent") || !isKnownHeroAgent("Task qa_agent") {
-		t.Fatal("expected named Hero agents")
-	}
-	if isKnownHeroAgent("") || isKnownHeroAgent("explore") || isKnownHeroAgent("generalPurpose") {
-		t.Fatal("generic/empty names are not Hero agents")
-	}
-}
