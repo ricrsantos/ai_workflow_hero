@@ -1,5 +1,9 @@
 # Context Log
 
+## 2026-10-02 — Release v3.6.0: minor bump
+
+**Change**: Minor bump `v3.5.2` → `v3.6.0` after `go test ./...`. Release commit bumps default `main.version`, `current-state`, and architecture overview. Carries TUI Agents panel subagents display, harness flow fixes, browser-validation execution work (C17), model catalog updates (incl. gpt-6.1 sol), and accumulated cycle/report fixes since v3.5.2. Tag pushed; `./scripts/release.sh`; GitHub Release with 8 binaries + `checksums.txt`.
+
 ## 2026-10-01 — Safe leveled logging for Telegram screenshot delivery
 
 **Change**: Telegram image delivery now records debug batch counts, info-level successful or policy-skipped outcomes, and error-level delivery/response failures. Log attributes are limited to counts and fixed reason/error codes; raw transport errors and image or chat data are omitted.
