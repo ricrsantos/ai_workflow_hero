@@ -1,5 +1,13 @@
 # Context Log
 
+## 2026-10-27 — Add GPT-6.1 Terra to Codex and OpenAI model catalogs
+
+**Change**: Added `gpt-6.1-terra` with official API pricing ($1.00 input / $5.00 output per 1M tokens, $0.05 cached input, $1.25 cache write at 30-minute retention), 1,050,000-token context, and `none/low/medium/high/xhigh/max` reasoning effort. Added the native Codex ID plus the OpenAI API and `openai/` aliases; kept `assets/models/` and `.workflow-hero/models/` byte-identical and refreshed overlay checksums. Updated the Codex catalog coverage list.
+
+**Sources**: [OpenAI API model page](https://developers.openai.com/api/docs/models/gpt-6.1-terra); [GPT-6.1 Terra announcement](https://openai.com/index/introducing-gpt-6-1-terra/).
+
+**Validation**: Asset and overlay copies match; overlay checksums match. Tests not run.
+
 ## 2026-10-02 — Release v3.6.0: minor bump
 
 **Change**: Minor bump `v3.5.2` → `v3.6.0` after `go test ./...`. Release commit bumps default `main.version`, `current-state`, and architecture overview. Carries TUI Agents panel subagents display, harness flow fixes, browser-validation execution work (C17), model catalog updates (incl. gpt-6.1 sol), and accumulated cycle/report fixes since v3.5.2. Tag pushed; `./scripts/release.sh`; GitHub Release with 8 binaries + `checksums.txt`.

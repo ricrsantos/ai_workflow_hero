@@ -2,13 +2,13 @@
 # Installed overlay: .workflow-hero/models/codex.yml
 # Model IDs are a Codex reference snapshot (PRD-C06-001 §4.8; design D12).
 # A successful Codex app-server ListModels response is authoritative.
-# Pricing from https://developers.openai.com/api/docs/pricing (Standard short-context, 2026-08-25).
-# For GPT-5.6 tiers cache_write is 1.25x input (OpenAI prompt-cache write surcharge).
+# Pricing from https://developers.openai.com/api/docs/pricing (Standard short-context, 2026-10-27).
+# For GPT-5.6+ tiers cache_write is 1.25x input (OpenAI prompt-cache write surcharge).
 # Long-context (>272K input) is 2x input / 1.5x output for the full request — not modeled here.
 # Context: Codex default window is ~272k; API max may be higher (1.05M/400K) — see model pages.
 provider: codex
 version: 1
-last_updated: 2026-09-30
+last_updated: 2026-10-27
 currency: usd
 unit: per_1m_tokens
 
@@ -218,6 +218,28 @@ models:
       ef:
         available: true
         values: ["low", "medium", "high", "xhigh", "max"]
+        default: "medium"
+      th:
+        available: true
+        values: ["off", "on", "detailed"]
+        default: "off"
+  # GPT-6.1 Terra: OpenAI API/Codex model. Standard $1.00/$5.00, cached input
+  # $0.05, and 30-minute cache writes $1.25. OpenAI lists 1.05M context,
+  # 128K max output, and reasoning effort none/low/medium/high/xhigh/max.
+  gpt-6.1-terra:
+    input: 1.00
+    cache_write: 1.25
+    cache_read: 0.05
+    output: 5.00
+    context_window: 1050000
+    properties:
+      fs:
+        available: false
+        values: ["na"]
+        default: "na"
+      ef:
+        available: true
+        values: ["none", "low", "medium", "high", "xhigh", "max"]
         default: "medium"
       th:
         available: true
